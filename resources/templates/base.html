@@ -13,30 +13,7 @@
     {% block scripts %} {% endblock %}
 </head>
 <body class="d-flex flex-column vh-100">
-    <div id="header" class="d-flex">
-        <ul class="nav nav-tabs">
-            <li class="nav-item">
-                <a 
-                class="nav-link {% if request.endpoint == 'index' %} active {% endif %}"
-                aria-current="page"
-                href="{{ url_for('index') }}">
-                    Home
-                </a>
-            </li>
-            <li class="nav-item">
-                <a 
-                class="nav-link {% if request.endpoint == 'settings' %} active {% endif %}" 
-                href="{{ url_for('settings') }}">
-                    Settings
-            </a>
-            </li>
-        </ul>
-        <a data-do-not-follow-link href="/exit-application" class="ms-auto btn btn-secondary">
-            Exit Application
-        </a>
-    </div>
-    <div id="content">
-        <h1 class="text-center"> 🎵 SyncLyrics 🎵 </h1>
+    <div id="content" class="flex-grow-1">
         {% with messages = get_flashed_messages(with_categories=True) %}
             {% if messages %}
                 <ul class="messages list-unstyled text-center rounded col-12 col-md-8 col-lg-6 mx-auto">
@@ -55,24 +32,26 @@
         {% endwith %}
         {% block content %} {% endblock %}
     </div>
-    <div id="footer" class="d-flex border border-1 p-2 mt-auto">
-        <div class="col-6">
-            <h2> SyncLyrics </h2>
-            <p> A diverse application that allows you to sign along with anything. </p>
-        </div>
-        <div class="col-6">
-            <p>
-                Developed by
-                <a href="https://github.com/KonstantinosPetrakis" target="_blank"
-                    class="text-decoration-none">
-                    Konstantinos Petrakis
-                </a> 
-            </p>
-            <a href="https://github.com/KonstantinosPetrakis/SyncLyrics"
-                target="_blank"
-                class="d-flex text-decoration-none">
+
+    <div id="bottom-nav" class="bottom-nav">
+        <div class="app-title">🎵 SyncLyrics 🎵</div>
+        <nav class="nav-controls">
+            <ul class="nav">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.endpoint == 'index' %} active {% endif %}"
+                       href="{{ url_for('index') }}">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.endpoint == 'settings' %} active {% endif %}"
+                       href="{{ url_for('settings') }}">Settings</a>
+                </li>
+            </ul>
+            <a data-do-not-follow-link href="/exit-application" class="exit-btn">Exit</a>
+        </nav>
+        <div class="credits">
+            <a href="https://github.com/KonstantinosPetrakis/SyncLyrics" target="_blank" class="repo-link">
                 <img src="{{ url_for('static', filename='images/github.png')}}" alt="Github" class="logo">
-                <span class="ms-2"> Project Repository </span>
+                <span>Project</span>
             </a>
         </div>
     </div>
