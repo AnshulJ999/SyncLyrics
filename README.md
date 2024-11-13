@@ -48,13 +48,13 @@ python build.py
 * Notification library has an issue on windows, I believe it will be fixed soon, see open issue: 
 https://github.com/samschott/desktop-notifier/issues/95
 
-Special Notes:
+## Special Notes:
 
 - I'm not a dev, just an enthusiast. I had a special niche need for this, so I used AI (Claude) to help me understand the code and modify it to my needs.
 - All of the code edits are made by AI, so it's prone to bugs right now. 
 
 The license is the same as the original project.
 
-Credits: 
+## Credits: 
 
 * [Konstantinos Petrakis](https://github.com/konstantinospetrakis) for amazing work the original project
