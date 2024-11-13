@@ -1,9 +1,44 @@
-/env
-/__pycache__
+
+# Project specific
 current_wallpaper.png
 state.json
-/sync_lyrics.build
-/sync_lyrics.dist
-/sync_lyrics.onefile-build
+sync_lyrics.build/
+sync_lyrics.dist/
+sync_lyrics.onefile-build/
 sync_lyrics.bin
 sync_lyrics.exe
+/resources latest - black
+/resources backup rollback
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
