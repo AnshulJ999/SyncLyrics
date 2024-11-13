@@ -1,14 +1,52 @@
 {% extends "base.html" %}
-{% block scripts %}
-    <script src="{{ url_for('static', filename='js/lyrics.js')}}"> </script>
+
+{% block title %}SyncLyrics{% endblock %}
+
+{% block styles %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 {% endblock %}
+
+{% block scripts %}
+    <script src="{{ url_for('static', filename='js/lyrics.js') }}"></script>
+{% endblock %}
+
 {% block content %}
     <div id="lyrics" class="lyrics-container">
+        <!-- Previous lyrics -->
         <div id="prev-2" class="lyric-line far-previous"></div>
         <div id="prev-1" class="lyric-line previous"></div>
+        
+        <!-- Current lyric -->
         <div id="current" class="lyric-line current"></div>
+        
+        <!-- Next lyrics -->
         <div id="next-1" class="lyric-line next"></div>
         <div id="next-2" class="lyric-line far-next"></div>
         <div id="next-3" class="lyric-line far-next"></div>
+        
+        <!-- Provider info - only shown in non-minimal mode -->
+        <div id="provider-info" class="provider-info">
+            <span class="provider-name"></span>
+            <span class="provider-stats"></span>
+        </div>
+
+        <!-- Minimal mode toggle -->
+        <div class="minimal-controls">
+            <button id="minimal-toggle" class="minimal-toggle" onclick="toggleMinimalMode()">
+                <span class="toggle-text">Minimal Mode</span>
+            </button>
+        </div>
     </div>
+
+    {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 {% endblock %}

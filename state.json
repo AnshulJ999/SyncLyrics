@@ -1,8 +1,24 @@
 {
     "theme": "dark",
     "currentWallpaper": "c:/users/anshul/appdata/local/microsoft/windows/themes/roamedthemefiles/desktopbackground/img3.jpg",
+    "uiSettings": {
+        "themePreset": "homeassistant",
+        "customColors": {
+            "bgStart": "#24273a",
+            "bgEnd": "#363b54",
+            "text": "#ffffff"
+        },
+        "backgroundStyle": "albumart",
+        "albumArt": {
+            "enabled": false,
+            "opacity": 50,
+            "blur": 10,
+            "extractColors": true
+        },
+        "animationStyle": "wave"
+    },
     "representationMethods": {
-        "notifications": false,
+        "notifications": true,
         "wallpaper": false,
         "terminal": false
     },

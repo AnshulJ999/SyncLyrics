@@ -1,10 +1,25 @@
-from os import path
-from typing import Any
-import json 
+"""
+State management system for SyncLyrics
+Combines simplicity with reliability while supporting new config system
+"""
 
+import json
+import logging
+from os import path
+from typing import Any, Dict, Optional
 from benedict import benedict
 
+from config import ROOT_DIR, LYRICS, UI, STORAGE, DEBUG
 
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, DEBUG['log_level']),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename=DEBUG['log_file'] if DEBUG['enabled'] else None
+)
+logger = logging.getLogger(__name__)
+
+# Default state configuration
 DEFAULT_STATE = {
     "theme": "dark",
     "currentWallpaper": None,
@@ -14,87 +29,167 @@ DEFAULT_STATE = {
         "terminal": False
     },
     "wallpaperSettings": {
-        "fontSize": 2.5, # in percent of wallpaper width
-        "fontColor": "#FFC0CB", # hex color
-        "pickColorFromWallpaper": True, # if true, fontColor is ignored
-        "fontFamily": "Arial", 
-        "fontStroke": 5, # in percent of font size (e.g 5% of 16px ~ 1px)
-        "xOffset": 50, # in percent of screen width
-        "yOffset": 80, # in percent of screen height
-        "width": 100, # in percent of screen width
-        "height": 20, # in percent of screen height
-        "quality": 100, # in percent
-        "scaling": 100, # in percent
+        "fontSize": LYRICS['wallpaper']['font_size_percent'],
+        "fontColor": LYRICS['wallpaper']['font_color'],
+        "pickColorFromWallpaper": LYRICS['wallpaper']['pick_color_from_wallpaper'],
+        "fontFamily": LYRICS['wallpaper']['font_family'],
+        "fontStroke": LYRICS['wallpaper']['font_stroke_percent'],
+        "xOffset": LYRICS['wallpaper']['x_offset_percent'],
+        "yOffset": LYRICS['wallpaper']['y_offset_percent'],
+        "width": LYRICS['wallpaper']['width_percent'],
+        "height": LYRICS['wallpaper']['height_percent'],
+        "quality": LYRICS['wallpaper']['quality'],
+        "scaling": LYRICS['wallpaper']['scaling']
+    },
+    "uiSettings": {
+        "themePreset": "default",
+        "customColors": UI['themes']['default'],
+        "backgroundStyle": "gradient",
+        "albumArt": {
+            "enabled": False,
+            "opacity": 50,
+            "blur": 10,
+            "extractColors": True
+        },
+        "animationStyle": "wave"
     }
 }
 
-state = None # memory cache for state to avoid reading from disk
+# Memory cache for state
+_state_cache = None
+_STATE_FILE = ROOT_DIR / "state.json"
 
-
-def reset_state(): 
-    """
-    This function resets the state to the default state.
-    """
-
+def reset_state() -> None:
+    """Reset the state to default values"""
     set_state(DEFAULT_STATE)
+    logger.info("State reset to defaults")
 
-
-def set_state(new_state: dict):
+def set_state(new_state: dict) -> None:
     """
-    This function sets the state to the given state.
-
+    Set the application state
+    
     Args:
-        new_state (dict): The new state.
+        new_state (dict): The new state to set
     """
-
-    global state
-    with open("state.json", "w") as f: json.dump(new_state, f, indent=4)
-    state = None # clear memory cache
-
+    global _state_cache
+    try:
+        # Create backup of current state if it exists
+        if _STATE_FILE.exists():
+            backup_path = _STATE_FILE.with_suffix('.backup.json')
+            with open(_STATE_FILE, 'r') as f:
+                current_state = json.load(f)
+            with open(backup_path, 'w') as f:
+                json.dump(current_state, f, indent=4)
+        
+        # Write new state
+        with open(_STATE_FILE, 'w') as f:
+            json.dump(new_state, f, indent=4)
+        
+        # Update cache
+        _state_cache = new_state
+        logger.debug("State updated successfully")
+        
+    except Exception as e:
+        logger.error(f"Error setting state: {e}")
+        if DEBUG['enabled']:
+            raise
 
 def get_state() -> dict:
     """
-    This function returns the current state.
-
+    Get the current application state
+    
     Returns:
-        dict: The current state.
+        dict: The current state
     """
+    global _state_cache
+    
+    # Return cached state if available
+    if _state_cache is not None:
+        return _state_cache
+    
+    try:
+        # Create default state if file doesn't exist
+        if not _STATE_FILE.exists():
+            reset_state()
+            return DEFAULT_STATE
+        
+        # Read state from file
+        with open(_STATE_FILE, 'r') as f:
+            state = json.load(f)
+            
+        # Validate and update with any missing default values
+        updated = False
+        for key, value in DEFAULT_STATE.items():
+            if key not in state:
+                state[key] = value
+                updated = True
+                
+        # Save if we added any missing values
+        if updated:
+            set_state(state)
+            
+        _state_cache = state
+        return state
+        
+    except Exception as e:
+        logger.error(f"Error reading state: {e}")
+        return DEFAULT_STATE
 
-    global state
-    if state is not None: return state # memory cache
-    if not path.exists("state.json"): reset_state()
-    with open("state.json", "r") as f: return json.load(f)
-
-
-def set_attribute_js_notation(state: dict, attribute: str, value: Any) -> dict:
+def set_attribute(state: dict, attribute: str, value: Any) -> dict:
     """
-    This function sets the given attribute to the given value in the given state.
-
+    Set a specific attribute in the state using dot notation
+    
     Args:
-        state (dict): The state to set the attribute in.
-        attribute (str): The attribute to set in js notation.
-        value (Any): The value to set the attribute to.
-
+        state (dict): Current state
+        attribute (str): Attribute to set (using dot notation)
+        value (Any): Value to set
+        
     Returns:
-        dict: The state with the attribute set to the value.
+        dict: Updated state
     """
+    try:
+        state_dict = benedict(state, keypath_separator=".")
+        state_dict[attribute] = value
+        return state_dict.dict()
+    except Exception as e:
+        logger.error(f"Error setting attribute {attribute}: {e}")
+        return state
 
-    state = benedict(state, keypath_separator=".")
-    state[attribute] = value
-    return state.dict()
-
-
-def get_attribute_js_notation(state: dict, attribute: str) -> Any:
+def get_attribute(state: dict, attribute: str) -> Any:
     """
-    This function returns the value of the given attribute in the given state.
-
+    Get a specific attribute from the state using dot notation
+    
     Args:
-        state (dict): The state to get the attribute from.
-        attribute (str): The attribute to get in js notation.
-
+        state (dict): Current state
+        attribute (str): Attribute to get (using dot notation)
+        
     Returns:
-        Any: The value of the attribute.
+        Any: Value of the attribute
     """
+    try:
+        state_dict = benedict(state, keypath_separator=".")
+        return state_dict[attribute]
+    except Exception as e:
+        logger.error(f"Error getting attribute {attribute}: {e}")
+        return None
 
-    state = benedict(state, keypath_separator=".")
-    return state[attribute]
+def clear_cache() -> None:
+    """Clear the state cache to force reload from disk"""
+    global _state_cache
+    _state_cache = None
+    logger.debug("State cache cleared")
+
+# Memory cache for simple values
+_value_cache: Dict[str, Any] = {}
+
+def cache_value(key: str, value: Any) -> None:
+    """Cache a simple value in memory"""
+    _value_cache[key] = value
+
+def get_cached_value(key: str) -> Optional[Any]:
+    """Get a cached value from memory"""
+    return _value_cache.get(key)
+
+def clear_value_cache() -> None:
+    """Clear the simple value cache"""
+    _value_cache.clear()

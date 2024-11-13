@@ -1,117 +1,190 @@
 {% extends "base.html" %}
 
+{# Define input classes #}
 {% set input_wrapper_class = 'd-flex align-items-center my-2' %}
 {% set label_class = 'form-label me-auto d-block w-25' %}
 
+{# Define all macros #}
 {% macro range_percent_input(label, variable, help="") %}
-    {% set variable_value = self._TemplateReference__context.resolve(variable) %}
-
     <div class="{{ input_wrapper_class }}">
-        <label for="{{ variable }}" class="{{ label_class }}"> {{ label }} </label>
+        <label for="{{ variable }}" class="{{ label_class }}">{{ label }}</label>
         <input type="range" class="form-range" id="{{ variable }}" name="{{ variable }}" 
-            min=0 max=100 value="{{ variable_value }}">
-        {% if help %} 
-            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}"> ⓘ </div> 
+            min="0" max="100" value="{{ kwargs[variable] if variable in kwargs else 0 }}">
+        {% if help %}
+            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}">ⓘ</div>
         {% endif %}
     </div>
 {% endmacro %}
 
 {% macro checkbox_input(label, variable, help="") %}
-    {% set variable_value = self._TemplateReference__context.resolve(variable) %}
-
     <div class="{{ input_wrapper_class }} me-3">
-        <label for="{{ variable }}" class="d-block"> {{ label }} </label>
-        <input class="form-check-input ms-1 d-block" type="checkbox" name="{{variable}}"
-            id="{{ variable }}" {% if variable_value %} checked {% endif %}>
-        {% if help %} 
-            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}"> ⓘ </div> 
+        <label for="{{ variable }}" class="d-block">{{ label }}</label>
+        <input class="form-check-input ms-1 d-block" type="checkbox" 
+            name="{{ variable }}" id="{{ variable }}"
+            {% if context[variable] %}checked{% endif %}>
+        {% if help %}
+            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}">ⓘ</div>
         {% endif %}
     </div>
 {% endmacro %}
 
-{% macro options_input(label, variable, options, help="") %}
-    {% set variable_value = self._TemplateReference__context.resolve(variable) %}
 
+{% macro options_input(label, variable, options, help="") %}
     <div class="{{ input_wrapper_class }}">
-        <label for="{{ variable }}" class="d-block"> {{ label }} </label>
+        <label for="{{ variable }}" class="d-block">{{ label }}</label>
         <select class="form-select" id="{{ variable }}" name="{{ variable }}">
             {% for option in options %}
-                <option value="{{ option }}" {% if option == variable_value %} selected {% endif %}>
+                <option value="{{ option }}"
+                    {% if context[variable] == option %}selected{% endif %}>
                     {{ option }}
                 </option>
             {% endfor %}
         </select>
-        {% if help %} 
-            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}"> ⓘ </div> 
+        {% if help %}
+            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}">ⓘ</div>
         {% endif %}
     </div>
 {% endmacro %}
 
 {% macro radio_group(label_values, variable, help="") %}
-    {% set variable_value = self._TemplateReference__context.resolve(variable) %}
-
     <div class="{{ input_wrapper_class }}">
-        <div class="d-flex"> 
-            {% for label_value in label_values %}
-                {% set label = label_value[0] %}
-                {% set value = label_value[1] %}
-                <div class="form-check me-2" >
-                    <input class="form-check-input" type="radio" name="{{ variable }}"
-                        id="{{ value }}" value="{{ value }}"
-                        {% if value == variable_value %} checked {% endif %}>
-                    <label class="form-check-label" for="{{ value }}"> {{ label }} </label>
+        <div class="d-flex">
+            {% for label, value in label_values %}
+                <div class="form-check me-2">
+                    <input class="form-check-input" type="radio" 
+                        name="{{ variable }}" id="{{ value }}" value="{{ value }}"
+                        {% if context[variable] == value %}checked{% endif %}>
+                    <label class="form-check-label" for="{{ value }}">{{ label }}</label>
                 </div>
             {% endfor %}
         </div>
-        {% if help %} 
-            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}"> ⓘ </div> 
+        {% if help %}
+            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}">ⓘ</div>
         {% endif %}
     </div>
 {% endmacro %}
 
 {% macro color_picker(label, variable, help="") %}
-    {% set variable_value = self._TemplateReference__context.resolve(variable) %}
-
     <div class="{{ input_wrapper_class }}">
-        <label for="{{ variable }}" class="{{ label_class }}"> {{ label }} </label>
-        <input type="color" class="form-control form-control-color ms-2" id="{{ variable }}"
-            name={{ variable }} value="{{ variable_value }}">
-        {% if help %} 
-            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}"> ⓘ </div> 
+        <label for="{{ variable }}" class="{{ label_class }}">{{ label }}</label>
+        <input type="color" class="form-control form-control-color ms-2" 
+            id="{{ variable }}" name="{{ variable }}" 
+            value="{{ kwargs[variable] if variable in kwargs else '#ffffff' }}">
+        {% if help %}
+            <div class="help ms-2" data-bs-toggle="tooltip" data-bs-title="{{ help }}">ⓘ</div>
         {% endif %}
     </div>
 {% endmacro %}
 
-{% block scripts %}
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-{% endblock %}
-
 {% block content %}
     <form action="{{ url_for('settings') }}" method="post" 
         class="col-xl-6 col-lg-8 col-md-10 col-12 border rounded mx-auto mt-4 p-3">
-        <h4> Application settings </h4>
-        {{ radio_group([('Dark', 'dark'), ('Light', 'light')], 'theme', "The theme in this application.") }}
-        <h4> Representation Methods </h4>
+        
+        <h4>Application Settings</h4>
+        {{ radio_group([('Dark', 'dark'), ('Light', 'light')], 'theme', 
+            "The theme in this application." ) }}
+        
+        <h4>UI Customization</h4>
+        {{ options_input('Theme Preset', 'theme-preset', 
+            ['default', 'homeassistant', 'custom'], 
+            "Choose a predefined theme or customize your own", context) }}
+        
+        <div id="custom-colors" class="ps-3" style="display: none;">
+            {{ color_picker('Background Start Color', 'bg-color-start', 
+                "The starting color for background gradient", context) }}
+            {{ color_picker('Background End Color', 'bg-color-end', 
+                "The ending color for background gradient", context) }}
+            {{ color_picker('Text Color', 'text-color', 
+                "The color for lyrics text", context) }}
+        </div>
+
+        {{ options_input('Background Style', 'bg-style', 
+            ['gradient', 'albumart', 'solid'], 
+            "Choose how the background should be displayed", context) }}
+        
+        <div id="album-art-options" class="ps-3" style="display: none;">
+            {{ range_percent_input('Album Art Opacity', 'albumart-opacity', 
+                "How visible the album art should be", context) }}
+            {{ range_percent_input('Blur Effect', 'albumart-blur', 
+                "How much blur to apply to the album art", context) }}
+            {{ checkbox_input('Extract colors from album art', 'albumart-color-extract', 
+                "Use colors from the album art for text and UI elements", context) }}
+        </div>
+
+        {{ options_input('Animation Style', 'animation-style', 
+            ['wave', 'fade', 'slide', 'none'], 
+            "Choose how lyrics should animate", context) }}
+
+        <h4>Representation Methods</h4>
         <div class="d-flex">
-            {{ checkbox_input('Notifications', 'notification-method', "Whether notifications should be sent for lyrics.") }}
-            {{ checkbox_input('Wallpaper', 'wallpaper-method', "Whether lyrics should show on the wallpaper.") }}
-            {{ checkbox_input('Terminal', 'terminal-method', "Whether lyrics should be printed in the terminal.") }}
+            {{ checkbox_input('Notifications', 'notification-method', 
+                "Whether notifications should be sent for lyrics", context) }}
+            {{ checkbox_input('Wallpaper', 'wallpaper-method', 
+                "Whether lyrics should show on the wallpaper", context) }}
+            {{ checkbox_input('Terminal', 'terminal-method', 
+                "Whether lyrics should be printed in the terminal", context) }}
         </div>
-        <h4 class="mt-2"> Wallpaper Settings </h4>
+
+        <h4 class="mt-2">Wallpaper Settings</h4>
         <div id="wallpaper-settings">
-            {{ range_percent_input('Font size in % (of wallpaper width)', 'font-size', "The font size as percentage of the wallpaper width. That's a good measure that works for every wallpaper. For example 3% of 1920x1080 = 57px") }}
-            {{ color_picker('Font Color (ignored if pick from wallpaper is on)', 'font-color', "The color of the font, if picked from wallpaper that setting is ignored.") }}
-            {{ checkbox_input('Pick font color from wallpaper', 'wallpaper-font-color', "Whether the font color should be the the most dominant in the wallpaper.") }}
-            {{ options_input('Font Family', 'font-family', available_fonts, "The font family to be used for displaying the lyrics.") }}
-            {{ range_percent_input('Font stroke in % (of font size)', 'font-stroke', "The font stroke as percent of the font size. That's a good measure that works for every font size. For example 5% of 50px = 2px.") }}
-            {{ range_percent_input('X offset in %', 'x-offset', "The horizontal offset in the lyrics box.") }}
-            {{ range_percent_input('Y offset in %', 'y-offset', "The vertical offset in the lyrics box.") }}
-            {{ range_percent_input('Width in %', 'width', "The width of the lyrics box.") }}
-            {{ range_percent_input('Height in %', 'height', "The height of the lyrics box.") }}
-            {{ range_percent_input('Quality in %', 'quality', "The quality of the lyrics wallpaper. How much JPEG compression is applied.") }}
-            {{ range_percent_input('Scaling in %', 'scaling', "The scaling (change of resolution) as percentage of the initial wallpaper.") }}
+            {{ range_percent_input('Font size in % (of wallpaper width)', 'font-size', 
+                "The font size as percentage of the wallpaper width", context) }}
+            {{ color_picker('Font Color', 'font-color', 
+                "The color of the font", context) }}
+            {{ checkbox_input('Pick font color from wallpaper', 'wallpaper-font-color', 
+                "Whether the font color should be picked from the wallpaper", context) }}
+            {{ options_input('Font Family', 'font-family', available_fonts, 
+                "The font family to use for lyrics", context) }}
+            {{ range_percent_input('Font stroke in % (of font size)', 'font-stroke', 
+                "The font stroke as percent of the font size", context) }}
+            {{ range_percent_input('X offset in %', 'x-offset', 
+                "The horizontal position of lyrics", context) }}
+            {{ range_percent_input('Y offset in %', 'y-offset', 
+                "The vertical position of lyrics", context) }}
+            {{ range_percent_input('Width in %', 'width', 
+                "The width of the lyrics box", context) }}
+            {{ range_percent_input('Height in %', 'height', 
+                "The height of the lyrics box", context) }}
+            {{ range_percent_input('Quality in %', 'quality', 
+                "The quality of the output image", context) }}
+            {{ range_percent_input('Scaling in %', 'scaling', 
+                "The scaling factor for the output", context) }}
         </div>
-        <input class="btn btn-primary" type="submit" value="Save">
-        <a href="/reset-defaults" class="btn btn-primary"> Reset defaults </a>
+
+        <div class="mt-3">
+            <input class="btn btn-primary" type="submit" value="Save">
+            <a href="/reset-defaults" class="btn btn-primary ms-2">Reset defaults</a>
+        </div>
     </form>
+{% endblock %}
+
+{% block scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script>
+        // Handle visibility of custom color options
+        const themePreset = document.querySelector('select[name="theme-preset"]');
+        const customColors = document.getElementById('custom-colors');
+        
+        themePreset?.addEventListener('change', function() {
+            customColors.style.display = this.value === 'custom' ? 'block' : 'none';
+        });
+
+        // Handle visibility of album art options
+        const bgStyle = document.querySelector('select[name="bg-style"]');
+        const albumArtOptions = document.getElementById('album-art-options');
+        
+        bgStyle?.addEventListener('change', function() {
+            albumArtOptions.style.display = this.value === 'albumart' ? 'block' : 'none';
+        });
+
+        // Initialize visibility based on initial values
+        window.addEventListener('DOMContentLoaded', () => {
+            if (themePreset && customColors) {
+                customColors.style.display = themePreset.value === 'custom' ? 'block' : 'none';
+            }
+            if (bgStyle && albumArtOptions) {
+                albumArtOptions.style.display = bgStyle.value === 'albumart' ? 'block' : 'none';
+            }
+        });
+    </script>
 {% endblock %}
