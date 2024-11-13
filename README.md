@@ -6,11 +6,11 @@ A cross-platform application (focused on Windows) that let's you sing along to y
 
 Notes: Forked by me for personal use. It focuses on Windows 10 and Spotify desktop client. I can't guarantee it will work on other OS or other music players.
 
-![Main UI](<SyncLyrics Main UI.png>)
+![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
 _Main UI_
 
-![Minimal Mode](<Minimal Mode.png>) 
+![Minimal Mode](<screenshots/Minimal Mode.png>) 
 
 _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 
@@ -24,7 +24,7 @@ _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 
 More are being worked on slowly. 
 
-For more information check the SyncLyrics' [website](https://konstantinospetrakis.github.io/SyncLyrics/)!
+For more information check the SyncLyrics' [website](https://konstantinospetrakis.github.io/SyncLyrics/)! (Konstantinos' original project)
 
 **For linux playerctl is required**
 
@@ -54,5 +54,7 @@ Special Notes:
 - All of the code edits are made by AI, so it's prone to bugs right now. 
 
 The license is the same as the original project.
+
 Credits: 
+
 * [Konstantinos Petrakis](https://github.com/konstantinospetrakis) for amazing work the original project
