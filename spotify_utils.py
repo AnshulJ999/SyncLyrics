@@ -1,4 +1,4 @@
-"""Spotify Web API integration and token management"""
+"""May be Deprecated - Spotify Web API integration and token management"""
 import base64
 import time
 import json

@@ -1,4 +1,18 @@
-# SyncLyrics
+# SyncLyrics - Alpha Version
+
+This alpha is currently broken. It doesn't work. But it has new features I'm working on. 
+
+- New lyrics providers
+- Async operations
+- Better error handling
+- Better logging
+- UI customization
+
+And more. 
+
+Change config-exampe.py to config.py
+
+And change env-example to .env
 
 ## Description
 
