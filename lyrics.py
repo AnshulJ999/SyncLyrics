@@ -56,7 +56,7 @@ def _get_lyrics(artist: str, title: str) -> list[tuple[float, str]]:
     return processed_lyrics
 
 
-def _find_current_lyric_index(delta: float = 0.1) -> int:
+def _find_current_lyric_index(delta: float = 0.15) -> int: # latency compensation - positive=earlier, negative=later. Current value is 150 ms EARLIER. 
     """
     This function returns the index of the current lyric in the current_song_lyrics list.
 
@@ -75,7 +75,7 @@ def _find_current_lyric_index(delta: float = 0.1) -> int:
     return -1
 
 
-async def get_timed_lyrics(delta: int = 0) -> str:
+async def get_timed_lyrics(delta: int = 0) -> str: # delta for latency compensation doesn't work rn
     """
     This function returns the current lyric of the song.
 
