@@ -5,13 +5,14 @@ from typing import Any
 from flask import Flask, render_template, redirect, flash, request, Response
 
 from lyrics import get_timed_lyrics_previous_and_next
-from system_utils import get_available_fonts
+from system_utils import get_available_fonts, get_current_song_meta_data
 from state_manager import *
 
 
 TEMPLATE_DIRECTORY = path.abspath("resources/templates")
 STATIC_DIRECTORY = path.abspath("resources")
 app = Flask(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
+app.config['SERVER_NAME'] = None
 app.secret_key = "secret key"
 
 VARIABLE_STATE_MAP = {
@@ -43,7 +44,6 @@ def guess_value_type(value: Any) -> Any:
     Returns:
         Any: The value with the guessed type.
     """
-
     if value == "true": return True
     if value == "false": return False
     if value == "on": return True
@@ -60,7 +60,6 @@ def theme() -> dict:
     Returns:
         dict: A dictionary containing the current theme.
     """
-
     return {"theme": get_state()["theme"]}
 
 
@@ -72,7 +71,6 @@ def index() -> str:
     Returns:
         str: The index page.
     """
-
     return render_template("index.html")
 
 
@@ -86,7 +84,6 @@ def settings() -> str:
     Returns:
         str: The settings page.
     """
-
     state = get_state()
     if request.method == "POST":
         for key, state_key in VARIABLE_STATE_MAP.items():
@@ -104,19 +101,23 @@ def settings() -> str:
 
 
 @app.route("/lyrics")
-async def lyrics() -> list[str] | dict[str, str]:
+async def lyrics() -> dict:
     """
-    This function returns the previous, current and next lyrics of the playing song as a list.
-    If the lyrics are not found, it returns a dictionary with a message.
+    This function returns the lyrics and colors data.
 
     Returns:
-        list[str] | dict[str, str]: The previous, current and next lyrics of the playing song as a list. 
-        If the lyrics are not found, it returns a dictionary with a message.
+        dict: The lyrics and color data, or an error message if lyrics not found.
     """
-
-    lyrics = await get_timed_lyrics_previous_and_next()
-    if type(lyrics) == str: return {"msg": lyrics} # lyrics not found
-    return list(lyrics)
+    lyrics_data = await get_timed_lyrics_previous_and_next()
+    metadata = await get_current_song_meta_data()
+    
+    if isinstance(lyrics_data, str):  # lyrics not found
+        return {"msg": lyrics_data}
+    
+    return {
+        "lyrics": list(lyrics_data),
+        "colors": metadata.get("colors", ["#24273a", "#363b54"]) if metadata else ["#24273a", "#363b54"]
+    }
 
 
 @app.route("/reset-defaults")
@@ -127,7 +128,18 @@ def reset_defaults() -> Response:
     Returns:
         Response: A redirect response to the settings page.
     """
-
     reset_state()
     flash("Settings have been reset!", "success")
     return redirect("/settings")
+
+
+@app.route("/exit-application")
+def exit_application() -> dict[str, str]:
+    """
+    This function exits the application.
+
+    Returns:
+        dict[str, str]: A dictionary with a success message.
+    """
+    kill(getpid(), SIGINT)
+    return {"msg": "Application has been closed."}

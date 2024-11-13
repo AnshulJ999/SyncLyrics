@@ -92,32 +92,32 @@ async def get_timed_lyrics(delta: int = 0) -> str:
     return current_song_lyrics[lyric_index][1]
 
 
-async def get_timed_lyrics_previous_and_next() -> tuple[str, str, str]:
+async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
     """
-    This function returns the previous, current and next lyrics of the song.
-
+    This function returns multiple lines of lyrics, including previous and next lines.
     Returns:
-        tuple[str, str, str]: The previous, current and next lyrics of the song. If a lyric is not found, "-" is returned.
+        tuple[str, ...] | str: Multiple lines of lyrics centered around the current line,
+                              or "Lyrics not found" if no lyrics are available.
     """
-
     def _lyric_representation(lyric_index: int) -> str:
-        """
-        This function returns the lyric representation of the given lyric index.
-
-        Args:
-            lyric_index (int): The index of the lyric in the current_song_lyrics list.
-
-        Returns:
-            str: The lyric representation of the given lyric index.
-        """
-
+        """Get lyric at index with bounds checking"""
+        if current_song_lyrics is None:
+            return "-"
+        if lyric_index < 0 or lyric_index >= len(current_song_lyrics):
+            return "-"
         return current_song_lyrics[lyric_index][1] or "-"
 
     await _update_song()
     lyric_index = _find_current_lyric_index()
-    if lyric_index == -1: return "Lyrics not found"
-    previous = _lyric_representation(lyric_index-1) if lyric_index > 0 else "-"
-    current = _lyric_representation(lyric_index)
-    next = (_lyric_representation(lyric_index+1)
-        if lyric_index + 1 < len(current_song_lyrics) - 1 else "-")
-    return previous, current, next
+    if lyric_index == -1 or current_song_lyrics is None:
+        return "Lyrics not found"
+    
+    # Return 6 lines total: 2 previous, current, and 3 next
+    return (
+        _lyric_representation(lyric_index-2),
+        _lyric_representation(lyric_index-1),
+        _lyric_representation(lyric_index),
+        _lyric_representation(lyric_index+1),
+        _lyric_representation(lyric_index+2),
+        _lyric_representation(lyric_index+3)
+    )
