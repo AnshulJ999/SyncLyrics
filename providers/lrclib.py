@@ -12,10 +12,11 @@ class LRCLIBProvider(LyricsProvider):
     
     def get_lyrics(self, artist: str, title: str):
         try:
-            # Search for song
+            # Search for song, direct API call with request
             artist_title = f"{artist} {title}"
             search_result = req.get(f"https://lrclib.net/api/search?q={artist_title}").json()
             
+            # Simple null check
             if not search_result: 
                 logger.info(f"No search results found for: {artist_title}")
                 return None
