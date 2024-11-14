@@ -1,7 +1,22 @@
 """
 Test script for Spotify API integration
 """
+import sys
 import time
+import os
+
+# from providers.spotify_api import SpotifyAPI
+
+# Add parent directory to path to import providers
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from providers import (
+    SpotifyLyrics,
+    NetEaseProvider,
+    LRCLIBProvider,
+    QQMusicProvider
+)
+
 from providers.spotify_api import SpotifyAPI
 
 def test_spotify():

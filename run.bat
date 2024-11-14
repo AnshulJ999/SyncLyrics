@@ -1,2 +1,4 @@
 @echo off
-start "" pythonw.exe sync_lyrics.py
+REM start "" pythonw.exe sync_lyrics.py
+
+python sync_lyrics.py

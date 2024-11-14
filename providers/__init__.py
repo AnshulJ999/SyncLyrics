@@ -7,12 +7,14 @@ from .base import LyricsProvider
 from .lrclib import LRCLIBProvider
 from .netease import NetEaseProvider
 from .spotify_lyrics import SpotifyLyrics
+from .qq import QQMusicProvider
 
 # List of all available providers
 available_providers = [
     LRCLIBProvider,
     NetEaseProvider,
-    SpotifyLyrics
+    SpotifyLyrics,
+    QQMusicProvider
 ]
 
 __all__ = [
@@ -20,5 +22,6 @@ __all__ = [
     'LRCLIBProvider',
     'NetEaseProvider',
     'SpotifyLyrics',
+    'QQMusicProvider',
     'available_providers'
 ] 
