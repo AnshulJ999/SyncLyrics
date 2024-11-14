@@ -2,7 +2,7 @@
 
 ## Description
 
-A cross-platform application (focused on Windows) that let's you sing along to your favorite songs regardless the player by displaying the lyrics of the currently playing song on your desktop wallpaper, notification pane, terminal or in a locally hosted webpage.
+A cross-platform application (focused on Windows) that lets you sing along to your favorite songs by displaying the lyrics of the currently playing song in a locally hosted webpage.
 
 Notes: Forked by me for personal use. It focuses on Windows 10 and Spotify desktop client. I can't guarantee it will work on other OS or other music players.
 

@@ -21,7 +21,7 @@ class SpotifyLyrics(LyricsProvider):
     
     def __init__(self) -> None:
         """Initialize provider with API endpoint from environment"""
-        super().__init__(name="Spotify", priority=3)
+        super().__init__(name="Spotify", priority=1)
         load_dotenv()
         self.api_url = os.getenv('SPOTIFY_LYRICS_SERVER', 
                                 'https://spotify-lyrics-api-seven-azure.vercel.app')

@@ -1,11 +1,10 @@
 import subprocess
 import platform
-import os
+# import os
 import re
-import ctypes
+# import ctypes
 from time import time
-from PIL import Image
-import matplotlib.font_manager as fm
+# from PIL import Image
 
 from state_manager import get_state, set_state
 
@@ -68,66 +67,6 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
 
 _get_current_song_meta_data_windows.last_returned_data = None
 
-def _set_wallpaper_gnome(path: str):
-    """
-    This function sets the wallpaper to the image at the given path.
-    It only works on Gnome 3 by using gsettings.
-    """
-    path = f"'{path}'"
-    uri = "picture-uri" + ("-dark" if GNOME_THEME == "dark" else "")
-    subprocess.Popen(f"gsettings set org.gnome.desktop.background {uri} file:{path}", shell=True)
-
-def _set_wallpaper_windows(path: str):
-    """
-    This function sets the wallpaper to the image at the given path.
-    """
-    SPI_SETDESKWALLPAPER = 0x0014
-    SPIF_UPDATEINIFILE = 0x01
-    SPIF_SENDCHANGE = 0x02
-    path = path.replace("\\", "/").replace("'", "")
-    ctypes.windll.user32.SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, path, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)
-
-def _get_current_wallpaper_gnome() -> Image.Image:
-    """
-    This function returns the current wallpaper as a PIL Image.
-    """
-    uri = "picture-uri" + ("-dark" if GNOME_THEME == "dark" else "")
-    process = subprocess.Popen(f"gsettings get org.gnome.desktop.background {uri}", shell=True, stdout=subprocess.PIPE)
-    process.wait()
-    path = process.stdout.read().decode("utf-8").replace("file:", "").replace("\n", "").replace("'", "")
-    state = get_state()
-    if state["currentWallpaper"] != path:
-        state["currentWallpaper"] = path
-        set_state(state)
-    return Image.open(path)
-
-def _get_current_wallpaper_windows() -> Image.Image:
-    """
-    This function returns the current wallpaper as a PIL Image.
-    """
-    SPI_GETDESKWALLPAPER = 0x0073
-    MAX_PATH = 260
-    wallpaper_buffer = ctypes.create_unicode_buffer(MAX_PATH)
-    ctypes.windll.user32.SystemParametersInfoW(SPI_GETDESKWALLPAPER, MAX_PATH, wallpaper_buffer, 0)
-    wallpaper_path = wallpaper_buffer.value.replace("\\", "/").replace("'", "")
-    state = get_state()
-    if state["currentWallpaper"] != wallpaper_path:
-        state["currentWallpaper"] = wallpaper_path
-        set_state(state)
-    return Image.open(wallpaper_path)
-
-def get_available_fonts() -> list[str]:
-    """
-    This function returns a list of all the available fonts.
-    """
-    return fm.get_font_names()
-
-def get_font_path(font_name: str) -> str:
-    """
-    This function returns the path to the font with the given name.
-    """
-    return fm.findfont(font_name)
-
 async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]] | None:
     """
     This function returns the current song's metadata if a song is playing, otherwise it returns None.
@@ -136,21 +75,6 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
         return _get_current_song_meta_data_gnome()
     elif DESKTOP == "Windows":
         return await _get_current_song_meta_data_windows()
-
-def set_wallpaper(path: str):
-    """
-    This function sets the wallpaper to the image at the given path.
-    """
-    path = os.path.abspath(path)
-    if DESKTOP == "Gnome": _set_wallpaper_gnome(path)
-    elif DESKTOP == "Windows": _set_wallpaper_windows(path)
-
-def get_current_wallpaper() -> Image.Image:
-    """
-    This function returns the current wallpaper as a PIL Image.
-    """
-    if DESKTOP == "Gnome": return _get_current_wallpaper_gnome() 
-    elif DESKTOP == "Windows": return _get_current_wallpaper_windows()
 
 # Find out which desktop environment is being used
 DESKTOP = platform.system()

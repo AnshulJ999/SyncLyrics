@@ -7,25 +7,9 @@ from benedict import benedict
 
 DEFAULT_STATE = {
     "theme": "dark",
-    "currentWallpaper": None,
     "representationMethods": {
-        "notifications": True,
-        "wallpaper": False,
         "terminal": False
     },
-    "wallpaperSettings": {
-        "fontSize": 2.5, # in percent of wallpaper width
-        "fontColor": "#FFC0CB", # hex color
-        "pickColorFromWallpaper": True, # if true, fontColor is ignored
-        "fontFamily": "Arial", 
-        "fontStroke": 5, # in percent of font size (e.g 5% of 16px ~ 1px)
-        "xOffset": 50, # in percent of screen width
-        "yOffset": 80, # in percent of screen height
-        "width": 100, # in percent of screen width
-        "height": 20, # in percent of screen height
-        "quality": 100, # in percent
-        "scaling": 100, # in percent
-    }
 }
 
 state = None # memory cache for state to avoid reading from disk

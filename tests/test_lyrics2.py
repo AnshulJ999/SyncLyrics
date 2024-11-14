@@ -26,8 +26,8 @@ def test_providers():
     """Test all providers with a known song"""
     
     # Test song
-    artist = "ERRA"
-    title = "Snowblood"
+    artist = "Guiding Lights"
+    title = "Skyharbor"
     
     providers = [
         LRCLIBProvider(),    # Priority 1

@@ -97,19 +97,6 @@ LYRICS = {
         "latency_compensation": -0.1,  # Adjust if lyrics seem off-sync
         "position_smoothing": 0.8,  # Smoothing factor for lyrics timing (0-1)
     },
-    "wallpaper": {
-        "font_size_percent": 2.5,  # Percent of wallpaper width
-        "font_color": "#FFC0CB",  # Default font color
-        "font_family": "Arial",
-        "font_stroke_percent": 5,  # Percent of font size
-        "x_offset_percent": 50,
-        "y_offset_percent": 80,
-        "width_percent": 100,
-        "height_percent": 20,
-        "quality": 100,
-        "scaling": 100,
-        "pick_color_from_wallpaper": True
-    }
 }
 
 # ==========================================
@@ -178,15 +165,6 @@ STORAGE = {
 }
 
 # ==========================================
-# Notification Settings
-# ==========================================
-NOTIFICATIONS = {
-    "enabled": True,
-    "duration": 3,  # seconds
-    "icon_path": str(RESOURCES_DIR / "images" / "icon.ico")
-}
-
-# ==========================================
 # System-specific Settings
 # ==========================================
 SYSTEM = {
@@ -196,9 +174,6 @@ SYSTEM = {
             "preferred": True,
             "timeout": 5
         },
-        "wallpaper": {
-            "save_path": str(RESOURCES_DIR / "current_wallpaper.png")
-        }
     },
     "linux": {
         "gsettings_enabled": True,

@@ -93,23 +93,7 @@
         {{ radio_group([('Dark', 'dark'), ('Light', 'light')], 'theme', "The theme in this application.") }}
         <h4> Representation Methods </h4>
         <div class="d-flex">
-            {{ checkbox_input('Notifications', 'notification-method', "Whether notifications should be sent for lyrics.") }}
-            {{ checkbox_input('Wallpaper', 'wallpaper-method', "Whether lyrics should show on the wallpaper.") }}
             {{ checkbox_input('Terminal', 'terminal-method', "Whether lyrics should be printed in the terminal.") }}
-        </div>
-        <h4 class="mt-2"> Wallpaper Settings </h4>
-        <div id="wallpaper-settings">
-            {{ range_percent_input('Font size in % (of wallpaper width)', 'font-size', "The font size as percentage of the wallpaper width. That's a good measure that works for every wallpaper. For example 3% of 1920x1080 = 57px") }}
-            {{ color_picker('Font Color (ignored if pick from wallpaper is on)', 'font-color', "The color of the font, if picked from wallpaper that setting is ignored.") }}
-            {{ checkbox_input('Pick font color from wallpaper', 'wallpaper-font-color', "Whether the font color should be the the most dominant in the wallpaper.") }}
-            {{ options_input('Font Family', 'font-family', available_fonts, "The font family to be used for displaying the lyrics.") }}
-            {{ range_percent_input('Font stroke in % (of font size)', 'font-stroke', "The font stroke as percent of the font size. That's a good measure that works for every font size. For example 5% of 50px = 2px.") }}
-            {{ range_percent_input('X offset in %', 'x-offset', "The horizontal offset in the lyrics box.") }}
-            {{ range_percent_input('Y offset in %', 'y-offset', "The vertical offset in the lyrics box.") }}
-            {{ range_percent_input('Width in %', 'width', "The width of the lyrics box.") }}
-            {{ range_percent_input('Height in %', 'height', "The height of the lyrics box.") }}
-            {{ range_percent_input('Quality in %', 'quality', "The quality of the lyrics wallpaper. How much JPEG compression is applied.") }}
-            {{ range_percent_input('Scaling in %', 'scaling', "The scaling (change of resolution) as percentage of the initial wallpaper.") }}
         </div>
         <input class="btn btn-primary" type="submit" value="Save">
         <a href="/reset-defaults" class="btn btn-primary"> Reset defaults </a>

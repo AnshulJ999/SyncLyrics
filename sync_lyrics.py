@@ -10,7 +10,7 @@ from queue import Queue
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
 from lyrics import get_timed_lyrics
-from graphics import render_text_with_background, restore_wallpaper
+# from graphics import render_text_with_background, restore_wallpaper
 from state_manager import get_state
 from server import app
 
@@ -62,19 +62,9 @@ async def main() -> NoReturn:
     methods = [method for method, active in get_state()["representationMethods"].items() 
               if active and method != "notifications"]
     
-    last_printed_lyric_per_method = {"wallpaper": None, "terminal": None}
+    last_printed_lyric_per_method = {"terminal": None}
 
     while True:
-        if "wallpaper" in methods:
-            avg_latency = (delta_sum / delta_count) if delta_count > 0 else 0.1
-            lyric = await get_timed_lyrics(avg_latency)
-            if lyric is not None and lyric != last_printed_lyric_per_method["wallpaper"]:
-                t0 = time()
-                render_text_with_background(lyric)
-                delta = time() - t0
-                delta_sum += delta
-                delta_count += 1
-                last_printed_lyric_per_method["wallpaper"] = lyric
 
         if "terminal" in methods:
             lyric = await get_timed_lyrics()
@@ -97,4 +87,3 @@ try:
     asyncio.run(main())
 except KeyboardInterrupt:
     queue.put("exit")
-restore_wallpaper() # Restore the wallpaper when the program exits

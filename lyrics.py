@@ -41,8 +41,11 @@ async def _update_song():
 
 
 def _get_lyrics(artist: str, title: str):
-    """Try each provider in order until lyrics are found"""
-    for provider in providers:
+    """Try each provider in order of priority"""
+    # Sort providers by priority (lower number = higher priority)
+    sorted_providers = sorted(providers, key=lambda x: x.priority)
+    
+    for provider in sorted_providers:
         try:
             lyrics = provider.get_lyrics(artist, title)
             if lyrics:
@@ -55,7 +58,7 @@ def _get_lyrics(artist: str, title: str):
     return None
 
 
-def _find_current_lyric_index(delta: float = 0.15) -> int: # latency compensation - positive=earlier, negative=later. Current value is 150 ms EARLIER. 
+def _find_current_lyric_index(delta: float = 0.2) -> int: # latency compensation - positive=earlier, negative=later. Current value is 200 ms EARLIER. 
     """
     This function returns the index of the current lyric in the current_song_lyrics list.
 

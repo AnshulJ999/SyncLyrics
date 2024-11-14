@@ -5,7 +5,7 @@ from typing import Any
 from flask import Flask, render_template, redirect, flash, request, Response
 
 from lyrics import get_timed_lyrics_previous_and_next
-from system_utils import get_available_fonts, get_current_song_meta_data
+from system_utils import get_current_song_meta_data
 from state_manager import *
 
 
@@ -17,20 +17,7 @@ app.secret_key = "secret key"
 
 VARIABLE_STATE_MAP = {
     "theme": "theme",
-    "notification-method": "representationMethods.notifications",
-    "wallpaper-method": "representationMethods.wallpaper",
-    "terminal-method": "representationMethods.terminal",
-    "font-size": "wallpaperSettings.fontSize",
-    "font-color": "wallpaperSettings.fontColor",
-    "wallpaper-font-color": "wallpaperSettings.pickColorFromWallpaper",
-    "font-family": "wallpaperSettings.fontFamily",
-    "font-stroke": "wallpaperSettings.fontStroke",
-    "x-offset": "wallpaperSettings.xOffset",
-    "y-offset": "wallpaperSettings.yOffset",
-    "width": "wallpaperSettings.width",
-    "height": "wallpaperSettings.height",
-    "quality": "wallpaperSettings.quality",
-    "scaling": "wallpaperSettings.scaling"
+    "terminal-method": "representationMethods.terminal"
 }
 
 
@@ -93,9 +80,9 @@ def settings() -> str:
         set_state(state)
         flash("Settings have been saved! Restart your application.", "success")
 
+    # Create context dictionary with just the state variables
     context = {key: get_attribute_js_notation(state, state_key) 
         for key, state_key in VARIABLE_STATE_MAP.items()}
-    context["available_fonts"] = get_available_fonts() 
     
     return render_template("settings.html", **context)
 

@@ -9,7 +9,12 @@ sync_lyrics.bin
 sync_lyrics.exe
 /resources latest - black
 /resources backup rollback
-
+config.py
+.env
+.cursorignore
+lyrics_database/
+cache/
+ignored/
 
 # Python
 __pycache__/
