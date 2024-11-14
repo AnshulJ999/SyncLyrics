@@ -4,13 +4,15 @@ import logging
 from system_utils import get_current_song_meta_data
 from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
+from providers.spotify_lyrics import SpotifyLyrics
 
 logger = logging.getLogger(__name__)
 
 # Initialize providers
 providers = [
     LRCLIBProvider(),  # Priority 1
-    NetEaseProvider()  # Priority 2
+    NetEaseProvider(), # Priority 2
+    SpotifyLyrics()    # Priority 3
 ]
 
 current_song_data = None

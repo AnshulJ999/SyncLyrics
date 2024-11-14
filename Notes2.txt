@@ -1,3 +1,134 @@
+
+
+
+
+
+
+Yes, that's a successful test! The Spotify API is working correctly - it's authenticating and retrieving track data. Let's plan the next steps:
+
+1. **Add Album Art Display**
+First, let's modify the UI to show album art and track info. We'll update index.html:
+
+```html:resources/templates/index.html
+{% extends "base.html" %}
+{% block scripts %}
+    <script src="{{ url_for('static', filename='js/lyrics.js')}}"> </script>
+{% endblock %}
+{% block content %}
+    <div class="track-info">
+        <img id="album-art" class="album-art" src="" alt="Album Art">
+        <div class="track-details">
+            <div id="track-title" class="track-title"></div>
+            <div id="track-artist" class="track-artist"></div>
+        </div>
+    </div>
+    <div id="lyrics" class="lyrics-container">
+        <div id="prev-2" class="lyric-line far-previous"></div>
+        <div id="prev-1" class="lyric-line previous"></div>
+        <div id="current" class="lyric-line current"></div>
+        <div id="next-1" class="lyric-line next"></div>
+        <div id="next-2" class="lyric-line far-next"></div>
+        <div id="next-3" class="lyric-line far-next"></div>
+    </div>
+{% endblock %}
+```
+
+2. **Add CSS for New Elements**
+Add to base.css:
+
+```css
+/* Track info styling */
+.track-info {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.album-art {
+    width: 60px;
+    height: 60px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.track-details {
+    color: #fff;
+}
+
+.track-title {
+    font-weight: 500;
+    font-size: 1.1em;
+}
+
+.track-artist {
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+```
+
+3. **Create Backend Route**
+Create a new route in your Flask app:
+
+```python
+@app.route('/current-track')
+def current_track():
+    spotify = SpotifyAPI()
+    track = spotify.get_current_track()
+    return jsonify(track if track else {"error": "No track playing"})
+```
+
+4. **Update lyrics.js**
+Add track info fetching:
+
+```javascript
+async function updateTrackInfo() {
+    try {
+        let response = await fetch('/current-track');
+        let track = await response.json();
+        
+        if (track && !track.error) {
+            document.getElementById('album-art').src = track.album_art;
+            document.getElementById('track-title').textContent = track.title;
+            document.getElementById('track-artist').textContent = track.artist;
+        }
+    } catch (error) {
+        console.error('Error fetching track info:', error);
+    }
+}
+
+// Add to main function
+```reference:resources/js/lyrics.js
+startLine: 75
+endLine: 86
+```
+// Update to include track info
+async function main() {
+    document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
+    
+    while(true) {
+        await Promise.all([
+            getLyrics(),
+            updateTrackInfo()
+        ]);
+        await sleep(400);
+    }
+}
+```
+
+Would you like me to:
+1. Show how to implement any specific part in more detail?
+2. Add progress bar functionality?
+3. Add click-to-open-in-Spotify functionality?
+
+---
+
 Notes2.txt
 
 Project: SyncLyrics - Enhanced Lyrics Fetching System
