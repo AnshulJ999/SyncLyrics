@@ -81,7 +81,7 @@ async function main() {
         if (lyrics) {
             setLyricsInDom(lyrics);
         }
-        await sleep(400); // Slightly longer interval for smoother updates
+        await sleep(200); // Slightly shorter  interval for smoother updates
     }
 }
 

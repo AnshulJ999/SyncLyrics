@@ -2,5 +2,19 @@
     "theme": "dark",
     "representationMethods": {
         "terminal": false
+    },
+    "MEDIA_SOURCE": {
+        "sources": [
+            {
+                "name": "spotify",
+                "enabled": true,
+                "priority": 2
+            },
+            {
+                "name": "windows_media",
+                "enabled": true,
+                "priority": 1
+            }
+        ]
     }
 }

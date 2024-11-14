@@ -58,3 +58,11 @@ The license is the same as the original project.
 ## Credits: 
 
 * [Konstantinos Petrakis](https://github.com/konstantinospetrakis) for amazing work the original project
+
+Lyricify https://github.com/WXRIW/Lyricify-Lyrics-Helper
+
+Syncedlyrics https://github.com/moehmeni/syncedlyrics
+
+spotify lyrics api https://github.com/akashrchandran/spotify-lyrics-api
+
+
