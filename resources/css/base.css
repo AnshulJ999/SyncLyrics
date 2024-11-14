@@ -54,14 +54,14 @@ body {
 
 /* Different states for lyrics */
 .far-previous, .far-next {
-    opacity: 0.15;
+    opacity: 0.40;
     font-size: clamp(0.8rem, 2vw, 1.4rem);
     transform: translateY(10px);
     filter: blur(1px);
 }
 
 .previous, .next {
-    opacity: 0.35;
+    opacity: 0.60;
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
 }

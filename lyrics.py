@@ -62,19 +62,36 @@ def _find_current_lyric_index(delta: float = 0.2) -> int: # latency compensation
     """
     This function returns the index of the current lyric in the current_song_lyrics list.
 
+        Find the current lyric index with special handling for start/end/breaks
+    
     Args:
-        delta (float, optional): A delay to take into account when calculating the index. Defaults to 0.1.
-
+        delta (float): Latency compensation value
+        
     Returns:
-        int: The index of the current lyric in the current_song_lyrics list. If a lyric is not found, -1 is returned.
+        int: Current lyric index or special values:
+            -2: Before first lyric
+            -3: After last lyric
+            -1: Between lyrics (instrumental)
     """
-
-    if current_song_lyrics is not None and current_song_data is not None:
-        time = current_song_data["position"]
-        for i in range(len(current_song_lyrics) - 1):
-            if current_song_lyrics[i][0] <= time + delta < current_song_lyrics[i + 1][0]:
-                return i
-    return -1
+    if current_song_lyrics is None or current_song_data is None:
+        return -1
+        
+    time = current_song_data["position"]
+    
+    # Before first lyric
+    if time + delta < current_song_lyrics[0][0]:
+        return -2
+        
+    # After last lyric
+    if time + delta > current_song_lyrics[-1][0]:
+        return -3
+    
+    # Find current lyric
+    for i in range(len(current_song_lyrics) - 1):
+        if current_song_lyrics[i][0] <= time + delta < current_song_lyrics[i + 1][0]:
+            return i
+            
+    return -1  # Instrumental/between lyrics
 
 
 async def get_timed_lyrics(delta: int = 0) -> str: # delta for latency compensation doesn't work rn
@@ -111,15 +128,55 @@ async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
 
     await _update_song()
     lyric_index = _find_current_lyric_index()
-    if lyric_index == -1 or current_song_lyrics is None:
-        return "Lyrics not found"
     
-    # Return 6 lines total: 2 previous, current, and 3 next
+    if current_song_lyrics is None:
+        return "Lyrics not found"
+    # Return 6 lines total: 2 previous, current, and 3 next        
+    # Before first lyric
+    if lyric_index == -2:
+        return (
+            "",
+            "",
+            "♪",
+            _lyric_representation(0),
+            _lyric_representation(1),
+            _lyric_representation(2)
+        )
+    
+    # After last lyric    
+    if lyric_index == -3:
+        last_index = len(current_song_lyrics) - 1
+        return (
+            _lyric_representation(last_index - 2),
+            _lyric_representation(last_index - 1),
+            "♪",
+            "",
+            "",
+            ""
+        )
+    
+    # Instrumental/between lyrics
+    if lyric_index == -1:
+        # Find nearest lyrics
+        time = current_song_data["position"]
+        for i in range(len(current_song_lyrics)):
+            if current_song_lyrics[i][0] > time:
+                prev_index = max(0, i - 1)
+                return (
+                    _lyric_representation(prev_index - 1),
+                    _lyric_representation(prev_index),
+                    "♪",
+                    _lyric_representation(i),
+                    _lyric_representation(i + 1),
+                    _lyric_representation(i + 2)
+                )
+    
+    # Normal case
     return (
-        _lyric_representation(lyric_index-2),
-        _lyric_representation(lyric_index-1),
+        _lyric_representation(lyric_index - 2),
+        _lyric_representation(lyric_index - 1),
         _lyric_representation(lyric_index),
-        _lyric_representation(lyric_index+1),
-        _lyric_representation(lyric_index+2),
-        _lyric_representation(lyric_index+3)
+        _lyric_representation(lyric_index + 1),
+        _lyric_representation(lyric_index + 2),
+        _lyric_representation(lyric_index + 3)
     )
