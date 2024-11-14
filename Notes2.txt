@@ -1,0 +1,47 @@
+Notes2.txt
+
+Project: SyncLyrics - Enhanced Lyrics Fetching System
+
+Overview:
+
+The SyncLyrics project aims to provide a robust and efficient system for fetching and displaying synchronized lyrics for currently playing songs.  The project utilizes multiple providers (LRCLib, NetEase, Spotify, Genius) to maximize lyrics availability and prioritizes synced lyrics for a better user experience.
+
+Current State:
+
+The core functionality of fetching lyrics from different providers, assessing their quality, and displaying them is implemented and generally functional.  The project utilizes a provider priority system, a local lyrics database for caching, and a configurable timing mechanism.
+
+Key Improvements:
+
+* Synced Lyrics Prioritization: The system prioritizes synced lyrics from all providers and falls back to unsynced lyrics only if no synced lyrics are found.
+* Configurable Timing: The lyric display timing is now configurable through `SYNC_SETTINGS` in `config.py`, allowing for latency compensation and buffer size adjustments.
+* "Next Line" Timing Algorithm:  The project now uses a "next line" approach for lyric timing, which can provide smoother transitions and a more natural feel.
+* Robust Error Handling (Partially Implemented):  Error handling and retry logic have been improved, particularly in the LRCLib provider.
+
+Outstanding Issues and Recommendations:
+
+1. Provider Reliability:
+
+* LRCLibProvider:  While improved, occasional "coroutine was expected" errors still occur.  Double-check all `await` calls and ensure the `retry_async` helper is used correctly.  Investigate the 404 errors and verify the LRCLib API endpoint and parameters.
+* SpotifyProvider:  Similar "coroutine was expected" errors can occur.  Thoroughly review all `await` calls in `get_lyrics`, `_get_track_id_from_web_api`, and `_get_lyrics_for_track`.  Implement more specific exception handling in `fetch_with_retry` and other methods.  Implement a fallback to directly query the Spotify API if other methods fail.
+* NetEaseProvider:  While generally functional, the provider might not find lyrics for all songs.  Experiment with different search queries and consider regional restrictions.  Add provider-specific error handling.
+* General Provider Recommendations:  Add more detailed logging within each provider to track API requests, responses, and errors.  Create minimal test cases to reproduce and isolate provider issues.
+
+2. Lyric Timing and Synchronization:
+
+* Position Data Accuracy: The accuracy of `state.current_song_data["position"]` is crucial.  Investigate and improve the `get_current_song_meta_data()` function in `system_utils.py`.  Consider event-driven updates if possible.
+* Edge Case Handling (Early in Song): Add a check in `get_timed_lyrics_previous_and_next` to handle the case where the current time is significantly before the first lyric timestamp.
+* User Configuration (Optional):  Consider adding a setting to allow users to choose between the "next line" approach and the binary search method for lyric timing.
+
+3. Code Improvements:
+
+* SpotifyProvider: Make `_track_successful_method` synchronous.
+* Remove Unused Code: Remove the `_save_to_cache` function.
+* Cache Persistence (Optional): Implement saving and loading the cache to/from a file for improved startup performance.
+
+Next Steps:
+
+1. Focus on resolving the remaining provider errors, particularly the "coroutine was expected" errors and the LRCLib 404 errors.
+2. Investigate and improve the accuracy of the song position data.
+3. Implement the remaining code improvements (Spotify `_track_successful_method`, unused code removal).
+4. Thoroughly test the application with various songs and providers, paying close attention to synchronization and error handling.
+5. Consider implementing optional features like cache persistence and user configuration for timing methods.

@@ -1,7 +1,17 @@
 import requests as req
+import logging
 
 from system_utils import get_current_song_meta_data
+from providers.lrclib import LRCLIBProvider
+from providers.netease import NetEaseProvider
 
+logger = logging.getLogger(__name__)
+
+# Initialize providers
+providers = [
+    LRCLIBProvider(),  # Priority 1
+    NetEaseProvider()  # Priority 2
+]
 
 current_song_data = None
 current_song_lyrics = None
@@ -28,32 +38,19 @@ async def _update_song():
     current_song_data = new_song_data
 
 
-def _get_lyrics(artist: str, title: str) -> list[tuple[float, str]]:
-    """
-    This function returns the lyrics of the given song by using the lrclib.net API.
-
-    Args:
-        artist (str): The artist of the song.
-        title (str): The title of the song.
-
-    Returns:
-        list[tuple[float, str]]: The lyrics of the song.
-    """
-
-    artist_title= f"{artist} {title}"
-    song_id = req.request("GET", f"https://lrclib.net/api/search?q={artist_title}").json()
-    if len(song_id) == 0: return None
-    song_id = song_id[0]["id"]
-    lyrics = req.request("GET", f"https://lrclib.net/api/get/{song_id}").json()["syncedLyrics"]
-    if lyrics is None: return None
-
-    processed_lyrics = []
-    for lyric in lyrics.split("\n"):
-        time = lyric[1: lyric.find("]") -1]
-        m, s = time.split(":")
-        seconds = float(m) * 60 + float(s)
-        processed_lyrics.append((seconds, lyric[lyric.find("]") + 1:].strip()))
-    return processed_lyrics
+def _get_lyrics(artist: str, title: str):
+    """Try each provider in order until lyrics are found"""
+    for provider in providers:
+        try:
+            lyrics = provider.get_lyrics(artist, title)
+            if lyrics:
+                logger.info(f"Found lyrics using {provider.name}")
+                return lyrics
+        except Exception as e:
+            logger.error(f"Error with {provider.name}: {str(e)}")
+            continue
+    
+    return None
 
 
 def _find_current_lyric_index(delta: float = 0.15) -> int: # latency compensation - positive=earlier, negative=later. Current value is 150 ms EARLIER. 

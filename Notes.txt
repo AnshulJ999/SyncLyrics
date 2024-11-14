@@ -1,0 +1,80 @@
+
+
+
+
+Move all providers to a separate file. under /providers/. 
+
+Fix lyric syncing
+
+Move Spotify API to a separate file and use it only for artist/title. 
+
+Simplify the code. 
+
+Simplify system_utils to make it faster. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+
+Some features I plan to implement:
+
+```
+- Better handling of network timeouts
+```
+
+- Add Musixmatch provider (they have high-quality synced lyrics) 
+- Add QQ Music provider (good for Asian music)
+
+Add any other synced lyrics providers that you know of. 
+
+
+```
+- Parallel provider fetching
+- Smart provider ordering based on success rate
+- Cache provider statistics to prioritize faster/more reliable ones
+```
+
+
+
+```
+- Better song title/artist matching using fuzzy matching
+```
+
+
+```
+- Add lyrics source attribution in UI
+- Show loading states while fetching lyrics
+- Provider preference settings in UI
+```
+
+These should be done only if minimal=true isn't set. 
+That is, in minimal mode, I want just the lyrics with a clean look, as in the image. 
+In normal mode, we can add more info. There should also be a button for minimal mode. 
+
+Some more things:
+
+1) Download and store all lyric files in a directory, with one file per song. 
+
+So we have an organized database of lyrics. 
+
+We want a high-quality database of lyrics.  With perfect syncs. 
+
+This database will be referred to when possible, so it will work better. 
+
+2) Add an option to change the background of the UI. 
+
+Different color options, gradients, 
+
+and also be able to add the album art or an album-art-color-gradient. 
+
