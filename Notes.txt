@@ -13,15 +13,151 @@ Simplify the code.
 Simplify system_utils to make it faster. 
 
 
+---
 
+# Features To CONSIDER
 
+1. **Provider System**
+- Multiple lyrics providers (LRCLib, NetEase)
+- Provider priority system
+- Easy to add new providers
+- Error handling per provider
+- Retry logic for failed requests
 
+2. **Local Storage**
+- Local database for lyrics
+- JSON storage format
+- Metadata tracking
+- Timestamp tracking
+- Provider source tracking
 
+3. **UI Features**
+- Minimal mode support
+- Color extraction from album art
+- Dynamic background colors
+- Multiple theme support
+- Better lyrics display (6 lines instead of 3)
 
+4. **Configuration System**
+- .env support
+- Extensive config.py settings
+- Feature flags
+- Environment-specific settings
+- Debug mode settings
 
+5. **Error Handling & Logging**
+- Comprehensive error logging
+- Debug mode
+- Performance tracking
+- Provider statistics
+- Error recovery systems
 
+6. **Performance Features**
+- Lyrics timing adjustments
+- Position smoothing
+- Latency compensation
+- Performance monitoring
 
+# Suggested Additional Features
 
+1. **User Features**
+- Manual lyrics timing adjustment
+- Lyrics search interface
+- Favorite songs list
+- Manual lyrics editing
+- Export/Import lyrics
+
+2. **Display Features**
+- Karaoke mode (highlight current word)
+- Romanization support for Asian languages
+- Multiple display styles
+- Custom CSS support
+
+3. **Integration Features**
+- Discord rich presence
+- Last.fm scrobbling
+- Music player control
+- Hotkey support
+
+# Action Plan for Experiment Branch Enhancement
+
+## Phase 1: Core Improvements
+1. **Local Storage**
+   - Implement lyrics database
+   - Add metadata tracking
+   - Add caching system
+
+2. **Basic Provider System**
+   - Add NetEase provider
+   - Add provider selection logic
+   - Add basic error handling
+
+**Timeline**: 1-2 days
+**Priority**: High
+
+## Phase 2: UI Enhancement
+1. **Display Improvements**
+   - Implement 6-line display
+   - Add minimal mode
+   - Add color extraction
+
+2. **Theme System**
+   - Add theme support
+   - Add background customization
+   - Implement color schemes
+
+**Timeline**: 2-3 days
+**Priority**: Medium
+
+## Phase 3: Configuration & Logging
+1. **Config System**
+   - Add .env support
+   - Create config.py
+   - Add feature flags
+
+2. **Logging System**
+   - Add comprehensive logging
+   - Add debug mode
+   - Add performance tracking
+
+**Timeline**: 1-2 days
+**Priority**: Medium
+
+## Phase 4: Performance & Timing
+1. **Timing Improvements**
+   - Add latency compensation
+   - Add position smoothing
+   - Add manual adjustment
+
+2. **Performance Features**
+   - Add performance monitoring
+   - Optimize provider calls
+   - Add caching
+
+**Timeline**: 2-3 days
+**Priority**: High
+
+## Phase 5: Additional Features
+1. **User Features**
+   - Add lyrics search
+   - Add manual editing
+   - Add favorites system
+
+2. **Integration Features**
+   - Add Discord presence
+   - Add Last.fm support
+   - Add hotkeys
+
+**Timeline**: 3-4 days
+**Priority**: Low
+
+# Implementation Guidelines
+1. Work on one feature at a time
+2. Test thoroughly before moving on
+3. Keep working code working
+4. Document all changes
+5. Create restore points
+6. Focus on stability over features
 
 
 ---
