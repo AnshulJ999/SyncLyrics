@@ -139,11 +139,32 @@ async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
         return current_song_lyrics[lyric_index][1] or "-"
 
     await _update_song()
-    lyric_index = _find_current_lyric_index()
+    
+    # Check if we have valid song data and lyrics
+    if current_song_data is None:
+        return "No song playing"
     
     if current_song_lyrics is None:
         return "Lyrics not found"
-    # Return 6 lines total: 2 previous, current, and 3 next        
+    # Return 6 lines total: 2 previous, current, and 3 next                
+    lyric_index = _find_current_lyric_index()
+    
+    # Instrumental/between lyrics
+    if lyric_index == -1:
+        # Find nearest lyrics
+        time = current_song_data.get("position", 0)  # Use get() with default value
+        for i in range(len(current_song_lyrics)):
+            if current_song_lyrics[i][0] > time:
+                prev_index = max(0, i - 1)
+                return (
+                    _lyric_representation(prev_index - 1),
+                    _lyric_representation(prev_index),
+                    "♪",
+                    _lyric_representation(i),
+                    _lyric_representation(i + 1),
+                    _lyric_representation(i + 2)
+                )
+    
     # Before first lyric
     if lyric_index == -2:
         return (
@@ -166,22 +187,6 @@ async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
             "",
             ""
         )
-    
-    # Instrumental/between lyrics
-    if lyric_index == -1:
-        # Find nearest lyrics
-        time = current_song_data["position"]
-        for i in range(len(current_song_lyrics)):
-            if current_song_lyrics[i][0] > time:
-                prev_index = max(0, i - 1)
-                return (
-                    _lyric_representation(prev_index - 1),
-                    _lyric_representation(prev_index),
-                    "♪",
-                    _lyric_representation(i),
-                    _lyric_representation(i + 1),
-                    _lyric_representation(i + 2)
-                )
     
     # Normal case
     return (

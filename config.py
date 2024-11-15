@@ -112,11 +112,12 @@ UI = {
 # ==========================================
 # Lyrics Configuration
 # ==========================================
+# It's recommended to fine-tune latency_compensation to your preference.
 LYRICS = {
     "display": {
         "buffer_size": 6,  # Number of lyrics lines to display (previous + current + next)
         "update_interval": 0.1,  # Seconds between updates (100ms)
-        "latency_compensation": 0.15,  # Positive = earlier, negative = later (100ms earlier)
+        "latency_compensation": 0.17,  # Positive = earlier, negative = later (100ms earlier)
   #      "position_smoothing": 0.8,  # Smoothing factor for lyrics timing (0-1)
     },
 }
