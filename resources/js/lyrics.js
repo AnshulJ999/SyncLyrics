@@ -79,6 +79,16 @@ function setLyricsInDom(lyrics) {
     updateLyricElement(document.getElementById('next-2'), lyrics[4]);
     updateLyricElement(document.getElementById('next-3'), lyrics[5]);
 
+    // Add smooth scroll to current line
+    const currentLine = document.getElementById('current');
+    const lyricsContainer = document.getElementById('lyrics');
+    if (currentLine && document.body.hasAttribute('data-scroll')) {
+        currentLine.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center'
+        });
+    }
+
     setTimeout(() => {
         updateInProgress = false;
     }, 800);
@@ -88,6 +98,26 @@ async function main() {
 
     // Get configuration first
     await getConfig();
+
+    // Check URL parameters for scroll setting
+    const params = new URLSearchParams(window.location.search);
+    const shouldScroll = params.get('scroll') === 'true';
+    
+    console.log('Scroll enabled:', shouldScroll); // Debug log
+
+    // Enable scrolling if requested
+    if (shouldScroll) {
+        document.body.setAttribute('data-scroll', 'true');
+        const lyricsContainer = document.getElementById('lyrics');
+        if (lyricsContainer) {
+            lyricsContainer.setAttribute('data-scroll', 'true');
+            console.log('Scroll attributes set on container'); // Debug log
+            // Also set it on all lyric lines
+            document.querySelectorAll('.lyric-line').forEach(line => {
+                line.setAttribute('data-scroll', 'true');
+            });
+        }
+    }
 
     // Set initial background
     document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;

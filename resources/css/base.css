@@ -27,6 +27,10 @@ body {
     overflow: hidden;
 }
 
+body[data-scroll="true"] {
+    overflow: auto;
+}
+
 /* ========== LOGO STYLES ========== */
 .logo {
     /* Set fixed dimensions for logo */
@@ -52,13 +56,33 @@ body {
     /* Maximum width to maintain readability */
     max-width: 1200px;
     margin: 0 auto;
+
+    /* Enable smooth scrolling when scroll=true */
+    &[data-scroll="true"] {
+        overflow-y: auto !important;
+        scroll-behavior: smooth;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+        padding-top: 40vh !important;
+        padding-bottom: 40vh !important;
+        background: none !important;
+    }
+}
+
+#lyrics[data-scroll="true"]::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
 }
 
 /* ========== LYRICS LINE STYLING ========== */
 .lyric-line {
     text-align: center;
-    /* Smooth transition for all animations */
-    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Reduce the gap between lines */
+    margin: 0.5rem 0;
+    /* Remove the border we added for debugging */
+    border: none;
+    /* Make sure opacity transitions are smooth */
+    transition: opacity 0.3s ease;
     width: 100%;
     padding: 0.2rem;
     max-width: 90%;
@@ -69,6 +93,11 @@ body {
     position: relative;
     /* Subtle text glow effect */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+
+    /* When scrolling is enabled */
+    [data-scroll="true"] & {
+        scroll-margin-top: 40vh;
+    }
 }
 
 /* ========== LYRICS STATES ========== */
