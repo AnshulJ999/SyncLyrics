@@ -2,11 +2,13 @@ from os import path, getpid, kill
 from signal import SIGINT
 from typing import Any
 
-from flask import Flask, render_template, redirect, flash, request, Response
+from flask import Flask, render_template, redirect, flash, request, Response, url_for
 
+import config
 from lyrics import get_timed_lyrics_previous_and_next
 from system_utils import get_current_song_meta_data
 from state_manager import *
+from providers.spotify_api import SpotifyAPI
 
 
 TEMPLATE_DIRECTORY = path.abspath("resources/templates")
@@ -90,20 +92,23 @@ def settings() -> str:
 @app.route("/lyrics")
 async def lyrics() -> dict:
     """
-    This function returns the lyrics and colors data.
+    This function returns the lyrics and album art colors data.
 
     Returns:
         dict: The lyrics and color data, or an error message if lyrics not found.
     """
     lyrics_data = await get_timed_lyrics_previous_and_next()
-    metadata = await get_current_song_meta_data()
+ #   metadata = await get_current_song_meta_data()    
+    # Get current track metadata including album art
+    spotify = SpotifyAPI()
+    current_track = spotify.get_current_track()
     
     if isinstance(lyrics_data, str):  # lyrics not found
         return {"msg": lyrics_data}
     
     return {
         "lyrics": list(lyrics_data),
-        "colors": metadata.get("colors", ["#24273a", "#363b54"]) if metadata else ["#24273a", "#363b54"]
+        "albumArt": current_track.get('album_art') if current_track else None
     }
 
 
@@ -130,3 +135,27 @@ def exit_application() -> dict[str, str]:
     """
     kill(getpid(), SIGINT)
     return {"msg": "Application has been closed."}
+
+
+@app.route("/settings", methods=["POST"])
+def update_settings():
+    album_colors_enabled = request.form.get("album-colors-enabled") == "on"
+    state = get_state()
+    state["albumColorsEnabled"] = album_colors_enabled
+    set_state(state)
+    # Also update config
+    config.ALBUM_COLORS["enabled"] = album_colors_enabled
+    return redirect(url_for("settings"))
+
+
+@app.route("/api/settings")
+def get_settings():
+    """Return frontend-needed settings as JSON"""
+    return {
+        "albumColors": {
+            "enabled": config.ALBUM_COLORS["enabled"],
+            "fallbackColors": config.ALBUM_COLORS["fallback_colors"],
+            "currentSwatch": config.ALBUM_COLORS["current_swatch"],
+            "availableSwatches": config.ALBUM_COLORS["available_swatches"]
+        }
+    }

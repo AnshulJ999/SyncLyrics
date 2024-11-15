@@ -1,6 +1,7 @@
 let lastLyrics = null;
 let updateInProgress = false;
 let currentColors = ["#24273a", "#363b54"];
+let lastAlbumArtUrl = null;
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -10,11 +11,19 @@ async function getLyrics() {
     try {
         let response = await fetch('/lyrics');
         let data = await response.json();
-        
-        // Update background if colors are present
-        if (data.colors && (data.colors[0] !== currentColors[0] || data.colors[1] !== currentColors[1])) {
-            updateBackgroundColors(data.colors);
-            currentColors = data.colors;
+        console.log('Album Art URL:', data.albumArt);
+        // Extract colors from album art if present
+        if (data.albumArt && data.albumArt !== lastAlbumArtUrl) {
+            try {
+                const colors = await extractColors(data.albumArt);
+                if (colors) {
+                    updateBackgroundColors(colors);
+                    currentColors = colors;
+                }
+            } catch (error) {
+                console.error('Color extraction error:', error);
+            }
+            lastAlbumArtUrl = data.albumArt;
         }
         
         return data.lyrics || data;
@@ -32,7 +41,7 @@ function areLyricsDifferent(oldLyrics, newLyrics) {
 
 function updateBackgroundColors(colors) {
     if (!colors || !Array.isArray(colors)) return;
-    
+    console.log('Updating colors to:', colors);
     document.body.style.background = `linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
     
     // Add subtle animation

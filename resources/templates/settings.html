@@ -95,6 +95,11 @@
         <div class="d-flex">
             {{ checkbox_input('Terminal', 'terminal-method', "Whether lyrics should be printed in the terminal.") }}
         </div>
+        <h4>Album Art Colors</h4>
+        <div class="d-flex">
+            {{ checkbox_input('Enable album art colors', 'album-colors-enabled', 
+                "Whether to use colors from album art for background.") }}
+        </div>
         <input class="btn btn-primary" type="submit" value="Save">
         <a href="/reset-defaults" class="btn btn-primary"> Reset defaults </a>
     </form>

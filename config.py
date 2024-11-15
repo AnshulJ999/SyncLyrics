@@ -83,6 +83,23 @@ SERVER = {
 # ==========================================
 # UI and Display Settings
 # ==========================================
+
+# Album Art Color Settings
+ALBUM_COLORS = {
+    "enabled": False,
+    "fallback_colors": ["#24273a", "#363b54"],
+    "transition_duration": 1000,
+    "current_swatch": "DarkMuted",  # Default swatch
+    "available_swatches": [
+        "Vibrant",
+        "DarkVibrant",
+        "LightVibrant",
+        "Muted",
+        "DarkMuted",
+        "LightMuted"
+    ]
+}
+
 UI = {
     "themes": {
         "default": {
