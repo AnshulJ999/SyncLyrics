@@ -7,7 +7,7 @@ from flask import Flask, render_template, redirect, flash, request, Response
 from lyrics import get_timed_lyrics_previous_and_next
 from system_utils import get_current_song_meta_data
 from state_manager import *
-
+from config import LYRICS
 
 TEMPLATE_DIRECTORY = path.abspath("resources/templates")
 STATIC_DIRECTORY = path.abspath("resources")
@@ -119,6 +119,12 @@ def reset_defaults() -> Response:
     flash("Settings have been reset!", "success")
     return redirect("/settings")
 
+@app.route('/config')
+def get_client_config():
+    """Return client-side configuration"""
+    return {
+        "updateInterval": LYRICS["display"]["update_interval"] * 1000  # Convert seconds to milliseconds
+    }
 
 @app.route("/exit-application")
 def exit_application() -> dict[str, str]:

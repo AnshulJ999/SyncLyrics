@@ -5,6 +5,7 @@ from system_utils import get_current_song_meta_data
 from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
+from config import LYRICS, DEBUG
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,11 @@ providers = [
     NetEaseProvider(), # Priority 2
     SpotifyLyrics()    # Priority 3
 ]
+
+LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
+
+logger.info(f"Using latency compensation: {LATENCY_COMPENSATION}s")
+logger.info(f"Using update interval: {LYRICS.get('display', {}).get('update_interval', 0.1)}s")
 
 current_song_data = None
 current_song_lyrics = None
@@ -58,7 +64,7 @@ def _get_lyrics(artist: str, title: str):
     return None
 
 
-def _find_current_lyric_index(delta: float = 0.2) -> int: # latency compensation - positive=earlier, negative=later. Current value is 200 ms EARLIER. 
+def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int: # latency compensation - positive=earlier, negative=later. Find it in config.py 
     """
     This function returns the index of the current lyric in the current_song_lyrics list.
 
@@ -83,8 +89,14 @@ def _find_current_lyric_index(delta: float = 0.2) -> int: # latency compensation
         return -2
         
     # After last lyric
-    if time + delta > current_song_lyrics[-1][0]:
+    last_lyric_time = current_song_lyrics[-1][0]
+    if time + delta > last_lyric_time + 6.0:  # Show last lyric for 6 seconds
         return -3
+    elif time + delta > last_lyric_time:
+        return len(current_song_lyrics) - 1  # Show the last lyric
+
+# old method    if time + delta > current_song_lyrics[-1][0]:
+#        return -3
     
     # Find current lyric
     for i in range(len(current_song_lyrics) - 1):
@@ -147,8 +159,8 @@ async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
     if lyric_index == -3:
         last_index = len(current_song_lyrics) - 1
         return (
-            _lyric_representation(last_index - 2),
             _lyric_representation(last_index - 1),
+            _lyric_representation(last_index - 0),
             "♪",
             "",
             "",

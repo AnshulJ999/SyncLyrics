@@ -1,6 +1,18 @@
 let lastLyrics = null;
 let updateInProgress = false;
 let currentColors = ["#24273a", "#363b54"];
+let updateInterval = 100; // Default value, will be updated from config
+
+async function getConfig() {
+    try {
+        const response = await fetch('/config');
+        const config = await response.json();
+        updateInterval = config.updateInterval;
+        console.log(`Update interval set to: ${updateInterval}ms`);  // Debug log
+    } catch (error) {
+        console.error('Error fetching config:', error);
+    }
+}
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -73,6 +85,10 @@ function setLyricsInDom(lyrics) {
 }
 
 async function main() {
+
+    // Get configuration first
+    await getConfig();
+
     // Set initial background
     document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
     
@@ -81,7 +97,7 @@ async function main() {
         if (lyrics) {
             setLyricsInDom(lyrics);
         }
-        await sleep(200); // Slightly shorter  interval for smoother updates
+        await sleep(updateInterval); // Use the configured interval
     }
 }
 

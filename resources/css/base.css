@@ -1,108 +1,140 @@
-/* Reset and base styles */
+/* ========== RESET STYLES ========== */
 * {
+    /* Remove default margins from all elements */
     margin: 0;
+    /* Remove default padding from all elements */
     padding: 0;
+    /* Include padding and border in element's total width and height */
     box-sizing: border-box;
 }
 
+/* ========== BODY STYLES ========== */
 body {
+    /* Create a diagonal gradient background from dark blue to slightly lighter blue */
     background: linear-gradient(135deg, #1e2030 0%, #2f354d 100%);
+    /* Set text color to white */
     color: #ffffff;
+    /* Make body at least full viewport height */
     min-height: 100vh;
     margin: 0;
     padding: 0;
+    /* Use flexbox for vertical layout */
     display: flex;
     flex-direction: column;
+    /* System font stack for optimal performance and fallbacks */
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    /* Prevent scrollbars from appearing */
     overflow: hidden;
 }
 
-/* Logo and basic elements */
+/* ========== LOGO STYLES ========== */
 .logo {
+    /* Set fixed dimensions for logo */
     width: 20px;
     height: 20px;
 }
 
-/* Main lyrics container */
+/* ========== MAIN LYRICS CONTAINER ========== */
 #lyrics {
+    /* Take up remaining vertical space */
     flex: 1;
+    /* Center content vertically and horizontally */
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    /* Responsive spacing between lyrics lines */
     gap: clamp(0.8rem, 3vh, 2rem);
+    /* Responsive padding */
     padding: clamp(1rem, 3vw, 2rem);
     min-height: 100vh;
     width: 100%;
+    /* Maximum width to maintain readability */
     max-width: 1200px;
     margin: 0 auto;
 }
 
-/* Lyrics lines styling */
+/* ========== LYRICS LINE STYLING ========== */
 .lyric-line {
     text-align: center;
+    /* Smooth transition for all animations */
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     width: 100%;
     padding: 0.2rem;
     max-width: 90%;
+    /* Performance optimizations */
     will-change: opacity, transform;
     transform: translateZ(0);
     -webkit-font-smoothing: antialiased;
     position: relative;
+    /* Subtle text glow effect */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
-/* Different states for lyrics */
+/* ========== LYRICS STATES ========== */
+/* Lines far from current (2+ lines away) */
 .far-previous, .far-next {
     opacity: 0.40;
+    /* Responsive font size */
     font-size: clamp(0.8rem, 2vw, 1.4rem);
     transform: translateY(10px);
     filter: blur(1px);
 }
 
+/* Lines immediately before/after current */
 .previous, .next {
     opacity: 0.60;
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
 }
 
+/* Currently active line */
 .current {
     font-size: clamp(1.5rem, 4vw, 3rem);
     opacity: 1;
     font-weight: 500;
+    /* Enhanced glow effect */
     text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
     transform: scale(1.02);
     letter-spacing: 0.5px;
+    /* Apply floating animation */
     animation: wave 3s ease-in-out infinite;
 }
 
-/* Wave animation */
+/* ========== ANIMATIONS ========== */
 @keyframes wave {
+    /* Gentle floating animation for current line */
     0% { transform: translateY(0); }
     50% { transform: translateY(-2px); }
     100% { transform: translateY(0); }
 }
 
-/* Bottom navigation */
+/* ========== BOTTOM NAVIGATION ========== */
 .bottom-nav {
+    /* Stick to bottom of viewport */
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
+    /* Semi-transparent background with blur effect */
     background: rgba(26, 27, 38, 0.8);
     backdrop-filter: blur(10px);
+    /* Responsive padding */
     padding: clamp(0.3rem, 2vh, 0.8rem);
+    /* Layout controls */
     display: flex;
     justify-content: space-between;
     align-items: center;
     height: auto;
     min-height: 40px;
     max-height: 60px;
+    /* Subtle top border */
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    /* Ensure nav stays above other content */
     z-index: 1000;
 }
 
-/* Navigation elements */
+/* ========== NAVIGATION ELEMENTS ========== */
 .nav-controls {
     display: flex;
     align-items: center;
@@ -110,6 +142,7 @@ body {
 }
 
 .nav-link {
+    /* Semi-transparent white text */
     color: rgba(255, 255, 255, 0.7) !important;
     padding: 0.3rem 0.8rem !important;
     transition: all 0.3s ease;
@@ -117,12 +150,14 @@ body {
     text-decoration: none;
 }
 
+/* Hover and active states for nav links */
 .nav-link:hover, .nav-link.active {
     color: white !important;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 4px;
 }
 
+/* Exit button styling */
 .exit-btn {
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
@@ -132,16 +167,19 @@ body {
     transition: all 0.3s ease;
 }
 
+/* Red background on hover for exit button */
 .exit-btn:hover {
     color: white;
     background: rgba(255, 0, 0, 0.2);
 }
 
+/* Credits section styling */
 .credits {
     display: flex;
     align-items: center;
 }
 
+/* Repository link styling */
 .repo-link {
     display: flex;
     align-items: center;
@@ -156,16 +194,18 @@ body {
     color: white;
 }
 
-/* Input styles */
+/* ========== FORM ELEMENTS ========== */
 input[type="range"] {
     width: 75%;
 }
 
+/* Cursor pointer for tooltip elements */
 *[data-bs-toggle="tooltip"]:hover {
     cursor: pointer;
 }
 
-/* Minimal mode and embedded view optimizations */
+/* ========== RESPONSIVE DESIGN ========== */
+/* Adjustments for small screens and embedded views */
 @media (max-height: 600px), (max-width: 600px) {
     #lyrics {
         min-height: 100vh;
@@ -174,23 +214,27 @@ input[type="range"] {
     }
 }
 
-/* Home Assistant and minimal mode optimizations */
+/* ========== HOME ASSISTANT MODE ========== */
+/* Hide elements in minimal mode */
 body[data-minimal="true"] .bottom-nav,
 body[data-minimal="true"] #header,
 body[data-minimal="true"] #footer {
     display: none !important;
 }
 
+/* Transparent background in minimal mode */
 body[data-minimal="true"] {
     background: transparent;
 }
 
+/* Adjust lyrics container in minimal mode */
 body[data-minimal="true"] #lyrics {
     min-height: 100vh;
     padding: 0;
 }
 
-/* Reduced motion preferences */
+/* ========== ACCESSIBILITY ========== */
+/* Respect user's reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
     .lyric-line {
         transition: opacity 0.5s ease-out;
@@ -198,16 +242,15 @@ body[data-minimal="true"] #lyrics {
     }
 }
 
-/* Utility classes */
+/* ========== UTILITY CLASSES ========== */
+/* Helper classes for common styling needs */
 .text-center { text-align: center; }
 .mt-auto { margin-top: auto; }
 .d-flex { display: flex; }
 .align-items-center { align-items: center; }
 
-
-
-/* Add this to your existing base.css */
-
+/* ========== HOME ASSISTANT SPECIFIC STYLES ========== */
+/* Default transparent background */
 body {
     background: transparent;
 }
@@ -217,7 +260,7 @@ body {
     background: none;
 }
 
-/* Add this media query for non-HA contexts */
+/* Add gradient background only for non-Home Assistant contexts */
 @media not all and (min-width: 600px) {
     body {
         background: linear-gradient(135deg, #24273a 0%, #363b54 100%);

@@ -4,6 +4,93 @@
 
 
 
+
+
+@echo off
+
+REM === HIDDEN OPTIONS ===
+REM Run completely hidden (no window)
+REM start "" pythonw.exe sync_lyrics.py
+
+REM Run hidden with different working directory
+REM start "" /D "C:\YourPath" pythonw.exe sync_lyrics.py
+
+REM === CMD PROMPT OPTIONS ===
+REM Run with basic cmd prompt
+REM python sync_lyrics.py
+
+REM Run minimized cmd prompt
+REM start /min cmd /c python sync_lyrics.py
+
+REM Run cmd with custom title
+REM start "SyncLyrics" cmd /c python sync_lyrics.py
+
+REM === WINDOWS TERMINAL OPTIONS ===
+REM Run with Terminal and title
+REM wt.exe --title "SyncLyrics" python sync_lyrics.py
+
+REM Run Terminal minimized
+REM wt.exe --title "SyncLyrics" --window-state minimized python sync_lyrics.py
+
+REM Run Terminal maximized
+REM wt.exe --title "SyncLyrics" --maximized python sync_lyrics.py
+
+REM Run Terminal with specific profile
+REM wt.exe --profile "Python" python sync_lyrics.py
+
+REM Run Terminal with specific size and position
+REM wt.exe --title "SyncLyrics" --size 120,30 --position 50,50 python sync_lyrics.py
+
+REM === PYTHON OPTIONS ===
+REM Run with specific Python version
+REM py -3.9 sync_lyrics.py
+
+REM Run with debug mode
+REM python -d sync_lyrics.py
+
+REM Run with optimizations
+REM python -O sync_lyrics.py
+
+REM Run with specific environment variables
+REM set PYTHONPATH=path/to/libs && python sync_lyrics.py
+
+REM === ADVANCED OPTIONS ===
+REM Run with low priority
+REM start /low "" pythonw.exe sync_lyrics.py
+
+REM Run with high priority
+REM start /high "" pythonw.exe sync_lyrics.py
+
+REM Run and redirect output to file
+REM python sync_lyrics.py > output.log 2>&1
+
+REM Run and append output to log file
+REM python sync_lyrics.py >> app.log 2>&1
+
+
+Some useful Windows Terminal (wt.exe) parameters:
+--title: Set window title
+--window-state: minimized/maximized/normal
+--size: Window size (columns,rows)
+--position: Window position (X,Y)
+--tabColor: Set tab color
+--profile: Use specific terminal profile
+--focus: Bring window to front
+Some useful CMD parameters:
+/c: Run command and close
+/k: Run command and keep open
+/min: Start minimized
+/max: Start maximized
+/b: Start without window (background)
+Some useful Python parameters:
+-d: Debug mode
+-O: Optimize
+-v: Verbose
+-m: Run module
+-c: Run command
+-i: Interactive mode
+
+
 Yes, that's a successful test! The Spotify API is working correctly - it's authenticating and retrieving track data. Let's plan the next steps:
 
 1. **Add Album Art Display**
