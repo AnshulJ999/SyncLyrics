@@ -6,6 +6,7 @@ from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from config import LYRICS, DEBUG
+from providers.qq import QQMusicProvider
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,9 @@ logger = logging.getLogger(__name__)
 providers = [
     LRCLIBProvider(),  # Priority 1
     NetEaseProvider(), # Priority 2
-    SpotifyLyrics()    # Priority 3
+    SpotifyLyrics(),    # Priority 1
+    QQMusicProvider()    # Priority 4
+
 ]
 
 LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
