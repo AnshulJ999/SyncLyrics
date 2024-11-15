@@ -5,6 +5,16 @@
 
 
 
+from werkzeug.exceptions import BadRequest
+
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    """Handle malformed requests gracefully"""
+    return 'Bad Request', 400
+
+# Add to your Flask app configuration
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
+
 
 @echo off
 

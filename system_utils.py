@@ -4,6 +4,7 @@ import platform
 import re
 import logging
 from time import time
+from typing import Optional
 # from PIL import Image
 
 import config
@@ -14,6 +15,22 @@ logger = logging.getLogger(__name__)
 
 # Initialize Spotify client once
 spotify_client = SpotifyAPI()
+
+# Initialize Spotify client with retry
+def init_spotify_client() -> Optional[SpotifyAPI]:
+    try:
+        client = SpotifyAPI()
+        logger.info("Successfully initialized Spotify client")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to initialize Spotify client: {e}")
+        return None
+
+spotify_client = init_spotify_client()
+
+# Add these variables at module level
+_last_warning_time = 0
+_warning_cooldown = 10  # seconds
 
 def _remove_text_inside_parentheses_and_brackets(text: str) -> str:
     """
@@ -42,11 +59,15 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
     """
     This function returns the current song's metadata if a song is playing, otherwise it returns None.
     """
-    PLABACK_PAUSED = 5
+    try:
+        PLABACK_PAUSED = 5
 
-    sessions = await MediaManager.request_async()
-    current_session = sessions.get_current_session()
-    if current_session: 
+        sessions = await MediaManager.request_async()
+        current_session = sessions.get_current_session()
+        if not current_session:
+            logger.debug("No active Windows Media session")
+            return None
+
         if current_session.get_playback_info().playback_status == PLABACK_PAUSED:
             return _get_current_song_meta_data_windows.last_returned_data
         
@@ -71,6 +92,10 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
         }
         _get_current_song_meta_data_windows.last_returned_data = metadata
         return metadata
+        
+    except Exception as e:
+        logger.error(f"Error getting Windows Media metadata: {e}")
+        return None
 
 _get_current_song_meta_data_windows.last_returned_data = None
 
@@ -108,6 +133,7 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
         elif DESKTOP == "Windows":
             logger.info("Using default source: Windows Media")
             return await _get_current_song_meta_data_windows()
+        return None  # Only return None if neither Gnome nor Windows
     
     # Sort sources by priority and filter enabled ones (lower number = higher priority)
     sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
@@ -160,8 +186,11 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
     
     # 8. No data available
     if last_song:  # Only log when we had a song before
-        logger.warning("No metadata available from any source")
-    return None
+        current_time = time()
+        if current_time - _last_warning_time > _warning_cooldown:
+            logger.warning("No metadata available from any source")
+            _last_warning_time = current_time
+        return None
 
 # Find out which desktop environment is being used
 DESKTOP = platform.system()

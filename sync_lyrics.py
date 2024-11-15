@@ -13,6 +13,19 @@ from lyrics import get_timed_lyrics
 # from graphics import render_text_with_background, restore_wallpaper
 from state_manager import get_state
 from server import app
+import signal
+import sys
+
+# Initialize logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+def signal_handler(sig, frame):
+    """Handle Ctrl+C gracefully"""
+    logger.info("Shutting down...")
+    queue.put("exit")
+    sys.exit(0)
 
 def run_tray() -> NoReturn:
     """
@@ -45,6 +58,10 @@ def run_server() -> NoReturn:
     click.echo = echo
     click.secho = secho
 
+    # Run the server with asyncio support
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     # Run the server
     app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 
@@ -79,6 +96,8 @@ async def main() -> NoReturn:
 ICON_URL = path.abspath("./resources/images/icon.ico")
 PORT = 9012
 queue = Queue()
+
+signal.signal(signal.SIGINT, signal_handler)
 
 t_tray = th.Thread(target=run_tray, daemon=True).start()
 t_server = th.Thread(target=run_server, daemon=True).start()

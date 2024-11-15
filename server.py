@@ -1,6 +1,9 @@
 from os import path, getpid, kill
 from signal import SIGINT
 from typing import Any
+from functools import wraps
+from asgiref.sync import async_to_sync
+import asyncio
 
 from flask import Flask, render_template, redirect, flash, request, Response
 
@@ -20,6 +23,12 @@ VARIABLE_STATE_MAP = {
     "terminal-method": "representationMethods.terminal"
 }
 
+# Required: Async route handler
+def async_route(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        return async_to_sync(f)(*args, **kwargs)
+    return decorated_function
 
 def guess_value_type(value: Any) -> Any:
     """
@@ -87,7 +96,8 @@ def settings() -> str:
     return render_template("settings.html", **context)
 
 
-@app.route("/lyrics")
+@app.route('/lyrics')
+@async_route
 async def lyrics() -> dict:
     """
     This function returns the lyrics and colors data.
@@ -136,3 +146,4 @@ def exit_application() -> dict[str, str]:
     """
     kill(getpid(), SIGINT)
     return {"msg": "Application has been closed."}
+
