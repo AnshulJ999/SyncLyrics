@@ -2,6 +2,7 @@ let lastLyrics = null;
 let updateInProgress = false;
 let currentColors = ["#24273a", "#363b54"];
 let updateInterval = 100; // Default value, will be updated from config
+let lastCheckTime = 0;    // Track last check time
 
 async function getConfig() {
     try {
@@ -16,6 +17,16 @@ async function getConfig() {
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function getCurrentTrack() {
+    try {
+        const response = await fetch('/current-track');
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching current track:', error);
+        return null;
+    }
 }
 
 async function getLyrics() {
@@ -84,21 +95,42 @@ function setLyricsInDom(lyrics) {
     }, 800);
 }
 
-async function main() {
+async function updateLoop() {
+    while (true) {
+        const now = Date.now();
+        const timeSinceLastCheck = now - lastCheckTime;
+        
+        // Ensure minimum time between checks
+        if (timeSinceLastCheck < updateInterval) {
+            await sleep(updateInterval - timeSinceLastCheck);
+            continue;
+        }
+        
+        // Get track info first
+        const trackInfo = await getCurrentTrack();
+        
+        // Only get lyrics if we have track info
+        if (trackInfo && !trackInfo.error) {
+            const lyrics = await getLyrics();
+            if (lyrics) {
+                setLyricsInDom(lyrics);
+            }
+        }
+        
+        lastCheckTime = Date.now();
+        await sleep(updateInterval);
+    }
+}
 
+async function main() {
     // Get configuration first
     await getConfig();
 
     // Set initial background
     document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
     
-    while(true) {
-        let lyrics = await getLyrics();
-        if (lyrics) {
-            setLyricsInDom(lyrics);
-        }
-        await sleep(updateInterval); // Use the configured interval
-    }
+    // Start the update loop
+    updateLoop();
 }
 
 // Initialize when DOM is ready

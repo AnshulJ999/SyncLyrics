@@ -45,6 +45,7 @@ DEBUG = {
     "log_file": get_env("LOG_FILE", "synclyrics.log"),
     "log_level": get_env("LOG_LEVEL", "WARNING").upper(),
     "log_providers": get_env_bool("LOG_PROVIDERS", True),
+    "log_polling": True,  # Add this to control polling logs
     "log_to_console": get_env_bool("LOG_TO_CONSOLE", True),
     "log_detailed": get_env_bool("LOG_DETAILED", False),
     "performance_logging": get_env_bool("PERFORMANCE_LOGGING", False),
@@ -141,9 +142,11 @@ UI = {
 LYRICS = {
     "display": {
         "buffer_size": 6,  # Number of lyrics lines to display (previous + current + next)
-        "update_interval": 0.1,  # Seconds between updates (100ms)
+        "update_interval": 0.1,  # Seconds between active polling updates (100ms)
+        "idle_interval": 5.0,    # Idle polling (3 seconds)
         "latency_compensation": 0.17,  # Positive = earlier, negative = later (100ms earlier)
   #      "position_smoothing": 0.8,  # Smoothing factor for lyrics timing (0-1)
+        "idle_wait_time": 3.0,   # Wait time before switching to idle mode (seconds)
     },
 }
 

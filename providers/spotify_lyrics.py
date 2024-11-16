@@ -41,7 +41,7 @@ class SpotifyLyrics(LyricsProvider):
                 track.get('artist') != artist and 
                 track.get('title') != title
             ):
-                logger.info(f"Searching Spotify for {artist} - {title}")
+                logger.info(f"Spotify - Searching Spotify for {artist} - {title}")
                 track = self.spotify.search_track(artist, title)
                 if not track:
                     logger.info(f"No track found on Spotify for: {artist} - {title}")
@@ -54,7 +54,7 @@ class SpotifyLyrics(LyricsProvider):
             data = response.json()
             
             if data.get('error'):
-                logger.error(f"API error: {data.get('message')}")
+                logger.error(f"Spotify - API error: {data.get('message')}")
                 return None
             
             # Log the response for debugging
@@ -81,5 +81,5 @@ class SpotifyLyrics(LyricsProvider):
             return processed_lyrics if processed_lyrics else None
 
         except Exception as e:
-            logger.error(f"Error fetching lyrics: {e}")
+            logger.error(f"Spotify - Error fetching lyrics: {e}")
             return None 

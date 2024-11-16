@@ -42,7 +42,7 @@ class LRCLIBProvider(LyricsProvider):
             if duration:
                 params["duration"] = duration
 
-            logger.info(f"Trying exact match with params: {params}")
+            logger.info(f"LRCLib - Trying exact match with params: {params}")
             
             # Try precise match first with proper headers
             response = req.get(
@@ -53,7 +53,7 @@ class LRCLIBProvider(LyricsProvider):
             
             # If precise match fails, try search with specific fields
             if "code" in response and response["code"] == 404:
-                logger.info(f"No exact match found, trying search with specific fields")
+                logger.info(f"LRCLib - No exact match found, trying search with specific fields")
                 search_params = {
                     "track_name": title,
                     "artist_name": artist
@@ -69,7 +69,7 @@ class LRCLIBProvider(LyricsProvider):
                 
                 # If specific search fails, try general search as last resort
                 if not search_result:
-                    logger.info(f"No results with specific fields, trying general search")
+                    logger.info(f"LRCLib - No results with specific fields, trying general search")
                     search_result = req.get(
                         f"{self.BASE_URL}/search",
                         params={"q": f"{artist} {title}"},
@@ -77,7 +77,7 @@ class LRCLIBProvider(LyricsProvider):
                     ).json()
                 
                 if not search_result: 
-                    logger.info(f"No search results found for: {artist} - {title}")
+                    logger.info(f"LRCLib - No search results found for: {artist} - {title}")
                     return None
                     
                 song_id = search_result[0]["id"]
@@ -86,7 +86,7 @@ class LRCLIBProvider(LyricsProvider):
             # Extract synced lyrics
             lyrics = response.get("syncedLyrics")
             if not lyrics:
-                logger.info(f"No synced lyrics found for: {artist} - {title}")
+                logger.info(f"LRCLib - No synced lyrics found for: {artist} - {title}")
                 return None
 
             # Process lyrics
@@ -100,5 +100,5 @@ class LRCLIBProvider(LyricsProvider):
             return processed_lyrics if processed_lyrics else None
             
         except Exception as e:
-            logger.error(f"Error fetching lyrics for {artist} - {title}: {str(e)}")
+            logger.error(f"LRCLib - Error fetching lyrics for {artist} - {title}: {str(e)}")
             return None 

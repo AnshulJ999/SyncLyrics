@@ -25,7 +25,7 @@ class NetEaseProvider(LyricsProvider):
             
             songs = search_response.get("result", {}).get("songs")
             if not songs:
-                logger.info(f"No search results found for: {search_term}")
+                logger.info(f"NetEase - No search results found for: {search_term}")
                 return None
             
             # Get lyrics
@@ -38,7 +38,7 @@ class NetEaseProvider(LyricsProvider):
             
             lyrics_text = lyrics_response.get("lrc", {}).get("lyric")
             if not lyrics_text:
-                logger.info(f"No lyrics found for: {search_term}")
+                logger.info(f"NetEase - No lyrics found for: {search_term}")
                 return None
             
             # Process lyrics
@@ -55,5 +55,5 @@ class NetEaseProvider(LyricsProvider):
             return processed_lyrics if processed_lyrics else None
             
         except Exception as e:
-            logger.error(f"Error fetching lyrics from NetEase for {search_term}: {str(e)}")
+            logger.error(f"NetEase - Error fetching lyrics from NetEase for {search_term}: {str(e)}")
             return None 

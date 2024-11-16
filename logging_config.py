@@ -17,7 +17,7 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 # Default log format
 # DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-DEFAULT_FORMAT = '%(levelname)s - %(message)s'
+DEFAULT_FORMAT = '(%(filename)s) %(levelname)s - %(message)s'
 DETAILED_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
 
 def setup_logging(

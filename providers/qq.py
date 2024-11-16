@@ -49,8 +49,8 @@ class QQMusicProvider(LyricsProvider):
         Returns:
             Optional[Dict]: JSON response or None if failed
         """
-        max_retries = 3
-        retry_delay = 1
+        max_retries = 4
+        retry_delay = 1.5
 
         for attempt in range(max_retries):
             try:
@@ -70,11 +70,11 @@ class QQMusicProvider(LyricsProvider):
                 return json.loads(content)
                 
             except Exception as e:
-                logger.error(f"Request attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"QQ - Request attempt {attempt + 1} failed: {str(e)}")
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                 else:
-                    logger.error("Max retries reached. Request failed.")
+                    logger.error("QQ - Max retries reached. Request failed.")
                     return None
 
     def _search_song(self, keyword: str) -> Optional[Dict[str, Any]]:
@@ -136,7 +136,7 @@ class QQMusicProvider(LyricsProvider):
             if 'lyric' in result:
                 return base64.b64decode(result['lyric']).decode('utf-8')
         except Exception as e:
-            logger.error(f"Error decoding lyrics: {e}")
+            logger.error(f"QQ - Error decoding lyrics: {e}")
         
         return None
 
@@ -177,7 +177,7 @@ class QQMusicProvider(LyricsProvider):
                     if text:
                         processed_lyrics.append((seconds, text))
             except Exception as e:
-                logger.debug(f"Skipping invalid lyric line: {e}")
+                logger.debug(f"QQ - Skipping invalid lyric line: {e}")
                 continue
         
         return sorted(processed_lyrics, key=lambda x: x[0])
@@ -196,26 +196,26 @@ class QQMusicProvider(LyricsProvider):
         """
         try:
             search_term = self._format_search_term(artist, title)
-            logger.info(f"Searching QQ Music for: {search_term}")
+            logger.info(f"QQ - Searching QQ Music for: {search_term}")
             
             results = self._search_song(search_term)
             if not results or 'data' not in results or 'song' not in results['data']:
-                logger.info(f"No search results found for: {search_term}")
+                logger.info(f"QQ - No search results found for: {search_term}")
                 return None
             
             songs = results['data']['song']['list']
             if not songs:
-                logger.info(f"No songs found for: {search_term}")
+                logger.info(f"QQ - No songs found for: {search_term}")
                 return None
             
             # Get the first matching song
             song = songs[0]
-            logger.info(f"Found song: {song['name']} - {song['singer'][0]['name']}")
+            logger.info(f"QQ - Found song: {song['name']} - {song['singer'][0]['name']}")
             
             # Get lyrics
             lyrics_text = self._get_raw_lyrics(song['mid'])
             if not lyrics_text:
-                logger.info(f"No lyrics found for: {search_term}")
+                logger.info(f"QQ - No lyrics found for: {search_term}")
                 return None
             
             # Process lyrics

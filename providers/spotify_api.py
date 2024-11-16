@@ -65,6 +65,7 @@ class SpotifyAPI:
                 headers=self.headers,
                 timeout=3  # Short timeout
             )
+            self.logger.info(f"Spotify health check successful (status code: {response.status_code})")
             return response.status_code in [200, 204]  # 204 means no track playing
         except Exception as e:
             self.logger.error(f"Spotify health check failed: {e}")
