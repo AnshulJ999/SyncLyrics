@@ -19,6 +19,13 @@ ignored/
 .cache
 logs/
 
+Notes.txt
+Notes2.txt
+Notes
+Notes2
+
+
+
 # Python
 __pycache__/
 *.py[cod]

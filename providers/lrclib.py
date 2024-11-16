@@ -3,8 +3,12 @@
 import requests as req
 import logging
 from .base import LyricsProvider
+from config import get_provider_config
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# logger = logging.getLogger(__name__)
 
 class LRCLIBProvider(LyricsProvider):
     # Define constants for the API
@@ -14,7 +18,14 @@ class LRCLIBProvider(LyricsProvider):
     }
     
     def __init__(self):
-        super().__init__(name="LRCLIB", priority=3)
+        """Initialize LRCLIB provider with config settings"""
+        super().__init__(provider_name="lrclib")
+        
+        # Get config settings
+        config = get_provider_config("lrclib")
+        
+        self.BASE_URL = config.get("base_url", self.BASE_URL)
+        self.HEADERS.update(config.get("headers", {}))  # Add any additional headers from config
     
     def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None):
         """

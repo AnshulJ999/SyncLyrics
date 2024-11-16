@@ -12,6 +12,7 @@ import logging
 from .base import LyricsProvider
 from .spotify_api import SpotifyAPI
 from logging_config import get_logger
+from config import get_provider_config
 
 # Configure logging
 # logging.basicConfig(level=logging.INFO)
@@ -23,12 +24,15 @@ class SpotifyLyrics(LyricsProvider):
     """Spotify lyrics provider using hosted API"""
     
     def __init__(self) -> None:
-        """Initialize provider with API endpoint from environment"""
-        super().__init__(name="Spotify", priority=1)
-        load_dotenv()
-        self.api_url = os.getenv('SPOTIFY_LYRICS_SERVER', 
-                                'https://spotify-lyrics-api-seven-azure.vercel.app/')
-        self.spotify = SpotifyAPI()  # Initialize Spotify API
+        """Initialize Spotify lyrics provider with config settings"""
+        super().__init__(provider_name="spotify")
+        
+        # Get config settings
+        config = get_provider_config("spotify")
+        
+        # Initialize API settings from config
+        self.api_url = config.get('base_url', 'https://spotify-lyrics-api-azure.vercel.app')
+        self.spotify = SpotifyAPI()  # Initialize Spotify API client
 
     def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
         """Get lyrics for a track by searching Spotify"""

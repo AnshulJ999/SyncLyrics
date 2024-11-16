@@ -158,7 +158,7 @@ PROVIDERS = {
 
     "lrclib": {
         "enabled": True,
-        "priority": 4,  # Highest priority
+        "priority": 1,  # Highest priority
         "base_url": "https://lrclib.net/api",
         "timeout": 10,
         "retries": 3,
@@ -176,6 +176,13 @@ PROVIDERS = {
         "client_secret": get_env("SPOTIFY_CLIENT_SECRET", ""),
         "token_refresh_buffer": 300,
         "cache_duration": 3600
+    },
+    "qq": {
+        "enabled": True,
+        "priority": 4,
+        "timeout": 10,
+        "retries": 3,
+        "cache_duration": 86400  # 24 hours in seconds
     },
     "netease": {
         "enabled": True,

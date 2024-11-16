@@ -11,8 +11,10 @@ import json
 import time
 import random
 import logging
+from html import unescape
 from .base import LyricsProvider
 from logging_config import get_logger
+from config import get_provider_config
 
 logger = get_logger(__name__)
 
@@ -24,8 +26,12 @@ class QQMusicProvider(LyricsProvider):
     """QQ Music lyrics provider"""
     
     def __init__(self) -> None:
-        """Initialize provider with lowest priority"""
-        super().__init__(name="QQ Music", priority=4)
+        """Initialize QQ Music provider with config settings"""
+        super().__init__(provider_name="qq")
+        
+        # Get additional config settings if needed
+        config = get_provider_config("qq")
+        
         self.headers = {
             'Referer': 'https://y.qq.com/',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -161,6 +167,9 @@ class QQMusicProvider(LyricsProvider):
             # Extract time and text
             time_str = line[1:line.find(']')]
             text = line[line.find(']') + 1:].strip()
+            
+            # Decode HTML entities in the text (like &apos;)
+            text = unescape(text)
             
             # Skip metadata lines
             if any(time_str.startswith(tag) for tag in metadata_tags):

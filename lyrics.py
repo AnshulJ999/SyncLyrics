@@ -19,8 +19,8 @@ logger = get_logger(__name__)
 # Initialize providers
 providers = [
     LRCLIBProvider(),  # Priority 1
-    NetEaseProvider(), # Priority 2
- #   SpotifyLyrics(),    # Priority 1
+    NetEaseProvider(), # Priority 3
+    SpotifyLyrics(),    # Priority 2
     QQMusicProvider()    # Priority 4
 
 ]

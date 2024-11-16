@@ -25,6 +25,10 @@ spotify_client = SpotifyAPI()
 # Add near the top with other globals
 _last_state_log_time = 0
 STATE_LOG_INTERVAL = 240  # Log state every 240 seconds
+_request_counters = {
+    'spotify': 0,
+    'windows_media': 0
+}
 
 def _log_app_state() -> None:
     """Log key application state and details. Only logs once every STATE_LOG_INTERVAL seconds."""
@@ -42,6 +46,15 @@ def _log_app_state() -> None:
     last_song = getattr(get_current_song_meta_data, '_last_song', 'None')
     last_source = getattr(get_current_song_meta_data, '_last_source', 'None')
     
+    # Add request counts if debug is enabled
+    request_stats = ""
+    if DEBUG["enabled"]:
+        request_stats = (
+            f"|- API Requests:\n"
+            f"|  |- Spotify: {_request_counters['spotify']}\n"
+            f"|  `- Windows Media: {_request_counters['windows_media']}\n"
+        )
+    
     # Create state summary using ASCII characters
     state_summary = (
         "\nApplication State Summary:\n"
@@ -49,6 +62,7 @@ def _log_app_state() -> None:
         f"|- Current Song: {last_song}\n"
         f"|- Active Source: {last_source}\n"
         f"|- Update Interval: {ACTIVE_INTERVAL if is_active else IDLE_INTERVAL:.1f}s\n"
+        f"{request_stats}"
         f"`- Desktop Environment: {DESKTOP}"
     )
     
@@ -83,6 +97,10 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
     Checks for actual playback status, not just if media session exists.
     """
     try:
+        # Increment counter
+        if DEBUG["enabled"]:
+            _request_counters['windows_media'] += 1
+            
         sessions = await MediaManager.request_async()
         current_session = sessions.get_current_session()
         
@@ -129,6 +147,10 @@ _get_current_song_meta_data_windows.last_returned_data = None
 async def _get_current_song_meta_data_spotify() -> dict[str, str | int | tuple[str, str]] | None:
     """Get current song metadata from Spotify in the expected format"""
     try:
+        # Increment counter
+        if DEBUG["enabled"]:
+            _request_counters['spotify'] += 1
+            
         track = spotify_client.get_current_track()
         if not track:
             return None
@@ -233,7 +255,7 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
                 result = data
                 break
             else:
-                logger.info(f"No data from {source['name']}")
+                logger.debug(f"No data from {source['name']}")
                 
         except Exception as e:
             logger.error(f"Error with {source['name']}: {str(e)}")

@@ -8,35 +8,42 @@ from typing import Optional, List, Tuple
 import requests
 import logging
 from logging_config import get_logger, setup_logging  # Import setup_logging
+from config import get_provider_config  # Add this import
 
 # Set up logging
 # logging.basicConfig(level=logging.INFO)
 
 setup_logging()
-
 logger = get_logger(__name__)
 
 class LyricsProvider(ABC):
-    """
-    Base class for all lyrics providers.
+    """Base class for all lyrics providers."""
     
-    Each provider must implement:
-    - get_lyrics(artist: str, title: str) method
-    """
-    
-    def __init__(self, name: str, priority: int = 100):
+    def __init__(self, provider_name: str):
         """
-        Initialize the provider
+        Initialize the provider using configuration from config.py
         
         Args:
-            name (str): Name of the provider
-            priority (int): Priority level (lower number = higher priority)
+            provider_name (str): Name of the provider (must match config key)
         """
-        self.name = name
-        self.priority = priority
-        self.enabled = True
+        # Get provider config
+        config = get_provider_config(provider_name.lower())
+        
+        # Set provider attributes from config
+        self.name = provider_name
+        self.priority = config.get('priority', 100)
+        self.enabled = config.get('enabled', True)
+        self.timeout = config.get('timeout', 10)
+        self.retries = config.get('retries', 3)
+        
+        # Initialize session
         self.session = requests.Session()
-        logger.info(f"Initialized {self.name} provider")
+        self.session.timeout = self.timeout
+    
+        if self.enabled:
+            logger.info(f"Initialized {self.name} provider (priority: {self.priority})")
+        else:
+            logger.info(f"{self.name} provider is disabled")
     
     @abstractmethod
     def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
