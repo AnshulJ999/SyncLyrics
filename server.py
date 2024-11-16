@@ -136,3 +136,19 @@ def exit_application() -> dict[str, str]:
     """
     kill(getpid(), SIGINT)
     return {"msg": "Application has been closed."}
+
+@app.route("/current-track")
+async def current_track() -> dict:
+    """
+    This function returns the current track information.
+    
+    Returns:
+        dict: The current track information or error message.
+    """
+    try:
+        metadata = await get_current_song_meta_data()
+        if metadata:
+            return metadata
+        return {"error": "No track playing"}
+    except Exception as e:
+        return {"error": str(e)}

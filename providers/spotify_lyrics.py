@@ -62,7 +62,7 @@ class SpotifyLyrics(LyricsProvider):
                 return None
             
             # Log the response for debugging
-            logger.info(f"Spotify lyrics response: {data}")
+            logger.debug(f"Spotify lyrics response: {data}")
             
             # Check if lyrics are properly synced
             if (data.get('syncType') == 'UNSYNCED' or 

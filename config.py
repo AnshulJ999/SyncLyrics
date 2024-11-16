@@ -68,13 +68,13 @@ MEDIA_SOURCE = {
     "sources": [
         {
             "name": "spotify",
-            "enabled": False,
-            "priority": 1,  # Higher priority
+            "enabled": True,
+            "priority": 2,  
         },
         {
             "name": "windows_media",
             "enabled": True,
-            "priority": 2,
+            "priority": 1,
         },
         {
             "name": "gnome",

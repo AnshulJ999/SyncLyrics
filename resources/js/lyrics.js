@@ -22,10 +22,14 @@ async function sleep(ms) {
 async function getCurrentTrack() {
     try {
         const response = await fetch('/current-track');
-        return await response.json();
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        return data;
     } catch (error) {
         console.error('Error fetching current track:', error);
-        return null;
+        return { error: error.message };
     }
 }
 
