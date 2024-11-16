@@ -7,10 +7,14 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Tuple
 import requests
 import logging
+from logging_config import get_logger, setup_logging  # Import setup_logging
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+
+setup_logging()
+
+logger = get_logger(__name__)
 
 class LyricsProvider(ABC):
     """

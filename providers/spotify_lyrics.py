@@ -11,10 +11,13 @@ from dotenv import load_dotenv
 import logging
 from .base import LyricsProvider
 from .spotify_api import SpotifyAPI
+from logging_config import get_logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 class SpotifyLyrics(LyricsProvider):
     """Spotify lyrics provider using hosted API"""
@@ -24,7 +27,7 @@ class SpotifyLyrics(LyricsProvider):
         super().__init__(name="Spotify", priority=1)
         load_dotenv()
         self.api_url = os.getenv('SPOTIFY_LYRICS_SERVER', 
-                                'https://spotify-lyrics-api-azure.vercel.app')
+                                'https://spotify-lyrics-api-seven-azure.vercel.app/')
         self.spotify = SpotifyAPI()  # Initialize Spotify API
 
     def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
@@ -38,7 +41,7 @@ class SpotifyLyrics(LyricsProvider):
                 track.get('artist') != artist and 
                 track.get('title') != title
             ):
-                logger.debug(f"Searching Spotify for {artist} - {title}")
+                logger.info(f"Searching Spotify for {artist} - {title}")
                 track = self.spotify.search_track(artist, title)
                 if not track:
                     logger.info(f"No track found on Spotify for: {artist} - {title}")
@@ -55,7 +58,7 @@ class SpotifyLyrics(LyricsProvider):
                 return None
             
             # Log the response for debugging
-            logger.debug(f"Spotify lyrics response: {data}")
+            logger.info(f"Spotify lyrics response: {data}")
             
             # Check if lyrics are properly synced
             if (data.get('syncType') == 'UNSYNCED' or 

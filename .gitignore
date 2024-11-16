@@ -17,6 +17,7 @@ lyrics_database/
 cache/
 ignored/
 .cache
+logs/
 
 # Python
 __pycache__/

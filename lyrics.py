@@ -7,14 +7,20 @@ from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from config import LYRICS, DEBUG
 from providers.qq import QQMusicProvider
+from logging_config import get_logger
+from logging_config import get_logger, setup_logging  # Import setup_logging
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+
+setup_logging()  # Call setup_logging before initializing providers
+
+logger = get_logger(__name__)
 
 # Initialize providers
 providers = [
     LRCLIBProvider(),  # Priority 1
     NetEaseProvider(), # Priority 2
-  #  SpotifyLyrics(),    # Priority 1
+ #   SpotifyLyrics(),    # Priority 1
     QQMusicProvider()    # Priority 4
 
 ]

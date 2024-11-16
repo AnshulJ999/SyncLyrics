@@ -36,6 +36,31 @@ def get_env_int(key: str, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
 
+# ==========================================
+# Development and Debug Settings
+# ==========================================
+
+DEBUG = {
+    "enabled": get_env_bool("DEBUG", False),
+    "log_file": get_env("LOG_FILE", "synclyrics.log"),
+    "log_level": get_env("LOG_LEVEL", "WARNING").upper(),
+    "log_providers": get_env_bool("LOG_PROVIDERS", True),
+    "log_to_console": get_env_bool("LOG_TO_CONSOLE", True),
+    "log_detailed": get_env_bool("LOG_DETAILED", False),
+    "performance_logging": get_env_bool("PERFORMANCE_LOGGING", False),
+    "log_rotation": {
+        "max_bytes": get_env_int("LOG_MAX_BYTES", 10*1024*1024),  # 10MB
+        "backup_count": get_env_int("LOG_BACKUP_COUNT", 5)
+    }
+}
+
+# DEBUG = {
+#     "enabled": get_env_bool("DEBUG", False),
+#     "log_file": get_env("LOG_FILE", "synclyrics.log"),
+#     "log_level": get_env("LOG_LEVEL", "WARNING").upper(),
+#     "log_providers": get_env_bool("LOG_PROVIDERS", True),
+#     "performance_logging": get_env_bool("PERFORMANCE_LOGGING", False)
+# }
 
 # Media Source Configuration
 MEDIA_SOURCE = {
@@ -206,17 +231,6 @@ SYSTEM = {
     }
 }
 
-# ==========================================
-# Development and Debug Settings
-# ==========================================
-
-DEBUG = {
-    "enabled": get_env_bool("DEBUG", False),
-    "log_file": get_env("LOG_FILE", "synclyrics.log"),
-    "log_level": get_env("LOG_LEVEL", "WARNING").upper(),
-    "log_providers": get_env_bool("LOG_PROVIDERS", True),
-    "performance_logging": get_env_bool("PERFORMANCE_LOGGING", False)
-}
 
 # ==========================================
 # Feature Flags

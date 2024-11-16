@@ -9,8 +9,10 @@ from time import time
 import config
 from state_manager import get_state, set_state
 from providers.spotify_api import SpotifyAPI
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Initialize Spotify client once
 spotify_client = SpotifyAPI()
@@ -160,7 +162,7 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
     
     # 8. No data available
     if last_song:  # Only log when we had a song before
-        logger.warning("No metadata available from any source")
+        logger.debug("No metadata available from any source")
     return None
 
 # Find out which desktop environment is being used

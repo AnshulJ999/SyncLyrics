@@ -12,10 +12,13 @@ import time
 import random
 import logging
 from .base import LyricsProvider
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 class QQMusicProvider(LyricsProvider):
     """QQ Music lyrics provider"""

@@ -9,10 +9,12 @@ from typing import NoReturn
 from queue import Queue
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
+from config import DEBUG
 from lyrics import get_timed_lyrics
 # from graphics import render_text_with_background, restore_wallpaper
 from state_manager import get_state
 from server import app
+from logging_config import setup_logging
 
 def run_tray() -> NoReturn:
     """
@@ -55,6 +57,13 @@ async def main() -> NoReturn:
     Returns:
         NoReturn: This function never returns.
     """
+    # Set up logging first thing
+    setup_logging(
+        level=DEBUG.get("log_level"),
+        console=DEBUG.get("log_to_console"),
+        detailed=DEBUG.get("log_detailed")
+    )
+
     # We count the average latency for wallpaper method because it's heavy
     # And we want to take the render time into account 
     delta_sum = 0
