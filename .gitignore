@@ -11,10 +11,12 @@ sync_lyrics.exe
 /resources backup rollback
 config.py
 .env
+.env 2
 .cursorignore
 lyrics_database/
 cache/
 ignored/
+.cache
 
 # Python
 __pycache__/

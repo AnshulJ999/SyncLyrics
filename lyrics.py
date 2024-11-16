@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 providers = [
     LRCLIBProvider(),  # Priority 1
     NetEaseProvider(), # Priority 2
-    SpotifyLyrics(),    # Priority 1
+  #  SpotifyLyrics(),    # Priority 1
     QQMusicProvider()    # Priority 4
 
 ]

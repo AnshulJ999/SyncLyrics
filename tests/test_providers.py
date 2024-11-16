@@ -2,6 +2,17 @@
 Integration Test for All Lyrics Providers
 Tests all available providers with a set of known songs
 """
+import sys
+import os
+from pathlib import Path
+import logging
+from datetime import datetime
+from typing import List, Dict, Any
+import threading
+from functools import wraps
+
+# Add parent directory to path
+sys.path.append(str(Path(__file__).parent.parent))
 
 import logging
 import sys
@@ -45,14 +56,8 @@ TEST_SONGS = [
     }
 ]
 
-def format_time(seconds: float) -> str:
-    """Format seconds to MM:SS.mm"""
-    minutes = int(seconds // 60)
-    seconds = seconds % 60
-    return f"{minutes:02d}:{seconds:05.2f}"
-
-def test_provider(provider_class: Any, song: Dict[str, str]) -> Dict[str, Any]:
-    """Test a single provider with a song"""
+def test_single_provider(provider_class: Any, song: Dict[str, str], timeout: int = 10) -> Dict[str, Any]:
+    """Test a single provider with timeout"""
     provider = provider_class()
     provider_name = provider.name
     start_time = datetime.now()
@@ -65,71 +70,86 @@ def test_provider(provider_class: Any, song: Dict[str, str]) -> Dict[str, Any]:
         "error": None
     }
     
-    try:
-        lyrics = provider.get_lyrics(song["artist"], song["title"])
-        end_time = datetime.now()
-        result["time_taken"] = (end_time - start_time).total_seconds()
-        
-        if lyrics:
-            result["success"] = True
-            result["lyrics_count"] = len(lyrics)
-            # Sample first few lyrics
-            logger.info(f"\nFirst few lines from {provider_name}:")
-            for time, text in lyrics[:3]:
-                logger.info(f"[{format_time(time)}] {text}")
-    except Exception as e:
-        result["error"] = str(e)
-        logger.error(f"Error testing {provider_name}: {e}")
+    def run_test():
+        try:
+            lyrics = provider.get_lyrics(song["artist"], song["title"])
+            if lyrics:
+                result["success"] = True
+                result["lyrics_count"] = len(lyrics)
+                logger.info(f"✓ {provider_name}: Found {len(lyrics)} lyrics")
+            else:
+                logger.info(f"✗ {provider_name}: No lyrics found")
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"❌ {provider_name} error: {e}")
     
+    # Run test with timeout
+    thread = threading.Thread(target=run_test)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    
+    if thread.is_alive():
+        result["error"] = f"Timeout after {timeout}s"
+        logger.error(f"⚠ {provider_name}: Operation timed out")
+        return result
+        
+    result["time_taken"] = (datetime.now() - start_time).total_seconds()
     return result
 
-def run_integration_test():
-    """Run integration test on all providers with all test songs"""
-    providers = [SpotifyLyrics, NetEaseProvider, LRCLIBProvider, QQMusicProvider]
-    results = []
+def run_tests():
+    """Run tests for all providers and songs"""
+    providers = [
+        LRCLIBProvider,    # Try LRCLIB first
+        NetEaseProvider,   # Then NetEase
+        QQMusicProvider,   # Then QQ Music
+        SpotifyLyrics      # Spotify as last resort
+    ]
+    
+    all_results = []
     
     for song in TEST_SONGS:
         logger.info(f"\n=== Testing: {song['artist']} - {song['title']} ===")
         song_results = []
         
         for provider_class in providers:
-            result = test_provider(provider_class, song)
+            result = test_single_provider(provider_class, song)
             song_results.append(result)
             
+            # Print immediate feedback
             status = "✓" if result["success"] else "✗"
             logger.info(
                 f"{status} {result['provider']}: "
-                f"Found {result['lyrics_count']} lyrics in {result['time_taken']:.2f}s"
+                f"Time: {result['time_taken']:.2f}s"
             )
-            
             if result["error"]:
-                logger.error(f"Error: {result['error']}")
-        
-        results.append({
+                logger.error(f"  Error: {result['error']}")
+                
+        all_results.append({
             "song": f"{song['artist']} - {song['title']}",
             "results": song_results
         })
-    
-    return results
-
-def print_summary(results: List[Dict[str, Any]]):
-    """Print summary of all test results"""
-    logger.info("\n=== Test Summary ===")
-    
-    for song_result in results:
-        logger.info(f"\n{song_result['song']}:")
-        successful_providers = [
-            r["provider"] for r in song_result["results"] 
-            if r["success"]
-        ]
-        logger.info(f"Found lyrics in: {', '.join(successful_providers)}")
+        
+    return all_results
 
 if __name__ == "__main__":
     try:
-        logger.info("Starting integration test of all providers...")
-        results = run_integration_test()
-        print_summary(results)
+        results = run_tests()
+        
+        # Print summary
+        logger.info("\n=== Test Summary ===")
+        for song_result in results:
+            logger.info(f"\n{song_result['song']}:")
+            working_providers = [
+                r["provider"] for r in song_result["results"] 
+                if r["success"]
+            ]
+            if working_providers:
+                logger.info(f"Working providers: {', '.join(working_providers)}")
+            else:
+                logger.info("No working providers found")
+                
     except KeyboardInterrupt:
         logger.info("\nTest interrupted by user")
     except Exception as e:
-        logger.error(f"Test failed: {e}") 
+        logger.error(f"Test framework error: {e}") 

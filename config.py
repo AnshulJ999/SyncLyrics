@@ -42,7 +42,7 @@ MEDIA_SOURCE = {
     "sources": [
         {
             "name": "spotify",
-            "enabled": True,
+            "enabled": False,
             "priority": 1,  # Higher priority
         },
         {

@@ -24,7 +24,7 @@ class SpotifyLyrics(LyricsProvider):
         super().__init__(name="Spotify", priority=1)
         load_dotenv()
         self.api_url = os.getenv('SPOTIFY_LYRICS_SERVER', 
-                                'https://spotify-lyrics-api-seven-azure.vercel.app')
+                                'https://spotify-lyrics-api-azure.vercel.app')
         self.spotify = SpotifyAPI()  # Initialize Spotify API
 
     def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
