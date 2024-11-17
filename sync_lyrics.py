@@ -4,7 +4,8 @@ import threading as th
 import logging
 import click
 from os import path
-from time import time
+import time
+from time import sleep
 from typing import NoReturn
 from queue import Queue
 from pystray import Icon, Menu, MenuItem

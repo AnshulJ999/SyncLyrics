@@ -4,6 +4,8 @@ Handles authentication and data retrieval from Spotify Web API
 """
 import sys
 from pathlib import Path
+import time
+import asyncio
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent)) 
@@ -15,10 +17,8 @@ import os
 from dotenv import load_dotenv
 import logging
 import requests
-import time
 from requests.exceptions import ReadTimeout
 from logging_config import get_logger
-from spotipy import Spotify
 from config import SPOTIFY
 
 # Load environment variables
@@ -57,29 +57,29 @@ class SpotifyAPI:
         
         try:
             # Initialize Spotify client
-            self.client_id = os.getenv('SPOTIFY_CLIENT_ID')
-            self.client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
-            self.redirect_uri = os.getenv('SPOTIFY_REDIRECT_URI')
-            self.scope = 'user-read-currently-playing user-read-playback-state'
-            
-            if not all([self.client_id, self.client_secret, self.redirect_uri]):
-                logger.error("Missing Spotify credentials in environment variables")
+            if not all([SPOTIFY["client_id"], SPOTIFY["client_secret"], SPOTIFY["redirect_uri"]]):
+                logger.error("Missing Spotify credentials in config")
                 return
                 
-            self.sp = Spotify(auth_manager=SpotifyOAuth(
-                client_id=SPOTIFY["client_id"],
-                client_secret=SPOTIFY["client_secret"],
-                redirect_uri=SPOTIFY["redirect_uri"],
-                scope=SPOTIFY["scope"]
-            ))
-            self.initialized = True
-            logger.info("Spotify API initialized successfully")
-            
-            # Test connection
-            self._test_connection()
-            
+            self.sp = spotipy.Spotify(
+                auth_manager=SpotifyOAuth(
+                    client_id=SPOTIFY["client_id"],
+                    client_secret=SPOTIFY["client_secret"],
+                    redirect_uri=SPOTIFY["redirect_uri"],
+                    scope=SPOTIFY["scope"]
+                ),
+                requests_timeout=self.timeout,
+                retries=self.max_retries
+            )
+            if self._test_connection():
+                self.initialized = True
+                logger.info("Spotify API initialized successfully")
+            else:
+                self.initialized = False
+                logger.error("Failed to connect to Spotify API")
         except Exception as e:
             logger.error(f"Failed to initialize Spotify API: {e}")
+            self.initialized = False
 
         # Use the custom logger
         self.logger = logger
@@ -133,23 +133,24 @@ class SpotifyAPI:
         if not self.initialized:
             logger.warning("Spotify API not initialized, skipping track fetch")
             return None
-        
-        """Get current track with caching and request tracking"""
-        current_time = time()
-        
-        # Check cache first (if enabled)
-        if self._cache_enabled and self._metadata_cache:
-            if (current_time - self._last_metadata_check) < self.metadata_cache_time:
-                self.request_stats['cached_responses'] += 1
-                logger.debug("Using cached Spotify data")
-                return self._metadata_cache
-        
+            
         try:
             # Track API call
             self.request_stats['total_requests'] += 1
             self.request_stats['api_calls']['current_playback'] += 1
             
-            current = await self.sp.current_playback()
+            # Check cache first
+            current_time = time.time()
+            if (self._cache_enabled and 
+                self._metadata_cache and 
+                current_time - self._last_metadata_check < self.metadata_cache_time):
+                self.request_stats['cached_responses'] += 1
+                logger.debug("Using cached metadata")
+                return self._metadata_cache
+            
+            # Get current playback state
+            loop = asyncio.get_event_loop()
+            current = await loop.run_in_executor(None, self.sp.current_playback)
             
             # Handle rate limits and errors
             if hasattr(current, 'status_code'):

@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent)) 
 
 from typing import Optional, Callable, Dict, Any
-from time import time
+import time
 import asyncio
 from dataclasses import dataclass
 from providers.spotify_api import SpotifyAPI
@@ -33,10 +33,12 @@ class SpotifyLyricsSync:
         # from providers.spotify_api import SpotifyAPI
         if not isinstance(spotify_client, SpotifyAPI):
             raise ValueError("Invalid Spotify client - must be SpotifyAPI instance")
+        if not spotify_client.initialized:
+            raise ValueError("Spotify client is not properly initialized")
             
         self.spotify = spotify_client
         self.state = TrackState()
-        self._last_update = time()
+        self._last_update = time.time()
         self._sync_task = None
         logger.info("SpotifyLyricsSync initialized")
         
@@ -49,36 +51,46 @@ class SpotifyLyricsSync:
                 self.state = TrackState(
                     id=current_track.get('track_id'),
                     position=current_track['progress_ms'] / 1000,
-                    timestamp=time(),
+                    timestamp=time.time(),
                     is_playing=current_track.get('is_playing', False),
                     duration=current_track['duration_ms'] / 1000
                 )
                 logger.info(f"Initial position: {self.state.position:.2f}s")
-                
+            
             # Start sync loop
-            await self._setup_tracker()
+            self._sync_task = asyncio.create_task(self._sync_loop())
             logger.info("Using API polling for position updates")
+            
         except Exception as e:
             logger.error(f"Sync init error: {e}")
             raise
             
     async def _setup_tracker(self):
         """Setup position tracking"""
-        await self._sync_state()  # Initial sync
+        await self._sync_state_async()  # Initial sync
         self._sync_task = asyncio.create_task(self._sync_loop())
         
     async def _sync_loop(self):
         """Periodic state sync"""
         while True:
             try:
-                await self._sync_state()
+                await self._sync_state_async()
                 await asyncio.sleep(3)  # Sync every 3s
             except Exception as e:
                 logger.error(f"Sync error: {e}")
                 await asyncio.sleep(5)  # Back off on error
                 
-    async def _sync_state(self):
-        """Sync with Spotify API"""
+    def _sync_state_sync(self):
+        """Sync with Spotify API (sync wrapper)"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._sync_state_async())
+        finally:
+            loop.close()
+
+    async def _sync_state_async(self):
+        """Sync with Spotify API (async)"""
         try:
             current_track = await self.spotify.get_current_track()
             if not current_track:
@@ -88,30 +100,30 @@ class SpotifyLyricsSync:
             self.state = TrackState(
                 id=current_track.get('track_id'),
                 position=current_track['progress_ms'] / 1000,
-                timestamp=time(),
+                timestamp=time.time(),
                 is_playing=current_track.get('is_playing', False),
                 duration=current_track['duration_ms'] / 1000
             )
-            self._last_update = time()
+            self._last_update = time.time()
             
             logger.debug(f"State synced - Position: {self.state.position:.2f}s (Playing: {self.state.is_playing})")
             
         except Exception as e:
             logger.error(f"State sync failed: {e}")
-        
+            
     def get_position(self) -> float:
         """Get current position with time tracking"""
         if not self.state.is_playing:
             return self.state.position
             
         # Calculate elapsed time since last update
-        now = time()
+        now = time.time()
         elapsed = now - self._last_update
         current_position = self.state.position + elapsed
         
         # Don't exceed track duration
         if current_position >= self.state.duration:
-            asyncio.create_task(self._sync_state())
+            self._sync_state_sync()  # Use sync version
             return self.state.position
             
-        return current_position        
+        return current_position

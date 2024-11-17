@@ -3,7 +3,7 @@ import platform
 # import os
 import re
 import logging
-from time import time
+import time
 # from PIL import Image
 from typing import Optional, Dict
 
@@ -28,13 +28,13 @@ _request_counters = {
     'windows_media': 0
 }
 
-# Initialize the SpotifyAPI client *outside* the function
-spotify_client: SpotifyAPI = SpotifyAPI()  # Type hint added
+# Initialize the SpotifyAPI client as None first
+spotify_client = None
 
 def _log_app_state() -> None:
     """Log key application state and details. Only logs once every STATE_LOG_INTERVAL seconds."""
     global _last_state_log_time
-    current_time = time()
+    current_time = time.time()
     global spotify_client # Access the global variable
     
     api_requests = {} # Initialize api_requests here
@@ -161,7 +161,7 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
 
         info = current_session.get_timeline_properties()
         seconds = info.position.total_seconds()
-        not_update_time = time() - info.last_updated_time.timestamp()
+        not_update_time = time.time() - info.last_updated_time.timestamp()
         position = seconds + not_update_time
         
         metadata = {
@@ -183,18 +183,18 @@ async def _get_current_song_meta_data_spotify() -> dict[str, str | int | tuple[s
     """Get current song metadata from Spotify."""
     global spotify_client # Access the global variable
 
-    if spotify_client is None: # Initialize if not already initialized
-        spotify_client = SpotifyAPI()
-
     try:
-        if not spotify_client.initialized:  # Check initialization *once*
+        if spotify_client is None:
+            spotify_client = SpotifyAPI()
+            
+        if not spotify_client.initialized:
             logger.error("Failed to initialize Spotify client")
             return None
 
         if DEBUG["enabled"]:
             _request_counters['spotify'] += 1
 
-        track = await spotify_client.get_current_track() # Use the existing client
+        track = await spotify_client.get_current_track()
         if not track:
             return None
             
@@ -216,7 +216,7 @@ async def _get_current_song_meta_data_spotify() -> dict[str, str | int | tuple[s
 
 async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]] | None:
     """Get song metadata from configured sources in priority order"""
-    current_time = time()
+    current_time = time.time()
         
     # Get last check time and state
     last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
