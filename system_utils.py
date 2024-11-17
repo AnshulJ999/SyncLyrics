@@ -5,6 +5,7 @@ import re
 import logging
 from time import time
 # from PIL import Image
+from typing import Optional, Dict
 
 import config
 from config import DEBUG
@@ -19,22 +20,25 @@ IDLE_WAIT_TIME = config.LYRICS["display"]["idle_wait_time"]   # 2.5s
 # logger = logging.getLogger(__name__)
 logger = get_logger(__name__)
 
-# Initialize Spotify client once
-spotify_client = SpotifyAPI()
-
 # Add near the top with other globals
 _last_state_log_time = 0
-STATE_LOG_INTERVAL = 240  # Log state every 240 seconds
+STATE_LOG_INTERVAL = 90  # Log state every 90 seconds
 _request_counters = {
     'spotify': 0,
     'windows_media': 0
 }
 
+# Initialize the SpotifyAPI client *outside* the function
+spotify_client: SpotifyAPI = SpotifyAPI()  # Type hint added
+
 def _log_app_state() -> None:
     """Log key application state and details. Only logs once every STATE_LOG_INTERVAL seconds."""
     global _last_state_log_time
     current_time = time()
+    global spotify_client # Access the global variable
     
+    api_requests = {} # Initialize api_requests here
+
     # Check if it's time to log
     if current_time - _last_state_log_time < STATE_LOG_INTERVAL:
         return
@@ -67,6 +71,37 @@ def _log_app_state() -> None:
     )
     
     logger.info(state_summary)
+    
+    # Access spotify_client safely
+    if spotify_client and spotify_client.initialized:
+        spotify_requests = _request_counters['spotify']
+    else:
+        spotify_requests = 0
+
+
+    # Add detailed Spotify stats if enabled
+    if DEBUG["enabled"] and spotify_client:
+        stats = spotify_client.get_request_stats()
+        spotify_stats = (
+            "\nSpotify API Statistics:\n"
+            f"|- Total Requests: {stats['Total Requests']}\n"
+            f"|- Cached Responses: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
+            "|- API Calls:\n"
+        )
+        
+        # Add detailed API call counts
+        for endpoint, count in stats['API Calls'].items():
+            spotify_stats += f"|  |- {endpoint}: {count}\n"
+            
+        # Add error counts
+        spotify_stats += "|- Errors:\n"
+        for error_type, count in stats['Errors'].items():
+            spotify_stats += f"|  |- {error_type}: {count}\n"
+            
+        # Add cache age
+        spotify_stats += f"`- Cache Age: {stats['Cache Age']}"
+        
+        logger.info(spotify_stats)
 
 def _remove_text_inside_parentheses_and_brackets(text: str) -> str:
     """
@@ -145,20 +180,28 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
 _get_current_song_meta_data_windows.last_returned_data = None
 
 async def _get_current_song_meta_data_spotify() -> dict[str, str | int | tuple[str, str]] | None:
-    """Get current song metadata from Spotify in the expected format"""
+    """Get current song metadata from Spotify."""
+    global spotify_client # Access the global variable
+
+    if spotify_client is None: # Initialize if not already initialized
+        spotify_client = SpotifyAPI()
+
     try:
-        # Increment counter
+        if not spotify_client.initialized:  # Check initialization *once*
+            logger.error("Failed to initialize Spotify client")
+            return None
+
         if DEBUG["enabled"]:
             _request_counters['spotify'] += 1
-            
-        track = spotify_client.get_current_track()
+
+        track = await spotify_client.get_current_track() # Use the existing client
         if not track:
             return None
             
         # Check if actually playing (not just open)
         if not track.get("is_playing", False):
             if DEBUG["enabled"]:
-                logger.info("Spotify session exists but not playing")
+                logger.debug("Spotify session exists but not playing")
             return None
             
         return {
@@ -174,7 +217,7 @@ async def _get_current_song_meta_data_spotify() -> dict[str, str | int | tuple[s
 async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]] | None:
     """Get song metadata from configured sources in priority order"""
     current_time = time()
-    
+        
     # Get last check time and state
     last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
     is_active = getattr(get_current_song_meta_data, '_is_active', True)
@@ -225,40 +268,63 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
 
     # 5. Try each source
     result = None
+    primary_source_error = False
+    
+    # Get the primary source (first in priority)
+    primary_source = sorted_sources[0] if sorted_sources else None
+    
     for source in sorted_sources:
         try:
             logger.debug(f"Attempting to get metadata from {source['name']}")
-            # 6. Get data from appropriate source
-            data = None
-            if source["name"] == "spotify":
-                data = await _get_current_song_meta_data_spotify()
-            elif source["name"] == "windows_media" and DESKTOP == "Windows":
-                data = await _get_current_song_meta_data_windows()
+            
+            if source["name"] == "windows_media" and DESKTOP == "Windows":
+                try:
+                    data = await _get_current_song_meta_data_windows()
+                    if data:
+                        result = data
+                        data["source"] = source["name"]
+                        break
+                    elif source == primary_source:
+                        # Only mark as error if this is the primary source
+                        logger.debug("No music playing in Windows Media")
+                        primary_source_error = True
+                except Exception as e:
+                    logger.error(f"Windows Media error: {e}")
+                    if source == primary_source:
+                        primary_source_error = True
+                        
+            elif source["name"] == "spotify":
+                # Try Spotify if it's primary OR if primary source failed
+                if source == primary_source or primary_source_error:
+                    try:
+                        data = await _get_current_song_meta_data_spotify()
+                        if data:
+                            result = data
+                            data["source"] = source["name"]
+                            break
+                        elif source == primary_source:
+                            # Only mark as error if this is the primary source
+                            logger.debug("No music playing in Spotify")
+                            primary_source_error = True
+                    except Exception as e:
+                        logger.error(f"Spotify error: {e}")
+                        if source == primary_source:
+                            primary_source_error = True
+                            
             elif source["name"] == "gnome" and DESKTOP == "Gnome":
-                data = _get_current_song_meta_data_gnome()
-            else:
-                continue
-                
-            if data:
-                data["source"] = source["name"]
-                current_song = f"{data['artist']} - {data['title']}"
-                
-                # Log only on changes
-                if current_song != last_song or source["name"] != last_source:
-                    logger.info(f"Now playing: {current_song} (Source: {source['name']})")
-                    get_current_song_meta_data._last_song = current_song
-                
-                if source["name"] != last_source:
-                    logger.info(f"Active source: {source['name']}")
-                    get_current_song_meta_data._last_source = source["name"]
-                
-                result = data
-                break
-            else:
-                logger.debug(f"No data from {source['name']}")
-                
+                if source == primary_source or primary_source_error:
+                    data = _get_current_song_meta_data_gnome()
+                    if data:
+                        result = data
+                        data["source"] = source["name"]
+                        break
+                    elif source == primary_source:
+                        primary_source_error = True
+                        
         except Exception as e:
             logger.error(f"Error with {source['name']}: {str(e)}")
+            if source == primary_source:
+                primary_source_error = True
             continue
     
     if result:

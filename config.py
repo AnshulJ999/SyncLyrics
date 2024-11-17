@@ -150,6 +150,21 @@ LYRICS = {
     },
 }
 
+# Spotify API Configuration
+SPOTIFY = {
+    "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
+    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
+    "redirect_uri": os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:9012/callback"),
+    "scope": [
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing"
+    ],
+    "cache": {
+        "metadata_ttl": 3.0,  # Time to live for metadata cache in seconds
+        "enabled": True,      # Enable/disable caching
+    }
+}
 # ==========================================
 # Lyrics Providers Configuration
 # ==========================================

@@ -2,6 +2,11 @@
 Spotify Lyrics Provider
 Uses Spotify's lyrics API (powered by Musixmatch) through a proxy server
 """
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent)) 
 
 from typing import Optional, Dict, Any, List, Tuple
 import requests
@@ -32,7 +37,7 @@ class SpotifyLyrics(LyricsProvider):
         
         # Initialize API settings from config
         self.api_url = config.get('base_url', 'https://spotify-lyrics-api-azure.vercel.app')
-        self.spotify = SpotifyAPI()  # Initialize Spotify API client
+        self.spotify = SpotifyAPI() # Initialize as None
 
     def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
         """Get lyrics for a track by searching Spotify"""

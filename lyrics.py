@@ -9,6 +9,9 @@ from config import LYRICS, DEBUG
 from providers.qq import QQMusicProvider
 from logging_config import get_logger
 from logging_config import get_logger, setup_logging  # Import setup_logging
+from providers.spotify_sync import SpotifyLyricsSync
+from providers.spotify_api import SpotifyAPI  # Import our Spotify client
+from typing import Optional, List, Tuple
 
 # logger = logging.getLogger(__name__)
 
@@ -206,3 +209,41 @@ async def get_timed_lyrics_previous_and_next() -> tuple[str, ...] | str:
         _lyric_representation(lyric_index + 2),
         _lyric_representation(lyric_index + 3)
     )
+
+
+class LyricsManager:
+    def __init__(self):
+        self.spotify_client = SpotifyAPI()  # Initialize Spotify client
+        self.spotify_sync = SpotifyLyricsSync(self.spotify_client)
+        self.current_lyrics: Optional[List[Tuple[float, str]]] = None
+        self.position: float = 0
+        
+    async def initialize(self):
+        """Initialize the lyrics manager"""
+        try:
+            await self.spotify_sync.initialize()
+            logger.info("Lyrics manager initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize lyrics manager: {e}")
+            raise
+        
+    async def update_lyrics(self) -> Optional[str]:
+        """Update lyrics based on position"""
+        try:
+            position = self.spotify_sync.get_position()
+            
+            if position is None or self.current_lyrics is None:
+                return None
+                
+            current_line = None
+            # Find matching lyric line
+            for timestamp, line in self.current_lyrics:
+                if timestamp > position + 0.1:  # 100ms lookahead
+                    break
+                current_line = line
+                
+            return current_line
+            
+        except Exception as e:
+            logger.error(f"Error updating lyrics: {e}")
+            return None

@@ -4,6 +4,12 @@ Fetches synchronized lyrics from QQ Music (y.qq.com)
 Supports both English and Chinese lyrics with translations
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent)) 
+
 from typing import Optional, Dict, Any, List, Tuple
 import requests
 import base64

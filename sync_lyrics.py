@@ -14,7 +14,12 @@ from lyrics import get_timed_lyrics
 # from graphics import render_text_with_background, restore_wallpaper
 from state_manager import get_state
 from server import app
-from logging_config import setup_logging
+from logging_config import setup_logging, get_logger
+from providers.spotify_api import SpotifyAPI
+from providers.spotify_sync import SpotifyLyricsSync
+from system_utils import _get_current_song_meta_data_spotify # Import the function
+
+logger = get_logger(__name__)
 
 def run_tray() -> NoReturn:
     """
@@ -50,6 +55,7 @@ def run_server() -> NoReturn:
     # Run the server
     app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 
+
 async def main() -> NoReturn:
     """
     The main function of the program. It runs the server and the tray icon, and
@@ -58,11 +64,22 @@ async def main() -> NoReturn:
         NoReturn: This function never returns.
     """
     # Set up logging first thing
-    setup_logging(
-        level=DEBUG.get("log_level"),
-        console=DEBUG.get("log_to_console"),
-        detailed=DEBUG.get("log_detailed")
-    )
+    # setup_logging(
+    #     level=DEBUG.get("log_level"),
+    #     console=DEBUG.get("log_to_console"),
+    #     detailed=DEBUG.get("log_detailed")
+    # )
+
+    # Initialize Spotify client and sync
+    spotify_client = SpotifyAPI()
+    spotify_sync = SpotifyLyricsSync(spotify_client)
+    
+    # Initialize the sync system
+    try:
+        await spotify_sync.initialize()
+    except Exception as e:
+        logger.error(f"Failed to initialize Spotify sync: {e}")
+        # Continue anyway as other methods might work
 
     # We count the average latency for wallpaper method because it's heavy
     # And we want to take the render time into account 

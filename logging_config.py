@@ -10,70 +10,86 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 from config import DEBUG, ROOT_DIR
+import sys
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = ROOT_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Default log format
-# DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-DEFAULT_FORMAT = '(%(filename)s) %(levelname)s - %(message)s'
-DETAILED_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+# Define log formats
+CONSOLE_FORMAT = '(%(filename)s:%(lineno)d) %(levelname)s - %(message)s'
+FILE_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+
+# Track if logging has been initialized
+_logging_initialized = False
 
 def setup_logging(
-    level: str = DEBUG.get("log_level", "INFO"),
+    console_level: str = DEBUG.get("log_level", "INFO"),
+    file_level: str = "DEBUG",
     console: bool = True,
-    detailed: bool = False
+    log_file: Optional[str] = None
 ) -> None:
     """
-    Set up logging configuration with timestamp-based files
+    Set up logging configuration with separate console and file handlers
     
     Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Optional log file path
-        console: Whether to log to console
-        detailed: Whether to use detailed format with file names and line numbers
+        console_level: Logging level for console output (default: INFO)
+        file_level: Logging level for file output (default: DEBUG)
+        console: Whether to enable console logging (default: True)
     """
-    # Create timestamp-based log file name
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = f"synclyrics_{timestamp}.log"
+    global _logging_initialized
+    if _logging_initialized:
+        return
+        
+    # Create timestamp-based log file name if not provided
+    if not log_file:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = f"synclyrics_{timestamp}.log"
+    log_path = LOGS_DIR / log_file
     
-    # Reset any existing handlers
-    logging.getLogger().handlers = []
-    
-    # Set base configuration
-    logging.basicConfig(
-        level=level,
-        format=DETAILED_FORMAT if detailed else DEFAULT_FORMAT,
-        handlers=[]
-    )
-    
+    # Get the root logger
     root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)  # Capture all levels
     
-    # Console handler
+    # Clear any existing handlers
+    root_logger.handlers = []
+    
+    # Console handler (simpler format)
     if console:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter(DETAILED_FORMAT if detailed else DEFAULT_FORMAT)
-        )
+        console_handler = logging.StreamHandler(sys.stdout)  # Use stdout instead of stderr
+        console_handler.setLevel(getattr(logging, console_level.upper()))
+        console_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT))
         root_logger.addHandler(console_handler)
     
-    # File handler
-    log_path = LOGS_DIR / log_file
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setFormatter(logging.Formatter(DETAILED_FORMAT))
+    # File handler (detailed format)
+    file_handler = logging.FileHandler(log_path, encoding='utf-8')
+    file_handler.setLevel(getattr(logging, file_level.upper()))
+    file_handler.setFormatter(logging.Formatter(FILE_FORMAT))
     root_logger.addHandler(file_handler)
-
-    # Set provider logging levels
+    
+    # Configure specific loggers
     if DEBUG.get("log_providers", True):
-        logging.getLogger('providers').setLevel(level)
+        logging.getLogger('providers').setLevel(getattr(logging, console_level.upper()))
     else:
         logging.getLogger('providers').setLevel(logging.WARNING)
     
     # Disable unnecessary logging
     logging.getLogger('PIL').setLevel(logging.WARNING)
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    
+    # Force UTF-8 encoding for Windows console
+    if sys.platform.startswith('win'):
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+        
+    _logging_initialized = True
+    
+    # Log initial setup message
+    root_logger.info(f"Logging initialized - Console: {console_level}, File: {file_level}")
+    root_logger.debug(f"Log file: {log_path}")
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the given name"""
+    if not _logging_initialized:
+        setup_logging()
     return logging.getLogger(name)

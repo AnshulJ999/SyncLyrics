@@ -3,6 +3,12 @@ Base Provider Class
 All lyrics providers must inherit from this base class.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent)) 
+
 from abc import ABC, abstractmethod
 from typing import Optional, List, Tuple
 import requests
