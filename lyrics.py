@@ -64,9 +64,10 @@ async def _get_lyrics(artist: str, title: str): # Make this function async
 
     for provider in sorted_providers:
         try:
-            if provider.name == "lrclib":  # Special handling for lrclib (synchronous)
+            # Handle sync vs async providers
+            if provider.name in ["lrclib", "netease", "qq"]:  # All sync providers
                 lyrics = await asyncio.to_thread(provider.get_lyrics, artist, title)
-            else:  # Asynchronous providers
+            else:  # Asynchronous providers (spotify)
                 lyrics = await provider.get_lyrics(artist, title)
 
             if lyrics:
@@ -74,8 +75,9 @@ async def _get_lyrics(artist: str, title: str): # Make this function async
                 return lyrics  # Return lyrics if found
         except Exception as e:
             logger.error(f"Error with {provider.name}: {str(e)}")
-            # Continue to the next provider if an error occurs
-    return None  # Return None if no lyrics are found after trying all providers
+            continue  # Skip to next provider if current one fails
+            
+    return None  # No provider found lyrics, return None
 
 
 def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int: # latency compensation - positive=earlier, negative=later. Find it in config.py 
