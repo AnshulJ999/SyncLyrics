@@ -18,12 +18,14 @@ cache/
 ignored/
 .cache
 logs/
-
+logs
 Notes.txt
 Notes2.txt
 Notes
 Notes2
-
+cache
+.cache
+state.json
 
 
 # Python

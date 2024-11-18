@@ -25,7 +25,7 @@ _logging_initialized = False
 
 def setup_logging(
     console_level: str = DEBUG.get("log_level", "INFO"),
-    file_level: str = "DEBUG",
+    file_level: str = "INFO",
     console: bool = True,
     log_file: Optional[str] = None
 ) -> None:

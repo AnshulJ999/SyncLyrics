@@ -16,5 +16,7 @@
                 "priority": 1
             }
         ]
-    }
+    },
+    "current_song": "The Contortionist - Language I: Intuition",
+    "active_source": "windows_media"
 }
