@@ -1,5 +1,5 @@
 # Core Dependencies
-Flask==2.3.2
+Quart==0.18.4
 Pillow==9.5.0
 requests==2.31.0
 pystray==0.19.4
@@ -26,6 +26,9 @@ numpy==1.25.1     # Required by matplotlib
 colorama==0.4.6   # For terminal colors
 PyYAML==6.0       # For configuration
 urllib3==2.0.3    # Required by requests
+
+# ASGI Server
+hypercorn==0.14.3
 
 # Missing Dependencies (Need to Add)
 asyncio>=3.4.3    # For async operations

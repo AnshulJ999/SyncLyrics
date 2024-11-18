@@ -2,7 +2,7 @@ from os import path, getpid, kill
 from signal import SIGINT
 from typing import Any
 
-from flask import Flask, render_template, redirect, flash, request, Response
+from quart import Quart, render_template, redirect, flash, request, Response
 
 from lyrics import get_timed_lyrics_previous_and_next
 from system_utils import get_current_song_meta_data
@@ -11,7 +11,7 @@ from config import LYRICS
 
 TEMPLATE_DIRECTORY = path.abspath("resources/templates")
 STATIC_DIRECTORY = path.abspath("resources")
-app = Flask(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
+app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
 app.config['SERVER_NAME'] = None
 app.secret_key = "secret key"
 
@@ -39,7 +39,7 @@ def guess_value_type(value: Any) -> Any:
 
 
 @app.context_processor
-def theme() -> dict: 
+async def theme() -> dict: 
     """
     This function is passed to every template context.
     For now, it only returns the current theme.
@@ -51,18 +51,18 @@ def theme() -> dict:
 
 
 @app.route("/")
-def index() -> str:
+async def index() -> str:
     """
     This function returns the index page.
 
     Returns:
         str: The index page.
     """
-    return render_template("index.html")
+    return await render_template("index.html")
 
 
 @app.route("/settings", methods=['GET', 'POST'])
-def settings() -> str:
+async def settings() -> str:
     """
     This function returns the settings page.
     It is also responsible for saving the settings using
@@ -73,18 +73,19 @@ def settings() -> str:
     """
     state = get_state()
     if request.method == "POST":
+        form = await request.form
         for key, state_key in VARIABLE_STATE_MAP.items():
-            value = request.form.get(key, False, type=guess_value_type) 
+            value = form.get(key, False, type=guess_value_type) 
             state = set_attribute_js_notation(state, state_key, value)
 
         set_state(state)
-        flash("Settings have been saved! Restart your application.", "success")
+        await flash("Settings have been saved! Restart your application.", "success")
 
     # Create context dictionary with just the state variables
     context = {key: get_attribute_js_notation(state, state_key) 
         for key, state_key in VARIABLE_STATE_MAP.items()}
     
-    return render_template("settings.html", **context)
+    return await render_template("settings.html", **context)
 
 
 @app.route("/lyrics")
@@ -108,7 +109,7 @@ async def lyrics() -> dict:
 
 
 @app.route("/reset-defaults")
-def reset_defaults() -> Response:
+async def reset_defaults() -> Response:
     """
     This function resets the settings to their default values and redirects to the settings page.
 
@@ -116,18 +117,18 @@ def reset_defaults() -> Response:
         Response: A redirect response to the settings page.
     """
     reset_state()
-    flash("Settings have been reset!", "success")
+    await flash("Settings have been reset!", "success")
     return redirect("/settings")
 
 @app.route('/config')
-def get_client_config():
+async def get_client_config():
     """Return client-side configuration"""
     return {
         "updateInterval": LYRICS["display"]["update_interval"] * 1000  # Convert seconds to milliseconds
     }
 
 @app.route("/exit-application")
-def exit_application() -> dict[str, str]:
+async def exit_application() -> dict[str, str]:
     """
     This function exits the application.
 

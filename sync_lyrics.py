@@ -12,24 +12,30 @@ from pystray import Icon, Menu, MenuItem
 from PIL import Image
 from config import DEBUG
 from lyrics import get_timed_lyrics
-# from graphics import render_text_with_background, restore_wallpaper
 from state_manager import get_state
 from server import app
 from logging_config import setup_logging, get_logger
 from providers.spotify_api import SpotifyAPI
 from providers.spotify_sync import SpotifyLyricsSync
-from system_utils import _get_current_song_meta_data_spotify # Import the function
+from system_utils import _get_current_song_meta_data_spotify
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
 
 logger = get_logger(__name__)
 
+# Constants
+ICON_URL = path.abspath("./resources/images/icon.ico")
+PORT = 9012
+queue = Queue()
+
 def run_tray() -> NoReturn:
     """
-    Run the tray icon
+    Run the system tray icon with menu options
     Returns:
-        NoReturn: This function never returns.
+        NoReturn: This function never returns
     """
     import socket
-    # Get local IP address
+    # Get local IP address for web interface links
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     
@@ -39,39 +45,29 @@ def run_tray() -> NoReturn:
         MenuItem("Quit", lambda: queue.put("exit"))
     )).run()
 
-def run_server() -> NoReturn:
+async def run_server() -> NoReturn:
     """
-    Run the flask server
+    Run the Quart server using Hypercorn with minimal logging
     Returns:
-        NoReturn: This function never returns.
+        NoReturn: This function never returns
     """
-    # Mute output from flask
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    def secho(*args, **kwargs): pass
-    def echo(*args, **kwargs): pass
-    click.echo = echo
-    click.secho = secho
-
-    # Run the server
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-
+    config = Config()
+    config.bind = [f"0.0.0.0:{PORT}"]
+    config.use_reloader = False
+    
+    # Mute unnecessary logging
+    logging.getLogger('hypercorn.error').setLevel(logging.ERROR)
+    logging.getLogger('hypercorn.access').setLevel(logging.ERROR)
+    
+    await serve(app, config)
 
 async def main() -> NoReturn:
     """
-    The main function of the program. It runs the server and the tray icon, and
-    it also handles the lyrics rendering.
+    Main application loop that coordinates the server, tray icon and lyrics sync
     Returns:
-        NoReturn: This function never returns.
+        NoReturn: This function never returns
     """
-    # Set up logging first thing
-    # setup_logging(
-    #     level=DEBUG.get("log_level"),
-    #     console=DEBUG.get("log_to_console"),
-    #     detailed=DEBUG.get("log_detailed")
-    # )
-
-    # Initialize Spotify client and sync
+    # Initialize Spotify services
     spotify_client = SpotifyAPI()
     spotify_sync = SpotifyLyricsSync(spotify_client)
     
@@ -82,35 +78,48 @@ async def main() -> NoReturn:
         logger.error(f"Failed to initialize Spotify sync: {e}")
         # Continue anyway as other methods might work
 
-    # We count the average latency for wallpaper method because it's heavy
-    # And we want to take the render time into account 
-    delta_sum = 0
-    delta_count = 0
+    # Start the server in the background
+    server_task = asyncio.create_task(run_server())
+    
+    # Start the tray icon in a separate thread since it's blocking
+    tray_thread = th.Thread(target=run_tray, daemon=True)
+    tray_thread.start()
+
+    # Get active display methods
     methods = [method for method, active in get_state()["representationMethods"].items() 
               if active and method != "notifications"]
     
     last_printed_lyric_per_method = {"terminal": None}
 
-    while True:
+    try:
+        while True:
+            if "terminal" in methods:
+                lyric = await get_timed_lyrics()
+                if lyric is not None and lyric != last_printed_lyric_per_method["terminal"]:
+                    print(lyric)
+                    last_printed_lyric_per_method["terminal"] = lyric
+            
+            # Check for exit signal
+            try:
+                if queue.get_nowait() == "exit":
+                    break
+            except:
+                pass
+                
+            await asyncio.sleep(0.1)
+    finally:
+        # Cleanup on exit
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
 
-        if "terminal" in methods:
-            lyric = await get_timed_lyrics()
-            if lyric is not None and lyric != last_printed_lyric_per_method["terminal"]:
-                print(lyric)
-                last_printed_lyric_per_method["terminal"] = lyric
-        
-        # Exit gracefully
-        if queue.qsize() > 0 and queue.get() == "exit": break
-        await asyncio.sleep(0.1) # Let the CPU rest a bit
-
-ICON_URL = path.abspath("./resources/images/icon.ico")
-PORT = 9012
-queue = Queue()
-
-t_tray = th.Thread(target=run_tray, daemon=True).start()
-t_server = th.Thread(target=run_server, daemon=True).start()
-
-try:
-    asyncio.run(main())
-except KeyboardInterrupt:
-    queue.put("exit")
+if __name__ == "__main__":
+    # Set up logging
+    setup_logging()
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        queue.put("exit")
