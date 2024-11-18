@@ -42,7 +42,7 @@ class SpotifyLyrics(LyricsProvider):
         if not self.spotify.initialized:
             logger.error("Failed to initialize Spotify client in SpotifyLyrics")
             
-    def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
+    async def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
         """Get lyrics for a track by searching Spotify"""
         try:
             if not self.spotify.initialized:
@@ -50,7 +50,7 @@ class SpotifyLyrics(LyricsProvider):
                 return None
                 
             # First try to get currently playing track
-            track = self.spotify.get_current_track()
+            track = await self.spotify.get_current_track()
             
             # If no track is playing or it's a different track, search for the requested track
             if not track or (

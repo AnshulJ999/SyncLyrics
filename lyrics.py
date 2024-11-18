@@ -1,6 +1,7 @@
 import requests as req
 import logging
 import time
+import asyncio
 
 from system_utils import get_current_song_meta_data
 from providers.lrclib import LRCLIBProvider
@@ -8,15 +9,13 @@ from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from config import LYRICS, DEBUG
 from providers.qq import QQMusicProvider
-from logging_config import get_logger
 from logging_config import get_logger, setup_logging  # Import setup_logging
 from providers.spotify_sync import SpotifyLyricsSync
 from providers.spotify_api import SpotifyAPI  # Import our Spotify client
 from typing import Optional, List, Tuple
 
-# logger = logging.getLogger(__name__)
-
-setup_logging()  # Call setup_logging before initializing providers
+# Call setup_logging before initializing providers
+setup_logging()
 
 logger = get_logger(__name__)
 
@@ -54,27 +53,29 @@ async def _update_song():
         ))
 
     if should_fetch_lyrics:
-        current_song_lyrics = _get_lyrics(new_song_data["artist"], new_song_data["title"])
-            
+        current_song_lyrics = await _get_lyrics(new_song_data["artist"], new_song_data["title"]) # Await _get_lyrics
+
     current_song_data = new_song_data
 
 
-def _get_lyrics(artist: str, title: str):
-    """Try each provider in order of priority"""
-    # Sort providers by priority (lower number = higher priority)
+async def _get_lyrics(artist: str, title: str): # Make this function async
+    """Tries each provider in order of priority."""
     sorted_providers = sorted(providers, key=lambda x: x.priority)
-    
+
     for provider in sorted_providers:
         try:
-            lyrics = provider.get_lyrics(artist, title)
+            if provider.name == "lrclib":  # Special handling for lrclib (synchronous)
+                lyrics = await asyncio.to_thread(provider.get_lyrics, artist, title)
+            else:  # Asynchronous providers
+                lyrics = await provider.get_lyrics(artist, title)
+
             if lyrics:
                 logger.info(f"Found lyrics using {provider.name}")
-                return lyrics
+                return lyrics  # Return lyrics if found
         except Exception as e:
             logger.error(f"Error with {provider.name}: {str(e)}")
-            continue
-    
-    return None
+            # Continue to the next provider if an error occurs
+    return None  # Return None if no lyrics are found after trying all providers
 
 
 def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int: # latency compensation - positive=earlier, negative=later. Find it in config.py 

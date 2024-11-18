@@ -61,6 +61,17 @@ async def run_server() -> NoReturn:
     
     await serve(app, config)
 
+async def cleanup() -> None:
+    """
+    Cleanup resources before exit
+    """
+    logger.info("Cleaning up resources...")
+    # Signal any active tasks to stop
+    queue.put("exit")
+    
+    # Small delay to allow tasks to cleanup
+    await asyncio.sleep(0.5)
+
 async def main() -> NoReturn:
     """
     Main application loop that coordinates the server, tray icon and lyrics sync
@@ -73,15 +84,19 @@ async def main() -> NoReturn:
     
     # Initialize the sync system
     try:
+        logger.debug("Initializing Spotify sync...")
         await spotify_sync.initialize()
     except Exception as e:
         logger.error(f"Failed to initialize Spotify sync: {e}")
+        logger.info("Continuing with fallback methods...")
         # Continue anyway as other methods might work
 
     # Start the server in the background
+    logger.info("Starting server...")
     server_task = asyncio.create_task(run_server())
     
     # Start the tray icon in a separate thread since it's blocking
+    logger.info("Starting system tray...")
     tray_thread = th.Thread(target=run_tray, daemon=True)
     tray_thread.start()
 
@@ -92,6 +107,7 @@ async def main() -> NoReturn:
     last_printed_lyric_per_method = {"terminal": None}
 
     try:
+        logger.info("Entering main loop...")
         while True:
             if "terminal" in methods:
                 lyric = await get_timed_lyrics()
@@ -109,17 +125,26 @@ async def main() -> NoReturn:
             await asyncio.sleep(0.1)
     finally:
         # Cleanup on exit
+        logger.info("Shutting down...")
         server_task.cancel()
         try:
             await server_task
         except asyncio.CancelledError:
             pass
+        await cleanup()
 
 if __name__ == "__main__":
     # Set up logging
     setup_logging()
     
     try:
+        logger.info("Starting SyncLyrics...")
         asyncio.run(main())
     except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt...")
         queue.put("exit")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise
+    finally:
+        logger.info("SyncLyrics shutdown complete")
