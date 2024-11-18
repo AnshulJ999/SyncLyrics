@@ -135,7 +135,11 @@ async def exit_application() -> dict[str, str]:
     Returns:
         dict[str, str]: A dictionary with a success message.
     """
-    kill(getpid(), SIGINT)
+    from sync_lyrics import queue, force_exit  # Import at function level to avoid circular import
+    queue.put("exit")
+    # Schedule force exit after 2 seconds
+    import threading
+    threading.Timer(2.0, force_exit).start()
     return {"msg": "Application has been closed."}
 
 @app.route("/current-track")

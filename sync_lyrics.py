@@ -20,6 +20,9 @@ from providers.spotify_sync import SpotifyLyricsSync
 from system_utils import _get_current_song_meta_data_spotify
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
+import signal
+import win32api
+import win32con
 
 logger = get_logger(__name__)
 
@@ -27,6 +30,8 @@ logger = get_logger(__name__)
 ICON_URL = path.abspath("./resources/images/icon.ico")
 PORT = 9012
 queue = Queue()
+_tray_icon = None
+_tray_thread = None
 
 def run_tray() -> NoReturn:
     """
@@ -34,16 +39,26 @@ def run_tray() -> NoReturn:
     Returns:
         NoReturn: This function never returns
     """
+    global _tray_icon
+    
     import socket
     # Get local IP address for web interface links
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     
-    Icon("SyncLyrics", Image.open(ICON_URL), menu=Menu(
+    def on_exit():
+        queue.put("exit")
+        if _tray_icon:
+            _tray_icon.stop()
+    
+    menu = Menu(
         MenuItem("Open Lyrics", lambda: webbrowser.open(f"http://{local_ip}:{PORT}"), default=True),
         MenuItem("Open Settings", lambda: webbrowser.open(f"http://{local_ip}:{PORT}/settings")),
-        MenuItem("Quit", lambda: queue.put("exit"))
-    )).run()
+        MenuItem("Exit", on_exit)
+    )
+    
+    _tray_icon = Icon("SyncLyrics", Image.open(ICON_URL), menu=menu)
+    _tray_icon.run()
 
 async def run_server() -> NoReturn:
     """
@@ -54,18 +69,36 @@ async def run_server() -> NoReturn:
     config = Config()
     config.bind = [f"0.0.0.0:{PORT}"]
     config.use_reloader = False
+    config.ignore_keyboard_interrupt = True
+#    config.worker_class = "asyncio"
+    config.graceful_timeout = 2  # Seconds allowed for graceful shutdown
+    config.shutdown_timeout = 2  # Limit time allowed for shutdown
+    config.debug = False
     
     # Mute unnecessary logging
     logging.getLogger('hypercorn.error').setLevel(logging.ERROR)
     logging.getLogger('hypercorn.access').setLevel(logging.ERROR)
     
-    await serve(app, config)
+    try:
+        await serve(app, config)
+    except asyncio.CancelledError:
+        logger.info("Server task cancelled")
 
 async def cleanup() -> None:
     """
     Cleanup resources before exit
     """
+    global _tray_icon, _tray_thread
     logger.info("Cleaning up resources...")
+    
+    # Stop the tray icon first
+    if _tray_icon:
+        _tray_icon.stop()
+        
+    # Wait for tray thread to finish
+    if _tray_thread and _tray_thread.is_alive():
+        _tray_thread.join(timeout=1.0)  # Wait up to 1 second
+    
     # Signal any active tasks to stop
     queue.put("exit")
     
@@ -78,6 +111,8 @@ async def main() -> NoReturn:
     Returns:
         NoReturn: This function never returns
     """
+    global _tray_thread
+    
     # Initialize Spotify services
     spotify_client = SpotifyAPI()
     spotify_sync = SpotifyLyricsSync(spotify_client)
@@ -90,15 +125,15 @@ async def main() -> NoReturn:
         logger.error(f"Failed to initialize Spotify sync: {e}")
         logger.info("Continuing with fallback methods...")
         # Continue anyway as other methods might work
-
+    
     # Start the server in the background
     logger.info("Starting server...")
     server_task = asyncio.create_task(run_server())
     
     # Start the tray icon in a separate thread since it's blocking
     logger.info("Starting system tray...")
-    tray_thread = th.Thread(target=run_tray, daemon=True)
-    tray_thread.start()
+    _tray_thread = th.Thread(target=run_tray, daemon=False)  # Changed to non-daemon
+    _tray_thread.start()
 
     # Get active display methods
     methods = [method for method, active in get_state()["representationMethods"].items() 
@@ -115,36 +150,70 @@ async def main() -> NoReturn:
                     print(lyric)
                     last_printed_lyric_per_method["terminal"] = lyric
             
-            # Check for exit signal
+            # Check for exit signal with shorter timeout
             try:
                 if queue.get_nowait() == "exit":
+                    logger.info("Exit signal received, breaking main loop...")
                     break
             except:
                 pass
                 
+            # Shorter sleep interval for more responsive interrupts
             await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        logger.info("Main loop cancelled...")
     finally:
         # Cleanup on exit
         logger.info("Shutting down...")
-        server_task.cancel()
-        try:
-            await server_task
-        except asyncio.CancelledError:
-            pass
+        if not server_task.done():
+            server_task.cancel()
+            try:
+                await server_task
+            except asyncio.CancelledError:
+                pass
         await cleanup()
 
 if __name__ == "__main__":
     # Set up logging
     setup_logging()
     
+    def handle_interrupt(signum, frame):
+        """Handle keyboard interrupt"""
+        logger.info("Received keyboard interrupt...")
+        if _tray_icon:
+            _tray_icon.stop()
+        queue.put("exit")
+    
+    def win32_handler(ctrl_type):
+        """Windows-specific control handler"""
+        if ctrl_type in (win32con.CTRL_C_EVENT, win32con.CTRL_BREAK_EVENT):
+            logger.info("Received Windows interrupt signal...")
+            if _tray_icon:
+                _tray_icon.stop()
+            queue.put("exit")
+            return True  # Don't chain to the next handler
+        return False
+    
+    # Set up signal handler
+    import signal
+    signal.signal(signal.SIGINT, handle_interrupt)
+    
+    # Set up Windows-specific handler
+    win32api.SetConsoleCtrlHandler(win32_handler, True)
+    
     try:
         logger.info("Starting SyncLyrics...")
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt...")
+        logger.info("Keyboard interrupt caught in main...")
         queue.put("exit")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
         raise
     finally:
+        # Final cleanup
+        if _tray_icon:
+            _tray_icon.stop()
+        if _tray_thread and _tray_thread.is_alive():
+            _tray_thread.join(timeout=1.0)
         logger.info("SyncLyrics shutdown complete")
