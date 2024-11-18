@@ -173,7 +173,7 @@ PROVIDERS = {
 
     "lrclib": {
         "enabled": True,
-        "priority": 1,  # Highest priority
+        "priority": 1,
         "base_url": "https://lrclib.net/api",
         "timeout": 10,
         "retries": 3,
@@ -181,8 +181,8 @@ PROVIDERS = {
     },
 
     "spotify": {
-        "enabled": True,
-        "priority": 2,
+        "enabled": False,
+        "priority": 1,
         "base_url": get_env("SPOTIFY_LYRICS_SERVER", "https://spotify-lyrics-api-azure.vercel.app"),
         "api_url": "https://api.spotify.com/v1",
         "timeout": get_env_int("SPOTIFY_TIMEOUT", 10),
