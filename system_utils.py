@@ -213,12 +213,12 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
                         data["source"] = source["name"]
                         break
                     elif source == primary_source:
-                        # Only mark as error if this is the primary source
+                        # No music playing is not an error state
                         logger.debug("No music playing in Windows Media")
-                        primary_source_error = True
                 except Exception as e:
                     logger.error(f"Windows Media error: {e}")
                     if source == primary_source:
+                        # Only mark as error if there's an actual error
                         primary_source_error = True
                         
             elif source["name"] == "spotify":
@@ -231,12 +231,12 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
                             data["source"] = source["name"]
                             break
                         elif source == primary_source:
-                            # Only mark as error if this is the primary source
+                            # No music playing is not an error state
                             logger.debug("No music playing in Spotify")
-                            primary_source_error = True
                     except Exception as e:
                         logger.error(f"Spotify error: {e}")
                         if source == primary_source:
+                            # Only mark as error if there's an actual error
                             primary_source_error = True
                             
             elif source["name"] == "gnome" and DESKTOP == "Gnome":
@@ -293,10 +293,6 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
             _log_app_state()  # Log when mode changes
     get_current_song_meta_data._prev_state = get_current_song_meta_data._is_active
     
-    # Log if no metadata found (only when we had a song before)
-    if not result and last_song:
-        logger.debug("No metadata available from any source")
-        
     # Log application state
     _log_app_state()
     
