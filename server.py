@@ -257,6 +257,18 @@ async def exit_application() -> dict[str, str]:
     threading.Timer(2.0, force_exit).start()
     return {"msg": "Application has been closed."}
 
+@app.route("/restart", methods=['POST'])
+async def restart_server():
+    """Restart the server."""
+    from sync_lyrics import queue
+    queue.put("restart")
+    return {'status': 'ok', 'msg': 'Application is restarting...'}, 200
+
+async def restart_application():
+    """Restart the application after a short delay."""
+    await asyncio.sleep(1)  # Give time for the response to be sent
+    execv(sys.executable, [sys.executable] + sys.argv)
+
 @app.route("/current-track")
 async def current_track() -> dict:
     """
@@ -279,15 +291,3 @@ async def get_client_config():
     return {
         "updateInterval": LYRICS["display"]["update_interval"] * 1000  # Convert seconds to milliseconds
     }
-
-@app.route('/restart-server', methods=['POST'])
-async def restart_server():
-    """Restart the server."""
-    # Schedule the restart after sending the response
-    asyncio.create_task(restart_application())
-    return {'status': 'ok'}, 200
-
-async def restart_application():
-    """Restart the application after a short delay."""
-    await asyncio.sleep(1)  # Give time for the response to be sent
-    execv(sys.executable, [sys.executable] + sys.argv)

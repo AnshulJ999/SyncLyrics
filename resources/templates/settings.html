@@ -93,8 +93,11 @@
                     <a href="{{ url_for('reset_defaults') }}" class="btn btn-secondary btn-sm">
                         <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
                     </a>
-                    <button type="button" id="restartBtn" class="btn btn-warning btn-sm" style="{% if not restart_required %}display: none;{% endif %}">
-                        <i class="bi bi-arrow-clockwise me-1"></i>Restart Server
+                    <button type="button" id="restartBtn" class="btn btn-warning btn-sm">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Restart
+                    </button>
+                    <button type="button" id="exitBtn" class="btn btn-danger btn-sm">
+                        <i class="bi bi-power me-1"></i>Exit
                     </button>
                 </div>
             </form>
@@ -102,7 +105,7 @@
             <!-- Restart Notice -->
             <div id="restart-notice" class="alert alert-warning mt-3" style="display: none;">
                 <i class="bi bi-exclamation-triangle me-2"></i>
-                Some changes require application restart to take effect.
+                Some changes require a restart to take effect.
             </div>
         </div>
     </div>
@@ -189,12 +192,44 @@
                 });
             });
 
-            // Handle restart button click
-            restartBtn.addEventListener('click', function() {
-                if (confirm('Are you sure you want to restart the application?')) {
-                    restartServer();
+            async function restartServer() {
+                try {
+                    const response = await fetch('/restart', {
+                        method: 'POST'
+                    });
+                    if (response.ok) {
+                        // Show a message that the server is restarting
+                        alert('Server is restarting...');
+                        // Wait 2 seconds then reload the page
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    }
+                } catch (error) {
+                    console.error('Error restarting server:', error);
                 }
-            });
+            }
+
+            document.getElementById('restartBtn')?.addEventListener('click', restartServer);
+
+            async function exitApplication() {
+                try {
+                    const response = await fetch('/exit-application', {
+                        method: 'GET'
+                    });
+                    if (response.ok) {
+                        alert('Application is shutting down...');
+                        // Close the window after 1 second
+                        setTimeout(() => {
+                            window.close();
+                        }, 1000);
+                    }
+                } catch (error) {
+                    console.error('Error exiting application:', error);
+                }
+            }
+
+            document.getElementById('exitBtn')?.addEventListener('click', exitApplication);
 
             // Dismiss alerts automatically
             const alerts = document.querySelectorAll('.alert-dismissible');
@@ -220,23 +255,5 @@
                 });
             });
         });
-
-        function restartServer() {
-            fetch('/restart', { method: 'POST' })
-                .then(response => {
-                    if (response.ok) {
-                        alert('Application is restarting...');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 5000);
-                    } else {
-                        alert('Failed to restart the application');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Failed to restart the application');
-                });
-        }
     </script>
 {% endblock %}

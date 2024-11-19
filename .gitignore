@@ -24,7 +24,8 @@ Notes
 Notes2
 cache
 .cache
-
+config_backups/
+data/
 
 # Python
 .pytest_cache

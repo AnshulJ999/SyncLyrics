@@ -33,6 +33,17 @@ queue = Queue()
 _tray_icon = None
 _tray_thread = None
 
+def force_exit():
+    """Force exit the application"""
+    import os, signal
+    os.kill(os.getpid(), signal.SIGTERM)
+
+def restart():
+    """Restart the application"""
+    import os, sys
+    cleanup()  # Clean up resources first
+    os.execv(sys.executable, ['python'] + sys.argv)
+
 def run_tray() -> NoReturn:
     """
     Run the system tray icon with menu options
@@ -51,9 +62,15 @@ def run_tray() -> NoReturn:
         if _tray_icon:
             _tray_icon.stop()
     
+    def on_restart():
+        queue.put("restart")
+        if _tray_icon:
+            _tray_icon.stop()
+    
     menu = Menu(
         MenuItem("Open Lyrics", lambda: webbrowser.open(f"http://{local_ip}:{PORT}"), default=True),
         MenuItem("Open Settings", lambda: webbrowser.open(f"http://{local_ip}:{PORT}/settings")),
+        MenuItem("Restart", on_restart),
         MenuItem("Exit", on_exit)
     )
     
@@ -152,9 +169,13 @@ async def main() -> NoReturn:
             
             # Check for exit signal with shorter timeout
             try:
-                if queue.get_nowait() == "exit":
+                signal = queue.get_nowait()
+                if signal == "exit":
                     logger.info("Exit signal received, breaking main loop...")
                     break
+                elif signal == "restart":
+                    logger.info("Restart signal received, restarting...")
+                    restart()
             except:
                 pass
                 
