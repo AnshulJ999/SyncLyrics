@@ -7,7 +7,7 @@ from os import path
 import time
 from time import sleep
 from typing import NoReturn
-from queue import Queue
+from queue import Queue, Empty
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
 from config import DEBUG
@@ -23,6 +23,8 @@ from hypercorn.asyncio import serve
 import signal
 import win32api
 import win32con
+import os
+import sys
 
 logger = get_logger(__name__)
 
@@ -32,6 +34,8 @@ PORT = 9012
 queue = Queue()
 _tray_icon = None
 _tray_thread = None
+_shutdown_event = asyncio.Event()
+_server_task = None  # Global to track server task
 
 def force_exit():
     """Force exit the application"""
@@ -40,9 +44,55 @@ def force_exit():
 
 def restart():
     """Restart the application"""
-    import os, sys
-    cleanup()  # Clean up resources first
-    os.execv(sys.executable, ['python'] + sys.argv)
+    logger.info("Initiating restart sequence...")
+    
+    # Stop the tray icon directly
+    if _tray_icon:
+        try:
+            _tray_icon.stop()
+        except Exception as e:
+            logger.error(f"Error stopping tray icon: {e}")
+    
+    # Wait for tray thread to finish
+    if _tray_thread and _tray_thread.is_alive():
+        try:
+            _tray_thread.join(timeout=1.0)
+        except Exception as e:
+            logger.error(f"Error joining tray thread: {e}")
+
+    # Replace current process with new one
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
+
+async def cleanup() -> None:
+    """Cleanup resources before exit"""
+    global _tray_icon, _tray_thread, _server_task
+    logger.info("Cleaning up resources...")
+
+    # Cancel server task first
+    if _server_task:
+        _server_task.cancel()
+        try:
+            await _server_task
+        except asyncio.CancelledError:
+            logger.info("Server task cancelled")
+
+    # Stop the tray icon
+    if _tray_icon:
+        try:
+            _tray_icon.stop()
+        except Exception as e:
+            logger.error(f"Error stopping tray icon: {e}")
+
+    # Wait for tray thread to finish
+    if _tray_thread and _tray_thread.is_alive():
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, lambda: _tray_thread.join(timeout=1.0))
+        except Exception as e:
+            logger.error(f"Error joining tray thread: {e}")
+
+    queue.put("exit")
+    await asyncio.sleep(0.5)
 
 def run_tray() -> NoReturn:
     """
@@ -101,34 +151,13 @@ async def run_server() -> NoReturn:
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
 
-async def cleanup() -> None:
-    """
-    Cleanup resources before exit
-    """
-    global _tray_icon, _tray_thread
-    logger.info("Cleaning up resources...")
-    
-    # Stop the tray icon first
-    if _tray_icon:
-        _tray_icon.stop()
-        
-    # Wait for tray thread to finish
-    if _tray_thread and _tray_thread.is_alive():
-        _tray_thread.join(timeout=1.0)  # Wait up to 1 second
-    
-    # Signal any active tasks to stop
-    queue.put("exit")
-    
-    # Small delay to allow tasks to cleanup
-    await asyncio.sleep(0.5)
-
 async def main() -> NoReturn:
     """
     Main application loop that coordinates the server, tray icon and lyrics sync
     Returns:
         NoReturn: This function never returns
     """
-    global _tray_thread
+    global _tray_thread, _server_task
     
     # Initialize Spotify services
     spotify_client = SpotifyAPI()
@@ -143,13 +172,13 @@ async def main() -> NoReturn:
         logger.info("Continuing with fallback methods...")
         # Continue anyway as other methods might work
     
-    # Start the server in the background
+    # Start the server and store task globally
     logger.info("Starting server...")
-    server_task = asyncio.create_task(run_server())
+    _server_task = asyncio.create_task(run_server())
     
     # Start the tray icon in a separate thread since it's blocking
     logger.info("Starting system tray...")
-    _tray_thread = th.Thread(target=run_tray, daemon=False)  # Changed to non-daemon
+    _tray_thread = th.Thread(target=run_tray, daemon=False)
     _tray_thread.start()
 
     # Get active display methods
@@ -167,31 +196,27 @@ async def main() -> NoReturn:
                     print(lyric)
                     last_printed_lyric_per_method["terminal"] = lyric
             
-            # Check for exit signal with shorter timeout
+            # Check for exit/restart signals
             try:
                 signal = queue.get_nowait()
                 if signal == "exit":
                     logger.info("Exit signal received, breaking main loop...")
                     break
                 elif signal == "restart":
-                    logger.info("Restart signal received, restarting...")
+                    logger.info("Restart signal received, initiating restart...")
+                    await cleanup()
                     restart()
-            except:
+                    return
+            except Empty:
                 pass
+            except Exception as e:
+                logger.error(f"Error processing signal: {e}")
                 
             # Shorter sleep interval for more responsive interrupts
             await asyncio.sleep(0.1)
     except asyncio.CancelledError:
         logger.info("Main loop cancelled...")
     finally:
-        # Cleanup on exit
-        logger.info("Shutting down...")
-        if not server_task.done():
-            server_task.cancel()
-            try:
-                await server_task
-            except asyncio.CancelledError:
-                pass
         await cleanup()
 
 if __name__ == "__main__":

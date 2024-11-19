@@ -86,19 +86,15 @@
                     {% endfor %}
                 </div>
 
-                <div class="d-flex gap-2 sticky-footer">
-                    <button type="submit" class="btn btn-primary btn-sm">
-                        <i class="bi bi-save me-1"></i>Save
-                    </button>
-                    <a href="{{ url_for('reset_defaults') }}" class="btn btn-secondary btn-sm">
-                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
-                    </a>
-                    <button type="button" id="restartBtn" class="btn btn-warning btn-sm">
-                        <i class="bi bi-arrow-clockwise me-1"></i>Restart
-                    </button>
-                    <button type="button" id="exitBtn" class="btn btn-danger btn-sm">
-                        <i class="bi bi-power me-1"></i>Exit
-                    </button>
+                <div class="sticky-footer">
+                    <div class="container-fluid d-flex justify-content-center gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary px-3">
+                            <i class="bi bi-save me-1"></i>Save
+                        </button>
+                        <a href="{{ url_for('reset_defaults') }}" class="btn btn-sm btn-secondary px-3">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset to Default
+                        </a>
+                    </div>
                 </div>
             </form>
 
@@ -115,22 +111,10 @@
     .settings-container {
         height: calc(100vh - 80px); /* Adjust for bottom nav */
         overflow-y: auto;
-        padding-bottom: 60px; /* Reduced space for sticky footer */
+        padding-bottom: 120px; /* Give space for both sticky footer and bottom nav */
     }
     .settings-content {
         margin-bottom: 60px; /* Reduced space for sticky footer */
-    }
-    .sticky-footer {
-        position: fixed;
-        bottom: 80px; /* Above bottom nav */
-        left: 0;
-        right: 0;
-        background: white;
-        padding: 0.5rem; /* Reduced padding */
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-        z-index: 1000;
-        justify-content: center;
-        gap: 0.5rem; /* Reduced gap between buttons */
     }
     .settings-section {
         background: rgba(0,0,0,0.02);
@@ -158,12 +142,24 @@
         background-color: #0d6efd;
         border-color: #0d6efd;
     }
-    [data-bs-theme="dark"] .sticky-footer {
-        background: var(--bs-body-bg);
-    }
     .btn-sm {
         padding: 0.25rem 0.5rem;
         font-size: 0.875rem;
+    }
+    .sticky-footer {
+        position: fixed;
+        bottom: 60px;  /* Position it just above the bottom nav */
+        left: 0;
+        right: 0;
+        background: rgba(33, 37, 41, 0.95);  /* Dark, semi-transparent background */
+        backdrop-filter: blur(10px);
+        padding: 8px;
+        z-index: 1000;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .sticky-footer .btn-sm {
+        font-size: 0.85rem;
+        padding: 0.25rem 0.75rem;
     }
 </style>
 
@@ -191,45 +187,6 @@
                     restartBtn.style.display = 'inline-block';
                 });
             });
-
-            async function restartServer() {
-                try {
-                    const response = await fetch('/restart', {
-                        method: 'POST'
-                    });
-                    if (response.ok) {
-                        // Show a message that the server is restarting
-                        alert('Server is restarting...');
-                        // Wait 2 seconds then reload the page
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 2000);
-                    }
-                } catch (error) {
-                    console.error('Error restarting server:', error);
-                }
-            }
-
-            document.getElementById('restartBtn')?.addEventListener('click', restartServer);
-
-            async function exitApplication() {
-                try {
-                    const response = await fetch('/exit-application', {
-                        method: 'GET'
-                    });
-                    if (response.ok) {
-                        alert('Application is shutting down...');
-                        // Close the window after 1 second
-                        setTimeout(() => {
-                            window.close();
-                        }, 1000);
-                    }
-                } catch (error) {
-                    console.error('Error exiting application:', error);
-                }
-            }
-
-            document.getElementById('exitBtn')?.addEventListener('click', exitApplication);
 
             // Dismiss alerts automatically
             const alerts = document.querySelectorAll('.alert-dismissible');

@@ -138,9 +138,54 @@ body {
 .nav-controls {
     display: flex;
     align-items: center;
-    gap: 1rem;
 }
 
+.nav {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.nav-link {
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.nav-link:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-link.active {
+    color: #fff;
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.nav-link.exit-link {
+    color: rgba(239, 68, 68, 0.8);
+}
+
+.nav-link.exit-link:hover {
+    color: rgb(239, 68, 68);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Update content padding to account for bottom nav */
+#content {
+    padding-bottom: 4rem;
+}
+
+/* ========== NAVIGATION ELEMENTS ========== */
 .nav-link {
     /* Semi-transparent white text */
     color: rgba(255, 255, 255, 0.7) !important;

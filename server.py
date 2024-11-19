@@ -244,30 +244,34 @@ async def lyrics() -> dict:
 
 @app.route("/exit-application")
 async def exit_application() -> dict[str, str]:
-    """
-    This function exits the application.
-
-    Returns:
-        dict[str, str]: A dictionary with a success message.
-    """
-    from sync_lyrics import queue, force_exit  # Import at function level to avoid circular import
-    queue.put("exit")
-    # Schedule force exit after 2 seconds
-    import threading
-    threading.Timer(2.0, force_exit).start()
-    return {"msg": "Application has been closed."}
+    """Exit the application."""
+    try:
+        from sync_lyrics import queue, force_exit
+        queue.put("exit")
+        
+        # Schedule force exit after 2 seconds
+        import threading
+        threading.Timer(2.0, force_exit).start()
+        
+        return {"status": "ok", "message": "Application is shutting down..."}, 200
+    except Exception as e:
+        logger.error(f"Error during exit: {e}")
+        return {"status": "error", "message": str(e)}, 500
 
 @app.route("/restart", methods=['POST'])
 async def restart_server():
     """Restart the server."""
-    from sync_lyrics import queue
-    queue.put("restart")
-    return {'status': 'ok', 'msg': 'Application is restarting...'}, 200
-
-async def restart_application():
-    """Restart the application after a short delay."""
-    await asyncio.sleep(1)  # Give time for the response to be sent
-    execv(sys.executable, [sys.executable] + sys.argv)
+    try:
+        # Import at function level to avoid circular import
+        from sync_lyrics import queue, restart
+        logger.info("Restart requested - sending restart signal")
+        queue.put("restart")
+        
+        # Return response immediately
+        return {'status': 'ok', 'message': 'Application is restarting...'}, 200
+    except Exception as e:
+        logger.error(f"Error during restart: {e}")
+        return {'status': 'error', 'message': str(e)}, 500
 
 @app.route("/current-track")
 async def current_track() -> dict:
