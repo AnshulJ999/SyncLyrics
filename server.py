@@ -36,10 +36,18 @@ def guess_value_type(value: Any) -> Any:
     Returns:
         Any: The value with the guessed type.
     """
-    if value == "true": return True
-    if value == "false": return False
-    if value == "on": return True
-    if value.isdigit(): return int(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if value.lower() in ('true', 'on'): return True
+        if value.lower() in ('false', 'off'): return False
+        if value.isdigit(): return int(value)
+        if value.startswith('[') and value.endswith(']'):
+            try:
+                # Handle list values properly
+                import ast
+                return ast.literal_eval(value)
+            except:
+                pass
     return value
 
 
@@ -134,10 +142,13 @@ async def handle_exception(e):
 async def settings_page():
     if request.method == 'POST':
         form_data = await request.form
+        logger.debug(f"Received settings form data: {form_data}")
         
         # Handle legacy settings
         theme = form_data.get('theme', 'dark')
         terminal_method = form_data.get('terminal-method', 'false').lower() == 'true'
+        
+        logger.debug(f"Legacy settings - theme: {theme}, terminal_method: {terminal_method}")
         
         # Update state manager
         state = get_state()
@@ -148,6 +159,8 @@ async def settings_page():
         # Handle new settings system
         settings_updated = False
         restart_required = False
+        errors = []
+        updates = {}
         
         for key, value in form_data.items():
             # Skip legacy settings
@@ -157,41 +170,78 @@ async def settings_page():
             # Get setting definition
             setting = settings._definitions.get(key)
             if not setting:
+                logger.warning(f"Unknown setting: {key}")
                 continue
                 
+            logger.debug(f"Processing setting {key} with raw value: {value}")
+            
             # Convert value to correct type
             try:
                 if setting.type == bool:
-                    value = value.lower() == 'true'
+                    value = str(value).lower() in ('true', 'on', '1', 'yes')
                 elif setting.type == int:
                     value = int(value)
                 elif setting.type == float:
                     value = float(value)
+                elif setting.type == list:
+                    if not value.strip():
+                        value = []  # Handle empty list case
+                    else:
+                        try:
+                            import ast
+                            value = ast.literal_eval(value)
+                            if not isinstance(value, list):
+                                raise ValueError(f"Expected list but got {type(value)}")
+                        except Exception as e:
+                            logger.error(f"Failed to parse list value for {key}: {value}")
+                            errors.append(f"Invalid list format for {key}: {str(e)}")
+                            continue
+                
+                # Validate value if there's a validator
+                if hasattr(setting, 'validator') and setting.validator:
+                    try:
+                        value = setting.validator(value)
+                    except ValueError as e:
+                        errors.append(f"Invalid value for {key}: {str(e)}")
+                        continue
                     
                 # Update setting if changed
-                if settings.get(key) != value:
-                    settings.set(key, value)
+                current_value = settings.get(key)
+                if current_value != value:
+                    logger.debug(f"Updating {key} from {current_value} to {value} (type: {type(value)})")
+                    updates[key] = value
                     settings_updated = True
                     if setting.requires_restart:
                         restart_required = True
                         
             except (ValueError, TypeError) as e:
-                flash(f'Error setting {key}: {str(e)}', 'danger')
+                error_msg = f"Invalid value for {key}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
                 continue
         
-        # Save settings if any were updated
+        # Apply all updates at once
         if settings_updated:
             try:
+                logger.debug(f"Applying updates: {updates}")
+                for key, value in updates.items():
+                    settings.set(key, value)
+                    
                 settings.save_to_config()
+                await flash("Settings saved successfully!")
                 if restart_required:
-                    flash('Settings saved. Some changes require application restart.', 'warning')
-                else:
-                    flash('Settings saved successfully.', 'success')
+                    await flash("Some changes require a restart to take effect.", "warning")
             except Exception as e:
-                flash(f'Error saving settings: {str(e)}', 'danger')
+                error_msg = f"Failed to save settings: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                errors.append(error_msg)
         
+        # Flash any errors that occurred
+        for error in errors:
+            await flash(error, "error")
+            
         return redirect(url_for('settings_page'))
-    
+        
     # GET request - render settings page
     settings_by_category = {}
     for key, setting in settings._definitions.items():

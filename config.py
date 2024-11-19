@@ -51,12 +51,12 @@ MEDIA_SOURCE = {
         {
             "name": "spotify",
             "enabled": True,
-            "priority": 2,  
+            "priority": 1,  
         },
         {
             "name": "windows_media",
             "enabled": True,
-            "priority": 1,
+            "priority": 2,
         },
         {
             "name": "gnome",
@@ -154,7 +154,7 @@ PROVIDERS = {
 
     "lrclib": {
         "enabled": True,
-        "priority": 1,
+        "priority": 2,
         "base_url": "https://lrclib.net/api",
         "timeout": 10,
         "retries": 3,
@@ -163,7 +163,7 @@ PROVIDERS = {
 
     "spotify": {
         "enabled": True,
-        "priority": 2,
+        "priority": 1,
         "base_url": get_env("SPOTIFY_LYRICS_SERVER", "https://spotify-lyrics-api-azure.vercel.app"),
         "api_url": "https://api.spotify.com/v1",
         "timeout": get_env_int("SPOTIFY_TIMEOUT", 10),

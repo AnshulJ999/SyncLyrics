@@ -258,6 +258,8 @@ class SettingsManager:
         try:
             # Create backup before making changes
             backup_path = self._create_backup()
+            logger.debug(f"Created backup at {backup_path}")
+            logger.debug(f"Current settings to save: {self._settings}")
             
             import config
             config_path = Path(__file__).parent / "config.py"
@@ -266,18 +268,17 @@ class SettingsManager:
             try:
                 with open(config_path, "r", encoding='utf-8') as f:
                     content = f.read()
+                logger.debug(f"Successfully read config.py")
             except Exception as e:
                 logger.error(f"Error reading config.py: {str(e)}")
                 self._restore_backup(backup_path)
                 raise
             
             # Split content into sections
-            sections = content.split("\n\n# ")
-            
-            # Find and update only the configuration sections we care about
             updated_sections = []
             current_section = []
             in_config_section = False
+            section_updated = False
             
             for line in content.split('\n'):
                 # If we find a new section marker
@@ -288,37 +289,69 @@ class SettingsManager:
                     
                     section_name = line.strip('# ').split()[0]
                     if section_name in ['UI', 'LYRICS', 'SERVER', 'DEBUG', 'PROVIDERS', 'FEATURES', 'STORAGE', 'NOTIFICATIONS', 'SYSTEM']:
+                        logger.debug(f"Processing section: {section_name}")
                         in_config_section = True
                         current_section = [line]  # Start new section with header
+                        section_updated = False
                         
                         # Get the updated configuration
                         config_name = section_name.upper()
                         settings_dict = {}
                         prefix = config_name.lower() + '.'
                         
-                        # Collect all settings for this section
-                        for key, value in self._settings.items():
-                            if key.startswith(prefix):
+                        # Log relevant settings for this section
+                        relevant_settings = {k: v for k, v in self._settings.items() if k.startswith(prefix)}
+                        logger.debug(f"Settings for {config_name}: {relevant_settings}")
+                        
+                        if relevant_settings:
+                            # Collect all settings for this section
+                            for key, value in relevant_settings.items():
                                 parts = key[len(prefix):].split('.')
                                 current = settings_dict
                                 for part in parts[:-1]:
                                     if part not in current:
                                         current[part] = {}
                                     current = current[part]
-                                current[parts[-1]] = value
+                                # Handle special types
+                                if isinstance(value, (list, dict)):
+                                    current[parts[-1]] = value
+                                elif isinstance(value, bool):
+                                    current[parts[-1]] = bool(value)
+                                else:
+                                    current[parts[-1]] = value
+                                logger.debug(f"Updated {key} to {value} (type: {type(value)})")
+                                section_updated = True
                         
                         # If we have updates for this section
                         if settings_dict:
+                            # Format the dictionary with proper Python syntax for lists
+                            def format_value(v):
+                                if isinstance(v, list):
+                                    return repr(v)
+                                elif isinstance(v, dict):
+                                    return '{\n' + ',\n'.join(f'        "{k}": {format_value(val)}' for k, val in v.items()) + '\n    }'
+                                elif isinstance(v, bool):
+                                    return str(v)
+                                elif isinstance(v, (int, float)):
+                                    return str(v)
+                                else:
+                                    return f'"{v}"'
+                            
+                            formatted_dict = '{\n' + ',\n'.join(f'    "{k}": {format_value(v)}' for k, v in settings_dict.items()) + '\n}'
                             current_section.extend([
-                                f"{config_name} = {json.dumps(settings_dict, indent=4)}",
+                                f"{config_name} = {formatted_dict}",
                                 ""
                             ])
+                            logger.debug(f"Writing section {config_name} with content: {formatted_dict}")
                     else:
                         in_config_section = False
                         current_section = [line]
-                else:
-                    if not in_config_section or not line.strip().startswith(('UI', 'LYRICS', 'SERVER', 'DEBUG', 'PROVIDERS', 'FEATURES', 'STORAGE', 'NOTIFICATIONS', 'SYSTEM')):
+                elif line.strip().startswith(('UI', 'LYRICS', 'SERVER', 'DEBUG', 'PROVIDERS', 'FEATURES', 'STORAGE', 'NOTIFICATIONS', 'SYSTEM')):
+                    # Skip the original configuration line if we've updated this section
+                    if not section_updated:
                         current_section.append(line)
+                else:
+                    current_section.append(line)
             
             # Add the last section
             if current_section:
@@ -326,9 +359,11 @@ class SettingsManager:
             
             # Write the updated content back
             try:
+                content = '\n'.join(updated_sections)
                 with open(config_path, "w", encoding='utf-8') as f:
-                    f.write('\n'.join(updated_sections))
+                    f.write(content)
                 logger.info("Settings saved successfully while preserving config.py structure")
+                logger.debug("Final config content length: " + str(len(content)))
             except Exception as e:
                 logger.error(f"Error writing to config.py: {str(e)}")
                 self._restore_backup(backup_path)
