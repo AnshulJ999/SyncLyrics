@@ -9,7 +9,6 @@ sync_lyrics.bin
 sync_lyrics.exe
 /resources latest - black
 /resources backup rollback
-config.py
 .env
 .env 2
 .cursorignore
@@ -25,7 +24,6 @@ Notes
 Notes2
 cache
 .cache
-state.json
 
 
 # Python
