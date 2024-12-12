@@ -6,6 +6,7 @@ import logging
 import time
 # from PIL import Image
 from typing import Optional, Dict
+import asyncio
 
 import config
 from config import DEBUG
@@ -65,41 +66,54 @@ async def _get_current_song_meta_data_windows() -> dict[str, str | int | tuple[s
             _request_counters['windows_media'] += 1
             
         sessions = await MediaManager.request_async()
+        if not sessions:  # Add null check for sessions
+            return None
+            
         current_session = sessions.get_current_session()
-        
         if not current_session:
             return None
             
-        playback_info = current_session.get_playback_info()
-        
-        # Check if actually playing (not just open)
-        # 4 = PLAYING, 5 = PAUSED, others = STOPPED/CLOSED
-        if playback_info.playback_status != 4:  
-            if DEBUG["enabled"]:
-                logger.debug(f"Media session exists but not playing (status: {playback_info.playback_status})")
+        try:  # Add nested try-except for better error handling
+            playback_info = current_session.get_playback_info()
+            
+            # Check if actually playing (not just open)
+            # 4 = PLAYING, 5 = PAUSED, others = STOPPED/CLOSED
+            if playback_info.playback_status != 4:  
+                if DEBUG["enabled"]:
+                    logger.debug(f"Media session exists but not playing (status: {playback_info.playback_status})")
+                return None
+                
+            # Get artist and title
+            info = await current_session.try_get_media_properties_async()
+            if not info:  # Add null check for media properties
+                return None
+                
+            artist, title, album = info.artist, info.title, info.album_title
+
+            if album == "":
+                title = _remove_text_inside_parentheses_and_brackets(title)
+                artist = ""
+
+            info = current_session.get_timeline_properties()
+            if not info:  # Add null check for timeline properties
+                return None
+                
+            seconds = info.position.total_seconds()
+            not_update_time = time.time() - info.last_updated_time.timestamp()
+            position = seconds + not_update_time
+            
+            metadata = {
+                "artist": artist,
+                "title": title,
+                "position": position,
+                "colors": ("#24273a", "#363b54")  # Default colors
+            }
+            _get_current_song_meta_data_windows.last_returned_data = metadata
+            return metadata
+            
+        except asyncio.CancelledError:  # Handle cancellation gracefully
+            logger.debug("Windows Media request cancelled")
             return None
-        
-        # Get artist and title
-        info = await current_session.try_get_media_properties_async()
-        artist, title, album = info.artist, info.title, info.album_title
-
-        if album == "":
-            title = _remove_text_inside_parentheses_and_brackets(title)
-            artist = ""
-
-        info = current_session.get_timeline_properties()
-        seconds = info.position.total_seconds()
-        not_update_time = time.time() - info.last_updated_time.timestamp()
-        position = seconds + not_update_time
-        
-        metadata = {
-            "artist": artist,
-            "title": title,
-            "position": position,
-            "colors": ("#24273a", "#363b54")  # Default colors
-        }
-        _get_current_song_meta_data_windows.last_returned_data = metadata
-        return metadata
             
     except Exception as e:
         logger.error(f"Error getting Windows media metadata: {e}")
