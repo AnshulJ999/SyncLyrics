@@ -156,11 +156,11 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
     required_interval = ACTIVE_INTERVAL if is_active else IDLE_INTERVAL
     
     if DEBUG["enabled"]:
-        logger.debug(f"Time since last check: {time_since_check:.2f}s, Required interval: {required_interval:.2f}s")
-        logger.debug(f"Current mode: {'active' if is_active else 'idle'}")
-    
-    if time_since_check < required_interval:
-        return getattr(get_current_song_meta_data, '_last_result', None)
+    #  logger.debug(f"Time since last check: {time_since_check:.2f}s, Required interval: {required_interval:.2f}s")
+    #  logger.debug(f"Current mode: {'active' if is_active else 'idle'}")
+   
+        if time_since_check < required_interval:
+            return getattr(get_current_song_meta_data, '_last_result', None)
     
     # Update last check time
     get_current_song_meta_data._last_check_time = current_time
@@ -192,7 +192,7 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
         get_current_song_meta_data._last_sources_order = sources_order
 
     # Debug log the priority order
-    logger.debug(f"Source priorities: {[(s['name'], s.get('priority')) for s in sorted_sources]}")
+    # logger.debug(f"Source priorities: {[(s['name'], s.get('priority')) for s in sorted_sources]}")
 
     # 5. Try each source
     result = None
@@ -203,7 +203,7 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
     
     for source in sorted_sources:
         try:
-            logger.debug(f"Attempting to get metadata from {source['name']}")
+            # logger.debug(f"Attempting to get metadata from {source['name']}")
             
             if source["name"] == "windows_media" and DESKTOP == "Windows":
                 try:
@@ -259,8 +259,8 @@ async def get_current_song_meta_data() -> dict[str, str | int | tuple[str, str]]
         # Song is playing, stay in or switch to active mode
         get_current_song_meta_data._is_active = True
         get_current_song_meta_data._last_active_time = current_time
-        if DEBUG["enabled"]:
-            logger.debug("Song detected - maintaining/switching to active mode")
+       # if DEBUG["enabled"]:
+            # logger.debug("Song detected - maintaining/switching to active mode")
     else:
         # No song playing, check if we should switch to idle mode
         time_since_active = current_time - last_active_time

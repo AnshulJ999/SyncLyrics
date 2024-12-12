@@ -51,12 +51,12 @@ MEDIA_SOURCE = {
         {
             "name": "spotify",
             "enabled": True,
-            "priority": 1,  
+            "priority": 2,  
         },
         {
             "name": "windows_media",
             "enabled": True,
-            "priority": 2,
+            "priority": 1,
         },
         {
             "name": "gnome",
@@ -126,7 +126,7 @@ LYRICS = {
         "buffer_size": 6,  # Number of lyrics lines to display (previous + current + next)
         "update_interval": 0.1,  # Seconds between active polling updates (100ms)
         "idle_interval": 5.0,    # Idle polling (3 seconds)
-        "latency_compensation": 0.17,  # Positive = earlier, negative = later (100ms earlier)
+        "latency_compensation": 0.1,  # Positive = earlier, negative = later (100ms earlier)
         "idle_wait_time": 3.0,   # Wait time before switching to idle mode (seconds)
     },
 }
@@ -142,7 +142,7 @@ SPOTIFY = {
         "user-read-currently-playing"
     ],
     "cache": {
-        "metadata_ttl": 3.0,  # Time to live for metadata cache in seconds
+        "metadata_ttl": 2.0,  # Time to live for metadata cache in seconds
         "enabled": True,      # Enable/disable caching
     }
 }
@@ -154,7 +154,7 @@ PROVIDERS = {
 
     "lrclib": {
         "enabled": True,
-        "priority": 2,
+        "priority": 1,
         "base_url": "https://lrclib.net/api",
         "timeout": 10,
         "retries": 3,
@@ -163,7 +163,7 @@ PROVIDERS = {
 
     "spotify": {
         "enabled": True,
-        "priority": 1,
+        "priority": 2,
         "base_url": get_env("SPOTIFY_LYRICS_SERVER", "https://spotify-lyrics-api-azure.vercel.app"),
         "api_url": "https://api.spotify.com/v1",
         "timeout": get_env_int("SPOTIFY_TIMEOUT", 10),
