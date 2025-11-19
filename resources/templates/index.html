@@ -22,7 +22,7 @@
 
 <!-- Track Header (Album Art + Info) -->
 <div id="track-header" class="track-header">
-    <img id="album-art" class="album-art" src="" alt="Album Art">
+    <img id="album-art" class="album-art" src="">
     <div class="track-info">
         <div id="track-title" class="track-title"></div>
         <div id="track-artist" class="track-artist"></div>
@@ -39,21 +39,26 @@
     <div id="next-3" class="lyric-line far-next"></div>
 </div>
 
-<!-- Progress Bar -->
-<div id="progress-container" class="progress-container">
-    <div class="progress-bar">
-        <div id="progress-fill" class="progress-fill"></div>
-    </div>
-    <div class="progress-time">
-        <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
-    </div>
-</div>
+<!-- Player UI Container for Dynamic Positioning -->
+<div id="player-ui-container">
 
-<!-- Playback Controls -->
-<div id="playback-controls" class="playback-controls">
-    <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
-    <button id="btn-play-pause" class="control-btn play-pause-btn" title="Play/Pause">⏸</button>
-    <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+    <!-- Progress Bar -->
+    <div id="progress-container" class="progress-container">
+        <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div class="progress-time">
+            <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+        </div>
+    </div>
+
+    <!-- Playback Controls -->
+    <div id="playback-controls" class="playback-controls">
+        <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
+        <button id="btn-play-pause" class="control-btn play-pause-btn" title="Play/Pause">⏸</button>
+        <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+    </div>
+
 </div>
 
 {% endblock %}

@@ -438,9 +438,16 @@ body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     transition: all 0.5s ease;
     object-fit: cover;
+    /* Hide by default until valid src is loaded */
+    opacity: 0;
 }
 
-/* Hide album art element when it has no src */
+/* Show album art only when it has a valid HTTP(S) URL */
+.album-art[src^="http"] {
+    opacity: 1;
+}
+
+/* Fallback: hide empty src to prevent broken image icon */
 .album-art:not([src]),
 .album-art[src=""] {
     display: none !important;
@@ -471,14 +478,34 @@ body {
     text-overflow: ellipsis;
 }
 
+/* ========== PLAYER UI CONTAINER ========== */
+/* Groups progress bar and controls for dynamic positioning */
+#player-ui-container {
+    position: fixed;
+    bottom: 80px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: bottom 0.3s ease;
+    z-index: 900;
+    pointer-events: none;
+}
+
+/* Move player container down when bottom nav is hidden */
+body.hide-nav #player-ui-container {
+    bottom: 20px;
+}
+
 /* ========== PROGRESS BAR ========== */
 .progress-container {
-    position: fixed;
-    bottom: 180px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: clamp(300px, 80%, 600px);
+    position: relative;
+    width: clamp(300px, 60%, 500px);
     text-align: center;
+    margin-bottom: 10px;
+    pointer-events: auto;
 }
 
 .progress-bar {
@@ -506,26 +533,23 @@ body {
 
 /* ========== PLAYBACK CONTROLS ========== */
 .playback-controls {
-    position: fixed;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
     display: flex;
-    gap: 1.5rem;
-    padding: 1rem;
-    background: rgba(26, 27, 38, 0.8);
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: rgba(26, 27, 38, 0.6);
     backdrop-filter: blur(10px);
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border-radius: 50px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    pointer-events: auto;
 }
 
 .control-btn {
-    background: rgba(255, 255, 255, 0.1);
+    background: transparent;
     border: none;
     color: white;
-    font-size: 1.3rem;
-    width: 60px;
-    height: 60px;
+    font-size: 1rem;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -550,17 +574,16 @@ body {
 }
 
 .play-pause-btn {
-    width: 70px;
-    height: 70px;
-    font-size: 1.5rem;
-    background: rgba(255, 255, 255, 0.15);
+    width: 50px;
+    height: 50px;
+    font-size: 1.2rem;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 /* ========== MINIMAL MODE OVERRIDES ========== */
 body[data-minimal="true"] .settings-toggle,
 body[data-minimal="true"] .track-header,
-body[data-minimal="true"] .progress-container,
-body[data-minimal="true"] .playback-controls,
+body[data-minimal="true"] #player-ui-container,
 body[data-minimal="true"] .album-art {
     display: none !important;
 }
@@ -590,24 +613,24 @@ body[data-minimal="true"] .album-art {
     }
 
     .control-btn {
-        width: 50px;
-        height: 50px;
-        font-size: 1.1rem;
+        width: 38px;
+        height: 38px;
+        font-size: 0.95rem;
     }
 
     .play-pause-btn {
-        width: 60px;
-        height: 60px;
-        font-size: 1.3rem;
+        width: 48px;
+        height: 48px;
+        font-size: 1.15rem;
     }
 
-    .progress-container {
-        bottom: 160px;
-    }
-
-    .playback-controls {
+    /* Adjust container position for mobile */
+    #player-ui-container {
         bottom: 90px;
-        gap: 1rem;
+    }
+
+    body.hide-nav #player-ui-container {
+        bottom: 10px;
     }
 }
 

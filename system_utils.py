@@ -245,7 +245,7 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
 # --- Main Function ---
 
 async def get_current_song_meta_data() -> Optional[dict]:
-    """Main orchestrator to get song data from configured sources."""
+    """Main orchestrator to get song data from configured sources with hybrid enrichment."""
     current_time = time.time()
     last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
     is_active = getattr(get_current_song_meta_data, '_is_active', True)
@@ -262,6 +262,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                      if s.get("enabled", False)]
 
     result = None
+    
+    # 1. Fetch Primary Data from sorted sources
     for source in sorted_sources:
         try:
             if source["name"] == "windows_media" and DESKTOP == "Windows":
@@ -277,6 +279,40 @@ async def get_current_song_meta_data() -> Optional[dict]:
         except Exception:
             continue
     
+    # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
+    if result and result.get("source") == "windows_media":
+        try:
+            spotify_data = await _get_current_song_meta_data_spotify()
+            if spotify_data:
+                # Fuzzy match check: If title and artist are roughly the same
+                win_title = result.get("title", "").lower()
+                win_artist = result.get("artist", "").lower()
+                spot_title = spotify_data.get("title", "").lower()
+                spot_artist = spotify_data.get("artist", "").lower()
+                
+                # Match if titles overlap or artist+title combo matches
+                title_match = win_title in spot_title or spot_title in win_title
+                artist_match = win_artist in spot_artist or spot_artist in win_artist
+                
+                if title_match and (artist_match or not win_artist):
+                    # Steal Album Art if Windows doesn't have it
+                    if not result.get("album_art_url") and spotify_data.get("album_art_url"):
+                        result["album_art_url"] = spotify_data.get("album_art_url")
+                    
+                    # Steal Colors if Windows has default colors
+                    if result.get("colors") == ("#24273a", "#363b54"):
+                        result["colors"] = spotify_data.get("colors", ("#24273a", "#363b54"))
+
+                    # Enable Controls by marking as hybrid
+                    # Frontend will allow controls for this source type
+                    result["source"] = "spotify_hybrid"
+                    
+                    if DEBUG["enabled"]:
+                        logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
+        except Exception as e:
+            logger.error(f"Hybrid enrichment failed: {e}")
+    
+    # 3. State Management (Active vs Idle)
     if result:
         get_current_song_meta_data._is_active = True
         get_current_song_meta_data._last_active_time = current_time

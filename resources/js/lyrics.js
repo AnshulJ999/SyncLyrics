@@ -151,11 +151,14 @@ function applyDisplayConfig() {
     const settingsToggle = document.getElementById('settings-toggle');
     const bottomNav = document.getElementById('bottom-nav');
 
+    // Toggle bottom nav visibility and body class for dynamic positioning
     if (bottomNav) {
         if (displayConfig.showBottomNav) {
             bottomNav.classList.remove('hidden');
+            document.body.classList.remove('hide-nav');
         } else {
             bottomNav.classList.add('hidden');
+            document.body.classList.add('hide-nav');
         }
     }
 
@@ -380,13 +383,13 @@ function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Only enable controls for Spotify
-    const isSpotifyActive = trackInfo.source === 'spotify';
+    // Enable controls for Spotify or Spotify Hybrid (Windows Media enriched with Spotify)
+    const canControl = trackInfo.source === 'spotify' || trackInfo.source === 'spotify_hybrid';
 
-    if (prevBtn) prevBtn.disabled = !isSpotifyActive;
-    if (nextBtn) nextBtn.disabled = !isSpotifyActive;
+    if (prevBtn) prevBtn.disabled = !canControl;
+    if (nextBtn) nextBtn.disabled = !canControl;
     if (playPauseBtn) {
-        playPauseBtn.disabled = !isSpotifyActive;
+        playPauseBtn.disabled = !canControl;
         // Update play/pause icon
         playPauseBtn.textContent = trackInfo.is_playing ? '⏸' : '▶';
     }
