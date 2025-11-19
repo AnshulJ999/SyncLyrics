@@ -21,10 +21,16 @@ from system_utils import _get_current_song_meta_data_spotify
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import signal
-import win32api
-import win32con
 import os
 import sys
+
+# Platform specific imports
+try:
+    import win32api
+    import win32con
+except ImportError:
+    win32api = None
+    win32con = None
 
 logger = get_logger(__name__)
 
@@ -245,7 +251,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_interrupt)
     
     # Set up Windows-specific handler
-    win32api.SetConsoleCtrlHandler(win32_handler, True)
+    if win32api:
+        win32api.SetConsoleCtrlHandler(win32_handler, True)
     
     try:
         logger.info("Starting SyncLyrics...")
