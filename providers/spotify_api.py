@@ -267,3 +267,65 @@ class SpotifyAPI:
             'Cache Age': f"{time.time() - self._last_metadata_check:.1f}s",
             'Cache Hit Rate': f"{(cached_responses / max(total_requests, 1)) * 100:.1f}%"
         }
+
+    # Playback Control Methods
+    
+    async def pause_playback(self) -> bool:
+        """Pause current playback"""
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            logger.info("Pausing playback")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.pause_playback)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pause playback: {e}")
+            return False
+    
+    async def resume_playback(self) -> bool:
+        """Resume current playback"""
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            logger.info("Resuming playback")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.start_playback)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to resume playback: {e}")
+            return False
+    
+    async def next_track(self) -> bool:
+        """Skip to next track"""
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            logger.info("Skipping to next track")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.next_track)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to skip to next track: {e}")
+            return False
+    
+    async def previous_track(self) -> bool:
+        """Go to previous track"""
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            logger.info("Going to previous track")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.previous_track)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to go to previous track: {e}")
+            return False

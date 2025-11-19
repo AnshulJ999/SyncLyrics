@@ -307,8 +307,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # Frontend will allow controls for this source type
                     result["source"] = "spotify_hybrid"
                     
-                    if DEBUG["enabled"]:
-                        logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
+ #                   if DEBUG["enabled"]:
+ #                       logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
         except Exception as e:
             logger.error(f"Hybrid enrichment failed: {e}")
     
