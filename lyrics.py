@@ -87,25 +87,30 @@ async def _get_lyrics(artist: str, title: str):
         tasks.append(task)
         provider_map[task] = provider.name
 
-    # Wait for the first successful result
-    try:
-        for completed_task in asyncio.as_completed(tasks):
+    # Wait for the FIRST one to complete
+    if not tasks: return None
+    
+    # Run untill first success
+    pending = set(tasks)
+    while pending:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        
+        for task in done:
             try:
-                lyrics = await completed_task
+                lyrics = await task
                 if lyrics:
-                    provider_name = provider_map.get(completed_task, "Unknown")
+                    provider_name = provider_map.get(task, "Unknown")
                     logger.info(f"Found lyrics using {provider_name} (Parallel)")
                     
-                    # Cancel remaining tasks
-                    for t in tasks:
-                        if not t.done(): t.cancel()
+                    # Cancel all other running tasks
+                    for p in pending:
+                        p.cancel()
                     return lyrics
             except Exception as e:
-                logger.warning(f"A provider failed during parallel fetch: {e}")
-                continue
-    except Exception as e:
-        logger.error(f"Critical error in parallel fetch: {e}")
-
+                provider_name = provider_map.get(task, "Unknown")
+                logger.warning(f"{provider_name} failed during parallel fetch: {e}")
+                # Loop continues to check other tasks or wait for pending
+                
     return None
 
 def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:

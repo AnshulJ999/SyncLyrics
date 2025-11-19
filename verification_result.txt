@@ -1,0 +1,4 @@
+Handlers: [<StreamHandler <stdout> (INFO)>, <RotatingFileHandler G:\GitHub\SyncLyrics Combined\SyncLyrics - Stable\logs\app.log (INFO)>]
+Found RotatingFileHandler: G:\GitHub\SyncLyrics Combined\SyncLyrics - Stable\logs\app.log, maxBytes=5242880, backupCount=3
+SUCCESS: RotatingFileHandler found.
+Log file exists: G:\GitHub\SyncLyrics Combined\SyncLyrics - Stable\logs\app.log

@@ -72,7 +72,17 @@ class SpotifyLyrics(LyricsProvider):
             track_url = track['url']
             
             response = requests.get(f"{self.api_url}/?url={track_url}&format=lrc")
-            data = response.json()
+            
+            # Fix: Check status code before parsing JSON
+            if response.status_code != 200:
+                logger.error(f"Spotify Proxy returned status {response.status_code}")
+                return None
+                
+            try:
+                data = response.json()
+            except Exception:
+                logger.error("Spotify Proxy returned invalid JSON")
+                return None
             
             if data.get('error'):
                 logger.error(f"Spotify - API error: {data.get('message')}")

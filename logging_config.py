@@ -43,8 +43,7 @@ def setup_logging(
         
     # Create timestamp-based log file name if not provided
     if not log_file:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = f"synclyrics_{timestamp}.log"
+        log_file = "app.log"
     log_path = LOGS_DIR / log_file
     
     # Get the root logger
@@ -62,7 +61,13 @@ def setup_logging(
         root_logger.addHandler(console_handler)
     
     # File handler (detailed format)
-    file_handler = logging.FileHandler(log_path, encoding='utf-8')
+    # Rotate logs: 5MB max size, keep 3 backups
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path, 
+        maxBytes=5*1024*1024, 
+        backupCount=10, 
+        encoding='utf-8'
+    )
     file_handler.setLevel(getattr(logging, file_level.upper()))
     file_handler.setFormatter(logging.Formatter(FILE_FORMAT))
     root_logger.addHandler(file_handler)

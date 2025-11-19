@@ -106,16 +106,28 @@ class LRCLIBProvider(LyricsProvider):
                 logger.info(f"LRCLib - No synced lyrics found for: {artist} - {title}")
                 return None
 
-            # Process lyrics
+            # Process lyrics SAFE PARSING
             processed_lyrics = []
             for line in lyrics.split("\n"):
-                time = line[1: line.find("]") -1]
-                m, s = time.split(":")
-                seconds = float(m) * 60 + float(s)
-                processed_lyrics.append((seconds, line[line.find("]") + 1:].strip()))
+                try:
+                    if not line.strip() or "]" not in line: continue
+                    
+                    # Parse Timestamp
+                    time_part = line[1: line.find("]")]
+                    
+                    # Skip meta tags like [by:...] or [ar:...]
+                    if not time_part[0].isdigit(): continue
+
+                    m, s = time_part.split(":")
+                    seconds = float(m) * 60 + float(s)
+                    text = line[line.find("]") + 1:].strip()
+                    
+                    processed_lyrics.append((seconds, text))
+                except ValueError:
+                    continue # Skip lines that fail to parse
             
             return processed_lyrics if processed_lyrics else None
             
         except Exception as e:
             logger.error(f"LRCLib - Error fetching lyrics for {artist} - {title}: {str(e)}")
-            return None 
+            return None
