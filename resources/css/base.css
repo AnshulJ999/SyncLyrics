@@ -335,3 +335,281 @@ body {
         background: linear-gradient(135deg, #24273a 0%, #363b54 100%);
     }
 }
+
+/* ========== SETTINGS TOGGLE ========== */
+.settings-toggle {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    font-size: 1.5rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    z-index: 1001;
+}
+
+.settings-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(90deg);
+}
+
+/* ========== SETTINGS PANEL ========== */
+.settings-panel {
+    position: fixed;
+    top: 80px;
+    right: 1rem;
+    background: rgba(26, 27, 38, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 1.5rem;
+    min-width: 300px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-panel h3 {
+    margin: 0 0 1rem 0;
+    color: white;
+    font-size: 1.2rem;
+}
+
+.settings-panel label {
+    display: block;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 0.8rem;
+    cursor: pointer;
+}
+
+.settings-panel input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+.settings-panel button {
+    width: 100%;
+    padding: 0.8rem;
+    margin-top: 1rem;
+    background: rgba(59, 130, 246, 0.3);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.settings-panel button:hover {
+    background: rgba(59, 130, 246, 0.5);
+}
+
+.url-display {
+    margin-top: 1rem;
+    padding: 0.8rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    word-break: break-all;
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+/* ========== TRACK HEADER ========== */
+.track-header {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    z-index: 100;
+    max-width: 400px;
+}
+
+.album-art {
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    transition: all 0.5s ease;
+    object-fit: cover;
+}
+
+.track-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.track-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.track-artist {
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    margin-top: 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ========== PROGRESS BAR ========== */
+.progress-container {
+    position: fixed;
+    bottom: 140px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: clamp(300px, 80%, 600px);
+    text-align: center;
+}
+
+.progress-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.9));
+    border-radius: 3px;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.progress-time {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ========== PLAYBACK CONTROLS ========== */
+.playback-controls {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 1.5rem;
+    padding: 1rem;
+    background: rgba(26, 27, 38, 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.control-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    font-size: 1.3rem;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.control-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.control-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.control-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.play-pause-btn {
+    width: 70px;
+    height: 70px;
+    font-size: 1.5rem;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* ========== MINIMAL MODE OVERRIDES ========== */
+body[data-minimal="true"] .settings-toggle,
+body[data-minimal="true"] .track-header,
+body[data-minimal="true"] .progress-container,
+body[data-minimal="true"] .playback-controls {
+    display: none !important;
+}
+
+/* ========== RESPONSIVE DESIGN FOR NEW COMPONENTS ========== */
+@media (max-width: 768px) {
+    .track-header {
+        max-width: 250px;
+    }
+    
+    .album-art {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .track-title {
+        font-size: 1rem;
+    }
+    
+    .track-artist {
+        font-size: 0.85rem;
+    }
+    
+    .control-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 1.1rem;
+    }
+    
+    .play-pause-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 1.3rem;
+    }
+    
+    .progress-container {
+        bottom: 120px;
+    }
+    
+    .playback-controls {
+        bottom: 70px;
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .track-header {
+        top: 0.5rem;
+        left: 0.5rem;
+    }
+    
+    .settings-toggle {
+        top: 0.5rem;
+        right: 0.5rem;
+        width: 40px;
+        height: 40px;
+        font-size: 1.2rem;
+    }
+}

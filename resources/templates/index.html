@@ -3,6 +3,32 @@
 <script src="{{ url_for('static', filename='js/lyrics.js')}}"> </script>
 {% endblock %}
 {% block content %}
+
+<!-- Settings Toggle Button -->
+<button id="settings-toggle" class="settings-toggle" title="Display Settings">⚙</button>
+
+<!-- Settings Panel -->
+<div id="settings-panel" class="settings-panel" style="display: none;">
+    <h3>Display Options</h3>
+    <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
+    <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
+    <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
+    <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
+    <label><input type="checkbox" id="opt-colors" checked> Use Album Colors</label>
+    <button id="copy-url-btn">Copy Current URL</button>
+    <div id="url-display" class="url-display"></div>
+</div>
+
+<!-- Track Header (Album Art + Info) -->
+<div id="track-header" class="track-header">
+    <img id="album-art" class="album-art" src="" alt="Album Art">
+    <div class="track-info">
+        <div id="track-title" class="track-title"></div>
+        <div id="track-artist" class="track-artist"></div>
+    </div>
+</div>
+
+<!-- Lyrics Container (Unchanged) -->
 <div id="lyrics" class="lyrics-container">
     <div id="prev-2" class="lyric-line far-previous"></div>
     <div id="prev-1" class="lyric-line previous"></div>
@@ -11,4 +37,22 @@
     <div id="next-2" class="lyric-line far-next"></div>
     <div id="next-3" class="lyric-line far-next"></div>
 </div>
+
+<!-- Progress Bar -->
+<div id="progress-container" class="progress-container">
+    <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+    </div>
+    <div class="progress-time">
+        <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+    </div>
+</div>
+
+<!-- Playback Controls -->
+<div id="playback-controls" class="playback-controls">
+    <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
+    <button id="btn-play-pause" class="control-btn play-pause-btn" title="Play/Pause">⏸</button>
+    <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+</div>
+
 {% endblock %}
