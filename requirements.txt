@@ -1,45 +1,31 @@
 # Core Dependencies
-Quart==0.18.4
-Pillow==9.5.0
-requests==2.31.0
-pystray==0.19.4
-python-benedict==0.31.0
-desktop-notifier==3.5.6
+quart>=0.18.4
+pillow>=10.3.0       # Compatible with Python 3.13
+requests>=2.31.0
+pystray>=0.19.4
+python-benedict>=0.31.0
+desktop-notifier>=3.5.6
 
 # Platform Specific
-winsdk==1.0.0b9; platform_system == "Windows"  # Windows only
-dbus-next==0.2.3; platform_system == "Linux"   # Linux only
-python-xlib==0.33; platform_system == "Linux"   # Linux only
+# winsdk>=1.0.0b9; platform_system == "Windows"
+# dbus-next>=0.2.3; platform_system == "Linux"
+# python-xlib>=0.33; platform_system == "Linux"
 
 # Flask Dependencies
-Werkzeug==2.3.6
-Jinja2==3.1.2
-click==8.1.4
-blinker==1.6.2
-itsdangerous==2.1.2
+werkzeug>=2.3.6
+jinja2>=3.1.2
+click>=8.1.4
+blinker>=1.5         # Quart requires <1.6 for 0.18.4, so >=1.5 <1.6
+itsdangerous>=2.1.2
 
 # Image Processing
-matplotlib==3.7.2  # For color processing
-numpy==1.25.1     # Required by matplotlib
+numpy>=1.26.4
+matplotlib>=3.8.0
 
 # Utilities
-colorama==0.4.6   # For terminal colors
-PyYAML==6.0       # For configuration
-urllib3==2.0.3    # Required by requests
+colorama>=0.4.6
+pyyaml>=6.0.2
+urllib3>=2.0.3
 
 # ASGI Server
-hypercorn==0.14.3
-
-# Missing Dependencies (Need to Add)
-asyncio>=3.4.3    # For async operations
-webbrowser        # Built-in, no need to add
-typing            # Built-in for Python 3.5+
-queue             # Built-in
-logging           # Built-in
-subprocess        # Built-in
-platform          # Built-in
-os                # Built-in
-re                # Built-in
-ctypes            # Built-in
-time              # Built-in
-json              # Built-in
+hypercorn>=0.14.3

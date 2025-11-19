@@ -46,11 +46,16 @@ async def _update_song():
 
     new_song_data = await get_current_song_meta_data()
 
-    should_fetch_lyrics = new_song_data is not None and (
-        current_song_data is None or (
-            current_song_data["artist"] != new_song_data["artist"] or
-            current_song_data["title"] != new_song_data["title"]
-        ))
+    # Don't fetch lyrics if no song is playing or if artist and title are empty
+    if new_song_data is None or (not new_song_data["artist"].strip() and not new_song_data["title"].strip()):
+        current_song_lyrics = None
+        current_song_data = new_song_data
+        return
+
+    should_fetch_lyrics = current_song_data is None or (
+        current_song_data["artist"] != new_song_data["artist"] or
+        current_song_data["title"] != new_song_data["title"]
+    )
 
     if should_fetch_lyrics:
         current_song_lyrics = await _get_lyrics(new_song_data["artist"], new_song_data["title"]) # Await _get_lyrics

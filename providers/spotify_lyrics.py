@@ -45,6 +45,11 @@ class SpotifyLyrics(LyricsProvider):
     async def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
         """Get lyrics for a track by searching Spotify"""
         try:
+            # Return None if both artist and title are empty
+            if not artist.strip() and not title.strip():
+                logger.debug("Spotify - Empty artist and title, skipping lyrics search")
+                return None
+
             if not self.spotify.initialized:
                 logger.error("Spotify client not initialized")
                 return None
