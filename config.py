@@ -4,11 +4,19 @@ All configurable settings are centralized here for easy management.
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-env_path = Path(__file__).parent / '.env'
+if getattr(sys, 'frozen', False):
+    # If run as exe, look in the executable's directory
+    application_path = Path(sys.executable).parent
+else:
+    # If run as script, look in the file's directory
+    application_path = Path(__file__).parent
+
+env_path = application_path / '.env'
 load_dotenv(env_path)
 
 def get_env(key: str, default: str = None) -> str:

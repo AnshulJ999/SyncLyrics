@@ -167,12 +167,17 @@ async def main() -> NoReturn:
     
     # Initialize Spotify services
     spotify_client = SpotifyAPI()
-    spotify_sync = SpotifyLyricsSync(spotify_client)
+    try:
+        spotify_sync = SpotifyLyricsSync(spotify_client)
+    except ValueError as e:
+        logger.error(f"Failed to initialize Spotify Sync: {e}")
+        spotify_sync = None
     
     # Initialize the sync system
     try:
-        logger.debug("Initializing Spotify sync...")
-        await spotify_sync.initialize()
+        if spotify_sync:
+            logger.debug("Initializing Spotify sync...")
+            await spotify_sync.initialize()
     except Exception as e:
         logger.error(f"Failed to initialize Spotify sync: {e}")
         logger.info("Continuing with fallback methods...")
