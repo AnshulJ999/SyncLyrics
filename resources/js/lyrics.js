@@ -11,6 +11,7 @@ let displayConfig = {
     showTrackInfo: true,
     showControls: true,
     showProgress: true,
+    showBottomNav: true,
     useAlbumColors: true
 };
 
@@ -121,6 +122,7 @@ function initializeDisplay() {
     displayConfig.showTrackInfo = params.get('showTrackInfo') !== 'false';
     displayConfig.showControls = params.get('showControls') !== 'false';
     displayConfig.showProgress = params.get('showProgress') !== 'false';
+    displayConfig.showBottomNav = params.get('showBottomNav') !== 'false';
     displayConfig.useAlbumColors = params.get('useAlbumColors') !== 'false';
 
     // Minimal mode overrides all
@@ -129,6 +131,8 @@ function initializeDisplay() {
         displayConfig.showTrackInfo = false;
         displayConfig.showControls = false;
         displayConfig.showProgress = false;
+        displayConfig.showBottomNav = false;
+
     }
 
     // Apply visibility
@@ -145,6 +149,15 @@ function applyDisplayConfig() {
     const progressContainer = document.getElementById('progress-container');
     const playbackControls = document.getElementById('playback-controls');
     const settingsToggle = document.getElementById('settings-toggle');
+    const bottomNav = document.getElementById('bottom-nav');
+
+    if (bottomNav) {
+        if (displayConfig.showBottomNav) {
+            bottomNav.classList.remove('hidden');
+        } else {
+            bottomNav.classList.add('hidden');
+        }
+    }
 
     if (trackHeader) {
         trackHeader.style.display = (displayConfig.showAlbumArt || displayConfig.showTrackInfo) ? 'flex' : 'none';
@@ -181,6 +194,7 @@ function setupSettingsPanel() {
     document.getElementById('opt-track-info').checked = displayConfig.showTrackInfo;
     document.getElementById('opt-controls').checked = displayConfig.showControls;
     document.getElementById('opt-progress').checked = displayConfig.showProgress;
+    document.getElementById('opt-bottom-nav').checked = displayConfig.showBottomNav;
     document.getElementById('opt-colors').checked = displayConfig.useAlbumColors;
 
     // Handle checkbox changes
@@ -204,6 +218,12 @@ function setupSettingsPanel() {
 
     document.getElementById('opt-progress').addEventListener('change', (e) => {
         displayConfig.showProgress = e.target.checked;
+        applyDisplayConfig();
+        updateUrlDisplay();
+    });
+
+    document.getElementById('opt-bottom-nav').addEventListener('change', (e) => {
+        displayConfig.showBottomNav = e.target.checked;
         applyDisplayConfig();
         updateUrlDisplay();
     });
@@ -249,6 +269,7 @@ function generateCurrentUrl() {
     if (!displayConfig.showTrackInfo) params.set('showTrackInfo', 'false');
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
+    if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'false');
 
     return params.toString() ? `${base}?${params.toString()}` : base;

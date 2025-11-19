@@ -440,6 +440,12 @@ body {
     object-fit: cover;
 }
 
+/* Hide album art element when it has no src */
+.album-art:not([src]),
+.album-art[src=""] {
+    display: none !important;
+}
+
 .track-info {
     flex: 1;
     min-width: 0;
@@ -468,7 +474,7 @@ body {
 /* ========== PROGRESS BAR ========== */
 .progress-container {
     position: fixed;
-    bottom: 140px;
+    bottom: 180px;
     left: 50%;
     transform: translateX(-50%);
     width: clamp(300px, 80%, 600px);
@@ -554,7 +560,13 @@ body {
 body[data-minimal="true"] .settings-toggle,
 body[data-minimal="true"] .track-header,
 body[data-minimal="true"] .progress-container,
-body[data-minimal="true"] .playback-controls {
+body[data-minimal="true"] .playback-controls,
+body[data-minimal="true"] .album-art {
+    display: none !important;
+}
+
+/* ========== BOTTOM NAV TOGGLE ========== */
+.bottom-nav.hidden {
     display: none !important;
 }
 
@@ -563,38 +575,38 @@ body[data-minimal="true"] .playback-controls {
     .track-header {
         max-width: 250px;
     }
-    
+
     .album-art {
         width: 80px;
         height: 80px;
     }
-    
+
     .track-title {
         font-size: 1rem;
     }
-    
+
     .track-artist {
         font-size: 0.85rem;
     }
-    
+
     .control-btn {
         width: 50px;
         height: 50px;
         font-size: 1.1rem;
     }
-    
+
     .play-pause-btn {
         width: 60px;
         height: 60px;
         font-size: 1.3rem;
     }
-    
+
     .progress-container {
-        bottom: 120px;
+        bottom: 160px;
     }
-    
+
     .playback-controls {
-        bottom: 70px;
+        bottom: 90px;
         gap: 1rem;
     }
 }
@@ -604,7 +616,7 @@ body[data-minimal="true"] .playback-controls {
         top: 0.5rem;
         left: 0.5rem;
     }
-    
+
     .settings-toggle {
         top: 0.5rem;
         right: 0.5rem;
