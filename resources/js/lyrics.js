@@ -37,13 +37,13 @@ async function getLyrics() {
     try {
         let response = await fetch('/lyrics');
         let data = await response.json();
-        
+
         // Update background if colors are present
         if (data.colors && (data.colors[0] !== currentColors[0] || data.colors[1] !== currentColors[1])) {
             updateBackgroundColors(data.colors);
             currentColors = data.colors;
         }
-        
+
         return data.lyrics || data;
     } catch (error) {
         console.error('Error fetching lyrics:', error);
@@ -59,9 +59,9 @@ function areLyricsDifferent(oldLyrics, newLyrics) {
 
 function updateBackgroundColors(colors) {
     if (!colors || !Array.isArray(colors)) return;
-    
+
     document.body.style.background = `linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
-    
+
     // Add subtle animation
     document.body.style.transition = 'background 1s ease-in-out';
 }
@@ -103,16 +103,16 @@ async function updateLoop() {
     while (true) {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
-        
+
         // Ensure minimum time between checks
         if (timeSinceLastCheck < updateInterval) {
             await sleep(updateInterval - timeSinceLastCheck);
             continue;
         }
-        
+
         // Get track info first
         const trackInfo = await getCurrentTrack();
-        
+
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
             const lyrics = await getLyrics();
@@ -120,7 +120,7 @@ async function updateLoop() {
                 setLyricsInDom(lyrics);
             }
         }
-        
+
         lastCheckTime = Date.now();
         await sleep(updateInterval);
     }
@@ -132,7 +132,7 @@ async function main() {
 
     // Set initial background
     document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
-    
+
     // Start the update loop
     updateLoop();
 }
