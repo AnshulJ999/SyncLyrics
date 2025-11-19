@@ -1,4 +1,3 @@
-
 # Project specific
 current_wallpaper.png
 state.json
@@ -11,12 +10,16 @@ sync_lyrics.spec
 build_final/
 build_output/
 Unused/
-resources/images/icon.ico
+# resources/images/icon.ico
 lyrics_database/
 cache/
 logs/
+config_backups/
+data/
+screenshots/
+verification_result.txt
 
-logs
+# Notes
 Notes.txt
 Notes2.txt
 Notes
@@ -25,7 +28,7 @@ cache
 .cache
 config_backups/
 data/
-screenshots/
+# screenshots/
 
 verification_result.txt
 
