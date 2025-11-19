@@ -1,16 +1,18 @@
-from os import path, getpid, kill, execv
-from signal import SIGINT
+from os import path
 from typing import Any
 import asyncio
-import sys
 
-from quart import Quart, render_template, redirect, flash, request, Response, jsonify, url_for
+from quart import Quart, render_template, redirect, flash, request, jsonify, url_for
 from lyrics import get_timed_lyrics_previous_and_next
 from system_utils import get_current_song_meta_data
 from state_manager import *
 from config import LYRICS
 from settings import settings
 from logging_config import get_logger
+
+# Import shared Spotify instance if needed for controls
+from system_utils import spotify_client 
+from providers.spotify_api import SpotifyAPI
 
 logger = get_logger(__name__)
 
@@ -20,316 +22,52 @@ app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_D
 app.config['SERVER_NAME'] = None
 app.secret_key = "secret key"
 
-VARIABLE_STATE_MAP = {
-    "theme": "theme",
-    "terminal-method": "representationMethods.terminal"
-}
+# --- Helper Functions ---
 
-
-def guess_value_type(value: Any) -> Any:
-    """
-    This function guesses the type of the value.
-
-    Args:
-        value (Any): The value to guess the type of.
-
-    Returns:
-        Any: The value with the guessed type.
-    """
-    if isinstance(value, str):
-        value = value.strip()
-        if value.lower() in ('true', 'on'): return True
-        if value.lower() in ('false', 'off'): return False
-        if value.isdigit(): return int(value)
-        if value.startswith('[') and value.endswith(']'):
-            try:
-                # Handle list values properly
-                import ast
-                return ast.literal_eval(value)
-            except:
-                pass
-    return value
-
+def get_spotify_client():
+    """Helper to get the active Spotify client from system_utils or create one"""
+    # We try to reuse the one from system_utils to share the session/cache
+    from system_utils import spotify_client
+    if spotify_client and spotify_client.initialized:
+        return spotify_client
+    
+    # Fallback: Create new if not exists (e.g. first run)
+    new_client = SpotifyAPI()
+    return new_client if new_client.initialized else None
 
 @app.context_processor
 async def theme() -> dict: 
-    """
-    This function is passed to every template context.
-    For now, it only returns the current theme.
-
-    Returns:
-        dict: A dictionary containing the current theme.
-    """
     return {"theme": get_attribute_js_notation(get_state(), 'theme')}
 
+# --- Routes ---
 
 @app.route("/")
 async def index() -> str:
-    """
-    This function returns the index page.
-
-    Returns:
-        str: The index page.
-    """
     return await render_template("index.html")
-
-
-@app.route("/api/settings", methods=['GET'])
-async def api_get_settings():
-    """Get all application settings"""
-    return jsonify(settings.get_all())
-
-@app.route("/api/settings/<key>", methods=['GET'])
-async def api_get_setting(key: str):
-    """Get a specific setting value"""
-    try:
-        return jsonify({"value": settings.get(key)})
-    except KeyError:
-        return jsonify({"error": f"Setting {key} not found"}), 404
-
-@app.route("/api/settings/<key>", methods=['POST'])
-async def api_update_setting(key: str):
-    """Update a specific setting value"""
-    try:
-        data = await request.get_json()
-        if 'value' not in data:
-            return jsonify({"error": "No value provided"}), 400
-            
-        needs_restart = settings.set(key, data['value'])
-        settings.save_to_config()
-        
-        return jsonify({
-            "success": True,
-            "requires_restart": needs_restart
-        })
-    except KeyError:
-        return jsonify({"error": f"Setting {key} not found"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-@app.route("/api/settings", methods=['POST'])
-async def api_update_settings():
-    """Update multiple settings at once"""
-    try:
-        data = await request.get_json()
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid request format"}), 400
-            
-        needs_restart = False
-        for key, value in data.items():
-            try:
-                needs_restart |= settings.set(key, value)
-            except KeyError:
-                return jsonify({"error": f"Setting {key} not found"}), 404
-                
-        settings.save_to_config()
-        
-        return jsonify({
-            "success": True,
-            "requires_restart": needs_restart
-        })
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-@app.errorhandler(Exception)
-async def handle_exception(e):
-    """Log any errors that occur"""
-    logger = get_logger(__name__)
-    logger.error(f"Error handling request: {str(e)}", exc_info=True)
-    return "Internal Server Error", 500
-
-@app.route('/settings', methods=['GET', 'POST'])
-async def settings_page():
-    if request.method == 'POST':
-        form_data = await request.form
-        logger.debug(f"Received settings form data: {form_data}")
-        
-        # Handle legacy settings
-        theme = form_data.get('theme', 'dark')
-        terminal_method = form_data.get('terminal-method', 'false').lower() == 'true'
-        
-        logger.debug(f"Legacy settings - theme: {theme}, terminal_method: {terminal_method}")
-        
-        # Update state manager
-        state = get_state()
-        state = set_attribute_js_notation(state, 'theme', theme)
-        state = set_attribute_js_notation(state, 'representationMethods.terminal', terminal_method)
-        set_state(state)
-        
-        # Handle new settings system
-        settings_updated = False
-        restart_required = False
-        errors = []
-        updates = {}
-        
-        for key, value in form_data.items():
-            # Skip legacy settings
-            if key in ['theme', 'terminal-method']:
-                continue
-                
-            # Get setting definition
-            setting = settings._definitions.get(key)
-            if not setting:
-                logger.warning(f"Unknown setting: {key}")
-                continue
-                
-            logger.debug(f"Processing setting {key} with raw value: {value}")
-            
-            # Convert value to correct type
-            try:
-                if setting.type == bool:
-                    value = str(value).lower() in ('true', 'on', '1', 'yes')
-                elif setting.type == int:
-                    value = int(value)
-                elif setting.type == float:
-                    value = float(value)
-                elif setting.type == list:
-                    if not value.strip():
-                        value = []  # Handle empty list case
-                    else:
-                        try:
-                            import ast
-                            value = ast.literal_eval(value)
-                            if not isinstance(value, list):
-                                raise ValueError(f"Expected list but got {type(value)}")
-                        except Exception as e:
-                            logger.error(f"Failed to parse list value for {key}: {value}")
-                            errors.append(f"Invalid list format for {key}: {str(e)}")
-                            continue
-                
-                # Validate value if there's a validator
-                if hasattr(setting, 'validator') and setting.validator:
-                    try:
-                        value = setting.validator(value)
-                    except ValueError as e:
-                        errors.append(f"Invalid value for {key}: {str(e)}")
-                        continue
-                    
-                # Update setting if changed
-                current_value = settings.get(key)
-                if current_value != value:
-                    logger.debug(f"Updating {key} from {current_value} to {value} (type: {type(value)})")
-                    updates[key] = value
-                    settings_updated = True
-                    if setting.requires_restart:
-                        restart_required = True
-                        
-            except (ValueError, TypeError) as e:
-                error_msg = f"Invalid value for {key}: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
-                continue
-        
-        # Apply all updates at once
-        if settings_updated:
-            try:
-                logger.debug(f"Applying updates: {updates}")
-                for key, value in updates.items():
-                    settings.set(key, value)
-                    
-                settings.save_to_config()
-                await flash("Settings saved successfully!")
-                if restart_required:
-                    await flash("Some changes require a restart to take effect.", "warning")
-            except Exception as e:
-                error_msg = f"Failed to save settings: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                errors.append(error_msg)
-        
-        # Flash any errors that occurred
-        for error in errors:
-            await flash(error, "error")
-            
-        return redirect(url_for('settings_page'))
-        
-    # GET request - render settings page
-    settings_by_category = {}
-    for key, setting in settings._definitions.items():
-        category = setting.category
-        if category not in settings_by_category:
-            settings_by_category[category] = {}
-            
-        settings_by_category[category][key] = {
-            'name': setting.name,
-            'type': setting.type.__name__,
-            'value': settings.get(key),
-            'requires_restart': setting.requires_restart,
-            'description': setting.description
-        }
-    
-    state = get_state()
-    return await render_template('settings.html',
-                               settings=settings_by_category,
-                               theme=get_attribute_js_notation(state, 'theme'),
-                               terminal_method=get_attribute_js_notation(state, 'representationMethods.terminal'))
-
-@app.route('/reset-defaults')
-async def reset_defaults():
-    try:
-        settings.reset_to_defaults()
-        flash('Settings reset to defaults successfully.', 'success')
-    except Exception as e:
-        flash(f'Error resetting settings: {str(e)}', 'danger')
-    return redirect(url_for('settings_page'))
 
 @app.route("/lyrics")
 async def lyrics() -> dict:
-    """
-    This function returns the lyrics and colors data.
-
-    Returns:
-        dict: The lyrics and color data, or an error message if lyrics not found.
-    """
+    """Returns lyrics and basic color data for the main loop."""
     lyrics_data = await get_timed_lyrics_previous_and_next()
     metadata = await get_current_song_meta_data()
     
-    if isinstance(lyrics_data, str):  # lyrics not found
+    if isinstance(lyrics_data, str):
         return {"msg": lyrics_data}
+    
+    colors = ["#24273a", "#363b54"]
+    if metadata and metadata.get("colors"):
+        colors = metadata.get("colors")
     
     return {
         "lyrics": list(lyrics_data),
-        "colors": metadata.get("colors", ["#24273a", "#363b54"]) if metadata else ["#24273a", "#363b54"]
+        "colors": colors
     }
-
-
-@app.route("/exit-application")
-async def exit_application() -> dict[str, str]:
-    """Exit the application."""
-    try:
-        from sync_lyrics import queue, force_exit
-        queue.put("exit")
-        
-        # Schedule force exit after 2 seconds
-        import threading
-        threading.Timer(2.0, force_exit).start()
-        
-        return {"status": "ok", "message": "Application is shutting down..."}, 200
-    except Exception as e:
-        logger.error(f"Error during exit: {e}")
-        return {"status": "error", "message": str(e)}, 500
-
-@app.route("/restart", methods=['POST'])
-async def restart_server():
-    """Restart the server."""
-    try:
-        # Import at function level to avoid circular import
-        from sync_lyrics import queue, restart
-        logger.info("Restart requested - sending restart signal")
-        queue.put("restart")
-        
-        # Return response immediately
-        return {'status': 'ok', 'message': 'Application is restarting...'}, 200
-    except Exception as e:
-        logger.error(f"Error during restart: {e}")
-        return {'status': 'error', 'message': str(e)}, 500
 
 @app.route("/current-track")
 async def current_track() -> dict:
     """
-    This function returns the current track information.
-    
-    Returns:
-        dict: The current track information or error message.
+    Returns detailed track info (Art, Progress, Duration).
+    Used for the UI Header/Footer.
     """
     try:
         metadata = await get_current_song_meta_data()
@@ -337,11 +75,135 @@ async def current_track() -> dict:
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
+        logger.error(f"Track Info Error: {e}")
         return {"error": str(e)}
+
+# --- Settings API (Unchanged) ---
+
+@app.route("/api/settings", methods=['GET'])
+async def api_get_settings():
+    return jsonify(settings.get_all())
+
+@app.route("/api/settings/<key>", methods=['POST'])
+async def api_update_setting(key: str):
+    try:
+        data = await request.get_json()
+        if 'value' not in data: return jsonify({"error": "No value"}), 400
+        needs_restart = settings.set(key, data['value'])
+        settings.save_to_config()
+        return jsonify({"success": True, "requires_restart": needs_restart})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/settings", methods=['POST'])
+async def api_update_settings():
+    try:
+        data = await request.get_json()
+        needs_restart = False
+        for key, value in data.items():
+            needs_restart |= settings.set(key, value)
+        settings.save_to_config()
+        return jsonify({"success": True, "requires_restart": needs_restart})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# --- Playback Control API (The New Features) ---
+
+@app.route("/api/playback/play-pause", methods=['POST'])
+async def toggle_playback():
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    # We need to know if playing or paused to toggle
+    track = await client.get_current_track()
+    if not track: return jsonify({"error": "No active session"}), 404
+    
+    if track.get('is_playing'):
+        await client.pause_playback()
+        msg = "Paused"
+    else:
+        await client.resume_playback()
+        msg = "Resumed"
+    
+    return jsonify({"status": "success", "message": msg})
+
+@app.route("/api/playback/next", methods=['POST'])
+async def next_track():
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    await client.next_track()
+    return jsonify({"status": "success", "message": "Skipped"})
+
+@app.route("/api/playback/previous", methods=['POST'])
+async def previous_track():
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    await client.previous_track()
+    return jsonify({"status": "success", "message": "Previous"})
+
+# --- System Routes ---
+
+@app.route('/settings', methods=['GET', 'POST'])
+async def settings_page():
+    if request.method == 'POST':
+        form_data = await request.form
+        
+        # Legacy support
+        theme = form_data.get('theme', 'dark')
+        terminal = form_data.get('terminal-method', 'false').lower() == 'true'
+        state = get_state()
+        state = set_attribute_js_notation(state, 'theme', theme)
+        state = set_attribute_js_notation(state, 'representationMethods.terminal', terminal)
+        set_state(state)
+
+        # New settings support
+        for key, value in form_data.items():
+            if key in ['theme', 'terminal-method']: continue
+            try:
+                # Simple type conversion logic
+                if value.lower() in ['true', 'on']: val = True
+                elif value.lower() in ['false', 'off']: val = False
+                elif value.isdigit(): val = int(value)
+                else: val = value
+                settings.set(key, val)
+            except: pass
+        
+        settings.save_to_config()
+        return redirect(url_for('settings_page'))
+
+    # Render
+    settings_by_category = {}
+    for key, setting in settings._definitions.items():
+        cat = setting.category or "Misc"
+        if cat not in settings_by_category: settings_by_category[cat] = {}
+        settings_by_category[cat][key] = {
+            'name': setting.name, 'type': setting.type.__name__,
+            'value': settings.get(key), 'description': setting.description
+        }
+    
+    return await render_template('settings.html', settings=settings_by_category, theme=get_attribute_js_notation(get_state(), 'theme'))
+
+@app.route('/reset-defaults')
+async def reset_defaults():
+    settings.reset_to_defaults()
+    return redirect(url_for('settings_page'))
+
+@app.route("/exit-application")
+async def exit_application() -> dict:
+    from sync_lyrics import queue, force_exit
+    queue.put("exit")
+    import threading
+    threading.Timer(2.0, force_exit).start()
+    return {"status": "ok"}, 200
+
+@app.route("/restart", methods=['POST'])
+async def restart_server():
+    from sync_lyrics import queue
+    queue.put("restart")
+    return {'status': 'ok'}, 200
 
 @app.route('/config')
 async def get_client_config():
-    """Return client-side configuration"""
-    return {
-        "updateInterval": LYRICS["display"]["update_interval"] * 1000  # Convert seconds to milliseconds
-    }
+    return {"updateInterval": LYRICS["display"]["update_interval"] * 1000}

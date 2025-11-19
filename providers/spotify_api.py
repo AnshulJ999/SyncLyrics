@@ -134,6 +134,11 @@ class SpotifyAPI:
             logger.warning("Spotify API not initialized, skipping track fetch")
             return None
             
+        # Check if we are in a backoff period
+        if hasattr(self, '_backoff_until') and time.time() < self._backoff_until:
+            logger.debug(f"In backoff period. Skipping request. Resuming in {self._backoff_until - time.time():.1f}s")
+            return self._metadata_cache
+
         try:
             # Track API call
             self.request_stats['total_requests'] += 1
@@ -152,11 +157,13 @@ class SpotifyAPI:
             loop = asyncio.get_event_loop()
             current = await loop.run_in_executor(None, self.sp.current_playback)
             
-            # Handle rate limits and errors
+            # Handle rate limits and errors (Spotipy usually raises exceptions, but checking status just in case)
             if hasattr(current, 'status_code'):
                 if current.status_code == 429:
                     self.request_stats['errors']['rate_limit'] += 1
-                    logger.warning(f"Rate limit hit. Total rate limits: {self.request_stats['errors']['rate_limit']}")
+                    retry_after = int(current.headers.get('Retry-After', 5))
+                    self._backoff_until = time.time() + retry_after
+                    logger.warning(f"Rate limit hit. Backing off for {retry_after}s")
                     return self._metadata_cache
                 elif current.status_code != 200:
                     self.request_stats['errors']['other'] += 1
@@ -186,6 +193,17 @@ class SpotifyAPI:
             }
             self._last_metadata_check = current_time
             
+            return self._metadata_cache
+            
+        except spotipy.exceptions.SpotifyException as e:
+            if e.http_status == 429:
+                self.request_stats['errors']['rate_limit'] += 1
+                retry_after = int(e.headers.get('Retry-After', 30))
+                self._backoff_until = time.time() + retry_after
+                logger.warning(f"Rate limit hit (Exception). Backing off for {retry_after}s")
+            else:
+                self.request_stats['errors']['other'] += 1
+                logger.error(f"Spotify API Exception: {e}")
             return self._metadata_cache
             
         except ReadTimeout:
