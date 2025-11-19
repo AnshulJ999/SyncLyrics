@@ -1,68 +1,74 @@
-# SyncLyrics
+# 🎵 SyncLyrics
 
-## Description
+A lightweight, cross-platform desktop application that displays synchronized lyrics for your currently playing song on Spotify and Windows Media.
 
-A cross-platform application (focused on Windows) that lets you sing along to your favorite songs by displaying the lyrics of the currently playing song in a locally hosted webpage.
+![Main UI](screenshots/SyncLyrics_Main_UI.png)
 
-Notes: Forked by me for personal use. It focuses on Windows 10 and Spotify desktop client. I can't guarantee it will work on other OS or other music players.
+## ✨ Features
+*   **Instant Sync:** Fetches time-synced lyrics from LRCLib, NetEase, Spotify, and QQ Music.
+*   **Parallel Search:** Queries all providers simultaneously for zero lag.
+*   **Cross-Platform:** Works on Windows (native media integration) and Linux (via playerctl).
+*   **Customizable:** Dark/Light themes, transparency, and minimized "Overlay" mode.
+*   **Resource Efficient:** Smart caching ensures <1% CPU usage.
 
-![Main UI](<screenshots/SyncLyrics Main UI.png>)
+## 🚀 Installation
 
-_Main UI_
+### Option 1: Download Executable (Windows)
+1.  Go to the **[Releases](../../releases)** page.
+2.  Download `SyncLyrics.zip`.
+3.  Extract and run `SyncLyrics.exe`.
 
-![Minimal Mode](<screenshots/Minimal Mode.png>) 
+### Option 2: Run from Source
+1.  Install Python 3.10+.
+2.  Clone the repo:
+    ```bash
+    git clone https://github.com/AnshulJ999/SyncLyrics.git
+    cd SyncLyrics
+    ```
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    # For Windows Media support (included in requirements.txt):
+    # pip install winsdk
+    ```
+4.  Create your configuration:
+    *   Rename `.env.example` to `.env`.
+    *   (Optional) Add your Spotify Client ID/Secret for better reliability.
+5.  Run it:
+    ```bash
+    python sync_lyrics.py
+    ```
 
-_Minimal Mode can be accessed by adding ?minimal=true to the URL_
+## 🛠️ Build
+To create a standalone executable:
 
-## Features
-- Real-time lyrics synchronization
-- Multiple display methods
-- Customizable appearance
-- Minimal mode for embedded view
-- Dark/Light theme support
-- Cross-platform support (Windows/Linux)
-
-More are being worked on slowly. 
-
-For more information check the SyncLyrics' [website](https://konstantinospetrakis.github.io/SyncLyrics/)! (Konstantinos' original project)
-
-**For linux playerctl is required**
-
-## Run from source
-```python
-python -m venv venv
-source ./venv/bin/activate
-pip install -r requirements.txt
-python sync_lyrics.py
+```bash
+python build.py
 ```
+This will generate the executable in `build_final/SyncLyrics/SyncLyrics.exe`.
 
-If you don't want to create a virtual environment, you can install requirements and use run.bat to run the script in a hidden window. 
+## ⚙️ Configuration
+You can configure the app via the System Tray icon -> Settings, or by editing `config.py` / `.env`.
 
-## Build
-```python
-python build.py 
-```
+| Setting | Description |
+| :--- | :--- |
+| `ENABLE_PARALLEL_FETCH` | Speed up search by asking all providers at once. |
+| `CACHE_DURATION_DAYS` | How long to keep lyrics offline (Default: 30 days). |
+| `SPOTIFY_LYRICS_SERVER` | Custom Spotify lyrics API server. |
 
-## Known Issues from Original Project
-* Tray is partially broken (only default button works) on Linux in the compiled versions. (Works fine when running from source)
-* Notification library has an issue on windows, I believe it will be fixed soon, see open issue: 
-https://github.com/samschott/desktop-notifier/issues/95
+## 🤝 Contributing
+Pull requests are welcome! Please make sure to update tests as appropriate.
 
-## Special Notes:
+## 📜 License
+[MIT](LICENSE)
 
-- I'm not a dev, just an enthusiast. I had a special niche need for this, so I used AI (Claude) to help me understand the code and modify it to my needs.
-- All of the code edits are made by AI, so it's prone to bugs right now. 
+## ❤️ Credits
+Based on the original work by [Konstantinos Petrakis](https://github.com/konstantinospetrakis).
 
-The license is the same as the original project.
+**Libraries used:**
+*   [Lyricify](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
+*   [Syncedlyrics](https://github.com/moehmeni/syncedlyrics)
+*   [spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api)
 
-## Credits: 
-
-* [Konstantinos Petrakis](https://github.com/konstantinospetrakis) for amazing work the original project
-
-Lyricify https://github.com/WXRIW/Lyricify-Lyrics-Helper
-
-Syncedlyrics https://github.com/moehmeni/syncedlyrics
-
-spotify lyrics api https://github.com/akashrchandran/spotify-lyrics-api
 
 

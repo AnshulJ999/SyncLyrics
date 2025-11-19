@@ -73,7 +73,8 @@ body {
 
 /* ========== LYRICS STATES ========== */
 /* Lines far from current (2+ lines away) */
-.far-previous, .far-next {
+.far-previous,
+.far-next {
     opacity: 0.40;
     /* Responsive font size */
     font-size: clamp(0.8rem, 2vw, 1.4rem);
@@ -82,7 +83,8 @@ body {
 }
 
 /* Lines immediately before/after current */
-.previous, .next {
+.previous,
+.next {
     opacity: 0.60;
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
@@ -103,10 +105,19 @@ body {
 
 /* ========== ANIMATIONS ========== */
 @keyframes wave {
+
     /* Gentle floating animation for current line */
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-2px); }
-    100% { transform: translateY(0); }
+    0% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-2px);
+    }
+
+    100% {
+        transform: translateY(0);
+    }
 }
 
 /* ========== BOTTOM NAVIGATION ========== */
@@ -196,7 +207,8 @@ body {
 }
 
 /* Hover and active states for nav links */
-.nav-link:hover, .nav-link.active {
+.nav-link:hover,
+.nav-link.active {
     color: white !important;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 4px;
@@ -251,7 +263,8 @@ input[type="range"] {
 
 /* ========== RESPONSIVE DESIGN ========== */
 /* Adjustments for small screens and embedded views */
-@media (max-height: 600px), (max-width: 600px) {
+@media (max-height: 600px),
+(max-width: 600px) {
     #lyrics {
         min-height: 100vh;
         gap: 0.5rem;
@@ -289,10 +302,21 @@ body[data-minimal="true"] #lyrics {
 
 /* ========== UTILITY CLASSES ========== */
 /* Helper classes for common styling needs */
-.text-center { text-align: center; }
-.mt-auto { margin-top: auto; }
-.d-flex { display: flex; }
-.align-items-center { align-items: center; }
+.text-center {
+    text-align: center;
+}
+
+.mt-auto {
+    margin-top: auto;
+}
+
+.d-flex {
+    display: flex;
+}
+
+.align-items-center {
+    align-items: center;
+}
 
 /* ========== HOME ASSISTANT SPECIFIC STYLES ========== */
 /* Default transparent background */
