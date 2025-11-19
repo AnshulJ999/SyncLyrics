@@ -6,7 +6,7 @@ from quart import Quart, render_template, redirect, flash, request, jsonify, url
 from lyrics import get_timed_lyrics_previous_and_next
 from system_utils import get_current_song_meta_data
 from state_manager import *
-from config import LYRICS
+from config import LYRICS, RESOURCES_DIR
 from settings import settings
 from logging_config import get_logger
 
@@ -16,8 +16,8 @@ from providers.spotify_api import SpotifyAPI
 
 logger = get_logger(__name__)
 
-TEMPLATE_DIRECTORY = path.abspath("resources/templates")
-STATIC_DIRECTORY = path.abspath("resources")
+TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
+STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
 app.config['SERVER_NAME'] = None
 app.secret_key = "secret key"

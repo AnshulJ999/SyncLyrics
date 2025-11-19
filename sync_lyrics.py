@@ -10,7 +10,7 @@ from typing import NoReturn
 from queue import Queue, Empty
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
-from config import DEBUG
+from config import DEBUG, RESOURCES_DIR
 from lyrics import get_timed_lyrics
 from state_manager import get_state
 from server import app
@@ -35,7 +35,7 @@ except ImportError:
 logger = get_logger(__name__)
 
 # Constants
-ICON_URL = path.abspath("./resources/images/icon.ico")
+ICON_URL = str(RESOURCES_DIR / "images" / "icon.ico")
 PORT = 9012
 queue = Queue()
 _tray_icon = None

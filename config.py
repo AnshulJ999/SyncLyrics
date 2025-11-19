@@ -8,15 +8,19 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-if getattr(sys, 'frozen', False):
-    # If run as exe, look in the executable's directory
-    application_path = Path(sys.executable).parent
+# ==========================================
+# Path Configuration (The Fix)
+# ==========================================
+# Determine if we are running as a script or a compiled exe
+if "__compiled__" in globals() or getattr(sys, 'frozen', False):
+    # Running as compiled EXE
+    ROOT_DIR = Path(sys.argv[0]).parent
 else:
-    # If run as script, look in the file's directory
-    application_path = Path(__file__).parent
+    # Running as Python Script
+    ROOT_DIR = Path(__file__).parent
 
-env_path = application_path / '.env'
+# Load environment variables
+env_path = ROOT_DIR / '.env'
 load_dotenv(env_path)
 
 def get_env(key: str, default: str = None) -> str:
@@ -33,6 +37,17 @@ def get_env_int(key: str, default: int = 0) -> int:
         return int(os.getenv(key, default))
     except (TypeError, ValueError):
         return default
+
+# ==========================================
+# Directory Definitions
+# ==========================================
+RESOURCES_DIR = ROOT_DIR / "resources"
+DATABASE_DIR = ROOT_DIR / "lyrics_database"
+CACHE_DIR = ROOT_DIR / "cache"
+
+# Create necessary directories
+for directory in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
 
 # ==========================================
 # Development and Debug Settings
@@ -53,7 +68,9 @@ DEBUG = {
     }
 }
 
+# ==========================================
 # Media Source Configuration
+# ==========================================
 MEDIA_SOURCE = {
     "sources": [
         {
@@ -73,18 +90,6 @@ MEDIA_SOURCE = {
         }
     ]
 }
-
-# ==========================================
-# Base Paths and Directories
-# ==========================================
-ROOT_DIR = Path(__file__).parent
-RESOURCES_DIR = ROOT_DIR / "resources"
-DATABASE_DIR = ROOT_DIR / "lyrics_database"
-CACHE_DIR = ROOT_DIR / "cache"
-
-# Create necessary directories
-for directory in [ROOT_DIR, RESOURCES_DIR, DATABASE_DIR, CACHE_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
 
 # ==========================================
 # Server Configuration
@@ -139,7 +144,9 @@ LYRICS = {
     },
 }
 
+# ==========================================
 # Spotify API Configuration
+# ==========================================
 SPOTIFY = {
     "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
     "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
@@ -154,6 +161,7 @@ SPOTIFY = {
         "enabled": True,      # Enable/disable caching
     }
 }
+
 # ==========================================
 # Lyrics Providers Configuration
 # ==========================================
@@ -199,9 +207,8 @@ PROVIDERS = {
     }
 }
 
-
 # ==========================================
-# Cache and Storage Settings
+# Storage & System Settings
 # ==========================================
 
 STORAGE = {
@@ -231,6 +238,7 @@ NOTIFICATIONS = {
 # ==========================================
 # System-specific Settings
 # ==========================================
+
 SYSTEM = {
     "windows": {
         "media_session": {
