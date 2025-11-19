@@ -7,16 +7,15 @@ sync_lyrics.dist/
 sync_lyrics.onefile-build/
 sync_lyrics.bin
 sync_lyrics.exe
-/resources latest - black
-/resources backup rollback
-.env
-.env 2
-.cursorignore
+sync_lyrics.spec
+build_final/
+build_output/
+Unused/
+resources/images/icon.ico
 lyrics_database/
 cache/
-ignored/
-.cache
 logs/
+
 logs
 Notes.txt
 Notes2.txt
@@ -26,6 +25,21 @@ cache
 .cache
 config_backups/
 data/
+screenshots/
+
+verification_result.txt
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursorignore
 
 # Python
 .pytest_cache
@@ -36,7 +50,6 @@ __pycache__/
 .Python
 env/
 venv/
-.env
 build/
 develop-eggs/
 dist/
@@ -52,10 +65,3 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
