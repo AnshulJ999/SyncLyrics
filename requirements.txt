@@ -7,7 +7,7 @@ python-benedict>=0.31.0
 desktop-notifier>=3.5.6
 
 # Platform Specific
-# winsdk>=1.0.0b9; platform_system == "Windows"
+winsdk>=1.0.0b9; platform_system == "Windows"
 # dbus-next>=0.2.3; platform_system == "Linux"
 # python-xlib>=0.33; platform_system == "Linux"
 
