@@ -383,6 +383,13 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
                         with open(art_path, "wb") as f:
                             f.write(response.content)
                         
+                        # Invalidate cache for this path because the content changed
+                        # Since we reuse the same filename for all Spotify art, we need to
+                        # clear the old cached colors when a new image is downloaded
+                        str_path = str(art_path)
+                        if str_path in _color_cache:
+                            del _color_cache[str_path]
+                        
                         # Extract colors
                         colors = extract_dominant_colors(art_path)
                         
