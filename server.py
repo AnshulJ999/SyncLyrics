@@ -1,6 +1,7 @@
 from os import path
 from typing import Any
 import asyncio
+import time
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for
 from lyrics import get_timed_lyrics_previous_and_next
@@ -15,6 +16,9 @@ from system_utils import spotify_client
 from providers.spotify_api import SpotifyAPI
 
 logger = get_logger(__name__)
+
+# Cache version based on app start time for cache busting
+APP_START_TIME = int(time.time())
 
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
@@ -34,6 +38,11 @@ def get_spotify_client():
     # Fallback: Create new if not exists (e.g. first run)
     new_client = SpotifyAPI()
     return new_client if new_client.initialized else None
+
+@app.context_processor
+async def inject_cache_version() -> dict:
+    """Inject cache busting version into all templates"""
+    return {"cache_version": APP_START_TIME}
 
 @app.context_processor
 async def theme() -> dict: 
