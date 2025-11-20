@@ -207,15 +207,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     reader = DataReader(stream)
                     await reader.load_async(stream.size)
                     
-                    # Read bytes
-                    buffer = reader.read_buffer(stream.size)
-                    data = buffer.to_byte_array() # Requires winsdk specific method or manual read
-                    # Actually, winsdk DataReader doesn't have to_byte_array easily exposed in all versions
-                    # Let's use read_bytes if available or a bytearray
-                    
-                    # Simpler approach for Python winsdk:
-                    # The buffer object might be convertible to bytes directly or via specific method
-                    # Let's try standard read_bytes
+                    # Read bytes directly into bytearray
                     byte_data = bytearray(stream.size)
                     reader.read_bytes(byte_data)
                     
