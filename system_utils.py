@@ -28,6 +28,7 @@ spotify_client = None
 _last_state_log_time = 0
 STATE_LOG_INTERVAL = 100
 _request_counters = {'spotify': 0, 'windows_media': 0}
+_last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (color1, color2)
@@ -62,7 +63,7 @@ def extract_dominant_colors(image_path: Path) -> list:
                 r, g, b = palette[i], palette[i+1], palette[i+2]
                 # Skip very dark or very light colors unless we have no choice
                 brightness = (r * 299 + g * 587 + b * 114) / 1000
-                if 20 < brightness < 235:
+                if 10 < brightness < 245:
                     colors.append(f"#{r:02x}{g:02x}{b:02x}")
             
             # Fallback if we filtered everything out
@@ -291,8 +292,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # Get thumbnail if available
         album_art_url = None
         try:
+            # Create track ID to check if we need to re-fetch thumbnail
+            global _last_windows_track_id
+            current_track_id = f"{artist}:{title}"
+            
             thumbnail_ref = info.thumbnail
-            if thumbnail_ref:
+            # Only read thumbnail if track has changed or we don't have cached art
+            if thumbnail_ref and current_track_id != _last_windows_track_id:
                 # Open the stream
                 stream = await thumbnail_ref.open_read_async()
                 if stream:
@@ -312,9 +318,15 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     with open(art_path, "wb") as f:
                         f.write(byte_data)
                     
+                    # Update last track ID
+                    _last_windows_track_id = current_track_id
+                    
                     # Set URL to local server route
                     # We use a timestamp to bust cache
                     album_art_url = f"/cover-art?t={int(time.time())}"
+            elif thumbnail_ref:
+                # Track hasn't changed, use existing cached art
+                album_art_url = f"/cover-art?t={int(time.time())}"
         except Exception as e:
             # logger.debug(f"Failed to extract Windows thumbnail: {e}")
             pass
