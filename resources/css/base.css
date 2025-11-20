@@ -616,7 +616,7 @@ body.hide-nav #player-ui-container {
     position: absolute;
     left: 50%;
     top: 50%;
-    transform: translate(calc(-50% - 3px), -50%);
+    transform: translate(calc(-50% - 5px), -50%);
     width: 4px;
     height: 16px;
     background: white;
