@@ -9,7 +9,13 @@ import os
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
-from config import ROOT_DIR
+# from config import ROOT_DIR  <-- Removed to avoid circular dependency
+import sys
+
+if "__compiled__" in globals() or getattr(sys, 'frozen', False):
+    ROOT_DIR = Path(sys.argv[0]).parent
+else:
+    ROOT_DIR = Path(__file__).parent
 import sys
 
 # Create logs directory if it doesn't exist
