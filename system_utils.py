@@ -14,6 +14,7 @@ import os
 from functools import lru_cache
 from PIL import Image
 from pathlib import Path
+import requests
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -350,7 +351,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
 async def _get_current_song_meta_data_spotify() -> Optional[dict]:
     """Spotify API metadata fetcher with standardized output."""
-    global spotify_client
+    global spotify_client, _last_spotify_art_url
     try:
         if spotify_client is None:
             spotify_client = SpotifyAPI()
@@ -363,6 +364,39 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
         track = await spotify_client.get_current_track()
         if not track or not track.get("is_playing", False):
             return None
+        
+        # Extract colors from Spotify album art
+        colors = ("#24273a", "#363b54")  # Default
+        album_art_url = track.get("album_art")
+        
+        if album_art_url:
+            try:
+                # Check if we need to download new art (track changed)
+                if not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
+                   _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url:
+                    
+                    # Download album art
+                    response = requests.get(album_art_url, timeout=5)
+                    if response.status_code == 200:
+                        # Save to cache
+                        art_path = CACHE_DIR / "spotify_art.jpg"
+                        with open(art_path, "wb") as f:
+                            f.write(response.content)
+                        
+                        # Extract colors
+                        colors = extract_dominant_colors(art_path)
+                        
+                        # Cache the URL to avoid re-downloading
+                        _get_current_song_meta_data_spotify._last_spotify_art_url = album_art_url
+                        _get_current_song_meta_data_spotify._last_spotify_colors = colors
+                else:
+                    # Use cached colors
+                    if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_colors'):
+                        colors = _get_current_song_meta_data_spotify._last_spotify_colors
+                        
+            except Exception as e:
+                logger.debug(f"Failed to extract Spotify colors: {e}")
+                # Fall back to defaults
             
         # Return standardized structure with all fields
         return {
@@ -371,8 +405,8 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
             "album": track.get("album"),
             "position": track["progress_ms"] / 1000,
             "duration_ms": track.get("duration_ms"),
-            "colors": track.get("colors", ("#24273a", "#363b54")),
-            "album_art_url": track.get("album_art"),
+            "colors": colors,
+            "album_art_url": album_art_url,
             "is_playing": True,
             "source": "spotify"
         }
@@ -437,9 +471,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     if spotify_data.get("album_art_url"):
                         result["album_art_url"] = spotify_data.get("album_art_url")
                     
-                    # Steal Colors if Windows has default colors
-                    if result.get("colors") == ("#24273a", "#363b54"):
-                        result["colors"] = spotify_data.get("colors", ("#24273a", "#363b54"))
+                    # Steal Colors from Spotify (now properly extracted!)
+                    if spotify_data.get("colors"):
+                        result["colors"] = spotify_data.get("colors")
 
                     # Enable Controls by marking as hybrid
                     # Frontend will allow controls for this source type
