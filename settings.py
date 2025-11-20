@@ -4,13 +4,15 @@ Handles dynamic configuration management using settings.json
 """
 
 import json
+import shutil
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
-from dataclasses import dataclass
-from logging_config import get_logger
+from typing import Any, Dict, Optional, Union
+from dataclasses import dataclass, asdict
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 

@@ -232,7 +232,13 @@ async def main() -> NoReturn:
 
 if __name__ == "__main__":
     # Set up logging
-    setup_logging()
+    setup_logging(
+        console_level=DEBUG.get("log_level", "INFO"),
+        file_level="DEBUG" if DEBUG.get("log_detailed", False) else "INFO",
+        console=DEBUG.get("log_to_console", True),
+        log_file=DEBUG.get("log_file", "synclyrics.log"),
+        log_providers=DEBUG.get("log_providers", True)
+    )
     
     def handle_interrupt(signum, frame):
         """Handle keyboard interrupt"""

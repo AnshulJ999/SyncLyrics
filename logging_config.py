@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
-from config import DEBUG, ROOT_DIR
+from config import ROOT_DIR
 import sys
 
 # Create logs directory if it doesn't exist
@@ -24,18 +24,21 @@ FILE_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d 
 _logging_initialized = False
 
 def setup_logging(
-    console_level: str = DEBUG.get("log_level", "INFO"),
+    console_level: str = "INFO",
     file_level: str = "INFO",
     console: bool = True,
-    log_file: Optional[str] = None
+    log_file: Optional[str] = None,
+    log_providers: bool = True
 ) -> None:
     """
     Set up logging configuration with separate console and file handlers
     
     Args:
         console_level: Logging level for console output (default: INFO)
-        file_level: Logging level for file output (default: DEBUG)
+        file_level: Logging level for file output (default: INFO)
         console: Whether to enable console logging (default: True)
+        log_file: Optional custom log file name
+        log_providers: Whether to enable provider logging (default: True)
     """
     global _logging_initialized
     if _logging_initialized:
@@ -61,10 +64,10 @@ def setup_logging(
         root_logger.addHandler(console_handler)
     
     # File handler (detailed format)
-    # Rotate logs: 5MB max size, keep 3 backups
+    # Rotate logs: 1MB max size, keep 10 backups
     file_handler = logging.handlers.RotatingFileHandler(
         log_path, 
-        maxBytes=5*1024*1024, 
+        maxBytes=1*1024*1024, 
         backupCount=10, 
         encoding='utf-8'
     )
@@ -73,7 +76,7 @@ def setup_logging(
     root_logger.addHandler(file_handler)
     
     # Configure specific loggers
-    if DEBUG.get("log_providers", True):
+    if log_providers:
         logging.getLogger('providers').setLevel(getattr(logging, console_level.upper()))
     else:
         logging.getLogger('providers').setLevel(logging.WARNING)
@@ -95,6 +98,6 @@ def setup_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the given name"""
-    if not _logging_initialized:
-        setup_logging()
+    # We do NOT call setup_logging() here anymore to avoid circular deps.
+    # It must be called explicitly by the entry point.
     return logging.getLogger(name)
