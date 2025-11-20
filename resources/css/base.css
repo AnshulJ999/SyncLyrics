@@ -341,23 +341,25 @@ body {
 /* ========== SETTINGS TOGGLE ========== */
 .settings-toggle {
     position: fixed;
-    top: 1rem;
-    right: 1rem;
-    background: rgba(255, 255, 255, 0.1);
+    top: 20px;
+    right: 20px;
+    z-index: 200;
+    width: 40px;
+    height: 40px;
     border: none;
+    background: transparent;
     color: white;
-    font-size: 1.5rem;
-    width: 50px;
-    height: 50px;
     border-radius: 50%;
+    font-size: 1.2rem;
     cursor: pointer;
     transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .settings-toggle:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
     transform: rotate(90deg);
 }
 
@@ -587,7 +589,7 @@ body.hide-nav #player-ui-container {
     width: 50px;
     height: 50px;
     font-size: 1.2rem;
-    background: rgba(255, 255, 255, 0.1);
+    background: transparent;
     position: relative;
     /* Override any emoji rendering */
     -webkit-tap-highlight-color: transparent;
@@ -614,11 +616,11 @@ body.hide-nav #player-ui-container {
     position: absolute;
     left: 50%;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(calc(-50% - 3px), -50%);
     width: 4px;
     height: 16px;
     background: white;
-    box-shadow: 8px 0 0 white;
+    box-shadow: 6px 0 0 white;
 }
 
 /* ========== MINIMAL MODE OVERRIDES ========== */
