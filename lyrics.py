@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import json
+import os
 from typing import Optional, List, Tuple
 
 from system_utils import get_current_song_meta_data
@@ -7,22 +9,86 @@ from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from providers.qq import QQMusicProvider
-from config import LYRICS, DEBUG, FEATURES
+from config import LYRICS, DEBUG, FEATURES, DATABASE_DIR
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # Initialize providers
+# Priority Order:
+# 1. LRCLib (Best, Open Source)
+# 2. Spotify (Good, Synced)
+# 3. NetEase (Good coverage)
+# 4. QQ Music (Fallback)
 providers = [
     LRCLIBProvider(),   # Priority 1
-    NetEaseProvider(),  # Priority 3
     SpotifyLyrics(),    # Priority 2
+    NetEaseProvider(),  # Priority 3
     QQMusicProvider()   # Priority 4
 ]
 
 LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
 current_song_data = None
 current_song_lyrics = None
+
+# ==========================================
+# NEW: Local Database Helper Functions
+# ==========================================
+
+def _get_db_path(artist: str, title: str) -> Optional[str]:
+    """Generates a safe filename for storing lyrics locally."""
+    try:
+        # Remove illegal characters for filenames to prevent errors
+        safe_artist = "".join([c for c in artist if c.isalnum() or c in " -_"]).strip()
+        safe_title = "".join([c for c in title if c.isalnum() or c in " -_"]).strip()
+        filename = f"{safe_artist} - {safe_title}.json"
+        return str(DATABASE_DIR / filename)
+    except Exception:
+        return None
+
+def _load_from_db(artist: str, title: str):
+    """Checks if lyrics exist on disk to avoid API calls (Instant Load)."""
+    if not FEATURES.get("save_lyrics_locally", False): return None
+    
+    db_path = _get_db_path(artist, title)
+    if db_path and os.path.exists(db_path):
+        try:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Validate data structure
+                if data.get('lyrics') and isinstance(data['lyrics'], list):
+                    logger.info(f"Loaded lyrics from Local DB: {db_path}")
+                    return data['lyrics']
+        except Exception as e:
+            logger.error(f"Failed to load from Local DB: {e}")
+    return None
+
+def _save_to_db(artist: str, title: str, lyrics: list, source: str):
+    """Saves found lyrics to disk for offline use next time."""
+    if not FEATURES.get("save_lyrics_locally", False) or not lyrics: return
+    
+    try:
+        db_path = _get_db_path(artist, title)
+        if not db_path: return
+        
+        data = {
+            "artist": artist,
+            "title": title,
+            "source": source,
+            "lyrics": lyrics,
+            "timestamp": os.path.getmtime(db_path) if os.path.exists(db_path) else 0
+        }
+        
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            
+        logger.info(f"Saved lyrics to DB: {db_path}")
+    except Exception as e:
+        logger.error(f"Failed to save to DB: {e}")
+
+# ==========================================
+# Main Logic
+# ==========================================
 
 async def _update_song():
     """Updates current song data and fetches lyrics if changed."""
@@ -43,19 +109,34 @@ async def _update_song():
     )
 
     if should_fetch_lyrics:
-        current_song_lyrics = await _get_lyrics(new_song_data["artist"], new_song_data["title"])
+        artist = new_song_data["artist"]
+        title = new_song_data["title"]
+        
+        # 1. Try Local DB First (Zero Latency)
+        local_lyrics = _load_from_db(artist, title)
+        if local_lyrics:
+            current_song_lyrics = local_lyrics
+        else:
+            # 2. Try Internet (Smart Race)
+            current_song_lyrics = await _get_lyrics(artist, title)
 
     current_song_data = new_song_data
 
 async def _get_lyrics(artist: str, title: str):
     """
-    Tries providers.
-    If FEATURES['parallel_provider_fetch'] is True, tries all at once.
+    Tries providers to find lyrics.
+    
+    Modes:
+    1. Sequential: Tries one by one. Safe, but slow.
+    2. Parallel (Smart): Tries all at once. 
+       - Prioritizes High Quality (LRCLib/Spotify).
+       - If Low Quality (QQ/NetEase) comes first, waits 1.5s for High Quality before giving up.
     """
     active_providers = [p for p in providers if p.enabled]
     sorted_providers = sorted(active_providers, key=lambda x: x.priority)
 
     # --- SEQUENTIAL MODE (Safe Mode) ---
+    # This mode is used if Parallel Fetching is disabled in config
     if not FEATURES.get("parallel_provider_fetch", True):
         for provider in sorted_providers:
             try:
@@ -67,14 +148,15 @@ async def _get_lyrics(artist: str, title: str):
                 
                 if lyrics:
                     logger.info(f"Found lyrics using {provider.name}")
+                    _save_to_db(artist, title, lyrics, provider.name) # Save result
                     return lyrics
             except Exception as e:
                 logger.error(f"Error with {provider.name}: {e}")
         return None
 
-    # --- PARALLEL MODE (Fast Mode) ---
+    # --- PARALLEL MODE (Fast Mode with Smart Priority) ---
     tasks = []
-    provider_map = {} # Map tasks to provider names
+    provider_map = {} # Map tasks to provider objects
 
     for provider in sorted_providers:
         # Wrap sync functions in thread, keep async functions as is
@@ -85,33 +167,88 @@ async def _get_lyrics(artist: str, title: str):
         
         task = asyncio.create_task(coro)
         tasks.append(task)
-        provider_map[task] = provider.name
+        provider_map[task] = provider
 
-    # Wait for the FIRST one to complete
     if not tasks: return None
     
-    # Run untill first success
     pending = set(tasks)
+    best_result = None
+    best_provider_name = "Unknown"
+    
     while pending:
+        # Wait for the NEXT provider to finish (First Completed)
         done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
         
         for task in done:
             try:
                 lyrics = await task
-                if lyrics:
-                    provider_name = provider_map.get(task, "Unknown")
-                    logger.info(f"Found lyrics using {provider_name} (Parallel)")
-                    
-                    # Cancel all other running tasks
-                    for p in pending:
-                        p.cancel()
-                    return lyrics
-            except Exception as e:
-                provider_name = provider_map.get(task, "Unknown")
-                logger.warning(f"{provider_name} failed during parallel fetch: {e}")
-                # Loop continues to check other tasks or wait for pending
+                provider = provider_map.get(task)
                 
-    return None
+                if lyrics:
+                    # Case A: High Quality Provider (Priority 1 or 2)
+                    # If this finishes, we take it immediately because it's the best.
+                    if provider.priority <= 2:
+                        logger.info(f"Found High Quality lyrics using {provider.name} (Priority {provider.priority})")
+                        _save_to_db(artist, title, lyrics, provider.name)
+                        
+                        # Cancel all other running tasks to save resources
+                        for p in pending: p.cancel()
+                        return lyrics
+                    
+                    # Case B: Low Quality Provider (Priority 3 or 4)
+                    # If this finishes first, we hold onto it but DON'T return yet.
+                    # We want to give High Quality providers a chance.
+                    if best_result is None:
+                        best_result = lyrics
+                        best_provider_name = provider.name
+                        logger.info(f"Found backup lyrics using {provider.name}. Waiting for better...")
+
+            except Exception:
+                continue # Ignore errors from individual providers
+        
+        # If we have a result (backup), check if we should keep waiting or just use it
+        if best_result and pending:
+            # Check: Are any High Priority tasks still running?
+            high_priority_pending = any(provider_map[t].priority <= 2 for t in pending)
+            
+            if not high_priority_pending:
+                # No better providers left running. Return the backup.
+                logger.info(f"No better providers left. Using {best_provider_name}.")
+                _save_to_db(artist, title, best_result, best_provider_name)
+                for p in pending: p.cancel()
+                return best_result
+            
+            # High Quality providers are still running. Give them a "Grace Period" (1.5s).
+            # If they don't finish in 1.5s, we just take the backup.
+            try:
+                done_hq, pending_hq = await asyncio.wait(pending, timeout=1.5, return_when=asyncio.FIRST_COMPLETED)
+                
+                # Did anyone finish in that 1.5s?
+                for task in done_hq:
+                    try:
+                        hq_lyrics = await task
+                        provider = provider_map.get(task)
+                        if hq_lyrics and provider.priority <= 2:
+                             logger.info(f"Managed to upgrade to {provider.name} during grace period!")
+                             _save_to_db(artist, title, hq_lyrics, provider.name)
+                             for p in pending: p.cancel()
+                             return hq_lyrics
+                    except: pass
+                
+                # Time is up. High Quality took too long. Return backup.
+                logger.info("Grace period over. Returning backup.")
+                _save_to_db(artist, title, best_result, best_provider_name)
+                for p in pending: p.cancel()
+                return best_result
+
+            except Exception:
+                return best_result
+
+    return best_result
+
+# ==========================================
+# Helper Functions (Unchanged)
+# ==========================================
 
 def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
     """Returns index of current lyric line based on song position."""
@@ -173,8 +310,6 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
         
     if idx == -3: # Outro
         return (safe_get_line(len(current_song_lyrics)-1), "End", "", "", "", "")
-
-    # Standard return
     return (
         safe_get_line(idx - 2),
         safe_get_line(idx - 1),
