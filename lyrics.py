@@ -46,43 +46,92 @@ def _get_db_path(artist: str, title: str) -> Optional[str]:
     except Exception:
         return None
 
-def _load_from_db(artist: str, title: str):
-    """Checks if lyrics exist on disk to avoid API calls (Instant Load)."""
+def _load_from_db(artist: str, title: str) -> Optional[list]:
+    """Loads lyrics from disk, prioritizing highest-quality provider available."""
     if not FEATURES.get("save_lyrics_locally", False): return None
     
     db_path = _get_db_path(artist, title)
-    if db_path and os.path.exists(db_path):
-        try:
-            with open(db_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # Validate data structure
-                if data.get('lyrics') and isinstance(data['lyrics'], list):
-                    logger.info(f"Loaded lyrics from Local DB: {db_path}")
-                    return data['lyrics']
-        except Exception as e:
-            logger.error(f"Failed to load from Local DB: {e}")
+    if not db_path or not os.path.exists(db_path): return None
+    
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # NEW FORMAT: Multi-provider storage
+        if "saved_lyrics" in data and isinstance(data["saved_lyrics"], dict):
+            saved_lyrics = data["saved_lyrics"]
+            
+            # Find the BEST provider available (lowest priority number = best)
+            best_priority = 999
+            best_lyrics = None
+            best_provider = None
+            
+            for provider in providers:
+                if provider.name in saved_lyrics:
+                    if provider.priority < best_priority:
+                        best_priority = provider.priority
+                        best_lyrics = saved_lyrics[provider.name]
+                        best_provider = provider.name
+            
+            if best_lyrics:
+                logger.info(f"Loaded lyrics from Local DB: {best_provider} (Priority {best_priority})")
+                return best_lyrics
+        
+        # LEGACY FORMAT: Single provider (backward compatibility)
+        elif data.get('lyrics') and isinstance(data['lyrics'], list):
+            source = data.get('source', 'Unknown')
+            logger.info(f"Loaded lyrics from Local DB (legacy): {source}")
+            return data['lyrics']
+            
+    except Exception as e:
+        logger.error(f"Failed to load from Local DB: {e}")
+    
     return None
 
-def _save_to_db(artist: str, title: str, lyrics: list, source: str):
-    """Saves found lyrics to disk for offline use next time."""
+def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> None:
+    """Saves found lyrics to disk with multi-provider support (merge mode)."""
     if not FEATURES.get("save_lyrics_locally", False) or not lyrics: return
     
     try:
         db_path = _get_db_path(artist, title)
         if not db_path: return
         
+        # Start with base structure
         data = {
             "artist": artist,
             "title": title,
-            "source": source,
-            "lyrics": lyrics,
-            "timestamp": os.path.getmtime(db_path) if os.path.exists(db_path) else 0
+            "saved_lyrics": {}  # Multi-provider storage
         }
         
+        # Load existing file if it exists (for merging)
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                    
+                # Check if it's the NEW format (has "saved_lyrics" dict)
+                if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                    data = existing  # Keep all existing providers
+                    
+                # Migrate LEGACY format (single provider) to NEW format
+                elif "lyrics" in existing and "source" in existing:
+                    legacy_source = existing.get("source", "Unknown")
+                    legacy_lyrics = existing.get("lyrics", [])
+                    if legacy_lyrics:
+                        data["saved_lyrics"][legacy_source] = legacy_lyrics
+                        logger.info(f"Migrated legacy DB entry from {legacy_source}")
+                        
+            except Exception as e:
+                logger.warning(f"Could not load existing DB, creating new: {e}")
+        
+        # Add/Update this provider's lyrics
+        data["saved_lyrics"][source] = lyrics
+        
+        # Save merged data
         with open(db_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
             
-        logger.info(f"Saved lyrics to DB: {db_path}")
+        logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers)")
     except Exception as e:
         logger.error(f"Failed to save to DB: {e}")
 
@@ -130,7 +179,7 @@ async def _get_lyrics(artist: str, title: str):
     1. Sequential: Tries one by one. Safe, but slow.
     2. Parallel (Smart): Tries all at once. 
        - Prioritizes High Quality (LRCLib/Spotify).
-       - If Low Quality (QQ/NetEase) comes first, waits 1.5s for High Quality before giving up.
+       - If Low Quality (QQ/NetEase) comes first, waits a configurable grace period for High Quality before giving up.
     """
     active_providers = [p for p in providers if p.enabled]
     sorted_providers = sorted(active_providers, key=lambda x: x.priority)
@@ -202,6 +251,7 @@ async def _get_lyrics(artist: str, title: str):
                         best_result = lyrics
                         best_provider_name = provider.name
                         logger.info(f"Found backup lyrics using {provider.name}. Waiting for better...")
+                        _save_to_db(artist, title, lyrics, provider.name)  # Save backup immediately
 
             except Exception:
                 continue # Ignore errors from individual providers
@@ -218,12 +268,16 @@ async def _get_lyrics(artist: str, title: str):
                 for p in pending: p.cancel()
                 return best_result
             
-            # High Quality providers are still running. Give them a "Grace Period" (1.5s).
-            # If they don't finish in 1.5s, we just take the backup.
+            # High Quality providers are still running. Give them a configurable "Grace Period".
+            # If they don't finish in time, we just take the backup.
             try:
-                done_hq, pending_hq = await asyncio.wait(pending, timeout=1.5, return_when=asyncio.FIRST_COMPLETED)
+                done_hq, pending_hq = await asyncio.wait(
+                    pending,
+                    timeout=LYRICS.get("smart_race_timeout", 3.0),
+                    return_when=asyncio.FIRST_COMPLETED
+                )
                 
-                # Did anyone finish in that 1.5s?
+                # Did anyone finish during the grace window?
                 for task in done_hq:
                     try:
                         hq_lyrics = await task

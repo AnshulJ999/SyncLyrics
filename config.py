@@ -141,6 +141,7 @@ LYRICS = {
         "idle_interval": 5.0,    # Idle polling (3 seconds)
         "latency_compensation": 0.1,  # Positive = earlier, negative = later (100ms earlier)
         "idle_wait_time": 3.0,   # Wait time before switching to idle mode (seconds)
+        "smart_race_timeout": 3.0,
     },
 }
 

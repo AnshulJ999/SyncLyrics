@@ -35,26 +35,26 @@ async def test_local_db():
         os.remove(db_path)
         
     # 1. Save Low Priority Provider
-    print("Saving Low Priority (NetEase)...")
-    lyrics._save_to_db(artist, title, ["NetEase Lyrics"], "NetEase")
+    print("Saving Low Priority (netease)...")
+    lyrics._save_to_db(artist, title, ["NetEase Lyrics"], "netease")
     
     # Verify file exists and content
     with open(db_path, 'r') as f:
         data = json.load(f)
         assert "saved_lyrics" in data
-        assert "NetEase" in data["saved_lyrics"]
-        assert data["saved_lyrics"]["NetEase"] == ["NetEase Lyrics"]
+        assert "netease" in data["saved_lyrics"]
+        assert data["saved_lyrics"]["netease"] == ["NetEase Lyrics"]
         
     # 2. Save High Priority Provider (Merge)
-    print("Saving High Priority (LRCLib)...")
-    lyrics._save_to_db(artist, title, ["LRCLib Lyrics"], "LRCLib")
+    print("Saving High Priority (lrclib)...")
+    lyrics._save_to_db(artist, title, ["LRCLib Lyrics"], "lrclib")
     
     # Verify merge
     with open(db_path, 'r') as f:
         data = json.load(f)
-        assert "NetEase" in data["saved_lyrics"]
-        assert "LRCLib" in data["saved_lyrics"]
-        assert data["saved_lyrics"]["LRCLib"] == ["LRCLib Lyrics"]
+        assert "netease" in data["saved_lyrics"]
+        assert "lrclib" in data["saved_lyrics"]
+        assert data["saved_lyrics"]["lrclib"] == ["LRCLib Lyrics"]
         
     # 3. Load Best Provider
     # Mock providers list in lyrics module to include our mock providers
@@ -75,8 +75,8 @@ async def test_smart_race():
     # Scenario 1: High Priority finishes fast -> Returns immediately
     print("Scenario 1: High Priority Fast")
     lyrics.providers = [
-        MockProvider("LRCLib", 1, delay=0.1, result="HQ Lyrics"),
-        MockProvider("NetEase", 3, delay=0.5, result="LQ Lyrics")
+        MockProvider("lrclib", 1, delay=0.1, result="HQ Lyrics"),
+        MockProvider("netease", 3, delay=0.5, result="LQ Lyrics")
     ]
     res = await lyrics._get_lyrics("A", "B")
     assert res == ["HQ Lyrics"]
@@ -86,8 +86,8 @@ async def test_smart_race():
     print("Scenario 2: Low Priority Fast, High Priority within Grace Period")
     LYRICS["smart_race_timeout"] = 1.0
     lyrics.providers = [
-        MockProvider("LRCLib", 1, delay=0.5, result="HQ Lyrics"),
-        MockProvider("NetEase", 3, delay=0.1, result="LQ Lyrics")
+        MockProvider("lrclib", 1, delay=0.5, result="HQ Lyrics"),
+        MockProvider("netease", 3, delay=0.1, result="LQ Lyrics")
     ]
     res = await lyrics._get_lyrics("A", "B")
     assert res == ["HQ Lyrics"]
@@ -97,8 +97,8 @@ async def test_smart_race():
     print("Scenario 3: Low Priority Fast, High Priority Timeout")
     LYRICS["smart_race_timeout"] = 0.2
     lyrics.providers = [
-        MockProvider("LRCLib", 1, delay=1.0, result="HQ Lyrics"),
-        MockProvider("NetEase", 3, delay=0.1, result="LQ Lyrics")
+        MockProvider("lrclib", 1, delay=1.0, result="HQ Lyrics"),
+        MockProvider("netease", 3, delay=0.1, result="LQ Lyrics")
     ]
     res = await lyrics._get_lyrics("A", "B")
     assert res == ["LQ Lyrics"]
