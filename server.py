@@ -114,11 +114,19 @@ async def get_cover_art():
     """Serves the locally cached album art from Windows Media."""
     from config import CACHE_DIR
     import os
+    from system_utils import get_cached_art_path
     
-    art_path = CACHE_DIR / "current_art.jpg"
-    if os.path.exists(art_path):
+    art_path = get_cached_art_path()
+    if art_path and art_path.exists():
         from quart import send_file
-        return await send_file(art_path, mimetype='image/jpeg')
+        # Determine mimetype based on extension
+        ext = art_path.suffix.lower()
+        mime = 'image/jpeg' # Default
+        if ext == '.png': mime = 'image/png'
+        elif ext == '.bmp': mime = 'image/bmp'
+        elif ext == '.gif': mime = 'image/gif'
+        
+        return await send_file(art_path, mimetype=mime)
     
     return "", 404
 

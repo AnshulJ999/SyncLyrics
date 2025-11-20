@@ -198,6 +198,24 @@ def _get_current_song_meta_data_gnome() -> Optional[dict]:
     except Exception:
         return None
 
+def get_image_extension(data: bytes) -> str:
+    if data.startswith(b'\xff\xd8'):
+        return '.jpg'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return '.png'
+    if data.startswith(b'BM'):
+        return '.bmp'
+    if data.startswith(b'GIF8'):
+        return '.gif'
+    return '.jpg'
+
+def get_cached_art_path() -> Optional[Path]:
+    for ext in ['.jpg', '.png', '.bmp', '.gif']:
+        path = CACHE_DIR / f"current_art{ext}"
+        if path.exists():
+            return path
+    return None
+
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
     global _win_media_manager
@@ -268,8 +286,11 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     byte_data = bytearray(stream.size)
                     reader.read_bytes(byte_data)
                     
+                    # Detect extension
+                    ext = get_image_extension(byte_data)
+                    
                     # Save to cache
-                    art_path = CACHE_DIR / "current_art.jpg"
+                    art_path = CACHE_DIR / f"current_art{ext}"
                     with open(art_path, "wb") as f:
                         f.write(byte_data)
                     
@@ -402,8 +423,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # 4. If we still don't have colors (e.g. local file), extract them
     if result and result.get("source") == "windows_media":
         # Check if we have a local art path in the cache
-        local_art_path = CACHE_DIR / "current_art.jpg"
-        if result.get("colors") == ("#24273a", "#363b54") and local_art_path.exists():
+        local_art_path = get_cached_art_path()
+        if result.get("colors") == ("#24273a", "#363b54") and local_art_path:
              # Only extract if we have a valid local file and default colors
              result["colors"] = extract_dominant_colors(local_art_path)
 
