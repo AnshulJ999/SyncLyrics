@@ -185,8 +185,18 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         if not timeline: return None
             
         seconds = timeline.position.total_seconds()
-        elapsed = time.time() - timeline.last_updated_time.timestamp()
-        position = seconds + elapsed
+        
+        # Check for invalid timestamp (Windows epoch 1601-01-01)
+        # We use a safe threshold like year 2000
+        if timeline.last_updated_time.year < 2000:
+            # Invalid timestamp means we can't calculate elapsed time
+            # If position is also 0, we probably have no data
+            if seconds == 0:
+                return None
+            position = seconds
+        else:
+            elapsed = time.time() - timeline.last_updated_time.timestamp()
+            position = seconds + elapsed
         
         # Get duration if available
         duration_ms = None
