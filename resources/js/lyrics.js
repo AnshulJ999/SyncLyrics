@@ -459,8 +459,14 @@ function updateControlState(trackInfo) {
     if (nextBtn) nextBtn.disabled = !canControl;
     if (playPauseBtn) {
         playPauseBtn.disabled = !canControl;
-        // Update play/pause icon
-        playPauseBtn.textContent = trackInfo.is_playing ? '⏸' : '▶';
+        // Update play/pause icon via CSS classes
+        if (trackInfo.is_playing) {
+            playPauseBtn.classList.remove('paused');
+            playPauseBtn.classList.add('playing');
+        } else {
+            playPauseBtn.classList.remove('playing');
+            playPauseBtn.classList.add('paused');
+        }
     }
 }
 

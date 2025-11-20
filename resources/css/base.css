@@ -588,6 +588,37 @@ body.hide-nav #player-ui-container {
     height: 50px;
     font-size: 1.2rem;
     background: rgba(255, 255, 255, 0.1);
+    position: relative;
+    /* Override any emoji rendering */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-fill-color: white;
+}
+
+/* Pure CSS Play Icon (triangle) */
+.play-pause-btn.paused::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-40%, -50%);
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 8px 0 8px 14px;
+    border-color: transparent transparent transparent white;
+}
+
+/* Pure CSS Pause Icon (two bars) */
+.play-pause-btn.playing::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 16px;
+    background: white;
+    box-shadow: 8px 0 0 white;
 }
 
 /* ========== MINIMAL MODE OVERRIDES ========== */
