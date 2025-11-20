@@ -63,8 +63,26 @@ class MusicxmatchProvider(LyricsProvider):
                 logger.info(f"Musicxmatch - No results found for: {artist} - {title}")
                 return None
             
-            # Extract track list from response
-            track_list = search_results.get("message", {}).get("body", {}).get("track_list", [])
+            # Check status code
+            status_code = search_results.get("message", {}).get("header", {}).get("status_code")
+            if status_code != 200:
+                logger.warning(f"Musicxmatch - API returned status {status_code} (likely captcha/blocked)")
+                return None
+
+            # Extract body
+            body = search_results.get("message", {}).get("body", {})
+            
+            # Handle case where body is a list (e.g. empty list [])
+            if isinstance(body, list):
+                if not body:
+                    logger.info(f"Musicxmatch - No results (empty body) for: {artist} - {title}")
+                    return None
+                # If it's a non-empty list, we don't know the structure, so log and return
+                logger.warning(f"Musicxmatch - Unexpected body format (list): {body}")
+                return None
+                
+            # Extract track list from body dict
+            track_list = body.get("track_list", [])
             
             if not track_list:
                 logger.info(f"Musicxmatch - No tracks in search results for: {artist} - {title}")
