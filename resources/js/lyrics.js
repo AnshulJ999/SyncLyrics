@@ -12,7 +12,7 @@ let displayConfig = {
     showControls: true,
     showProgress: true,
     showBottomNav: true,
-    useAlbumColors: true,
+    useAlbumColors: false,
     artBackground: false
 };
 
