@@ -185,15 +185,30 @@ function setLyricsInDom(lyrics) {
 function initializeDisplay() {
     const params = new URLSearchParams(window.location.search);
 
-    // Parse parameters
+    // Parse parameters - only override defaults if explicitly set in URL
     displayConfig.minimal = params.get('minimal') === 'true';
-    displayConfig.showAlbumArt = params.get('showAlbumArt') !== 'false';
-    displayConfig.showTrackInfo = params.get('showTrackInfo') !== 'false';
-    displayConfig.showControls = params.get('showControls') !== 'false';
-    displayConfig.showProgress = params.get('showProgress') !== 'false';
-    displayConfig.showBottomNav = params.get('showBottomNav') !== 'false';
-    displayConfig.useAlbumColors = params.get('useAlbumColors') !== 'false';
-    displayConfig.artBackground = params.get('artBackground') === 'true';
+
+    if (params.has('showAlbumArt')) {
+        displayConfig.showAlbumArt = params.get('showAlbumArt') === 'true';
+    }
+    if (params.has('showTrackInfo')) {
+        displayConfig.showTrackInfo = params.get('showTrackInfo') === 'true';
+    }
+    if (params.has('showControls')) {
+        displayConfig.showControls = params.get('showControls') === 'true';
+    }
+    if (params.has('showProgress')) {
+        displayConfig.showProgress = params.get('showProgress') === 'true';
+    }
+    if (params.has('showBottomNav')) {
+        displayConfig.showBottomNav = params.get('showBottomNav') === 'true';
+    }
+    if (params.has('useAlbumColors')) {
+        displayConfig.useAlbumColors = params.get('useAlbumColors') === 'true';
+    }
+    if (params.has('artBackground')) {
+        displayConfig.artBackground = params.get('artBackground') === 'true';
+    }
 
     // Minimal mode overrides all
     if (displayConfig.minimal) {
