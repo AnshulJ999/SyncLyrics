@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="{{ theme }}">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,7 +24,7 @@
                             notice.style.zIndex = '9999';
                             notice.innerHTML = 'Application is shutting down...';
                             document.body.appendChild(notice);
-                            
+
                             setTimeout(() => {
                                 window.close();
                             }, 2000);
@@ -58,38 +59,39 @@
     </script>
     {% endblock %}
 </head>
+
 <body class="d-flex flex-column vh-100">
     <div id="content" class="flex-grow-1">
         {% with messages = get_flashed_messages(with_categories=True) %}
-            {% if messages %}
-                <ul class="messages list-unstyled text-center rounded col-12 col-md-8 col-lg-6 mx-auto">
-                    {% for category, message in messages %}
-                        <li class="alert
+        {% if messages %}
+        <ul class="messages list-unstyled text-center rounded col-12 col-md-8 col-lg-6 mx-auto">
+            {% for category, message in messages %}
+            <li class="alert
                             {% if category == 'error' %} alert-danger {% endif %}
                             {% if category == 'warning' %} alert-warning {% endif %}
                             {% if category == 'info' %} alert-info {% endif %}
                             {% if category == 'success' %} alert-success {% endif %}
-                        "> 
-                            {{ message }} 
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
+                        ">
+                {{ message }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
         {% endwith %}
         {% block content %} {% endblock %}
     </div>
 
     <div id="bottom-nav" class="bottom-nav">
-        <div class="app-title">🎵 SyncLyrics 🎵</div>
+        <div class="app-title">SyncLyrics</div>
         <nav class="nav-controls">
             <ul class="nav">
                 <li class="nav-item">
                     <a class="nav-link {% if request.endpoint == 'index' %} active {% endif %}"
-                       href="{{ url_for('index') }}">Home</a>
+                        href="{{ url_for('index') }}">Home</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if request.endpoint == 'settings_page' %} active {% endif %}"
-                       href="{{ url_for('settings_page') }}">Settings</a>
+                        href="{{ url_for('settings_page') }}">Settings</a>
                 </li>
                 <li class="nav-item">
                     <button class="nav-link" onclick="restartServer()">
@@ -111,4 +113,5 @@
         </div>
     </div>
 </body>
+
 </html>
