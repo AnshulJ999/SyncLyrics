@@ -259,16 +259,34 @@ function setupSettingsPanel() {
     if (copyUrlBtn) {
         copyUrlBtn.addEventListener('click', () => {
             const url = generateCurrentUrl();
+
+            const showFeedback = (success) => {
+                copyUrlBtn.textContent = success ? '✓ Copied!' : '✗ Copy failed';
+                setTimeout(() => {
+                    copyUrlBtn.textContent = 'Copy Current URL';
+                }, 2000);
+            };
+
             navigator.clipboard.writeText(url).then(() => {
-                copyUrlBtn.textContent = '✓ Copied!';
-                setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
-                }, 2000);
+                showFeedback(true);
             }).catch(() => {
-                copyUrlBtn.textContent = '✗ Copy failed';
-                setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
-                }, 2000);
+                // Fallback for non-secure contexts (Android HTTP)
+                try {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = url;
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-9999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    showFeedback(successful);
+                } catch (err) {
+                    console.error('Fallback copy failed:', err);
+                    showFeedback(false);
+                }
             });
         });
     }

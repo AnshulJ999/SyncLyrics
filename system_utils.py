@@ -53,21 +53,39 @@ def extract_dominant_colors(image_path: Path) -> list:
             img = img.convert("RGB")
             img = img.resize((100, 100))  # Small size is enough for dominant colors
             
-            # Quantize to 2 colors
-            result = img.quantize(colors=2)
-            palette = result.getpalette()[:6]  # Get first 2 RGB triplets
+            # Quantize to more colors to get a better palette
+            result = img.quantize(colors=10)
+            palette = result.getpalette()[:30]  # Get first 10 RGB triplets
             
             colors = []
             for i in range(0, len(palette), 3):
                 r, g, b = palette[i], palette[i+1], palette[i+2]
-                colors.append(f"#{r:02x}{g:02x}{b:02x}")
+                # Skip very dark or very light colors unless we have no choice
+                brightness = (r * 299 + g * 587 + b * 114) / 1000
+                if 20 < brightness < 235:
+                    colors.append(f"#{r:02x}{g:02x}{b:02x}")
             
-            # Ensure we have 2 colors
-            while len(colors) < 2:
-                colors.append(colors[0] if colors else "#363b54")
+            # Fallback if we filtered everything out
+            if not colors:
+                for i in range(0, len(palette), 3):
+                    r, g, b = palette[i], palette[i+1], palette[i+2]
+                    colors.append(f"#{r:02x}{g:02x}{b:02x}")
+
+            # Ensure we have 2 unique colors
+            final_colors = []
+            seen = set()
+            for c in colors:
+                if c not in seen:
+                    final_colors.append(c)
+                    seen.add(c)
+                if len(final_colors) >= 2:
+                    break
+            
+            while len(final_colors) < 2:
+                final_colors.append(final_colors[0] if final_colors else "#363b54")
                 
-            _color_cache[path_str] = colors
-            return colors
+            _color_cache[path_str] = final_colors
+            return final_colors
             
     except Exception as e:
         logger.error(f"Color extraction failed: {e}")
