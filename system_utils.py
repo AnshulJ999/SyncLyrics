@@ -335,8 +335,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 artist_match = win_artist in spot_artist or spot_artist in win_artist
                 
                 if title_match and (artist_match or not win_artist):
-                    # Steal Album Art if Windows doesn't have it
-                    if not result.get("album_art_url") and spotify_data.get("album_art_url"):
+                    # Steal Album Art (Prefer Spotify as it is usually higher quality)
+                    if spotify_data.get("album_art_url"):
                         result["album_art_url"] = spotify_data.get("album_art_url")
                     
                     # Steal Colors if Windows has default colors
