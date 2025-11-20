@@ -7,7 +7,6 @@ from os import path
 import time
 from time import sleep
 from typing import NoReturn
-from queue import Queue, Empty
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
 from config import DEBUG, RESOURCES_DIR
@@ -23,6 +22,8 @@ from hypercorn.asyncio import serve
 import signal
 import os
 import sys
+from context import queue
+from queue import Empty
 
 # Platform specific imports
 try:
@@ -37,7 +38,6 @@ logger = get_logger(__name__)
 # Constants
 ICON_URL = str(RESOURCES_DIR / "images" / "icon.ico")
 PORT = 9012
-queue = Queue()
 _tray_icon = None
 _tray_thread = None
 _shutdown_event = asyncio.Event()

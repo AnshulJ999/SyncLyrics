@@ -109,6 +109,19 @@ async def api_update_settings():
 
 # --- Playback Control API (The New Features) ---
 
+@app.route("/cover-art")
+async def get_cover_art():
+    """Serves the locally cached album art from Windows Media."""
+    from config import CACHE_DIR
+    import os
+    
+    art_path = CACHE_DIR / "current_art.jpg"
+    if os.path.exists(art_path):
+        from quart import send_file
+        return await send_file(art_path, mimetype='image/jpeg')
+    
+    return "", 404
+
 @app.route("/api/playback/play-pause", methods=['POST'])
 async def toggle_playback():
     client = get_spotify_client()
@@ -192,7 +205,8 @@ async def reset_defaults():
 
 @app.route("/exit-application")
 async def exit_application() -> dict:
-    from sync_lyrics import queue, force_exit
+    from context import queue
+    from sync_lyrics import force_exit
     queue.put("exit")
     import threading
     threading.Timer(2.0, force_exit).start()
@@ -200,7 +214,7 @@ async def exit_application() -> dict:
 
 @app.route("/restart", methods=['POST'])
 async def restart_server():
-    from sync_lyrics import queue
+    from context import queue
     queue.put("restart")
     return {'status': 'ok'}, 200
 

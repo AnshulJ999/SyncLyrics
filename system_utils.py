@@ -9,6 +9,8 @@ from config import DEBUG
 from state_manager import get_state, set_state
 from providers.spotify_api import SpotifyAPI
 from logging_config import get_logger
+from config import CACHE_DIR
+import os
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -193,6 +195,42 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         except:
             pass
         
+        # Get thumbnail if available
+        album_art_url = None
+        try:
+            thumbnail_ref = info.thumbnail
+            if thumbnail_ref:
+                # Open the stream
+                stream = await thumbnail_ref.open_read_async()
+                if stream:
+                    # Create DataReader
+                    reader = DataReader(stream)
+                    await reader.load_async(stream.size)
+                    
+                    # Read bytes
+                    buffer = reader.read_buffer(stream.size)
+                    data = buffer.to_byte_array() # Requires winsdk specific method or manual read
+                    # Actually, winsdk DataReader doesn't have to_byte_array easily exposed in all versions
+                    # Let's use read_bytes if available or a bytearray
+                    
+                    # Simpler approach for Python winsdk:
+                    # The buffer object might be convertible to bytes directly or via specific method
+                    # Let's try standard read_bytes
+                    byte_data = bytearray(stream.size)
+                    reader.read_bytes(byte_data)
+                    
+                    # Save to cache
+                    art_path = CACHE_DIR / "current_art.jpg"
+                    with open(art_path, "wb") as f:
+                        f.write(byte_data)
+                    
+                    # Set URL to local server route
+                    # We use a timestamp to bust cache
+                    album_art_url = f"/cover-art?t={int(time.time())}"
+        except Exception as e:
+            # logger.debug(f"Failed to extract Windows thumbnail: {e}")
+            pass
+
         return {
             "artist": artist,
             "title": title,
@@ -200,7 +238,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "position": position,
             "duration_ms": duration_ms,
             "colors": ("#24273a", "#363b54"),
-            "album_art_url": None,  # Windows thumbnail retrieval is unstable in Python
+            "album_art_url": album_art_url,
             "is_playing": True,
             "source": "windows_media"
         }
