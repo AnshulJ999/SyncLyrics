@@ -33,3 +33,6 @@ hypercorn>=0.14.3
 
 # Build System
 pyinstaller>=6.0.0
+
+# Lyrics Providers
+musicxmatch_api

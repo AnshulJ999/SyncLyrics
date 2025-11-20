@@ -113,6 +113,12 @@ class SettingsManager:
             "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
+            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, True, True, "Providers", "Enable Musicxmatch", "switch"),
+            "providers.musicxmatch.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
+            "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
+            "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
+            "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
+
             # Storage
             "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Storage", "Enable local DB", "switch"),
             "storage.lyrics_db.max_size_mb": Setting("Max DB Size", int, 100, False, "Storage", "Max DB size (MB)", "number"),

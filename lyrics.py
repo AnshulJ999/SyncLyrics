@@ -9,6 +9,7 @@ from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from providers.qq import QQMusicProvider
+from providers.musicxmatch import MusicxmatchProvider
 from config import LYRICS, DEBUG, FEATURES, DATABASE_DIR
 from logging_config import get_logger
 
@@ -17,14 +18,15 @@ logger = get_logger(__name__)
 # Initialize providers
 # Priority Order:
 # 1. LRCLib (Best, Open Source)
-# 2. Spotify (Good, Synced)
+# 2. Spotify + Musicxmatch (Good, Synced - Race in parallel)
 # 3. NetEase (Good coverage)
 # 4. QQ Music (Fallback)
 providers = [
-    LRCLIBProvider(),   # Priority 1
-    SpotifyLyrics(),    # Priority 2
-    NetEaseProvider(),  # Priority 3
-    QQMusicProvider()   # Priority 4
+    LRCLIBProvider(),      # Priority 1
+    SpotifyLyrics(),       # Priority 2
+    MusicxmatchProvider(), # Priority 2
+    NetEaseProvider(),     # Priority 3
+    QQMusicProvider()      # Priority 4
 ]
 
 LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
