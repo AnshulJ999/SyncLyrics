@@ -670,7 +670,9 @@ body[data-minimal="true"] .album-art {
 
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
-}/* ========== BACKGROUND LAYERS ========== */
+}
+
+/* ========== BACKGROUND LAYERS ========== */
 .background-layer {
     position: fixed;
     top: 0;
