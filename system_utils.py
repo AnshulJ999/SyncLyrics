@@ -11,6 +11,9 @@ from providers.spotify_api import SpotifyAPI
 from logging_config import get_logger
 from config import CACHE_DIR
 import os
+from functools import lru_cache
+from PIL import Image
+from pathlib import Path
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -25,6 +28,50 @@ spotify_client = None
 _last_state_log_time = 0
 STATE_LOG_INTERVAL = 100
 _request_counters = {'spotify': 0, 'windows_media': 0}
+
+# Cache for color extraction to avoid re-processing the same image
+# Key: file_path, Value: (color1, color2)
+_color_cache = {}
+
+def extract_dominant_colors(image_path: Path) -> list:
+    """
+    Extracts two dominant colors from an image using a simple quantization method.
+    Results are cached in memory to prevent high CPU usage on repeated polls.
+    """
+    path_str = str(image_path)
+    
+    # Check cache first
+    if path_str in _color_cache:
+        return _color_cache[path_str]
+        
+    try:
+        if not image_path.exists():
+            return ["#24273a", "#363b54"]
+
+        # Open image and resize for faster processing
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            img = img.resize((100, 100))  # Small size is enough for dominant colors
+            
+            # Quantize to 2 colors
+            result = img.quantize(colors=2)
+            palette = result.getpalette()[:6]  # Get first 2 RGB triplets
+            
+            colors = []
+            for i in range(0, len(palette), 3):
+                r, g, b = palette[i], palette[i+1], palette[i+2]
+                colors.append(f"#{r:02x}{g:02x}{b:02x}")
+            
+            # Ensure we have 2 colors
+            while len(colors) < 2:
+                colors.append(colors[0] if colors else "#363b54")
+                
+            _color_cache[path_str] = colors
+            return colors
+            
+    except Exception as e:
+        logger.error(f"Color extraction failed: {e}")
+        return ["#24273a", "#363b54"]
 
 # --- Helper Functions ---
 
@@ -352,6 +399,14 @@ async def get_current_song_meta_data() -> Optional[dict]:
         except Exception as e:
             logger.error(f"Hybrid enrichment failed: {e}")
     
+    # 4. If we still don't have colors (e.g. local file), extract them
+    if result and result.get("source") == "windows_media":
+        # Check if we have a local art path in the cache
+        local_art_path = CACHE_DIR / "current_art.jpg"
+        if result.get("colors") == ("#24273a", "#363b54") and local_art_path.exists():
+             # Only extract if we have a valid local file and default colors
+             result["colors"] = extract_dominant_colors(local_art_path)
+
     # 3. State Management (Active vs Idle)
     if result:
         get_current_song_meta_data._is_active = True

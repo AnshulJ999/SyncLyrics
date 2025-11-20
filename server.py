@@ -220,4 +220,8 @@ async def restart_server():
 
 @app.route('/config')
 async def get_client_config():
-    return {"updateInterval": LYRICS["display"]["update_interval"] * 1000}
+    return {
+        "updateInterval": LYRICS["display"]["update_interval"] * 1000,
+        "blurStrength": settings.get("ui.blur_strength"),
+        "overlayOpacity": settings.get("ui.overlay_opacity")
+    }

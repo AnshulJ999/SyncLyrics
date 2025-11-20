@@ -12,7 +12,8 @@ let displayConfig = {
     showControls: true,
     showProgress: true,
     showBottomNav: true,
-    useAlbumColors: true
+    useAlbumColors: true,
+    artBackground: false
 };
 
 let lastTrackInfo = null;
@@ -23,6 +24,12 @@ async function getConfig() {
         const config = await response.json();
         updateInterval = config.updateInterval;
         console.log(`Update interval set to: ${updateInterval}ms`);  // Debug log
+        if (config.overlayOpacity !== undefined) {
+            document.documentElement.style.setProperty('--overlay-opacity', config.overlayOpacity);
+        }
+
+        console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}`);
+
     } catch (error) {
         console.error('Error fetching config:', error);
     }
@@ -72,6 +79,9 @@ function areLyricsDifferent(oldLyrics, newLyrics) {
 
 function updateBackgroundColors(colors) {
     if (!colors || !Array.isArray(colors)) return;
+
+    // If Art Background is enabled, do NOT apply gradient
+    if (displayConfig.artBackground) return;
 
     document.body.style.background = `linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
 
@@ -124,6 +134,7 @@ function initializeDisplay() {
     displayConfig.showProgress = params.get('showProgress') !== 'false';
     displayConfig.showBottomNav = params.get('showBottomNav') !== 'false';
     displayConfig.useAlbumColors = params.get('useAlbumColors') !== 'false';
+    displayConfig.artBackground = params.get('artBackground') === 'true';
 
     // Minimal mode overrides all
     if (displayConfig.minimal) {
@@ -199,6 +210,7 @@ function setupSettingsPanel() {
     document.getElementById('opt-progress').checked = displayConfig.showProgress;
     document.getElementById('opt-bottom-nav').checked = displayConfig.showBottomNav;
     document.getElementById('opt-colors').checked = displayConfig.useAlbumColors;
+    document.getElementById('opt-art-bg').checked = displayConfig.artBackground;
 
     // Handle checkbox changes
     document.getElementById('opt-album-art').addEventListener('change', (e) => {
@@ -233,6 +245,13 @@ function setupSettingsPanel() {
 
     document.getElementById('opt-colors').addEventListener('change', (e) => {
         displayConfig.useAlbumColors = e.target.checked;
+        applyDisplayConfig();
+        updateUrlDisplay();
+    });
+
+    document.getElementById('opt-art-bg').addEventListener('change', (e) => {
+        displayConfig.artBackground = e.target.checked;
+        applyDisplayConfig();
         updateUrlDisplay();
     });
 
@@ -273,7 +292,9 @@ function generateCurrentUrl() {
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
+    if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'false');
+    if (displayConfig.artBackground) params.set('artBackground', 'true');
 
     return params.toString() ? `${base}?${params.toString()}` : base;
 }
@@ -297,6 +318,29 @@ function updateAlbumArt(trackInfo) {
     // Show/hide header based on whether we have art or track info
     const hasContent = (trackInfo.album_art_url && displayConfig.showAlbumArt) || displayConfig.showTrackInfo;
     trackHeader.style.display = hasContent ? 'flex' : 'none';
+
+    // Update Background Layer
+    const bgLayer = document.getElementById('background-layer');
+    const bgOverlay = document.getElementById('background-overlay');
+
+    if (bgLayer && bgOverlay) {
+        if (displayConfig.artBackground && trackInfo.album_art_url) {
+            bgLayer.style.backgroundImage = `url('${trackInfo.album_art_url}')`;
+            bgLayer.style.display = 'block';
+            bgOverlay.style.display = 'block';
+            // Remove gradient from body when art background is active
+            document.body.style.background = 'transparent';
+        } else {
+            bgLayer.style.display = 'none';
+            bgOverlay.style.display = 'none';
+            // Restore gradient if useAlbumColors is on (handled by updateBackgroundColors or default)
+            if (displayConfig.useAlbumColors && currentColors) {
+                updateBackgroundColors(currentColors);
+            } else {
+                document.body.style.background = 'linear-gradient(135deg, #1e2030 0%, #2f354d 100%)';
+            }
+        }
+    }
 }
 
 function updateTrackInfo(trackInfo) {
