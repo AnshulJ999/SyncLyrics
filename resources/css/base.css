@@ -15,7 +15,9 @@ body {
     /* Set text color to white */
     color: #ffffff;
     /* Make body at least full viewport height */
+    /* Make body at least full viewport height, using dvh for mobile browsers */
     min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
     /* Use flexbox for vertical layout */
@@ -688,7 +690,7 @@ body[data-minimal="true"] .album-art {
     background-position: center;
     background-repeat: no-repeat;
     filter: blur(var(--blur-strength, 20px));
-    transform: scale(1.1);
+    transform: scale(1.1) translate3d(0, 0, 0);
     /* Prevent blur edges */
     display: none;
     /* Hidden by default */
@@ -710,4 +712,9 @@ body[data-minimal="true"] .album-art {
     /* Hidden by default */
     backdrop-filter: blur(30px) saturate(180%);
     /* Glassmorphism effect */
+}
+
+.background-layer.visible,
+.background-overlay.visible {
+    display: block;
 }

@@ -18,14 +18,54 @@ let displayConfig = {
 
 let lastTrackInfo = null;
 
+// --- Helper: Robust Clipboard Copy ---
+async function copyToClipboard(text) {
+    // Try modern API first (Works on HTTPS / Localhost)
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    }
+
+    // Fallback for HTTP (Mobile LAN)
+    return new Promise((resolve, reject) => {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+
+            // Ensure it's not visible but part of DOM
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+
+            textArea.focus();
+            textArea.select();
+
+            // Mobile specific selection
+            textArea.setSelectionRange(0, 99999);
+
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+
+            if (successful) resolve();
+            else reject(new Error("execCommand failed"));
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
 async function getConfig() {
     try {
         const response = await fetch('/config');
         const config = await response.json();
         updateInterval = config.updateInterval;
         console.log(`Update interval set to: ${updateInterval}ms`);  // Debug log
+
         if (config.overlayOpacity !== undefined) {
             document.documentElement.style.setProperty('--overlay-opacity', config.overlayOpacity);
+        }
+        if (config.blurStrength !== undefined) {
+            document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
 
         console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}`);
@@ -59,9 +99,10 @@ async function getLyrics() {
         let data = await response.json();
 
         // Update background if colors are present
-        if (data.colors && displayConfig.useAlbumColors && (data.colors[0] !== currentColors[0] || data.colors[1] !== currentColors[1])) {
-            updateBackgroundColors(data.colors);
+        if (data.colors && (data.colors[0] !== currentColors[0] || data.colors[1] !== currentColors[1])) {
             currentColors = data.colors;
+            // We call updateBackground here to ensure colors are applied if art background is off
+            updateBackground();
         }
 
         return data.lyrics || data;
@@ -77,13 +118,31 @@ function areLyricsDifferent(oldLyrics, newLyrics) {
     return JSON.stringify(oldLyrics) !== JSON.stringify(newLyrics);
 }
 
-function updateBackgroundColors(colors) {
-    if (!colors || !Array.isArray(colors)) return;
+function updateBackground() {
+    const bgLayer = document.getElementById('background-layer');
+    const bgOverlay = document.getElementById('background-overlay');
 
-    // If Art Background is enabled, do NOT apply gradient
-    if (displayConfig.artBackground) return;
+    if (displayConfig.artBackground && lastTrackInfo && lastTrackInfo.album_art_url) {
+        // Fix: Encode URI to handle spaces/symbols in local paths
+        // We use encodeURI to allow the full URL structure but escape spaces
+        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        bgLayer.style.backgroundImage = `url("${safeUrl}")`;
 
-    document.body.style.background = `linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
+        bgLayer.classList.add('visible');
+        bgOverlay.classList.add('visible');
+        // Remove gradient from body when art background is active
+        document.body.style.background = 'transparent';
+    }
+    else if (displayConfig.useAlbumColors && currentColors) {
+        bgLayer.classList.remove('visible');
+        bgOverlay.classList.remove('visible');
+        document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
+    }
+    else {
+        bgLayer.classList.remove('visible');
+        bgOverlay.classList.remove('visible');
+        document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
+    }
 
     // Add subtle animation
     document.body.style.transition = 'background 1s ease-in-out';
@@ -98,7 +157,7 @@ function updateLyricElement(element, text) {
 function setLyricsInDom(lyrics) {
     if (updateInProgress) return;
     if (!Array.isArray(lyrics)) {
-        lyrics = ['', '', lyrics.msg, '', '', ''];
+        lyrics = ['', '', lyrics.msg || '', '', '', ''];
     }
 
     // Only update if lyrics have changed
@@ -143,7 +202,6 @@ function initializeDisplay() {
         displayConfig.showControls = false;
         displayConfig.showProgress = false;
         displayConfig.showBottomNav = false;
-
     }
 
     // Apply visibility
@@ -188,6 +246,9 @@ function applyDisplayConfig() {
     if (settingsToggle) {
         settingsToggle.style.display = displayConfig.minimal ? 'none' : 'block';
     }
+
+    // Ensure background is correct
+    updateBackground();
 }
 
 function setupSettingsPanel() {
@@ -213,80 +274,41 @@ function setupSettingsPanel() {
     document.getElementById('opt-art-bg').checked = displayConfig.artBackground;
 
     // Handle checkbox changes
-    document.getElementById('opt-album-art').addEventListener('change', (e) => {
-        displayConfig.showAlbumArt = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
+    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg'];
 
-    document.getElementById('opt-track-info').addEventListener('change', (e) => {
-        displayConfig.showTrackInfo = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
+    checkboxes.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', (e) => {
+                // Map checkbox ID to config key
+                if (id === 'opt-album-art') displayConfig.showAlbumArt = e.target.checked;
+                if (id === 'opt-track-info') displayConfig.showTrackInfo = e.target.checked;
+                if (id === 'opt-controls') displayConfig.showControls = e.target.checked;
+                if (id === 'opt-progress') displayConfig.showProgress = e.target.checked;
+                if (id === 'opt-bottom-nav') displayConfig.showBottomNav = e.target.checked;
+                if (id === 'opt-colors') displayConfig.useAlbumColors = e.target.checked;
+                if (id === 'opt-art-bg') displayConfig.artBackground = e.target.checked;
 
-    document.getElementById('opt-controls').addEventListener('change', (e) => {
-        displayConfig.showControls = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
-
-    document.getElementById('opt-progress').addEventListener('change', (e) => {
-        displayConfig.showProgress = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
-
-    document.getElementById('opt-bottom-nav').addEventListener('change', (e) => {
-        displayConfig.showBottomNav = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
-
-    document.getElementById('opt-colors').addEventListener('change', (e) => {
-        displayConfig.useAlbumColors = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
-    });
-
-    document.getElementById('opt-art-bg').addEventListener('change', (e) => {
-        displayConfig.artBackground = e.target.checked;
-        applyDisplayConfig();
-        updateUrlDisplay();
+                applyDisplayConfig();
+                updateUrlDisplay();
+            });
+        }
     });
 
     // Copy URL button
     if (copyUrlBtn) {
         copyUrlBtn.addEventListener('click', () => {
             const url = generateCurrentUrl();
-
-            const showFeedback = (success) => {
-                copyUrlBtn.textContent = success ? '✓ Copied!' : '✗ Copy failed';
+            copyToClipboard(url).then(() => {
+                copyUrlBtn.textContent = '✓ Copied!';
                 setTimeout(() => {
                     copyUrlBtn.textContent = 'Copy Current URL';
                 }, 2000);
-            };
-
-            navigator.clipboard.writeText(url).then(() => {
-                showFeedback(true);
             }).catch(() => {
-                // Fallback for non-secure contexts (Android HTTP)
-                try {
-                    const textArea = document.createElement("textarea");
-                    textArea.value = url;
-                    textArea.style.position = "fixed";
-                    textArea.style.left = "-9999px";
-                    document.body.appendChild(textArea);
-                    textArea.focus();
-                    textArea.select();
-
-                    const successful = document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                    showFeedback(successful);
-                } catch (err) {
-                    console.error('Fallback copy failed:', err);
-                    showFeedback(false);
-                }
+                copyUrlBtn.textContent = '✗ Failed';
+                setTimeout(() => {
+                    copyUrlBtn.textContent = 'Copy Current URL';
+                }, 2000);
             });
         });
     }
@@ -310,7 +332,6 @@ function generateCurrentUrl() {
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
-    if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'false');
     if (displayConfig.artBackground) params.set('artBackground', 'true');
 
@@ -318,16 +339,20 @@ function generateCurrentUrl() {
 }
 
 function updateAlbumArt(trackInfo) {
-    if (!displayConfig.showAlbumArt) return;
-
     const albumArt = document.getElementById('album-art');
     const trackHeader = document.getElementById('track-header');
 
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        albumArt.src = trackInfo.album_art_url;
-        albumArt.style.display = 'block';
+        // Only update src if changed to avoid flickering
+        if (albumArt.src !== trackInfo.album_art_url &&
+            !albumArt.src.endsWith(trackInfo.album_art_url)) {
+
+            albumArt.src = trackInfo.album_art_url;
+            if (displayConfig.artBackground) updateBackground();
+        }
+        albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
     } else {
         // Hide album art if not available
         albumArt.style.display = 'none';
@@ -337,27 +362,9 @@ function updateAlbumArt(trackInfo) {
     const hasContent = (trackInfo.album_art_url && displayConfig.showAlbumArt) || displayConfig.showTrackInfo;
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 
-    // Update Background Layer
-    const bgLayer = document.getElementById('background-layer');
-    const bgOverlay = document.getElementById('background-overlay');
-
-    if (bgLayer && bgOverlay) {
-        if (displayConfig.artBackground && trackInfo.album_art_url) {
-            bgLayer.style.backgroundImage = `url('${trackInfo.album_art_url}')`;
-            bgLayer.style.display = 'block';
-            bgOverlay.style.display = 'block';
-            // Remove gradient from body when art background is active
-            document.body.style.background = 'transparent';
-        } else {
-            bgLayer.style.display = 'none';
-            bgOverlay.style.display = 'none';
-            // Restore gradient if useAlbumColors is on (handled by updateBackgroundColors or default)
-            if (displayConfig.useAlbumColors && currentColors) {
-                updateBackgroundColors(currentColors);
-            } else {
-                document.body.style.background = 'linear-gradient(135deg, #1e2030 0%, #2f354d 100%)';
-            }
-        }
+    // Ensure background is correct if art changed
+    if (displayConfig.artBackground) {
+        updateBackground();
     }
 }
 
