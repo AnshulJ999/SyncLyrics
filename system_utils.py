@@ -118,50 +118,53 @@ def _log_app_state() -> None:
     state['active_source'] = last_source
     set_state(state)
 
-    request_stats = ""
-    if DEBUG["enabled"]:
+    # --- FIXED LOGGING LOGIC ---
+    # We log if the level is INFO or lower, regardless of "Debug Mode" toggle.
+    if logger.isEnabledFor(logging.INFO):
         request_stats = (
             f"|- API Requests:\n"
             f"|  |- Spotify: {_request_counters['spotify']}\n"
             f"|  `- Windows Media: {_request_counters['windows_media']}\n"
         )
-    
-    current_time_str = time.strftime("%I:%M %p - %b %d, %Y")
-    
+        
+        current_time_str = time.strftime("%I:%M %p - %b %d, %Y")
+        
     # Base state summary
-    state_summary = (
-        f"\nApplication State Summary:\n"
-        f"|- Time: {current_time_str}\n"
-        f"|- Mode: {'Active' if is_active else 'Idle'}\n"
-        f"|- Current Song: {last_song}\n"
-        f"|- Active Source: {last_source}\n"
-        f"{request_stats}"
-    )
-    logger.info(state_summary)
+        state_summary = (
+            f"\nApplication State Summary:\n"
+            f"|- Time: {current_time_str}\n"
+            f"|- Mode: {'Active' if is_active else 'Idle'}\n"
+            f"|- Current Song: {last_song}\n"
+            f"|- Active Source: {last_source}\n"
+            f"{request_stats}"
+        )
+        logger.info(state_summary)
 
-    # --- RESTORED: Detailed Spotify Stats ---
-    if DEBUG["enabled"] and spotify_client and spotify_client.initialized:
-        try:
-            stats = spotify_client.get_request_stats()
-            spotify_stats = (
-                "\nSpotify API Statistics:\n"
-                f"|- Total Requests: {stats['Total Requests']}\n"
-                f"|- Cached Responses: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
-                "|- API Calls:\n"
-            )
+        # Log Spotify API stats if available
+        if spotify_client and spotify_client.initialized:
+            try:
+                stats = spotify_client.get_request_stats()
+                spotify_stats = (
+                    "\nSpotify API Statistics:\n"
+                    f"|- Total Requests: {stats['Total Requests']}\n"
+                    f"|- Cached Responses: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
+                    "|- API Calls:\n"
+                )
             
-            for endpoint, count in stats['API Calls'].items():
-                spotify_stats += f"|  |- {endpoint}: {count}\n"
+                for endpoint, count in stats['API Calls'].items():
+                    spotify_stats += f"|  |- {endpoint}: {count}\n"
                 
-            spotify_stats += "|- Errors:\n"
-            for error_type, count in stats['Errors'].items():
-                spotify_stats += f"|  |- {error_type}: {count}\n"
+                # Only show errors if they exist or if we are in Detailed mode
+                if DEBUG.get("log_detailed", False) or sum(stats['Errors'].values()) > 0:
+                    spotify_stats += "|- Errors:\n"
+                    for error_type, count in stats['Errors'].items():
+                        spotify_stats += f"|  |- {error_type}: {count}\n"
                 
-            spotify_stats += f"`- Cache Age: {stats['Cache Age']}"
-            
-            logger.info(spotify_stats)
-        except Exception as e:
-            logger.error(f"Failed to log Spotify stats: {e}")
+                spotify_stats += f"`- Cache Age: {stats['Cache Age']}"
+                logger.info(spotify_stats)
+                
+            except Exception as e:
+                logger.error(f"Failed to log Spotify stats: {e}")
 
 # --- Platform Specific Logic ---
 
