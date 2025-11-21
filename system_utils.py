@@ -15,6 +15,7 @@ from functools import lru_cache
 from PIL import Image
 from pathlib import Path
 import requests
+import logging
 
 # Initialize Logger
 logger = get_logger(__name__)
