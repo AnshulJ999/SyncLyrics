@@ -244,20 +244,27 @@ def _backfill_missing_providers(
             if not tasks:
                 return
 
-            for task in asyncio.as_completed(tasks):
-                provider = provider_map.get(task)
-                if not provider:
-                    continue
+            # Use asyncio.wait() instead of as_completed() to preserve original task objects
+            # This ensures provider_map.get(task) works correctly (as_completed returns wrapper futures)
+            pending = tasks
 
-                try:
-                    lyrics = await task
-                except Exception as exc:
-                    logger.debug(f"Backfill provider error ({getattr(provider, 'name', 'Unknown')}): {exc}")
-                    continue
+            while pending:
+                # Wait for at least one task to complete
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
 
-                if lyrics:
-                    await _save_to_db(artist, title, lyrics, provider.name)
-                    logger.info(f"Backfill saved lyrics from {provider.name}")
+                # Process all completed tasks
+                for task in done:
+                    provider = provider_map.get(task)
+                    if not provider:
+                        continue
+
+                    try:
+                        lyrics = await task
+                        if lyrics:
+                            await _save_to_db(artist, title, lyrics, provider.name)
+                            logger.info(f"Backfill saved lyrics from {provider.name}")
+                    except Exception as exc:
+                        logger.debug(f"Backfill provider error ({getattr(provider, 'name', 'Unknown')}): {exc}")
         finally:
             _backfill_tracker.discard(song_key)
 
