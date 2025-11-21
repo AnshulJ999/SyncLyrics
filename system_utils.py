@@ -34,19 +34,15 @@ _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (color1, color2)
+# Limited to 50 entries to prevent memory leaks
 _color_cache = {}
+_MAX_CACHE_SIZE = 50
 
-def extract_dominant_colors(image_path: Path) -> list:
+def extract_dominant_colors_sync(image_path: Path) -> list:
     """
-    Extracts two dominant colors from an image using a simple quantization method.
-    Results are cached in memory to prevent high CPU usage on repeated polls.
+    Synchronous helper function for color extraction.
+    This runs in a separate thread to avoid blocking the event loop.
     """
-    path_str = str(image_path)
-    
-    # Check cache first
-    if path_str in _color_cache:
-        return _color_cache[path_str]
-        
     try:
         if not image_path.exists():
             return ["#24273a", "#363b54"]
@@ -87,12 +83,38 @@ def extract_dominant_colors(image_path: Path) -> list:
             while len(final_colors) < 2:
                 final_colors.append(final_colors[0] if final_colors else "#363b54")
                 
-            _color_cache[path_str] = final_colors
             return final_colors
             
     except Exception as e:
         logger.error(f"Color extraction failed: {e}")
         return ["#24273a", "#363b54"]
+
+async def extract_dominant_colors(image_path: Path) -> list:
+    """
+    Extracts two dominant colors from an image using a simple quantization method.
+    Results are cached in memory to prevent high CPU usage on repeated polls.
+    
+    This async version runs CPU-bound Pillow operations in a thread executor
+    to prevent blocking the event loop, ensuring smooth lyrics animation.
+    """
+    path_str = str(image_path)
+    
+    # Check cache first
+    if path_str in _color_cache:
+        return _color_cache[path_str]
+    
+    # Prevent cache from growing indefinitely - clear if too large
+    if len(_color_cache) > _MAX_CACHE_SIZE:
+        _color_cache.clear()
+        logger.debug(f"Color cache cleared (exceeded {_MAX_CACHE_SIZE} entries)")
+    
+    # Run CPU-bound task in thread executor to avoid blocking event loop
+    loop = asyncio.get_running_loop()
+    final_colors = await loop.run_in_executor(None, extract_dominant_colors_sync, image_path)
+    
+    # Cache the result
+    _color_cache[path_str] = final_colors
+    return final_colors
 
 # --- Helper Functions ---
 
@@ -234,11 +256,34 @@ def get_image_extension(data: bytes) -> str:
     return '.jpg'
 
 def get_cached_art_path() -> Optional[Path]:
+    """
+    Finds the cached album art file by checking common image extensions.
+    Returns the first matching file found.
+    """
     for ext in ['.jpg', '.png', '.bmp', '.gif']:
         path = CACHE_DIR / f"current_art{ext}"
         if path.exists():
             return path
     return None
+
+def cleanup_old_art() -> None:
+    """
+    Removes previous album art files to prevent conflicts.
+    
+    When switching songs, Windows might provide a different image format (e.g., PNG instead of JPG).
+    If we don't delete the old file, get_cached_art_path() might return the stale file
+    because it checks extensions in order (.jpg first, then .png, etc.).
+    This function ensures only the current song's art exists.
+    """
+    for ext in ['.jpg', '.png', '.bmp', '.gif']:
+        try:
+            path = CACHE_DIR / f"current_art{ext}"
+            if path.exists():
+                os.remove(path)
+                logger.debug(f"Cleaned up old album art: {path.name}")
+        except Exception as e:
+            # Silently ignore errors (file might be in use or already deleted)
+            logger.debug(f"Could not remove old art file {ext}: {e}")
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
@@ -318,6 +363,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     # Detect extension
                     ext = get_image_extension(byte_data)
                     
+                    # Clean up old art files before saving new one to prevent stale art bug
+                    cleanup_old_art()
+                    
                     # Save to cache
                     art_path = CACHE_DIR / f"current_art{ext}"
                     with open(art_path, "wb") as f:
@@ -379,8 +427,14 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
                 if not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
                    _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url:
                     
-                    # Download album art
-                    response = requests.get(album_art_url, timeout=5)
+                    # Download album art in thread executor to avoid blocking event loop
+                    # This prevents lyrics animation from freezing during slow network requests
+                    loop = asyncio.get_running_loop()
+                    response = await loop.run_in_executor(
+                        None, 
+                        lambda: requests.get(album_art_url, timeout=5)
+                    )
+                    
                     if response.status_code == 200:
                         # Save to cache
                         art_path = CACHE_DIR / "spotify_art.jpg"
@@ -394,8 +448,8 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
                         if str_path in _color_cache:
                             del _color_cache[str_path]
                         
-                        # Extract colors
-                        colors = extract_dominant_colors(art_path)
+                        # Extract colors (now async, so we await it)
+                        colors = await extract_dominant_colors(art_path)
                         
                         # Cache the URL to avoid re-downloading
                         _get_current_song_meta_data_spotify._last_spotify_art_url = album_art_url
@@ -501,7 +555,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
         local_art_path = get_cached_art_path()
         if result.get("colors") == ("#24273a", "#363b54") and local_art_path:
              # Only extract if we have a valid local file and default colors
-             result["colors"] = extract_dominant_colors(local_art_path)
+             # Now async, so we await it
+             result["colors"] = await extract_dominant_colors(local_art_path)
 
     # 3. State Management (Active vs Idle)
     if result:
