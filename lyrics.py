@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 import os
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Set
 
 from system_utils import get_current_song_meta_data
 from providers.lrclib import LRCLIBProvider
@@ -32,6 +32,7 @@ providers = [
 LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
 current_song_data = None
 current_song_lyrics = None
+_db_lock = asyncio.Lock()  # Protects read/modify/write cycle for DB files
 
 # ==========================================
 # NEW: Local Database Helper Functions
@@ -90,52 +91,89 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
     
     return None
 
-def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> None:
+async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> None:
     """Saves found lyrics to disk with multi-provider support (merge mode)."""
     if not FEATURES.get("save_lyrics_locally", False) or not lyrics: return
     
-    try:
-        db_path = _get_db_path(artist, title)
-        if not db_path: return
-        
-        # Start with base structure
-        data = {
-            "artist": artist,
-            "title": title,
-            "saved_lyrics": {}  # Multi-provider storage
-        }
-        
-        # Load existing file if it exists (for merging)
-        if os.path.exists(db_path):
-            try:
-                with open(db_path, 'r', encoding='utf-8') as f:
-                    existing = json.load(f)
-                    
-                # Check if it's the NEW format (has "saved_lyrics" dict)
-                if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
-                    data = existing  # Keep all existing providers
-                    
-                # Migrate LEGACY format (single provider) to NEW format
-                elif "lyrics" in existing and "source" in existing:
-                    legacy_source = existing.get("source", "Unknown")
-                    legacy_lyrics = existing.get("lyrics", [])
-                    if legacy_lyrics:
-                        data["saved_lyrics"][legacy_source] = legacy_lyrics
-                        logger.info(f"Migrated legacy DB entry from {legacy_source}")
-                        
-            except Exception as e:
-                logger.warning(f"Could not load existing DB, creating new: {e}")
-        
-        # Add/Update this provider's lyrics
-        data["saved_lyrics"][source] = lyrics
-        
-        # Save merged data
-        with open(db_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+    db_path = _get_db_path(artist, title)
+    if not db_path: return
+
+    async with _db_lock:
+        try:
+            # Start with base structure
+            data = {
+                "artist": artist,
+                "title": title,
+                "saved_lyrics": {}  # Multi-provider storage
+            }
             
-        logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers)")
-    except Exception as e:
-        logger.error(f"Failed to save to DB: {e}")
+            # Load existing file if it exists (for merging)
+            if os.path.exists(db_path):
+                try:
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                        
+                    # Check if it's the NEW format (has "saved_lyrics" dict)
+                    if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                        data = existing  # Keep all existing providers
+                        
+                    # Migrate LEGACY format (single provider) to NEW format
+                    elif "lyrics" in existing and "source" in existing:
+                        legacy_source = existing.get("source", "Unknown")
+                        legacy_lyrics = existing.get("lyrics", [])
+                        if legacy_lyrics:
+                            data["saved_lyrics"][legacy_source] = legacy_lyrics
+                            logger.info(f"Migrated legacy DB entry from {legacy_source}")
+                            
+                except Exception as e:
+                    logger.warning(f"Could not load existing DB, creating new: {e}")
+            
+            # Add/Update this provider's lyrics
+            data["saved_lyrics"][source] = lyrics
+            
+            # Save merged data
+            with open(db_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+                
+            logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers)")
+        except Exception as e:
+            logger.error(f"Failed to save to DB: {e}")
+
+
+def _save_all_results_background(
+    artist: str,
+    title: str,
+    pending_tasks: Set[asyncio.Task],
+    provider_map: Dict[asyncio.Task, object],
+    timeout: float = 10.0
+) -> None:
+    """Continues collecting provider results after we already returned lyrics."""
+
+    async def collect_remaining() -> None:
+        """Waits for remaining providers, saves finished ones, cancels laggards."""
+        try:
+            if pending_tasks:
+                done, still_pending = await asyncio.wait(pending_tasks, timeout=timeout)
+
+                for task in done:
+                    provider = provider_map.get(task)
+                    if not provider:
+                        continue
+
+                    try:
+                        lyrics = await task
+                        if lyrics:
+                            await _save_to_db(artist, title, lyrics, provider.name)
+                            logger.info(f"Background save complete for {provider.name}")
+                    except Exception as exc:
+                        logger.debug(f"Background provider error ({provider.name}): {exc}")
+
+                for task in still_pending:
+                    task.cancel()
+        except Exception as exc:
+            logger.error(f"Background collection error: {exc}")
+
+    asyncio.create_task(collect_remaining())
 
 # ==========================================
 # Main Logic
@@ -189,6 +227,7 @@ async def _get_lyrics(artist: str, title: str):
     # --- SEQUENTIAL MODE (Safe Mode) ---
     # This mode is used if Parallel Fetching is disabled in config
     if not FEATURES.get("parallel_provider_fetch", True):
+        best_lyrics = None
         for provider in sorted_providers:
             try:
                 # Check if the method is async or sync and handle accordingly
@@ -199,11 +238,12 @@ async def _get_lyrics(artist: str, title: str):
                 
                 if lyrics:
                     logger.info(f"Found lyrics using {provider.name}")
-                    _save_to_db(artist, title, lyrics, provider.name) # Save result
-                    return lyrics
+                    await _save_to_db(artist, title, lyrics, provider.name) # Save result
+                    if best_lyrics is None:
+                        best_lyrics = lyrics  # Keep first usable result for display
             except Exception as e:
                 logger.error(f"Error with {provider.name}: {e}")
-        return None
+        return best_lyrics
 
     # --- PARALLEL MODE (Fast Mode with Smart Priority) ---
     tasks = []
@@ -224,80 +264,98 @@ async def _get_lyrics(artist: str, title: str):
     
     pending = set(tasks)
     best_result = None
-    best_provider_name = "Unknown"
+    best_priority = 999
     
     while pending:
         # Wait for the NEXT provider to finish (First Completed)
         done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
         
         for task in done:
+            provider = provider_map.get(task)
+            if not provider:
+                continue
+
             try:
                 lyrics = await task
-                provider = provider_map.get(task)
-                
-                if lyrics:
-                    # Case A: High Quality Provider (Priority 1 or 2)
-                    # If this finishes, we take it immediately because it's the best.
-                    if provider.priority <= 2:
-                        logger.info(f"Found High Quality lyrics using {provider.name} (Priority {provider.priority})")
-                        _save_to_db(artist, title, lyrics, provider.name)
-                        
-                        # Cancel all other running tasks to save resources
-                        for p in pending: p.cancel()
-                        return lyrics
-                    
-                    # Case B: Low Quality Provider (Priority 3 or 4)
-                    # If this finishes first, we hold onto it but DON'T return yet.
-                    # We want to give High Quality providers a chance.
-                    if best_result is None:
-                        best_result = lyrics
-                        best_provider_name = provider.name
-                        logger.info(f"Found backup lyrics using {provider.name}. Waiting for better...")
-                        _save_to_db(artist, title, lyrics, provider.name)  # Save backup immediately
+            except Exception as exc:
+                logger.debug(f"Provider task failed for {getattr(provider, 'name', 'Unknown')}: {exc}")
+                continue
+            
+            if lyrics:
+                # Save every provider result so the DB accumulates data over time
+                await _save_to_db(artist, title, lyrics, provider.name)
+                logger.info(f"Saved lyrics using {provider.name} (Priority {provider.priority})")
 
-            except Exception:
-                continue # Ignore errors from individual providers
+                # Track the best lyrics we have so far for display
+                if provider.priority < best_priority:
+                    best_priority = provider.priority
+                    best_result = lyrics
+                    logger.info(f"New best result now from {provider.name}")
+
+                # Case A: High Quality provider (priority 1-2) finished – return immediately for UX
+                if provider.priority <= 2:
+                    if pending:
+                        _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_high_quality", 8.0))
+                    return best_result
         
-        # If we have a result (backup), check if we should keep waiting or just use it
         if best_result and pending:
-            # Check: Are any High Priority tasks still running?
             high_priority_pending = any(provider_map[t].priority <= 2 for t in pending)
             
             if not high_priority_pending:
-                # No better providers left running. Return the backup.
-                logger.info(f"No better providers left. Using {best_provider_name}.")
-                _save_to_db(artist, title, best_result, best_provider_name)
-                for p in pending: p.cancel()
-                return best_result
-            
-            # High Quality providers are still running. Give them a configurable "Grace Period".
-            # If they don't finish in time, we just take the backup.
-            try:
-                done_hq, pending_hq = await asyncio.wait(
-                    pending,
-                    timeout=LYRICS.get("smart_race_timeout", 3.0),
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                
-                # Did anyone finish during the grace window?
-                for task in done_hq:
-                    try:
-                        hq_lyrics = await task
-                        provider = provider_map.get(task)
-                        if hq_lyrics and provider.priority <= 2:
-                             logger.info(f"Managed to upgrade to {provider.name} during grace period!")
-                             _save_to_db(artist, title, hq_lyrics, provider.name)
-                             for p in pending: p.cancel()
-                             return hq_lyrics
-                    except: pass
-                
-                # Time is up. High Quality took too long. Return backup.
-                logger.info("Grace period over. Returning backup.")
-                _save_to_db(artist, title, best_result, best_provider_name)
-                for p in pending: p.cancel()
+                logger.info("No high quality providers pending. Returning best current lyrics.")
+                _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_low_quality", 5.0))
                 return best_result
 
-            except Exception:
+            # Case B: Low-quality provider finished first; allow a grace window for upgrades
+            grace_period = LYRICS.get("smart_race_timeout", 3.0)
+            logger.info(f"Waiting up to {grace_period}s for a high quality upgrade before returning {best_priority}.")
+            try:
+                done_hq, pending = await asyncio.wait(
+                    pending,
+                    timeout=grace_period,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+            except Exception as exc:
+                logger.debug(f"Grace wait interrupted: {exc}")
+                done_hq = set()
+
+            if done_hq:
+                for task in done_hq:
+                    provider = provider_map.get(task)
+                    if not provider:
+                        continue
+
+                    try:
+                        lyrics = await task
+                    except Exception as exc:
+                        logger.debug(f"Provider task failed during grace window ({getattr(provider, 'name', 'Unknown')}): {exc}")
+                        continue
+                    
+                    if lyrics:
+                        await _save_to_db(artist, title, lyrics, provider.name)
+                        logger.info(f"Grace window got lyrics from {provider.name} (Priority {provider.priority})")
+
+                        if provider.priority < best_priority:
+                            best_priority = provider.priority
+                            best_result = lyrics
+                            logger.info(f"Grace window upgraded best result to {provider.name}")
+
+                        if provider.priority <= 2:
+                            if pending:
+                                _save_all_results_background(
+                                    artist,
+                                    title,
+                                    pending,
+                                    provider_map,
+                                    timeout=LYRICS.get("background_timeout_high_quality", 8.0)
+                                )
+                            return best_result
+
+                # Continue loop to keep waiting for the remaining providers after processing grace tasks
+                continue
+            else:
+                logger.info("Grace period expired with no upgrade, returning backup lyrics.")
+                _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_low_quality", 5.0))
                 return best_result
 
     return best_result
