@@ -154,6 +154,13 @@ PROVIDERS = {
         "timeout": conf("providers.netease.timeout", 10),
         "retries": conf("providers.netease.retries", 3),
         "cache_duration": conf("providers.netease.cache_duration", 86400)
+    },
+    "musicxmatch": {
+        "enabled": conf("providers.musicxmatch.enabled", True),
+        "priority": conf("providers.musicxmatch.priority", 2),
+        "timeout": conf("providers.musicxmatch.timeout", 10),
+        "retries": conf("providers.musicxmatch.retries", 3),
+        "cache_duration": conf("providers.musicxmatch.cache_duration", 86400)
     }
 }
 
