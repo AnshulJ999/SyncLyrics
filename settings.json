@@ -98,7 +98,7 @@
     "spotify.client_id": "",
     "spotify.client_secret": "",
     "spotify.redirect_uri": "http://localhost:9012/callback",
-    "spotify.base_url": "https://spotify-lyrics-api-azure.vercel.app",
+    "spotify.base_url": "https://spotify-lyrics-api-seven-azure.vercel.app",
     "spotify.cache.metadata_ttl": 2.0,
     "spotify.cache.enabled": true,
     "paths.root_dir": ".",

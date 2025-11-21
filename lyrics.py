@@ -457,6 +457,10 @@ async def _update_song():
     )
 
     if should_fetch_lyrics:
+        # Reset provider when song changes so UI shows correct info during fetch
+        # This prevents showing the previous song's provider while searching for new lyrics
+        current_song_provider = None
+        
         artist = new_song_data["artist"]
         title = new_song_data["title"]
         
