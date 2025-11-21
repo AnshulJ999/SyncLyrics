@@ -33,6 +33,7 @@ LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1
 current_song_data = None
 current_song_lyrics = None
 _db_lock = asyncio.Lock()  # Protects read/modify/write cycle for DB files
+_backfill_tracker: Set[str] = set()  # Avoid duplicate backfill runs per song
 
 # ==========================================
 # NEW: Local Database Helper Functions
@@ -90,6 +91,29 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
         logger.error(f"Failed to load from Local DB: {e}")
     
     return None
+
+def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
+    """Returns provider names already stored in the DB entry for this song."""
+    if not FEATURES.get("save_lyrics_locally", False):
+        return set()
+
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return set()
+
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if "saved_lyrics" in data and isinstance(data["saved_lyrics"], dict):
+            return set(data["saved_lyrics"].keys())
+    except Exception as exc:
+        logger.debug(f"Could not read provider list from DB ({artist} - {title}): {exc}")
+
+    return set()
+
+def _normalized_song_key(artist: str, title: str) -> str:
+    """Creates a consistent key for tracking per-song background tasks."""
+    return f"{artist.strip().lower()}::{title.strip().lower()}"
 
 async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> None:
     """Saves found lyrics to disk with multi-provider support (merge mode)."""
@@ -175,6 +199,56 @@ def _save_all_results_background(
 
     asyncio.create_task(collect_remaining())
 
+def _backfill_missing_providers(
+    artist: str,
+    title: str,
+    missing_providers: List[object]
+) -> None:
+    """Fetches any providers that are missing in the DB while UI uses cached lyrics."""
+    song_key = _normalized_song_key(artist, title)
+    if song_key in _backfill_tracker:
+        return
+
+    _backfill_tracker.add(song_key)
+
+    async def run_backfill() -> None:
+        """Runs each missing provider without blocking the main playback."""
+        try:
+            tasks: Set[asyncio.Task] = set()
+            provider_map: Dict[asyncio.Task, object] = {}
+
+            for provider in missing_providers:
+                if asyncio.iscoroutinefunction(provider.get_lyrics):
+                    coro = provider.get_lyrics(artist, title)
+                else:
+                    coro = asyncio.to_thread(provider.get_lyrics, artist, title)
+
+                task = asyncio.create_task(coro)
+                tasks.add(task)
+                provider_map[task] = provider
+
+            if not tasks:
+                return
+
+            for task in asyncio.as_completed(tasks):
+                provider = provider_map.get(task)
+                if not provider:
+                    continue
+
+                try:
+                    lyrics = await task
+                except Exception as exc:
+                    logger.debug(f"Backfill provider error ({getattr(provider, 'name', 'Unknown')}): {exc}")
+                    continue
+
+                if lyrics:
+                    await _save_to_db(artist, title, lyrics, provider.name)
+                    logger.info(f"Backfill saved lyrics from {provider.name}")
+        finally:
+            _backfill_tracker.discard(song_key)
+
+    asyncio.create_task(run_backfill())
+
 # ==========================================
 # Main Logic
 # ==========================================
@@ -205,6 +279,16 @@ async def _update_song():
         local_lyrics = _load_from_db(artist, title)
         if local_lyrics:
             current_song_lyrics = local_lyrics
+
+            saved_providers = _get_saved_provider_names(artist, title)
+            missing = [
+                provider
+                for provider in providers
+                if provider.enabled and provider.name not in saved_providers
+            ]
+            if missing:
+                logger.info(f"Backfill triggered for {artist} - {title} (missing: {', '.join(p.name for p in missing)})")
+                _backfill_missing_providers(artist, title, missing)
         else:
             # 2. Try Internet (Smart Race)
             current_song_lyrics = await _get_lyrics(artist, title)
