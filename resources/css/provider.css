@@ -1,20 +1,23 @@
 /* ========== PROVIDER INFO BADGE ========== */
 .provider-info {
     position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 20px;
+    right: 20px;
     z-index: 150;
     display: flex;
     align-items: center;
     gap: 8px;
     transition: all 0.3s ease;
+    /* Reset top/left/transform from previous center positioning */
+    top: auto;
+    left: auto;
+    transform: none;
 }
 
 .provider-info.hidden {
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-50%) translateY(-10px);
+    transform: translateY(10px);
 }
 
 /* Hide the "Source:" label for a cleaner look */
@@ -26,44 +29,43 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
-    padding: 6px 16px;
-    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.2);
+    /* More transparent/discreet */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.5);
+    /* Dimmer text by default */
+    padding: 4px 12px;
+    border-radius: 12px;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     font-family: inherit;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    /* Smaller font */
     font-weight: 500;
-    letter-spacing: 0.5px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    box-shadow: none;
+    /* No shadow by default for discreet look */
+
 }
 
 .provider-badge:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    /* Brighten on hover */
 }
 
 .provider-badge:active {
-    transform: translateY(0);
+    transform: scale(0.95);
 }
 
+/* Icon removed in HTML, but just in case */
 .provider-icon {
-    font-size: 0.7rem;
-    opacity: 0.7;
-    transition: transform 0.3s ease;
-}
-
-.provider-badge:hover .provider-icon {
-    transform: rotate(180deg);
-    opacity: 1;
+    display: none;
 }
 
 /* ========== PROVIDER MODAL ========== */
@@ -91,7 +93,8 @@
 }
 
 .provider-modal.hidden {
-    display: flex; /* Keep flex to maintain layout during transition */
+    display: flex;
+    /* Keep flex to maintain layout during transition */
 }
 
 .provider-modal-content {
@@ -167,7 +170,8 @@
     border-radius: 16px;
     padding: 16px 20px;
     transition: all 0.2s ease;
-    cursor: pointer; /* Make whole item clickable if we wanted, but we have button */
+    cursor: pointer;
+    /* Make whole item clickable if we wanted, but we have button */
 }
 
 .provider-item:hover {
@@ -343,12 +347,12 @@
     .provider-info {
         top: 10px;
     }
-    
+
     .provider-badge {
         padding: 4px 12px;
         font-size: 0.75rem;
     }
-    
+
     .provider-modal-content {
         padding: 20px;
         width: 95%;

@@ -503,7 +503,14 @@ function updateControlState(trackInfo) {
     }
 }
 
-// --- Provider Management Functions ---
+// Provider Display Names Mapping
+const providerDisplayNames = {
+    "lrclib": "LRCLib",
+    "spotify": "Spotify",
+    "netease": "NetEase",
+    "qq": "QQ",
+    "musicxmatch": "Musixmatch"
+};
 
 function updateProviderDisplay(providerName) {
     if (!displayConfig.showProvider) return;
@@ -512,7 +519,9 @@ function updateProviderDisplay(providerName) {
     const providerNameEl = document.getElementById('provider-name');
 
     if (providerInfo && providerNameEl) {
-        providerNameEl.textContent = providerName;
+        const displayName = providerDisplayNames[providerName] ||
+            providerName.charAt(0).toUpperCase() + providerName.slice(1);
+        providerNameEl.textContent = displayName;
         providerInfo.classList.remove('hidden');
     }
 }
@@ -541,10 +550,13 @@ async function showProviderModal() {
                 providerItem.classList.add('current-provider');
             }
 
+            const displayName = providerDisplayNames[provider.name] ||
+                provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
+
             const providerInfo = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
-                        <span class="provider-item-name">${provider.name}</span>
+                        <span class="provider-item-name">${displayName}</span>
                         ${provider.is_current ? '<span class="current-badge">Current</span>' : ''}
                         ${provider.cached ? '<span class="cached-badge">Cached</span>' : ''}
                     </div>
@@ -595,7 +607,8 @@ async function selectProvider(providerName) {
             hideProviderModal();
 
             // Show brief success message
-            showToast(`Switched to ${result.provider}`);
+            const displayName = providerDisplayNames[result.provider] || result.provider;
+            showToast(`Switched to ${displayName}`);
         } else {
             showToast(`Error: ${result.message}`, 'error');
         }
