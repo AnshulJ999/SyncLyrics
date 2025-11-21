@@ -364,7 +364,8 @@ function generateCurrentUrl() {
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
-    if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'false');
+    if (!displayConfig.showProvider) params.set('showProvider', 'false');
+    if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
     if (displayConfig.artBackground) params.set('artBackground', 'true');
 
     return params.toString() ? `${base}?${params.toString()}` : base;
@@ -506,10 +507,10 @@ function updateControlState(trackInfo) {
 
 function updateProviderDisplay(providerName) {
     if (!displayConfig.showProvider) return;
-    
+
     const providerInfo = document.getElementById('provider-info');
     const providerNameEl = document.getElementById('provider-name');
-    
+
     if (providerInfo && providerNameEl) {
         providerNameEl.textContent = providerName;
         providerInfo.classList.remove('hidden');
@@ -520,18 +521,18 @@ async function showProviderModal() {
     try {
         const response = await fetch('/api/providers/available');
         const data = await response.json();
-        
+
         if (data.error) {
             console.error('Cannot show providers:', data.error);
             return;
         }
-        
+
         const modal = document.getElementById('provider-modal');
         const providerList = document.getElementById('provider-list');
-        
+
         // Clear existing content
         providerList.innerHTML = '';
-        
+
         // Build provider list
         data.providers.forEach(provider => {
             const providerItem = document.createElement('div');
@@ -539,7 +540,7 @@ async function showProviderModal() {
             if (provider.is_current) {
                 providerItem.classList.add('current-provider');
             }
-            
+
             const providerInfo = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
@@ -555,14 +556,14 @@ async function showProviderModal() {
                     ${provider.is_current ? 'Selected' : 'Use This'}
                 </button>
             `;
-            
+
             providerItem.innerHTML = providerInfo;
             providerList.appendChild(providerItem);
         });
-        
+
         // Show modal
         modal.classList.remove('hidden');
-        
+
     } catch (error) {
         console.error('Error loading providers:', error);
     }
@@ -582,9 +583,9 @@ async function selectProvider(providerName) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ provider: providerName })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             // Update UI immediately with new lyrics if provided
             if (result.lyrics) {
@@ -592,7 +593,7 @@ async function selectProvider(providerName) {
             }
             updateProviderDisplay(result.provider);
             hideProviderModal();
-            
+
             // Show brief success message
             showToast(`Switched to ${result.provider}`);
         } else {
@@ -609,9 +610,9 @@ async function clearProviderPreference() {
         const response = await fetch('/api/providers/preference', {
             method: 'DELETE'
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             hideProviderModal();
             showToast('Reset to automatic provider selection');
@@ -630,11 +631,11 @@ function showToast(message, type = 'success') {
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.classList.add('show');
     }, 10);
-    
+
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
@@ -647,13 +648,13 @@ function setupProviderUI() {
     if (providerBadge) {
         providerBadge.addEventListener('click', showProviderModal);
     }
-    
+
     // Modal close handlers
     const modalClose = document.getElementById('provider-modal-close');
     if (modalClose) {
         modalClose.addEventListener('click', hideProviderModal);
     }
-    
+
     const modal = document.getElementById('provider-modal');
     if (modal) {
         modal.addEventListener('click', (e) => {
@@ -662,13 +663,13 @@ function setupProviderUI() {
             }
         });
     }
-    
+
     // Clear preference button
     const clearBtn = document.getElementById('provider-clear-preference');
     if (clearBtn) {
         clearBtn.addEventListener('click', clearProviderPreference);
     }
-    
+
     // Provider selection (event delegation)
     const providerList = document.getElementById('provider-list');
     if (providerList) {
