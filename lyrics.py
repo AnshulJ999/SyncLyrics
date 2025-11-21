@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 import os
-from typing import Optional, List, Tuple, Dict, Set
+from typing import Optional, List, Tuple, Dict, Set, Any
 
 from system_utils import get_current_song_meta_data
 from providers.lrclib import LRCLIBProvider
@@ -32,6 +32,7 @@ providers = [
 LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
 current_song_data = None
 current_song_lyrics = None
+current_song_provider: Optional[str] = None  # Tracks which provider is currently serving lyrics
 _db_lock = asyncio.Lock()  # Protects read/modify/write cycle for DB files
 _backfill_tracker: Set[str] = set()  # Avoid duplicate backfill runs per song
 
@@ -51,7 +52,9 @@ def _get_db_path(artist: str, title: str) -> Optional[str]:
         return None
 
 def _load_from_db(artist: str, title: str) -> Optional[list]:
-    """Loads lyrics from disk, prioritizing highest-quality provider available."""
+    """Loads lyrics from disk, prioritizing user preference or highest-quality provider available."""
+    global current_song_provider
+    
     if not FEATURES.get("save_lyrics_locally", False): return None
     
     db_path = _get_db_path(artist, title)
@@ -65,7 +68,14 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
         if "saved_lyrics" in data and isinstance(data["saved_lyrics"], dict):
             saved_lyrics = data["saved_lyrics"]
             
-            # Find the BEST provider available (lowest priority number = best)
+            # Check for user's preferred provider first
+            preferred_provider = data.get('preferred_provider')
+            if preferred_provider and preferred_provider in saved_lyrics:
+                current_song_provider = preferred_provider
+                logger.info(f"Loaded lyrics from Local DB: {preferred_provider} (User Preference)")
+                return saved_lyrics[preferred_provider]
+            
+            # If no preference, find the BEST provider available (lowest priority number = best)
             best_priority = 999
             best_lyrics = None
             best_provider = None
@@ -78,12 +88,14 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
                         best_provider = provider.name
             
             if best_lyrics:
+                current_song_provider = best_provider
                 logger.info(f"Loaded lyrics from Local DB: {best_provider} (Priority {best_priority})")
                 return best_lyrics
         
         # LEGACY FORMAT: Single provider (backward compatibility)
         elif data.get('lyrics') and isinstance(data['lyrics'], list):
             source = data.get('source', 'Unknown')
+            current_song_provider = source
             logger.info(f"Loaded lyrics from Local DB (legacy): {source}")
             return data['lyrics']
             
@@ -139,7 +151,7 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> Non
                         
                     # Check if it's the NEW format (has "saved_lyrics" dict)
                     if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
-                        data = existing  # Keep all existing providers
+                        data = existing  # Keep all existing providers and preferred_provider if present
                         
                     # Migrate LEGACY format (single provider) to NEW format
                     elif "lyrics" in existing and "source" in existing:
@@ -153,6 +165,8 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> Non
                     logger.warning(f"Could not load existing DB, creating new: {e}")
             
             # Add/Update this provider's lyrics
+            # Note: preferred_provider field is preserved from existing data (if present)
+            # It should only be modified via set_provider_preference(), not during automatic saves
             data["saved_lyrics"][source] = lyrics
             
             # Save merged data
@@ -250,12 +264,176 @@ def _backfill_missing_providers(
     asyncio.create_task(run_backfill())
 
 # ==========================================
+# Provider Management Functions
+# ==========================================
+
+def get_current_provider() -> Optional[str]:
+    """Returns the name of the provider currently serving lyrics."""
+    return current_song_provider
+
+def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, Any]]:
+    """
+    Returns list of providers that have lyrics for this song.
+    
+    Returns:
+        List of dicts with: {
+            'name': str,
+            'priority': int,
+            'cached': bool,
+            'is_current': bool
+        }
+    """
+    # Check database for cached providers
+    saved_providers = _get_saved_provider_names(artist, title)
+    
+    result = []
+    for provider in providers:
+        if not provider.enabled:
+            continue
+            
+        result.append({
+            'name': provider.name,
+            'priority': provider.priority,
+            'cached': provider.name in saved_providers,
+            'is_current': provider.name == current_song_provider
+        })
+    
+    # Sort by priority for consistent ordering
+    return sorted(result, key=lambda x: x['priority'])
+
+async def set_provider_preference(artist: str, title: str, provider_name: str) -> Dict[str, Any]:
+    """
+    Set user's preferred provider for a specific song.
+    
+    Returns:
+        {
+            'status': 'success' | 'error',
+            'message': str,
+            'lyrics': Optional[list],  # New lyrics if fetched
+            'provider': str  # Name of provider now being used
+        }
+    """
+    global current_song_provider, current_song_lyrics
+    
+    # Validate provider exists and is enabled
+    provider_obj = None
+    for p in providers:
+        if p.name == provider_name and p.enabled:
+            provider_obj = p
+            break
+    
+    if not provider_obj:
+        return {'status': 'error', 'message': f'Provider {provider_name} not available'}
+    
+    # Check if lyrics are already in DB
+    db_path = _get_db_path(artist, title)
+    if db_path and os.path.exists(db_path):
+        async with _db_lock:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Check if this provider's lyrics exist
+            if 'saved_lyrics' in data and provider_name in data['saved_lyrics']:
+                # Use cached lyrics
+                lyrics = data['saved_lyrics'][provider_name]
+                current_song_lyrics = lyrics
+                current_song_provider = provider_name
+                
+                # Update preference in DB
+                data['preferred_provider'] = provider_name
+                with open(db_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                
+                logger.info(f"Switched to cached {provider_name} lyrics")
+                return {
+                    'status': 'success',
+                    'message': f'Switched to {provider_name}',
+                    'lyrics': lyrics,
+                    'provider': provider_name
+                }
+    
+    # Lyrics not cached - fetch them
+    try:
+        if asyncio.iscoroutinefunction(provider_obj.get_lyrics):
+            lyrics = await provider_obj.get_lyrics(artist, title)
+        else:
+            lyrics = await asyncio.to_thread(provider_obj.get_lyrics, artist, title)
+        
+        if lyrics:
+            # Save to DB with preference
+            await _save_to_db(artist, title, lyrics, provider_name)
+            
+            # Update preference in DB
+            db_path = _get_db_path(artist, title)
+            if db_path:
+                async with _db_lock:
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    data['preferred_provider'] = provider_name
+                    with open(db_path, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+            
+            # Update current state
+            current_song_lyrics = lyrics
+            current_song_provider = provider_name
+            
+            logger.info(f"Fetched and switched to {provider_name} lyrics")
+            return {
+                'status': 'success',
+                'message': f'Switched to {provider_name}',
+                'lyrics': lyrics,
+                'provider': provider_name
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'{provider_name} has no lyrics for this song'
+            }
+    except Exception as e:
+        logger.error(f"Error fetching from {provider_name}: {e}")
+        return {
+            'status': 'error',
+            'message': f'Failed to fetch from {provider_name}: {str(e)}'
+        }
+
+async def clear_provider_preference(artist: str, title: str) -> bool:
+    """
+    Clear manual provider preference, return to automatic selection.
+    
+    Returns:
+        True if preference was cleared, False if error
+    """
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return True  # No preference to clear
+    
+    try:
+        async with _db_lock:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if 'preferred_provider' in data:
+                del data['preferred_provider']
+                
+                with open(db_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                
+                logger.info(f"Cleared provider preference for {artist} - {title}")
+        
+        # Reload lyrics with automatic selection
+        await _update_song()
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing preference: {e}")
+        return False
+
+# ==========================================
 # Main Logic
 # ==========================================
 
 async def _update_song():
     """Updates current song data and fetches lyrics if changed."""
-    global current_song_lyrics, current_song_data
+    global current_song_lyrics, current_song_data, current_song_provider
 
     new_song_data = await get_current_song_meta_data()
 
@@ -305,6 +483,8 @@ async def _get_lyrics(artist: str, title: str):
        - Prioritizes High Quality (LRCLib/Spotify).
        - If Low Quality (QQ/NetEase) comes first, waits a configurable grace period for High Quality before giving up.
     """
+    global current_song_provider
+    
     active_providers = [p for p in providers if p.enabled]
     sorted_providers = sorted(active_providers, key=lambda x: x.priority)
 
@@ -312,6 +492,7 @@ async def _get_lyrics(artist: str, title: str):
     # This mode is used if Parallel Fetching is disabled in config
     if not FEATURES.get("parallel_provider_fetch", True):
         best_lyrics = None
+        best_provider_name = None
         for provider in sorted_providers:
             try:
                 # Check if the method is async or sync and handle accordingly
@@ -325,8 +506,11 @@ async def _get_lyrics(artist: str, title: str):
                     await _save_to_db(artist, title, lyrics, provider.name) # Save result
                     if best_lyrics is None:
                         best_lyrics = lyrics  # Keep first usable result for display
+                        best_provider_name = provider.name
             except Exception as e:
                 logger.error(f"Error with {provider.name}: {e}")
+        if best_provider_name:
+            current_song_provider = best_provider_name
         return best_lyrics
 
     # --- PARALLEL MODE (Fast Mode with Smart Priority) ---
@@ -349,6 +533,7 @@ async def _get_lyrics(artist: str, title: str):
     pending = set(tasks)
     best_result = None
     best_priority = 999
+    best_provider_name = None
     
     while pending:
         # Wait for the NEXT provider to finish (First Completed)
@@ -374,10 +559,12 @@ async def _get_lyrics(artist: str, title: str):
                 if provider.priority < best_priority:
                     best_priority = provider.priority
                     best_result = lyrics
+                    best_provider_name = provider.name
                     logger.info(f"New best result now from {provider.name}")
 
                 # Case A: High Quality provider (priority 1-2) finished – return immediately for UX
                 if provider.priority <= 2:
+                    current_song_provider = provider.name
                     if pending:
                         _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_high_quality", 8.0))
                     return best_result
@@ -386,6 +573,8 @@ async def _get_lyrics(artist: str, title: str):
             high_priority_pending = any(provider_map[t].priority <= 2 for t in pending)
             
             if not high_priority_pending:
+                if best_provider_name:
+                    current_song_provider = best_provider_name
                 logger.info("No high quality providers pending. Returning best current lyrics.")
                 _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_low_quality", 5.0))
                 return best_result
@@ -422,9 +611,11 @@ async def _get_lyrics(artist: str, title: str):
                         if provider.priority < best_priority:
                             best_priority = provider.priority
                             best_result = lyrics
+                            best_provider_name = provider.name
                             logger.info(f"Grace window upgraded best result to {provider.name}")
 
                         if provider.priority <= 2:
+                            current_song_provider = provider.name
                             if pending:
                                 _save_all_results_background(
                                     artist,
@@ -438,10 +629,14 @@ async def _get_lyrics(artist: str, title: str):
                 # Continue loop to keep waiting for the remaining providers after processing grace tasks
                 continue
             else:
+                if best_provider_name:
+                    current_song_provider = best_provider_name
                 logger.info("Grace period expired with no upgrade, returning backup lyrics.")
                 _save_all_results_background(artist, title, pending, provider_map, timeout=LYRICS.get("background_timeout_low_quality", 5.0))
                 return best_result
 
+    if best_provider_name:
+        current_song_provider = best_provider_name
     return best_result
 
 # ==========================================

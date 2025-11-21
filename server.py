@@ -57,6 +57,8 @@ async def index() -> str:
 @app.route("/lyrics")
 async def lyrics() -> dict:
     """Returns lyrics and basic color data for the main loop."""
+    from lyrics import get_current_provider
+    
     lyrics_data = await get_timed_lyrics_previous_and_next()
     metadata = await get_current_song_meta_data()
     
@@ -69,7 +71,8 @@ async def lyrics() -> dict:
     
     return {
         "lyrics": list(lyrics_data),
-        "colors": colors
+        "colors": colors,
+        "provider": get_current_provider()  # NEW: Add provider info
     }
 
 @app.route("/current-track")
@@ -115,6 +118,93 @@ async def api_update_settings():
         return jsonify({"success": True, "requires_restart": needs_restart})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+# --- Provider Management API ---
+
+@app.route("/api/providers/current", methods=['GET'])
+async def get_current_provider_info():
+    """Get info about the provider currently serving lyrics"""
+    from lyrics import get_current_provider, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    provider_name = get_current_provider()
+    if not provider_name:
+        return jsonify({"error": "No provider active"}), 404
+    
+    # Find provider object for additional info
+    from lyrics import providers
+    provider_info = None
+    for p in providers:
+        if p.name == provider_name:
+            provider_info = {
+                "name": p.name,
+                "priority": p.priority,
+                "enabled": p.enabled
+            }
+            break
+    
+    return jsonify(provider_info or {"name": provider_name})
+
+@app.route("/api/providers/available", methods=['GET'])
+async def get_available_providers():
+    """Get list of providers that could provide lyrics for current song"""
+    from lyrics import get_available_providers_for_song, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    if not artist or not title:
+        return jsonify({"error": "Invalid song data"}), 400
+    
+    providers_list = get_available_providers_for_song(artist, title)
+    return jsonify({"providers": providers_list})
+
+@app.route("/api/providers/preference", methods=['POST'])
+async def set_provider_preference():
+    """Set preferred provider for current song"""
+    from lyrics import set_provider_preference as set_pref, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    data = await request.get_json()
+    provider_name = data.get('provider')
+    
+    if not provider_name:
+        return jsonify({"error": "No provider specified"}), 400
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    result = await set_pref(artist, title, provider_name)
+    
+    if result['status'] == 'success':
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 400
+
+@app.route("/api/providers/preference", methods=['DELETE'])
+async def clear_provider_preference_endpoint():
+    """Clear provider preference for current song"""
+    from lyrics import clear_provider_preference as clear_pref, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    success = await clear_pref(artist, title)
+    
+    if success:
+        return jsonify({"status": "success", "message": "Preference cleared"}), 200
+    else:
+        return jsonify({"status": "error", "message": "Failed to clear preference"}), 500
 
 # --- Playback Control API (The New Features) ---
 

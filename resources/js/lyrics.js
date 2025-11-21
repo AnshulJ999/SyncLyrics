@@ -12,6 +12,7 @@ let displayConfig = {
     showControls: true,
     showProgress: true,
     showBottomNav: true,
+    showProvider: true,  // NEW
     useAlbumColors: false,
     artBackground: false
 };
@@ -103,6 +104,11 @@ async function getLyrics() {
             currentColors = data.colors;
             // We call updateBackground here to ensure colors are applied if art background is off
             updateBackground();
+        }
+
+        // Update provider info (NEW)
+        if (data.provider) {
+            updateProviderDisplay(data.provider);
         }
 
         return data.lyrics || data;
@@ -209,6 +215,9 @@ function initializeDisplay() {
     if (params.has('artBackground')) {
         displayConfig.artBackground = params.get('artBackground') === 'true';
     }
+    if (params.has('showProvider')) {
+        displayConfig.showProvider = params.get('showProvider') === 'true';
+    }
 
     // Minimal mode overrides all
     if (displayConfig.minimal) {
@@ -217,6 +226,7 @@ function initializeDisplay() {
         displayConfig.showControls = false;
         displayConfig.showProgress = false;
         displayConfig.showBottomNav = false;
+        displayConfig.showProvider = false;
     }
 
     // Apply visibility
@@ -262,6 +272,11 @@ function applyDisplayConfig() {
         settingsToggle.style.display = displayConfig.minimal ? 'none' : 'block';
     }
 
+    const providerInfo = document.getElementById('provider-info');
+    if (providerInfo) {
+        providerInfo.style.display = displayConfig.showProvider ? 'flex' : 'none';
+    }
+
     // Ensure background is correct
     updateBackground();
 }
@@ -287,9 +302,10 @@ function setupSettingsPanel() {
     document.getElementById('opt-bottom-nav').checked = displayConfig.showBottomNav;
     document.getElementById('opt-colors').checked = displayConfig.useAlbumColors;
     document.getElementById('opt-art-bg').checked = displayConfig.artBackground;
+    document.getElementById('opt-show-provider').checked = displayConfig.showProvider;
 
     // Handle checkbox changes
-    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg'];
+    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg', 'opt-show-provider'];
 
     checkboxes.forEach(id => {
         const el = document.getElementById(id);
@@ -303,6 +319,7 @@ function setupSettingsPanel() {
                 if (id === 'opt-bottom-nav') displayConfig.showBottomNav = e.target.checked;
                 if (id === 'opt-colors') displayConfig.useAlbumColors = e.target.checked;
                 if (id === 'opt-art-bg') displayConfig.artBackground = e.target.checked;
+                if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
 
                 applyDisplayConfig();
                 updateUrlDisplay();
@@ -485,6 +502,185 @@ function updateControlState(trackInfo) {
     }
 }
 
+// --- Provider Management Functions ---
+
+function updateProviderDisplay(providerName) {
+    if (!displayConfig.showProvider) return;
+    
+    const providerInfo = document.getElementById('provider-info');
+    const providerNameEl = document.getElementById('provider-name');
+    
+    if (providerInfo && providerNameEl) {
+        providerNameEl.textContent = providerName;
+        providerInfo.classList.remove('hidden');
+    }
+}
+
+async function showProviderModal() {
+    try {
+        const response = await fetch('/api/providers/available');
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Cannot show providers:', data.error);
+            return;
+        }
+        
+        const modal = document.getElementById('provider-modal');
+        const providerList = document.getElementById('provider-list');
+        
+        // Clear existing content
+        providerList.innerHTML = '';
+        
+        // Build provider list
+        data.providers.forEach(provider => {
+            const providerItem = document.createElement('div');
+            providerItem.className = 'provider-item';
+            if (provider.is_current) {
+                providerItem.classList.add('current-provider');
+            }
+            
+            const providerInfo = `
+                <div class="provider-item-content">
+                    <div class="provider-item-header">
+                        <span class="provider-item-name">${provider.name}</span>
+                        ${provider.is_current ? '<span class="current-badge">Current</span>' : ''}
+                        ${provider.cached ? '<span class="cached-badge">Cached</span>' : ''}
+                    </div>
+                    <div class="provider-item-meta">
+                        Priority: ${provider.priority}
+                    </div>
+                </div>
+                <button class="provider-select-btn" data-provider="${provider.name}">
+                    ${provider.is_current ? 'Selected' : 'Use This'}
+                </button>
+            `;
+            
+            providerItem.innerHTML = providerInfo;
+            providerList.appendChild(providerItem);
+        });
+        
+        // Show modal
+        modal.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Error loading providers:', error);
+    }
+}
+
+function hideProviderModal() {
+    const modal = document.getElementById('provider-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+async function selectProvider(providerName) {
+    try {
+        const response = await fetch('/api/providers/preference', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: providerName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            // Update UI immediately with new lyrics if provided
+            if (result.lyrics) {
+                setLyricsInDom(result.lyrics);
+            }
+            updateProviderDisplay(result.provider);
+            hideProviderModal();
+            
+            // Show brief success message
+            showToast(`Switched to ${result.provider}`);
+        } else {
+            showToast(`Error: ${result.message}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error selecting provider:', error);
+        showToast('Failed to switch provider', 'error');
+    }
+}
+
+async function clearProviderPreference() {
+    try {
+        const response = await fetch('/api/providers/preference', {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            hideProviderModal();
+            showToast('Reset to automatic provider selection');
+        } else {
+            showToast('Failed to reset preference', 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing preference:', error);
+        showToast('Failed to reset preference', 'error');
+    }
+}
+
+function showToast(message, type = 'success') {
+    // Simple toast notification
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+function setupProviderUI() {
+    // Provider badge click handler
+    const providerBadge = document.getElementById('provider-badge');
+    if (providerBadge) {
+        providerBadge.addEventListener('click', showProviderModal);
+    }
+    
+    // Modal close handlers
+    const modalClose = document.getElementById('provider-modal-close');
+    if (modalClose) {
+        modalClose.addEventListener('click', hideProviderModal);
+    }
+    
+    const modal = document.getElementById('provider-modal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                hideProviderModal();
+            }
+        });
+    }
+    
+    // Clear preference button
+    const clearBtn = document.getElementById('provider-clear-preference');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearProviderPreference);
+    }
+    
+    // Provider selection (event delegation)
+    const providerList = document.getElementById('provider-list');
+    if (providerList) {
+        providerList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('provider-select-btn')) {
+                const providerName = e.target.getAttribute('data-provider');
+                selectProvider(providerName);
+            }
+        });
+    }
+}
+
 async function updateLoop() {
     while (true) {
         const now = Date.now();
@@ -533,6 +729,9 @@ async function main() {
 
     // Attach control handlers
     attachControlHandlers();
+
+    // Setup provider UI
+    setupProviderUI();
 
     // Start the update loop
     updateLoop();

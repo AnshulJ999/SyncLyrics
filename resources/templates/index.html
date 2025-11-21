@@ -21,6 +21,7 @@
     <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
     <label><input type="checkbox" id="opt-colors" checked> Use Album Colors</label>
     <label><input type="checkbox" id="opt-art-bg"> Album Art Background</label>
+    <label><input type="checkbox" id="opt-show-provider" checked> Show Provider Info</label>
     <button id="copy-url-btn">Copy Current URL</button>
     <div id="url-display" class="url-display"></div>
 </div>
@@ -31,6 +32,31 @@
     <div class="track-info">
         <div id="track-title" class="track-title"></div>
         <div id="track-artist" class="track-artist"></div>
+    </div>
+</div>
+
+<!-- Provider Info Badge (NEW) -->
+<div id="provider-info" class="provider-info hidden">
+    <span class="provider-label">Source:</span>
+    <button id="provider-badge" class="provider-badge" title="Click to change provider">
+        <span id="provider-name">Unknown</span>
+        <span class="provider-icon">▼</span>
+    </button>
+</div>
+
+<!-- Provider Selection Modal (NEW) -->
+<div id="provider-modal" class="provider-modal hidden">
+    <div class="provider-modal-content">
+        <div class="provider-modal-header">
+            <h3>Select Lyrics Provider</h3>
+            <button id="provider-modal-close" class="modal-close">×</button>
+        </div>
+        <div id="provider-list" class="provider-list">
+            <!-- Populated dynamically -->
+        </div>
+        <div class="provider-modal-footer">
+            <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
+        </div>
     </div>
 </div>
 
