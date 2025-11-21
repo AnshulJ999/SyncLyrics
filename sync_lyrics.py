@@ -15,8 +15,7 @@ from state_manager import get_state
 from server import app
 from logging_config import setup_logging, get_logger
 from providers.spotify_api import SpotifyAPI
-from providers.spotify_sync import SpotifyLyricsSync
-from system_utils import _get_current_song_meta_data_spotify
+# from system_utils import _get_current_song_meta_data_spotify
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import signal
@@ -165,24 +164,6 @@ async def main() -> NoReturn:
     """
     global _tray_thread, _server_task
     
-    # Initialize Spotify services
-    spotify_client = SpotifyAPI()
-    try:
-        spotify_sync = SpotifyLyricsSync(spotify_client)
-    except ValueError as e:
-        logger.error(f"Failed to initialize Spotify Sync: {e}")
-        spotify_sync = None
-    
-    # Initialize the sync system
-    try:
-        if spotify_sync:
-            logger.debug("Initializing Spotify sync...")
-            await spotify_sync.initialize()
-    except Exception as e:
-        logger.error(f"Failed to initialize Spotify sync: {e}")
-        logger.info("Continuing with fallback methods...")
-        # Continue anyway as other methods might work
-    
     # Start the server and store task globally
     logger.info("Starting server...")
     _server_task = asyncio.create_task(run_server())
@@ -263,7 +244,19 @@ if __name__ == "__main__":
     
     # Set up Windows-specific handler
     if win32api:
-        win32api.SetConsoleCtrlHandler(win32_handler, True)
+        try:
+
+            import ctypes
+
+            myappid = 'anshulj.synclyrics.version.1.0' # Arbitrary string
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+            win32api.SetConsoleCtrlHandler(win32_handler, True)
+
+        except Exception:
+
+            pass
     
     try:
         logger.info("Starting SyncLyrics...")
