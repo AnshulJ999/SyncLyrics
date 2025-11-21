@@ -18,6 +18,7 @@ class LRCLIBProvider(LyricsProvider):
     # Define constants for the API
     BASE_URL = "https://lrclib.net/api"
     HEADERS = {
+        "User-Agent": "SyncLyrics v1.0.0 (https://github.com/AnshulJ999/SyncLyrics)",
         "Lrclib-Client": "SyncLyrics v1.0.0 (https://github.com/AnshulJ999/SyncLyrics)"
     }
     
@@ -47,32 +48,45 @@ class LRCLIBProvider(LyricsProvider):
             if album:
                 album = album.strip()
 
-            # First try the more accurate /api/get endpoint with specific parameters
-            params = {
-                "artist_name": artist,
-                "track_name": title
-            }
-            if album:
-                params["album_name"] = album
+            response = None
+            
+            # 1. Try /api/get ONLY if we have a duration (Required by API)
             if duration:
-                params["duration"] = duration
+                params = {
+                    "artist_name": artist,
+                    "track_name": title,
+                    "duration": duration
+                }
+                if album:
+                    params["album_name"] = album
 
-            logger.info(f"LRCLib - Trying exact match with params: {params}")
+                logger.info(f"LRCLib - Trying exact match with params: {params}")
+                
+                try:
+                    resp = req.get(
+                        f"{self.BASE_URL}/get", 
+                        params=params,
+                        headers=self.HEADERS,
+                        timeout=10
+                    )
+                    if resp.status_code == 200:
+                        response = resp.json()
+                    elif resp.status_code == 404:
+                        logger.info("LRCLib - Exact match 404 Not Found")
+                    else:
+                        logger.warning(f"LRCLib - Exact match returned status {resp.status_code}")
+                except Exception as e:
+                    logger.error(f"LRCLib - Exact match request failed: {e}")
+
+            # 2. Fallback to /api/search if:
+            #    a) No duration provided (skipped /get)
+            #    b) /get returned 404 or error
+            #    c) /get returned 200 but no synced lyrics
             
-            # Try precise match first with proper headers
-            response = req.get(
-                f"{self.BASE_URL}/get", 
-                params=params,
-                headers=self.HEADERS
-            ).json()
+            has_synced = response and response.get("syncedLyrics")
             
-            # Check if we got a valid response with synced lyrics
-            # If 404 OR if 200 but no synced lyrics, we should try searching
-            has_synced = response.get("syncedLyrics") is not None
-            is_404 = "code" in response and response["code"] == 404
-            
-            if is_404 or not has_synced:
-                reason = "404 Not Found" if is_404 else "No synced lyrics in exact match"
+            if not has_synced:
+                reason = "No duration provided" if not duration else "No synced lyrics in exact match"
                 logger.info(f"LRCLib - {reason}, trying search with specific fields")
                 
                 search_params = {
@@ -82,39 +96,54 @@ class LRCLIBProvider(LyricsProvider):
                 if album:
                     search_params["album_name"] = album
                     
-                search_result = req.get(
-                    f"{self.BASE_URL}/search",
-                    params=search_params,
-                    headers=self.HEADERS
-                ).json()
-                
-                # If specific search fails, try general search as last resort
-                if not search_result:
-                    logger.info(f"LRCLib - No results with specific fields, trying general search")
-                    search_result = req.get(
+                try:
+                    search_resp = req.get(
                         f"{self.BASE_URL}/search",
-                        params={"q": f"{artist} {title}"},
-                        headers=self.HEADERS
-                    ).json()
-                
-                if not search_result: 
-                    logger.info(f"LRCLib - No search results found for: {artist} - {title}")
-                    return None
-                
-                # Iterate through search results to find one with synced lyrics
-                found_match = False
-                for result in search_result:
-                    if result.get("syncedLyrics"):
-                        response = result
-                        found_match = True
-                        logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')}")
-                        break
-                
-                if not found_match:
-                    logger.info(f"LRCLib - Search results found but none had synced lyrics")
+                        params=search_params,
+                        headers=self.HEADERS,
+                        timeout=10
+                    )
+                    
+                    search_result = []
+                    if search_resp.status_code == 200:
+                        search_result = search_resp.json()
+                    
+                    # If specific search fails, try general search as last resort
+                    if not search_result:
+                        logger.info(f"LRCLib - No results with specific fields, trying general search")
+                        gen_resp = req.get(
+                            f"{self.BASE_URL}/search",
+                            params={"q": f"{artist} {title}"},
+                            headers=self.HEADERS,
+                            timeout=10
+                        )
+                        if gen_resp.status_code == 200:
+                            search_result = gen_resp.json()
+                    
+                    if not search_result: 
+                        logger.info(f"LRCLib - No search results found for: {artist} - {title}")
+                        return None
+                    
+                    # Iterate through search results to find one with synced lyrics
+                    found_match = False
+                    for result in search_result:
+                        if result.get("syncedLyrics"):
+                            response = result
+                            found_match = True
+                            logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')}")
+                            break
+                    
+                    if not found_match:
+                        logger.info(f"LRCLib - Search results found but none had synced lyrics")
+                        return None
+                        
+                except Exception as e:
+                    logger.error(f"LRCLib - Search request failed: {e}")
                     return None
 
             # Extract synced lyrics
+            if not response: return None
+            
             lyrics = response.get("syncedLyrics")
             if not lyrics:
                 logger.info(f"LRCLib - No synced lyrics found for: {artist} - {title}")
