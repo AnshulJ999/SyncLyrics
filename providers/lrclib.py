@@ -14,8 +14,6 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# logger = logging.getLogger(__name__)
-
 class LRCLIBProvider(LyricsProvider):
     # Define constants for the API
     BASE_URL = "https://lrclib.net/api"
@@ -33,7 +31,7 @@ class LRCLIBProvider(LyricsProvider):
         self.BASE_URL = config.get("base_url", self.BASE_URL)
         self.HEADERS.update(config.get("headers", {}))  # Add any additional headers from config
     
-    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None):
+    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> list | None:
         """
         Get lyrics using LRCLIB API
         Args:
@@ -68,9 +66,15 @@ class LRCLIBProvider(LyricsProvider):
                 headers=self.HEADERS
             ).json()
             
-            # If precise match fails, try search with specific fields
-            if "code" in response and response["code"] == 404:
-                logger.info(f"LRCLib - No exact match found, trying search with specific fields")
+            # Check if we got a valid response with synced lyrics
+            # If 404 OR if 200 but no synced lyrics, we should try searching
+            has_synced = response.get("syncedLyrics") is not None
+            is_404 = "code" in response and response["code"] == 404
+            
+            if is_404 or not has_synced:
+                reason = "404 Not Found" if is_404 else "No synced lyrics in exact match"
+                logger.info(f"LRCLib - {reason}, trying search with specific fields")
+                
                 search_params = {
                     "track_name": title,
                     "artist_name": artist
@@ -96,9 +100,19 @@ class LRCLIBProvider(LyricsProvider):
                 if not search_result: 
                     logger.info(f"LRCLib - No search results found for: {artist} - {title}")
                     return None
-                    
-                song_id = search_result[0]["id"]
-                response = req.get(f"{self.BASE_URL}/get/{song_id}", headers=self.HEADERS).json()
+                
+                # Iterate through search results to find one with synced lyrics
+                found_match = False
+                for result in search_result:
+                    if result.get("syncedLyrics"):
+                        response = result
+                        found_match = True
+                        logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')}")
+                        break
+                
+                if not found_match:
+                    logger.info(f"LRCLib - Search results found but none had synced lyrics")
+                    return None
 
             # Extract synced lyrics
             lyrics = response.get("syncedLyrics")
