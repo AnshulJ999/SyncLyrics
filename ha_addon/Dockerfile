@@ -3,7 +3,7 @@ FROM $BUILD_FROM
 
 # Install requirements for add-on
 RUN \
-  apk add --no-cache \
+    apk add --no-cache \
     python3 \
     py3-pip \
     jq
@@ -17,7 +17,7 @@ WORKDIR /app
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 # Copy run script
-COPY ha_addon/run.sh /run.sh
+COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
 CMD [ "/run.sh" ]
