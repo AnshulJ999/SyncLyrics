@@ -38,6 +38,8 @@
         "provider-info",
         "minimal-toggle"
     ],
+    "ui.blur_strength": 10,
+    "ui.overlay_opacity": 0.4,
     "lyrics.display.buffer_size": 6,
     "lyrics.display.update_interval": 0.1,
     "lyrics.display.idle_interval": 5.0,
