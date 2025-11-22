@@ -40,7 +40,7 @@ class SpotifyAPI:
         
         # Smart caching settings
         self.active_ttl = 5.0   # Poll every 5s when playing (interpolate in between)
-        self.idle_ttl = 10.0    # Poll every 10s when paused
+        self.idle_ttl = 6.0     # Poll every 5s when paused (Safe: max ~17k req/day)
         self.backoff_ttl = 30.0 # Circuit breaker timeout
         
         # Backoff state
