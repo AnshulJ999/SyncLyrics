@@ -401,7 +401,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         _win_media_manager = None
         return None
 
-async def _get_current_song_meta_data_spotify(target_title: str = None, target_artist: str = None) -> Optional[dict]:
+async def _get_current_song_meta_data_spotify(target_title: str = None, target_artist: str = None, force_refresh: bool = False) -> Optional[dict]:
     """Spotify API metadata fetcher with standardized output."""
     global spotify_client, _last_spotify_art_url
     try:
@@ -436,7 +436,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
 
         # If no cache hit, fetch from API (or internal smart cache)
         if track is None:
-            track = await spotify_client.get_current_track()
+            track = await spotify_client.get_current_track(force_refresh=force_refresh)
             
         if not track or not track.get("is_playing", False):
             return None
@@ -543,9 +543,22 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
     if result and result.get("source") == "windows_media":
         try:
+            # Smart Wake-Up Logic: Only force refresh if Windows says playing BUT Spotify cache says paused
+            # This prevents unnecessary force_refresh flags and reduces API calls
+            is_windows_playing = result.get("is_playing", False)
+            spotify_cached_paused = False
+            
+            # Check Spotify cache state to determine if we need to wake it up
+            if spotify_client and spotify_client._metadata_cache:
+                spotify_cached_paused = not spotify_client._metadata_cache.get('is_playing', False)
+            
+            # Only force refresh when there's a mismatch (Windows playing + Spotify paused)
+            force_wake = is_windows_playing and spotify_cached_paused
+            
             spotify_data = await _get_current_song_meta_data_spotify(
                 target_title=result.get("title"),
-                target_artist=result.get("artist")
+                target_artist=result.get("artist"),
+                force_refresh=force_wake
             )
             if spotify_data:
                 # Fuzzy match check: If title and artist are roughly the same

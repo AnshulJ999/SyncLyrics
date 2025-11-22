@@ -47,6 +47,7 @@ class SpotifyAPI:
         self._backoff_until = 0
         self._consecutive_errors = 0
         self._last_valid_response_time = time.time()
+        self._last_force_refresh_failure_time = 0
         
         # Request tracking
         self.request_stats = {
@@ -178,7 +179,7 @@ class SpotifyAPI:
             
         self._backoff_until = time.time() + backoff_time
 
-    async def get_current_track(self) -> Optional[Dict[str, Any]]:
+    async def get_current_track(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """Get current track with playback state, smart caching, and interpolation"""
         if not self.initialized:
             logger.warning("Spotify API not initialized, skipping track fetch")
@@ -202,7 +203,20 @@ class SpotifyAPI:
             # 2. Smart Cache Check
             # Determine required TTL based on state
             is_playing = self._metadata_cache.get('is_playing', False) if self._metadata_cache else False
-            required_ttl = self.active_ttl if is_playing else self.idle_ttl
+            
+            # Force Refresh Logic with Backoff
+            # If external source (Windows) says we are playing, but cache says paused, force fetch
+            # BUT only if we haven't tried forcing recently and failed (to prevent local file loops)
+            should_force = False
+            if force_refresh and not is_playing:
+                last_force_fail = getattr(self, '_last_force_refresh_failure_time', 0)
+                if current_time - last_force_fail > self.idle_ttl:
+                    should_force = True
+            
+            if should_force:
+                required_ttl = 0.5 # Force fetch (allow small buffer)
+            else:
+                required_ttl = self.active_ttl if is_playing else self.idle_ttl
             
             if (self._cache_enabled and 
                 self._metadata_cache and 
@@ -228,9 +242,18 @@ class SpotifyAPI:
                 logger.debug("No track currently playing")
                 self._metadata_cache = None # Clear cache if nothing playing
                 self._last_metadata_check = current_time
+                
+                # If we forced a refresh but got nothing, mark it as a failure to backoff
+                if should_force:
+                    self._last_force_refresh_failure_time = current_time
+                    
                 return None
                 
             is_playing = current.get('is_playing', False)
+            
+            # If we forced a refresh but got Paused, mark it as a failure to backoff
+            if should_force and not is_playing:
+                self._last_force_refresh_failure_time = current_time
             
             # Update cache
             self._metadata_cache = {
