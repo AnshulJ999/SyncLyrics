@@ -35,12 +35,17 @@ except ImportError:
 logger = get_logger(__name__)
 
 # Constants
+from network_utils import MDNSService
+from config import SERVER
+
+# Constants
 ICON_URL = str(RESOURCES_DIR / "images" / "icon.ico")
-PORT = 9012
+PORT = SERVER["port"]
 _tray_icon = None
 _tray_thread = None
 _shutdown_event = asyncio.Event()
 _server_task = None  # Global to track server task
+_mdns_service = None # Global mDNS service
 
 def force_exit():
     """Force exit the application"""
@@ -71,8 +76,15 @@ def restart():
 
 async def cleanup() -> None:
     """Cleanup resources before exit"""
-    global _tray_icon, _tray_thread, _server_task
+    global _tray_icon, _tray_thread, _server_task, _mdns_service
     logger.info("Cleaning up resources...")
+
+    # Unregister mDNS
+    if _mdns_service:
+        try:
+            await asyncio.to_thread(_mdns_service.unregister)
+        except Exception as e:
+            logger.error(f"Error unregistering mDNS: {e}")
 
     # Cancel server task first
     if _server_task:
@@ -162,11 +174,18 @@ async def main() -> NoReturn:
     Returns:
         NoReturn: This function never returns
     """
-    global _tray_thread, _server_task
+    global _tray_thread, _server_task, _mdns_service
     
     # Start the server and store task globally
-    logger.info("Starting server...")
+    logger.info(f"Starting server on port {PORT}...")
     _server_task = asyncio.create_task(run_server())
+    
+    # Register mDNS service
+    try:
+        _mdns_service = MDNSService(PORT)
+        await asyncio.to_thread(_mdns_service.register)
+    except Exception as e:
+        logger.error(f"Failed to initialize mDNS: {e}")
     
     # Start the tray icon in a separate thread since it's blocking
     logger.info("Starting system tray...")
