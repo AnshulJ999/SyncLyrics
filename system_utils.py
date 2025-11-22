@@ -523,12 +523,17 @@ async def get_current_song_meta_data() -> Optional[dict]:
                      if s.get("enabled", False)]
 
     result = None
+    windows_media_checked = False
+    windows_media_result = None
     
     # 1. Fetch Primary Data from sorted sources
     for source in sorted_sources:
         try:
             if source["name"] == "windows_media" and DESKTOP == "Windows":
-                result = await _get_current_song_meta_data_windows()
+                windows_media_checked = True
+                windows_media_result = await _get_current_song_meta_data_windows()
+                if windows_media_result:
+                    result = windows_media_result
             elif source["name"] == "spotify":
                 result = await _get_current_song_meta_data_spotify()
             elif source["name"] == "gnome" and DESKTOP == "Gnome":
@@ -539,6 +544,20 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 break
         except Exception:
             continue
+    
+    # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
+    # Spotify-only means: result exists, source is "spotify" (not "spotify_hybrid"), and Windows Media didn't provide data
+    is_spotify_only = (result and 
+                       result.get("source") == "spotify" and  # Pure Spotify source (not hybrid)
+                       (not windows_media_checked or windows_media_result is None))  # Windows Media not available or returned None
+    
+    # Adjust Spotify API polling speed based on mode
+    # Fast mode (2.0s) for Spotify-only to reduce latency, Normal mode (6.0s) when Windows Media is active
+    if spotify_client and spotify_client.initialized:
+        if is_spotify_only:
+            spotify_client.set_fast_mode(True)  # Fast mode: 2.0s polling for lower latency
+        else:
+            spotify_client.set_fast_mode(False)  # Normal mode: 6.0s polling for rate limit protection
     
     # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
     if result and result.get("source") == "windows_media":

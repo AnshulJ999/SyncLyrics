@@ -39,8 +39,10 @@ class SpotifyAPI:
         self._cache_enabled = SPOTIFY["cache"]["enabled"]
         
         # Smart caching settings
-        self.active_ttl = 6.0   # Poll every 5s when playing (interpolate in between)
-        self.idle_ttl = 6.0     # Poll every 5s when paused (Safe: max ~17k req/day)
+        self.active_ttl = 6.0   # Default: Poll every 6s when playing (interpolate in between)
+        self.active_ttl_normal = 6.0   # Normal mode (when Windows Media is active)
+        self.active_ttl_fast = 2.0     # Fast mode (Spotify-only mode, reduced latency)
+        self.idle_ttl = 6.0     # Poll every 6s when paused (Safe: max ~17k req/day)
         self.backoff_ttl = 30.0 # Circuit breaker timeout
         
         # Backoff state
@@ -93,6 +95,18 @@ class SpotifyAPI:
 
         # Use the custom logger
         self.logger = logger
+
+    def set_fast_mode(self, enabled: bool = True):
+        """
+        Enable/disable fast polling mode for Spotify-only scenarios.
+        Fast mode reduces active_ttl from 6.0s to 2.0s for lower latency.
+        """
+        if enabled:
+            self.active_ttl = self.active_ttl_fast
+            logger.debug("Spotify API: Fast mode enabled (active_ttl=2.0s)")
+        else:
+            self.active_ttl = self.active_ttl_normal
+            logger.debug("Spotify API: Normal mode (active_ttl=6.0s)")
 
     def is_spotify_healthy(self) -> bool:
         """Quick health check for Spotify API"""

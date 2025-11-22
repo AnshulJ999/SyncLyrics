@@ -690,25 +690,38 @@ def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
     """Returns index of current lyric line based on song position."""
     if current_song_lyrics is None or current_song_data is None:
         return -1
-        
+    
+    # Adaptive latency compensation: Use higher compensation for Spotify-only mode
+    # This helps lyrics appear earlier when using Spotify API as primary source
+    source = current_song_data.get("source", "")
+    is_spotify_only = (source == "spotify")  # Spotify-only mode (not hybrid, not windows_media)
+    
+    if is_spotify_only:
+        # Spotify-only mode: Use 0.3s compensation (200ms earlier than default)
+        # This compensates for API polling latency and network delay
+        adaptive_delta = -0.4
+    else:
+        # Normal mode (Windows Media or hybrid): Use default compensation
+        adaptive_delta = delta if delta != LATENCY_COMPENSATION else LATENCY_COMPENSATION
+    
     position = current_song_data.get("position", 0)
     
     # 1. Before first lyric
-    if position + delta < current_song_lyrics[0][0]:
+    if position + adaptive_delta < current_song_lyrics[0][0]:
         return -2
         
     # 2. After last lyric
     last_lyric_time = current_song_lyrics[-1][0]
-    if position + delta > last_lyric_time + 6.0: # End song after 6s
+    if position + adaptive_delta > last_lyric_time + 6.0: # End song after 6s
         return -3
     
     # 3. Find current line
     for i in range(len(current_song_lyrics) - 1):
-        if current_song_lyrics[i][0] <= position + delta < current_song_lyrics[i + 1][0]:
+        if current_song_lyrics[i][0] <= position + adaptive_delta < current_song_lyrics[i + 1][0]:
             return i
             
     # 4. If we are at the very last line
-    if position + delta >= last_lyric_time:
+    if position + adaptive_delta >= last_lyric_time:
         return len(current_song_lyrics) - 1
 
     return -1
