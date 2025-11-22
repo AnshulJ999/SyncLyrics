@@ -59,7 +59,6 @@ class SettingsManager:
             # Server
             "server.port": Setting("Port", int, 9012, True, "Server", "Server port", "number"),
             "server.host": Setting("Host", str, "0.0.0.0", True, "Server", "Bind address"),
-            "server.secret_key": Setting("Secret Key", str, "change-me", True, "Server", "Session secret"),
             "server.debug": Setting("Server Debug", bool, False, True, "Server", "Quart debug mode", "switch"),
 
             # UI
@@ -159,18 +158,10 @@ class SettingsManager:
             "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             
             # Spotify API
-            "spotify.client_id": Setting("Client ID", str, "", True, "Spotify API", "Spotify Client ID"),
-            "spotify.client_secret": Setting("Client Secret", str, "", True, "Spotify API", "Spotify Client Secret"),
+            # Spotify API
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://localhost:9012/callback", True, "Spotify API", "Callback URL"),
-            "spotify.base_url": Setting("API URL", str, "https://spotify-lyrics-api-azure.vercel.app", True, "Spotify API", "Lyrics API URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 3.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),
-
-            # Paths (Read Only / Defaults)
-            "paths.root_dir": Setting("Root", str, ".", True, "Paths", "Root directory"),
-            "paths.resources_dir": Setting("Resources", str, "resources", True, "Paths", "Resources directory"),
-            "paths.database_dir": Setting("Database", str, "lyrics_database", True, "Paths", "Database directory"),
-            "paths.cache_dir": Setting("Cache", str, "cache", True, "Paths", "Cache directory"),
         }
         
         self.load_settings()

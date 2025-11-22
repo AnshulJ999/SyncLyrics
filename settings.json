@@ -11,7 +11,6 @@
     "debug.log_rotation.backup_count": 5,
     "server.port": 9012,
     "server.host": "0.0.0.0",
-    "server.secret_key": "your-secret-key-here",
     "server.debug": false,
     "ui.themes.default.bg_start": "#24273a",
     "ui.themes.default.bg_end": "#363b54",
@@ -95,14 +94,7 @@
     "media_source.windows_media.priority": 1,
     "media_source.gnome.enabled": false,
     "media_source.gnome.priority": 2,
-    "spotify.client_id": "",
-    "spotify.client_secret": "",
     "spotify.redirect_uri": "http://localhost:9012/callback",
-    "spotify.base_url": "https://spotify-lyrics-api-seven-azure.vercel.app",
     "spotify.cache.metadata_ttl": 2.0,
-    "spotify.cache.enabled": true,
-    "paths.root_dir": ".",
-    "paths.resources_dir": "resources",
-    "paths.database_dir": "lyrics_database",
-    "paths.cache_dir": "cache"
+    "spotify.cache.enabled": true
 }

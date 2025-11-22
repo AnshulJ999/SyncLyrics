@@ -72,7 +72,7 @@ DEBUG = {
 SERVER = {
     "port": conf("server.port", 9012),
     "host": conf("server.host", "0.0.0.0"),
-    "secret_key": conf("server.secret_key", "secret"),
+    "secret_key": os.getenv("QUART_SECRET_KEY", "change-me-in-env"),
     "debug": conf("server.debug", False),
 }
 
@@ -114,8 +114,8 @@ LYRICS = {
 }
 
 SPOTIFY = {
-    "client_id": conf("spotify.client_id", os.getenv("SPOTIFY_CLIENT_ID")),
-    "client_secret": conf("spotify.client_secret", os.getenv("SPOTIFY_CLIENT_SECRET")),
+    "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
+    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
     "redirect_uri": conf("spotify.redirect_uri", "http://localhost:9012/callback"),
     "scope": ["user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing"],
     "cache": {
@@ -136,7 +136,7 @@ PROVIDERS = {
     "spotify": {
         "enabled": conf("providers.spotify.enabled", True),
         "priority": conf("providers.spotify.priority", 2),
-        "base_url": conf("spotify.base_url", "https://spotify-lyrics-api-azure.vercel.app"),
+        "base_url": os.getenv("SPOTIFY_BASE_URL", "https://fake-spotify-lyrics-api-azure.vercel.app"),
         "timeout": conf("providers.spotify.timeout", 10),
         "retries": conf("providers.spotify.retries", 3),
         "cache_duration": conf("providers.spotify.cache_duration", 3600)
@@ -229,7 +229,7 @@ FEATURES = {
     "album_art_colors": conf("features.album_art_colors", True)
 }
 
-# Helper functions (Unchanged)
+# Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})
 
