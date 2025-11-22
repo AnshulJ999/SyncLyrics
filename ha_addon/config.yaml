@@ -1,0 +1,29 @@
+name: "SyncLyrics"
+version: "1.0.0"
+slug: "synclyrics"
+description: "Real-time synchronized lyrics for your smart home."
+url: "https://github.com/AnshulJ999/SyncLyrics"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+map:
+  - "config:rw"
+options:
+  spotify_client_id: ""
+  spotify_client_secret: ""
+  spotify_redirect_uri: "http://homeassistant.local:9012/callback"
+  server_port: 9012
+schema:
+  spotify_client_id: str
+  spotify_client_secret: str
+  spotify_redirect_uri: str
+  server_port: int
+ports:
+  9012/tcp: 9012
+ingress: true
+ingress_port: 9012
+ingress_entry: /
+panel_icon: "mdi:music-note-text"
