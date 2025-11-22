@@ -697,9 +697,10 @@ def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
     is_spotify_only = (source == "spotify")  # Spotify-only mode (not hybrid, not windows_media)
     
     if is_spotify_only:
-        # Spotify-only mode: Use 0.3s compensation (200ms earlier than default)
+        # Spotify-only mode: Use -0.5s compensation (lyrics appear 500ms later)
         # This compensates for API polling latency and network delay
-        adaptive_delta = -0.4
+        # Negative value means lyrics appear after the actual timestamp
+        adaptive_delta = -0.5
     else:
         # Normal mode (Windows Media or hybrid): Use default compensation
         adaptive_delta = delta if delta != LATENCY_COMPENSATION else LATENCY_COMPENSATION
