@@ -401,7 +401,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         _win_media_manager = None
         return None
 
-async def _get_current_song_meta_data_spotify() -> Optional[dict]:
+async def _get_current_song_meta_data_spotify(target_title: str = None, target_artist: str = None) -> Optional[dict]:
     """Spotify API metadata fetcher with standardized output."""
     global spotify_client, _last_spotify_art_url
     try:
@@ -413,7 +413,31 @@ async def _get_current_song_meta_data_spotify() -> Optional[dict]:
 
         if DEBUG["enabled"]: _request_counters['spotify'] += 1
 
-        track = await spotify_client.get_current_track()
+        track = None
+        
+        # Hybrid Cache Optimization:
+        # If we are looking for a specific song (e.g. from Windows Media) and we have it cached,
+        # use the cache to avoid hitting the API just for album art/colors.
+        if target_title and target_artist and spotify_client._metadata_cache:
+            cache = spotify_client._metadata_cache
+            s_title = cache.get('title', '').lower()
+            s_artist = cache.get('artist', '').lower()
+            t_title = target_title.lower()
+            t_artist = target_artist.lower()
+            
+            # Check for match (fuzzy)
+            if (t_title in s_title or s_title in t_title) and \
+               (t_artist in s_artist or s_artist in t_artist):
+                # Check if cache is fresh enough for hybrid use (30s)
+                # We allow a longer TTL here because we primarily want the Art/Colors, which don't change.
+                if time.time() - spotify_client._last_metadata_check < 30:
+                    track = cache
+                    # logger.debug("Hybrid: Using cached Spotify data")
+
+        # If no cache hit, fetch from API (or internal smart cache)
+        if track is None:
+            track = await spotify_client.get_current_track()
+            
         if not track or not track.get("is_playing", False):
             return None
         
@@ -519,7 +543,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
     if result and result.get("source") == "windows_media":
         try:
-            spotify_data = await _get_current_song_meta_data_spotify()
+            spotify_data = await _get_current_song_meta_data_spotify(
+                target_title=result.get("title"),
+                target_artist=result.get("artist")
+            )
             if spotify_data:
                 # Fuzzy match check: If title and artist are roughly the same
                 win_title = result.get("title", "").lower()

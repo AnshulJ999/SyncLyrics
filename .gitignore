@@ -72,3 +72,4 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+SPOTIFY_RATE_LIMITING_ANALYSIS.md

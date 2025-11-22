@@ -34,10 +34,19 @@ class SpotifyAPI:
         self.retry_delay = 1  # seconds
         self.initialized = False
         
-        self._last_metadata_check = time.time() #  Initialize with current time
+        self._last_metadata_check = 0
         self._metadata_cache = None
         self._cache_enabled = SPOTIFY["cache"]["enabled"]
-        self.metadata_cache_time = SPOTIFY["cache"]["metadata_ttl"]
+        
+        # Smart caching settings
+        self.active_ttl = 5.0   # Poll every 5s when playing (interpolate in between)
+        self.idle_ttl = 10.0    # Poll every 10s when paused
+        self.backoff_ttl = 30.0 # Circuit breaker timeout
+        
+        # Backoff state
+        self._backoff_until = 0
+        self._consecutive_errors = 0
+        self._last_valid_response_time = time.time()
         
         # Request tracking
         self.request_stats = {
@@ -87,6 +96,10 @@ class SpotifyAPI:
     def is_spotify_healthy(self) -> bool:
         """Quick health check for Spotify API"""
         try:
+            # Check if we are in backoff
+            if time.time() < self._backoff_until:
+                return False
+                
             # Try a simple API call
             response = requests.get(
                 "https://api.spotify.com/v1/me/player",
@@ -128,56 +141,96 @@ class SpotifyAPI:
                 time.sleep(self.retry_delay)
         return False
 
+    def _calculate_progress(self, cached_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Interpolate progress_ms based on elapsed time since cache"""
+        if not cached_data or not cached_data.get('is_playing'):
+            return cached_data
+            
+        elapsed = (time.time() - self._last_metadata_check) * 1000
+        new_progress = cached_data['progress_ms'] + elapsed
+        
+        # Don't exceed duration
+        if cached_data.get('duration_ms') and new_progress > cached_data['duration_ms']:
+            new_progress = cached_data['duration_ms']
+            
+        # Create a copy to avoid mutating the cache directly
+        interpolated = cached_data.copy()
+        interpolated['progress_ms'] = int(new_progress)
+        return interpolated
+
+    def _handle_error(self, error: Exception, status_code: Optional[int] = None):
+        """Handle API errors with exponential backoff"""
+        self._consecutive_errors += 1
+        
+        # Determine backoff time
+        if status_code == 429:
+            self.request_stats['errors']['rate_limit'] += 1
+            retry_after = 30 # Default if header missing
+            if hasattr(error, 'headers'):
+                retry_after = int(error.headers.get('Retry-After', 30))
+            backoff_time = retry_after
+            logger.warning(f"Rate limit hit. Backing off for {backoff_time}s")
+        else:
+            self.request_stats['errors']['other'] += 1
+            # Exponential backoff: 5s, 10s, 20s, 40s... capped at 60s
+            backoff_time = min(5 * (2 ** (self._consecutive_errors - 1)), 60)
+            logger.warning(f"API Error ({error}). Backing off for {backoff_time}s (Error #{self._consecutive_errors})")
+            
+        self._backoff_until = time.time() + backoff_time
+
     async def get_current_track(self) -> Optional[Dict[str, Any]]:
-        """Get current track with playback state"""
+        """Get current track with playback state, smart caching, and interpolation"""
         if not self.initialized:
             logger.warning("Spotify API not initialized, skipping track fetch")
             return None
             
-        # Check if we are in a backoff period
-        if hasattr(self, '_backoff_until') and time.time() < self._backoff_until:
-            logger.debug(f"In backoff period. Skipping request. Resuming in {self._backoff_until - time.time():.1f}s")
-            return self._metadata_cache
+        current_time = time.time()
+
+        # 1. Circuit Breaker / Backoff Check
+        if current_time < self._backoff_until:
+            # If we've been failing for too long (> 30s), invalidate cache to stop "Playing" state
+            if current_time - self._last_valid_response_time > self.backoff_ttl:
+                if self._metadata_cache:
+                    logger.warning("Circuit breaker: Invalidating stale cache due to extended API failure")
+                    self._metadata_cache = None
+                return None
+                
+            logger.debug(f"In backoff period. Skipping request. Resuming in {self._backoff_until - current_time:.1f}s")
+            return self._calculate_progress(self._metadata_cache)
 
         try:
-            # Track API call
+            # 2. Smart Cache Check
+            # Determine required TTL based on state
+            is_playing = self._metadata_cache.get('is_playing', False) if self._metadata_cache else False
+            required_ttl = self.active_ttl if is_playing else self.idle_ttl
+            
+            if (self._cache_enabled and 
+                self._metadata_cache and 
+                current_time - self._last_metadata_check < required_ttl):
+                
+                self.request_stats['cached_responses'] += 1
+                return self._calculate_progress(self._metadata_cache)
+            
+            # 3. API Call
             self.request_stats['total_requests'] += 1
             self.request_stats['api_calls']['current_playback'] += 1
             
-            # Check cache first
-            current_time = time.time()
-            if (self._cache_enabled and 
-                self._metadata_cache and 
-                current_time - self._last_metadata_check < self.metadata_cache_time):
-                self.request_stats['cached_responses'] += 1
-                logger.debug("Using cached metadata")
-                return self._metadata_cache
-            
-            # Get current playback state
             loop = asyncio.get_event_loop()
             current = await loop.run_in_executor(None, self.sp.current_playback)
             
-            # Handle rate limits and errors (Spotipy usually raises exceptions, but checking status just in case)
-            if hasattr(current, 'status_code'):
-                if current.status_code == 429:
-                    self.request_stats['errors']['rate_limit'] += 1
-                    retry_after = int(current.headers.get('Retry-After', 5))
-                    self._backoff_until = time.time() + retry_after
-                    logger.warning(f"Rate limit hit. Backing off for {retry_after}s")
-                    return self._metadata_cache
-                elif current.status_code != 200:
-                    self.request_stats['errors']['other'] += 1
-                    logger.error(f"Spotify API error: Status {current.status_code}")
-                    return self._metadata_cache
-                    
+            # 4. Success Handling
+            self._consecutive_errors = 0
+            self._backoff_until = 0
+            self._last_valid_response_time = current_time
+            
             # Process response
             if not current or not current.get('item'):
                 logger.debug("No track currently playing")
+                self._metadata_cache = None # Clear cache if nothing playing
+                self._last_metadata_check = current_time
                 return None
                 
-            # Check if actually playing
             is_playing = current.get('is_playing', False)
-            logger.debug(f"Playback state: {'Playing' if is_playing else 'Paused'}")
             
             # Update cache
             self._metadata_cache = {
@@ -196,24 +249,17 @@ class SpotifyAPI:
             return self._metadata_cache
             
         except spotipy.exceptions.SpotifyException as e:
-            if e.http_status == 429:
-                self.request_stats['errors']['rate_limit'] += 1
-                retry_after = int(e.headers.get('Retry-After', 30))
-                self._backoff_until = time.time() + retry_after
-                logger.warning(f"Rate limit hit (Exception). Backing off for {retry_after}s")
-            else:
-                self.request_stats['errors']['other'] += 1
-                logger.error(f"Spotify API Exception: {e}")
-            return self._metadata_cache
+            self._handle_error(e, e.http_status)
+            return self._calculate_progress(self._metadata_cache)
             
-        except ReadTimeout:
+        except ReadTimeout as e:
             self.request_stats['errors']['timeout'] += 1
-            logger.warning(f"Timeout error. Total timeouts: {self.request_stats['errors']['timeout']}")
-            return self._metadata_cache
+            self._handle_error(e)
+            return self._calculate_progress(self._metadata_cache)
+            
         except Exception as e:
-            self.request_stats['errors']['other'] += 1
-            logger.error(f"API error: {e}")
-            return self._metadata_cache
+            self._handle_error(e)
+            return self._calculate_progress(self._metadata_cache)
 
     def search_track(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
         """Search for a track on Spotify and return its details"""
