@@ -737,13 +737,12 @@ body[data-minimal="true"] .album-art {
     background-position: center;
     background-repeat: no-repeat;
     filter: blur(var(--blur-strength, 20px));
-    transform: scale(1.1) translate3d(0, 0, 0);
-    /* Prevent blur edges */
+    /* No scaling transform - matches Soft and Sharp modes */
+    transform: none;
+    -webkit-transform: none;
     display: none;
     /* Hidden by default */
     transition: background-image 0.5s ease-in-out;
-    /* Ensure visibility on mobile */
-    -webkit-transform: scale(1.1);
     will-change: transform, opacity;
 }
 
