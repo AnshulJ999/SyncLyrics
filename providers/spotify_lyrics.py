@@ -71,45 +71,104 @@ class SpotifyLyrics(LyricsProvider):
             # Use the track URL
             track_url = track['url']
             
-            response = requests.get(f"{self.api_url}/?url={track_url}&format=lrc")
-            
-            # Fix: Check status code before parsing JSON
-            if response.status_code != 200:
-                logger.error(f"Spotify Proxy returned status {response.status_code}")
-                return None
-                
-            try:
-                data = response.json()
-            except Exception:
-                logger.error("Spotify Proxy returned invalid JSON")
-                return None
-            
-            if data.get('error'):
-                logger.error(f"Spotify - API error: {data.get('message')}")
-                return None
-            
-            # Log the response for debugging
-            logger.debug(f"Spotify lyrics response: {data}")
-            
-            # Check if lyrics are properly synced
-            if (data.get('syncType') == 'UNSYNCED' or 
-                not data.get('lines') or 
-                all(line.get('timeTag', '00:00.00') == '00:00.00' for line in data['lines'])):
-                logger.warning(f"Unsynced lyrics found for {artist} - {title}, skipping")
-                return None
-
-            # Convert to standard format
-            processed_lyrics = []
-            for line in data['lines']:
-                if not line.get('words', '').strip():  # Skip empty lines
-                    continue
+            # CRITICAL FIX: Implement retry logic with exponential backoff
+            # Retry on 404 (might be temporary server issue), server errors (5xx), and connection errors
+            last_error = None
+            for attempt in range(self.retries):
+                try:
+                    response = requests.get(
+                        f"{self.api_url}/?url={track_url}&format=lrc",
+                        timeout=self.timeout
+                    )
                     
-                # Convert timeTag to seconds
-                time_parts = line['timeTag'].split(':')
-                seconds = float(time_parts[0]) * 60 + float(time_parts[1])
-                processed_lyrics.append((seconds, line['words']))
-            
-            return processed_lyrics if processed_lyrics else None
+                    # Distinguish between different error types
+                    if response.status_code == 404:
+                        # 404 might be temporary server issue (Vercel cold start, deployment issue)
+                        # Retry 2-3 times before giving up
+                        if attempt < self.retries - 1:
+                            backoff = 3 * (2 ** attempt)  # Exponential: 3s, 6s, 12s
+                            logger.warning(f"Spotify Proxy returned 404 (server might be unavailable), retry {attempt + 1}/{self.retries} in {backoff}s")
+                            time.sleep(backoff)
+                            continue
+                        else:
+                            logger.info(f"Spotify Proxy - No lyrics found for {artist} - {title} (404 after {self.retries} attempts)")
+                            return None
+                    elif response.status_code == 429:
+                        # Rate limited - retry with backoff
+                        retry_after = int(response.headers.get('Retry-After', 2 ** attempt))
+                        logger.warning(f"Spotify Proxy rate limited, retrying after {retry_after}s")
+                        time.sleep(retry_after)
+                        continue
+                    elif response.status_code >= 500:
+                        # Server error - retry with exponential backoff
+                        if attempt < self.retries - 1:
+                            backoff = 2 ** attempt  # Exponential: 1s, 2s, 4s
+                            logger.warning(f"Spotify Proxy server error {response.status_code}, retry {attempt + 1}/{self.retries} in {backoff}s")
+                            time.sleep(backoff)
+                            continue
+                        else:
+                            logger.error(f"Spotify Proxy server error {response.status_code} after {self.retries} attempts")
+                            return None
+                    elif response.status_code != 200:
+                        # Other error codes (4xx except 404/429) - don't retry
+                        logger.error(f"Spotify Proxy returned status {response.status_code}")
+                        return None
+                    
+                    # Success - parse response
+                    try:
+                        data = response.json()
+                    except Exception as e:
+                        logger.error(f"Spotify Proxy returned invalid JSON: {e}")
+                        return None
+                    
+                    if data.get('error'):
+                        logger.error(f"Spotify - API error: {data.get('message')}")
+                        return None
+                    
+                    # Log the response for debugging
+                    logger.debug(f"Spotify lyrics response: {data}")
+                    
+                    # Check if lyrics are properly synced
+                    if (data.get('syncType') == 'UNSYNCED' or 
+                        not data.get('lines') or 
+                        all(line.get('timeTag', '00:00.00') == '00:00.00' for line in data['lines'])):
+                        logger.warning(f"Unsynced lyrics found for {artist} - {title}, skipping")
+                        return None
+
+                    # Convert to standard format
+                    processed_lyrics = []
+                    for line in data['lines']:
+                        if not line.get('words', '').strip():  # Skip empty lines
+                            continue
+                            
+                        # Convert timeTag to seconds
+                        time_parts = line['timeTag'].split(':')
+                        seconds = float(time_parts[0]) * 60 + float(time_parts[1])
+                        processed_lyrics.append((seconds, line['words']))
+                    
+                    return processed_lyrics if processed_lyrics else None
+                    
+                except requests.exceptions.Timeout:
+                    # Timeout - retry with backoff
+                    if attempt < self.retries - 1:
+                        backoff = 2 ** attempt
+                        logger.warning(f"Spotify Proxy timeout, retry {attempt + 1}/{self.retries} in {backoff}s")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.error(f"Spotify Proxy timeout after {self.retries} attempts")
+                        return None
+                        
+                except requests.exceptions.ConnectionError as e:
+                    # Connection error - retry with backoff
+                    if attempt < self.retries - 1:
+                        backoff = 2 ** attempt
+                        logger.warning(f"Spotify Proxy connection error, retry {attempt + 1}/{self.retries} in {backoff}s")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.error(f"Spotify Proxy connection error after {self.retries} attempts: {e}")
+                        return None
 
         except Exception as e:
             logger.error(f"Spotify - Error fetching lyrics: {e}")
