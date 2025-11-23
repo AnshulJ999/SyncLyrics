@@ -44,7 +44,7 @@ from config import SERVER
 
 # Constants
 ICON_URL = str(RESOURCES_DIR / "images" / "icon.ico")
-PORT = SERVER["port"]
+PORT = int(SERVER["port"])
 _tray_icon = None
 _tray_thread = None
 _shutdown_event = asyncio.Event()
