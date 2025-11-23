@@ -775,8 +775,14 @@ body.sharp-mode .background-layer {
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
-    /* Use browser's default high-quality image rendering for photos */
+    /* Optimize image rendering for maximum sharpness */
+    /* Use high-quality rendering - auto is best for photos (smooth scaling) */
     image-rendering: auto;
+    /* Force hardware acceleration for better quality (without transforms) */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    /* Ensure crisp rendering */
+    -webkit-font-smoothing: antialiased;
 }
 
 body.sharp-mode .background-overlay {
