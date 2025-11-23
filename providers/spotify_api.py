@@ -103,12 +103,24 @@ class SpotifyAPI:
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
-            if self._test_connection():
-                self.initialized = True
-                logger.info("Spotify API initialized successfully")
+            
+            # CRITICAL FIX: Only test connection if we have cached tokens
+            # If no tokens exist, _test_connection() will trigger spotipy's interactive prompt
+            # which fails in headless environments with "EOF when reading a line"
+            # Instead, we mark as not initialized and let the web-based OAuth flow handle it
+            cached_token = self.auth_manager.get_cached_token()
+            if cached_token:
+                # We have tokens from cache - test if they're valid
+                if self._test_connection():
+                    self.initialized = True
+                    logger.info("Spotify API initialized successfully with cached tokens")
+                else:
+                    self.initialized = False
+                    logger.warning("Cached tokens invalid - re-authentication required")
             else:
+                # No cached tokens - don't test connection, wait for web auth
                 self.initialized = False
-                logger.error("Failed to connect to Spotify API")
+                logger.info("No cached Spotify tokens - web authentication required")
         except Exception as e:
             logger.error(f"Failed to initialize Spotify API: {e}")
             self.initialized = False
