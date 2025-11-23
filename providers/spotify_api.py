@@ -73,12 +73,26 @@ class SpotifyAPI:
                 logger.error("Missing Spotify credentials in config")
                 return
             
+            # Determine cache path for token persistence
+            # Environment variable SPOTIPY_CACHE_PATH can be set to a persistent location
+            # (e.g., /config/.spotify_cache in Home Assistant add-ons)
+            cache_path = os.getenv("SPOTIPY_CACHE_PATH")
+            if cache_path:
+                # Ensure the cache directory exists
+                cache_dir = Path(cache_path).parent
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Using persistent Spotify cache: {cache_path}")
+            else:
+                cache_path = None  # Use default (.cache in working directory)
+                logger.warning("No SPOTIPY_CACHE_PATH set - tokens may not persist across restarts")
+            
             # Store auth_manager as instance variable so we can use it for web-based auth flow
             self.auth_manager = SpotifyOAuth(
                 client_id=SPOTIFY["client_id"],
                 client_secret=SPOTIFY["client_secret"],
                 redirect_uri=SPOTIFY["redirect_uri"],
                 scope=SPOTIFY["scope"],
+                cache_path=cache_path,
                 open_browser=False  # Critical: Don't try to open browser in headless environment
             )
                 
