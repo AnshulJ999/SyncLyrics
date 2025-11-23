@@ -104,6 +104,8 @@ async function getLyrics() {
             currentColors = data.colors;
             // We call updateBackground here to ensure colors are applied if art background is off
             updateBackground();
+            // Update PWA theme-color meta tag with the first color (for Android status bar)
+            updateThemeColor(data.colors[0]);
         }
 
         // Update provider info (NEW)
@@ -122,6 +124,18 @@ function areLyricsDifferent(oldLyrics, newLyrics) {
     if (!oldLyrics || !newLyrics) return true;
     if (!Array.isArray(oldLyrics) || !Array.isArray(newLyrics)) return true;
     return JSON.stringify(oldLyrics) !== JSON.stringify(newLyrics);
+}
+
+/**
+ * Update the theme-color meta tag dynamically when album colors change.
+ * This updates the Android status bar and task switcher preview color.
+ * @param {string} color - The color to set (hex format, e.g., "#1db954")
+ */
+function updateThemeColor(color) {
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor && color) {
+        metaThemeColor.setAttribute('content', color);
+    }
 }
 
 function updateBackground() {

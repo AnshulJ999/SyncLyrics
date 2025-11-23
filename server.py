@@ -3,8 +3,8 @@ from typing import Any
 import asyncio
 import time
 
-from quart import Quart, render_template, redirect, flash, request, jsonify, url_for
-from lyrics import get_timed_lyrics_previous_and_next
+from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
+from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
 from system_utils import get_current_song_meta_data
 from state_manager import *
 from config import LYRICS, RESOURCES_DIR
@@ -71,21 +71,25 @@ async def index() -> str:
     
     # If we have a client (existing or new) that isn't initialized, get auth URL
     if client and not client.initialized:
-        # Spotify client exists but isn't authenticated - get auth URL
-        auth_url = client.get_auth_url()
-        if auth_url:
-            spotify_auth_url = auth_url
+        # Get the auth URL for Spotify login
+        try:
+            spotify_auth_url = client.get_auth_url()
             spotify_needs_auth = True
+        except Exception as e:
+            logger.error(f"Failed to get Spotify auth URL: {e}")
+            spotify_auth_url = None
     
-    return await render_template("index.html", 
+    # Render the HTML template with Spotify auth info
+    return await render_template('index.html', 
                                 spotify_auth_url=spotify_auth_url,
                                 spotify_needs_auth=spotify_needs_auth)
 
 @app.route("/lyrics")
 async def lyrics() -> dict:
-    """Returns lyrics and basic color data for the main loop."""
-    from lyrics import get_current_provider
-    
+    """
+    API endpoint that returns lyrics data as JSON.
+    Called by the frontend JavaScript to fetch lyrics updates.
+    """
     lyrics_data = await get_timed_lyrics_previous_and_next()
     metadata = await get_current_song_meta_data()
     
@@ -116,6 +120,16 @@ async def current_track() -> dict:
     except Exception as e:
         logger.error(f"Track Info Error: {e}")
         return {"error": str(e)}
+
+# --- PWA Routes ---
+
+@app.route('/manifest.json')
+async def manifest():
+    """
+    Serve the PWA manifest.json file with correct MIME type.
+    This enables Progressive Web App installation on Android devices.
+    """
+    return await send_from_directory('resources', 'manifest.json', mimetype='application/manifest+json')
 
 # --- Settings API (Unchanged) ---
 
