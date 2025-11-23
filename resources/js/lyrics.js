@@ -14,7 +14,8 @@ let displayConfig = {
     showBottomNav: true,
     showProvider: true,  // NEW
     useAlbumColors: false,
-    artBackground: false
+    artBackground: false,
+    sharpAlbumArt: false  // Sharp album art background (minimal blur, no scaling, better readability)
 };
 
 let lastTrackInfo = null;
@@ -68,8 +69,13 @@ async function getConfig() {
         if (config.blurStrength !== undefined) {
             document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
+        // Set sharp album art mode from config
+        if (config.sharpAlbumArt !== undefined) {
+            displayConfig.sharpAlbumArt = config.sharpAlbumArt;
+            applySharpMode();
+        }
 
-        console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}`);
+        console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Sharp=${config.sharpAlbumArt}`);
 
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -142,7 +148,19 @@ function updateBackground() {
     const bgLayer = document.getElementById('background-layer');
     const bgOverlay = document.getElementById('background-overlay');
 
-    if (displayConfig.artBackground && lastTrackInfo && lastTrackInfo.album_art_url) {
+    // Check for sharp album art background first (takes priority)
+    if (displayConfig.sharpAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
+        // Fix: Encode URI to handle spaces/symbols in local paths
+        // We use encodeURI to allow the full URL structure but escape spaces
+        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        bgLayer.style.backgroundImage = `url("${safeUrl}")`;
+
+        bgLayer.classList.add('visible');
+        bgOverlay.classList.add('visible');
+        // Remove gradient from body when art background is active
+        document.body.style.background = 'transparent';
+    }
+    else if (displayConfig.artBackground && lastTrackInfo && lastTrackInfo.album_art_url) {
         // Fix: Encode URI to handle spaces/symbols in local paths
         // We use encodeURI to allow the full URL structure but escape spaces
         const safeUrl = encodeURI(lastTrackInfo.album_art_url);
@@ -164,8 +182,25 @@ function updateBackground() {
         document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
     }
 
+    // Apply sharp mode styling
+    applySharpMode();
+
     // Add subtle animation
     document.body.style.transition = 'background 1s ease-in-out';
+}
+
+/**
+ * Apply sharp mode styling to remove blur and scaling effects
+ * This function toggles the 'sharp-mode' class on the body element
+ * which is used by CSS to disable blur filters and scaling transforms
+ */
+function applySharpMode() {
+    // Toggle sharp-mode class on body based on sharpAlbumArt setting
+    if (displayConfig.sharpAlbumArt) {
+        document.body.classList.add('sharp-mode');
+    } else {
+        document.body.classList.remove('sharp-mode');
+    }
 }
 
 function updateLyricElement(element, text) {
@@ -229,6 +264,9 @@ function initializeDisplay() {
     if (params.has('artBackground')) {
         displayConfig.artBackground = params.get('artBackground') === 'true';
     }
+    if (params.has('sharpAlbumArt')) {
+        displayConfig.sharpAlbumArt = params.get('sharpAlbumArt') === 'true';
+    }
     if (params.has('showProvider')) {
         displayConfig.showProvider = params.get('showProvider') === 'true';
     }
@@ -245,6 +283,8 @@ function initializeDisplay() {
 
     // Apply visibility
     applyDisplayConfig();
+    // Apply sharp mode styling
+    applySharpMode();
 
     // Setup settings panel (if not minimal)
     if (!displayConfig.minimal) {
@@ -316,10 +356,11 @@ function setupSettingsPanel() {
     document.getElementById('opt-bottom-nav').checked = displayConfig.showBottomNav;
     document.getElementById('opt-colors').checked = displayConfig.useAlbumColors;
     document.getElementById('opt-art-bg').checked = displayConfig.artBackground;
+    document.getElementById('opt-sharp-art-bg').checked = displayConfig.sharpAlbumArt;
     document.getElementById('opt-show-provider').checked = displayConfig.showProvider;
 
     // Handle checkbox changes
-    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg', 'opt-show-provider'];
+    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg', 'opt-sharp-art-bg', 'opt-show-provider'];
 
     checkboxes.forEach(id => {
         const el = document.getElementById(id);
@@ -332,10 +373,26 @@ function setupSettingsPanel() {
                 if (id === 'opt-progress') displayConfig.showProgress = e.target.checked;
                 if (id === 'opt-bottom-nav') displayConfig.showBottomNav = e.target.checked;
                 if (id === 'opt-colors') displayConfig.useAlbumColors = e.target.checked;
-                if (id === 'opt-art-bg') displayConfig.artBackground = e.target.checked;
+                if (id === 'opt-art-bg') {
+                    displayConfig.artBackground = e.target.checked;
+                    // Make mutually exclusive with sharp album art
+                    if (e.target.checked && displayConfig.sharpAlbumArt) {
+                        displayConfig.sharpAlbumArt = false;
+                        document.getElementById('opt-sharp-art-bg').checked = false;
+                    }
+                }
+                if (id === 'opt-sharp-art-bg') {
+                    displayConfig.sharpAlbumArt = e.target.checked;
+                    // Make mutually exclusive with blurred album art
+                    if (e.target.checked && displayConfig.artBackground) {
+                        displayConfig.artBackground = false;
+                        document.getElementById('opt-art-bg').checked = false;
+                    }
+                }
                 if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
 
                 applyDisplayConfig();
+                applySharpMode();
                 updateUrlDisplay();
             });
         }
@@ -381,6 +438,7 @@ function generateCurrentUrl() {
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
     if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
     if (displayConfig.artBackground) params.set('artBackground', 'true');
+    if (displayConfig.sharpAlbumArt) params.set('sharpAlbumArt', 'true');
 
     return params.toString() ? `${base}?${params.toString()}` : base;
 }
@@ -397,7 +455,7 @@ function updateAlbumArt(trackInfo) {
             !albumArt.src.endsWith(trackInfo.album_art_url)) {
 
             albumArt.src = trackInfo.album_art_url;
-            if (displayConfig.artBackground) updateBackground();
+            if (displayConfig.artBackground || displayConfig.sharpAlbumArt) updateBackground();
         }
         albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
     } else {
@@ -410,7 +468,7 @@ function updateAlbumArt(trackInfo) {
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 
     // Ensure background is correct if art changed
-    if (displayConfig.artBackground) {
+    if (displayConfig.artBackground || displayConfig.sharpAlbumArt) {
         updateBackground();
     }
 }

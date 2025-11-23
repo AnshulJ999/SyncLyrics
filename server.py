@@ -411,7 +411,8 @@ async def get_client_config():
     return {
         "updateInterval": LYRICS["display"]["update_interval"] * 1000,
         "blurStrength": settings.get("ui.blur_strength"),
-        "overlayOpacity": settings.get("ui.overlay_opacity")
+        "overlayOpacity": settings.get("ui.overlay_opacity"),
+        "sharpAlbumArt": settings.get("ui.sharp_album_art")
     }
 
 @app.route("/callback")

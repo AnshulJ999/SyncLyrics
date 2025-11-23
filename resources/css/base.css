@@ -766,6 +766,27 @@ body[data-minimal="true"] .album-art {
     display: block;
 }
 
+/* ========== SHARP MODE (Minimal Blur, No Scaling) ========== */
+/* Sharp mode: Clear album art with minimal blur for better text readability */
+/* Much sharper than "Blur Album Art Background" but with slight softening for readability */
+body.sharp-mode .background-layer {
+    /* Very light blur (3px) - keeps image sharp but reduces harsh edges for better readability */
+    filter: blur(3px) !important;
+    /* Remove scaling transform to show image at native size (no upscaling artifacts) */
+    transform: none !important;
+    -webkit-transform: none !important;
+    /* Use browser's default high-quality image rendering for photos */
+    image-rendering: auto;
+}
+
+body.sharp-mode .background-overlay {
+    /* Remove backdrop blur that causes haziness - this was the main culprit! */
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    /* Keep a subtle dark overlay for text readability, but much lighter than blurred mode */
+    background: rgba(0, 0, 0, 0.2) !important;
+}
+
 /* ========== SPOTIFY LOGIN OVERLAY ========== */
 .spotify-login-overlay {
     /* Full screen overlay */
@@ -790,6 +811,7 @@ body[data-minimal="true"] .album-art {
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -817,6 +839,7 @@ body[data-minimal="true"] .album-art {
         transform: scale(0.9);
         opacity: 0;
     }
+
     to {
         transform: scale(1);
         opacity: 1;
@@ -832,9 +855,12 @@ body[data-minimal="true"] .album-art {
 }
 
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(1.05);
     }
