@@ -72,15 +72,18 @@ class SpotifyAPI:
             if not all([SPOTIFY["client_id"], SPOTIFY["client_secret"], SPOTIFY["redirect_uri"]]):
                 logger.error("Missing Spotify credentials in config")
                 return
+            
+            # Store auth_manager as instance variable so we can use it for web-based auth flow
+            self.auth_manager = SpotifyOAuth(
+                client_id=SPOTIFY["client_id"],
+                client_secret=SPOTIFY["client_secret"],
+                redirect_uri=SPOTIFY["redirect_uri"],
+                scope=SPOTIFY["scope"],
+                open_browser=False  # Critical: Don't try to open browser in headless environment
+            )
                 
             self.sp = spotipy.Spotify(
-                auth_manager=SpotifyOAuth(
-                    client_id=SPOTIFY["client_id"],
-                    client_secret=SPOTIFY["client_secret"],
-                    redirect_uri=SPOTIFY["redirect_uri"],
-                    scope=SPOTIFY["scope"],
-                    open_browser=False
-                ),
+                auth_manager=self.auth_manager,
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
@@ -412,4 +415,73 @@ class SpotifyAPI:
             return True
         except Exception as e:
             logger.error(f"Failed to go to previous track: {e}")
+            return False
+    
+    def get_auth_url(self) -> Optional[str]:
+        """
+        Generate the Spotify authorization URL for web-based OAuth flow.
+        Returns the URL that users should visit to authorize the application.
+        """
+        if not hasattr(self, 'auth_manager') or not self.auth_manager:
+            logger.error("Auth manager not initialized")
+            return None
+        
+        try:
+            # Get the authorization URL from the auth manager
+            auth_url = self.auth_manager.get_authorize_url()
+            logger.info("Generated Spotify authorization URL")
+            return auth_url
+        except Exception as e:
+            logger.error(f"Failed to generate auth URL: {e}")
+            return None
+    
+    async def complete_auth(self, code: str) -> bool:
+        """
+        Complete the OAuth flow by exchanging the authorization code for access tokens.
+        This is called from the /callback route after the user authorizes the app.
+        
+        Args:
+            code: The authorization code from Spotify's callback
+            
+        Returns:
+            True if authentication was successful, False otherwise
+        """
+        if not hasattr(self, 'auth_manager') or not self.auth_manager:
+            logger.error("Auth manager not initialized")
+            return False
+        
+        try:
+            logger.info("Completing Spotify authentication...")
+            
+            # Exchange the code for tokens (this is a blocking operation, so run in executor)
+            loop = asyncio.get_event_loop()
+            token_info = await loop.run_in_executor(
+                None, 
+                lambda: self.auth_manager.get_access_token(code)
+            )
+            
+            if not token_info:
+                logger.error("Failed to get access token from Spotify")
+                return False
+            
+            # Re-initialize the Spotify client with the new auth manager (which now has tokens)
+            self.sp = spotipy.Spotify(
+                auth_manager=self.auth_manager,
+                requests_timeout=self.timeout,
+                retries=self.max_retries
+            )
+            
+            # Test the connection to verify authentication worked
+            self.initialized = self._test_connection()
+            
+            if self.initialized:
+                logger.info("Spotify authentication completed successfully")
+            else:
+                logger.error("Authentication succeeded but connection test failed")
+            
+            return self.initialized
+            
+        except Exception as e:
+            logger.error(f"Failed to complete authentication: {e}")
+            self.initialized = False
             return False

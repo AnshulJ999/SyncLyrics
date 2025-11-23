@@ -751,3 +751,135 @@ body[data-minimal="true"] .album-art {
 .background-overlay.visible {
     display: block;
 }
+
+/* ========== SPOTIFY LOGIN OVERLAY ========== */
+.spotify-login-overlay {
+    /* Full screen overlay */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    /* Dark semi-transparent background */
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    /* Center the login card */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /* Smooth fade-in animation */
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.spotify-login-card {
+    /* Card container */
+    background: linear-gradient(135deg, #1e2030 0%, #2f354d 100%);
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 400px;
+    width: 90%;
+    /* Center content */
+    text-align: center;
+    /* Subtle shadow for depth */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    /* Border for definition */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Smooth scale-in animation */
+    animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.spotify-login-icon {
+    /* Large emoji icon */
+    font-size: 64px;
+    margin-bottom: 20px;
+    /* Subtle animation */
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+.spotify-login-card h2 {
+    /* Heading style */
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.spotify-login-card p {
+    /* Description text */
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.spotify-login-button {
+    /* Spotify green button */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #1DB954;
+    /* Spotify brand green */
+    color: #ffffff;
+    padding: 14px 28px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    /* Hover effect */
+    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+}
+
+.spotify-login-button:hover {
+    /* Hover state */
+    background: #1ed760;
+    /* Lighter green on hover */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(29, 185, 84, 0.4);
+    color: #ffffff;
+    text-decoration: none;
+}
+
+.spotify-login-button:active {
+    /* Active/pressed state */
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+}
+
+.spotify-login-note {
+    /* Small note text */
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    margin-top: 16px;
+    margin-bottom: 0;
+}

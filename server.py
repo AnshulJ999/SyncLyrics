@@ -52,7 +52,34 @@ async def theme() -> dict:
 
 @app.route("/")
 async def index() -> str:
-    return await render_template("index.html")
+    """Main page - pass Spotify auth URL if not authenticated"""
+    # Check if Spotify needs authentication
+    spotify_auth_url = None
+    spotify_needs_auth = False
+    
+    # Try to get existing client, or create a new one to check auth status
+    client = get_spotify_client()
+    
+    # If no client exists or client exists but isn't initialized, we need auth
+    if not client:
+        # Create a new client just to get the auth URL (even if not initialized)
+        try:
+            client = SpotifyAPI()
+        except Exception as e:
+            logger.error(f"Failed to create Spotify client for auth check: {e}")
+            client = None
+    
+    # If we have a client (existing or new) that isn't initialized, get auth URL
+    if client and not client.initialized:
+        # Spotify client exists but isn't authenticated - get auth URL
+        auth_url = client.get_auth_url()
+        if auth_url:
+            spotify_auth_url = auth_url
+            spotify_needs_auth = True
+    
+    return await render_template("index.html", 
+                                spotify_auth_url=spotify_auth_url,
+                                spotify_needs_auth=spotify_needs_auth)
 
 @app.route("/lyrics")
 async def lyrics() -> dict:
@@ -332,3 +359,86 @@ async def get_client_config():
         "blurStrength": settings.get("ui.blur_strength"),
         "overlayOpacity": settings.get("ui.overlay_opacity")
     }
+
+@app.route("/callback")
+async def spotify_callback():
+    """
+    Handle Spotify OAuth callback.
+    This route receives the authorization code from Spotify after the user logs in.
+    """
+    # Get the authorization code from query parameters
+    code = request.args.get('code')
+    error = request.args.get('error')
+    
+    # Check for errors from Spotify
+    if error:
+        logger.error(f"Spotify OAuth error: {error}")
+        return """
+        <html>
+        <head><title>Spotify Login Failed</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>❌ Login Failed</h1>
+            <p>Spotify authentication was cancelled or failed.</p>
+            <p><a href="/">Return to Home</a></p>
+        </body>
+        </html>
+        """, 400
+    
+    if not code:
+        logger.error("No authorization code received from Spotify")
+        return """
+        <html>
+        <head><title>Spotify Login Failed</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>❌ Login Failed</h1>
+            <p>No authorization code received from Spotify.</p>
+            <p><a href="/">Return to Home</a></p>
+        </body>
+        </html>
+        """, 400
+    
+    # Get the Spotify client and complete authentication
+    client = get_spotify_client()
+    if not client:
+        # If client doesn't exist, create a new one
+        client = SpotifyAPI()
+    
+    # Complete the authentication flow
+    success = await client.complete_auth(code)
+    
+    if success:
+        # Update the global spotify_client in system_utils so it's reused
+        from system_utils import spotify_client as global_client
+        if global_client is None or not global_client.initialized:
+            import system_utils
+            system_utils.spotify_client = client
+        
+        logger.info("Spotify authentication successful")
+        return """
+        <html>
+        <head><title>Spotify Login Successful</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>✅ Login Successful!</h1>
+            <p>You have successfully connected to Spotify.</p>
+            <p>Redirecting to home page...</p>
+            <script>
+                setTimeout(function() {
+                    window.location.href = '/';
+                }, 2000);
+            </script>
+            <p><a href="/">Click here if you are not redirected</a></p>
+        </body>
+        </html>
+        """
+    else:
+        logger.error("Failed to complete Spotify authentication")
+        return """
+        <html>
+        <head><title>Spotify Login Failed</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>❌ Login Failed</h1>
+            <p>Failed to complete Spotify authentication. Please try again.</p>
+            <p><a href="/">Return to Home</a></p>
+        </body>
+        </html>
+        """, 500
