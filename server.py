@@ -126,10 +126,50 @@ async def current_track() -> dict:
 @app.route('/manifest.json')
 async def manifest():
     """
-    Serve the PWA manifest.json file with correct MIME type.
+    Serve the PWA manifest.json file with correct MIME type and icon paths.
     This enables Progressive Web App installation on Android devices.
+    We generate it dynamically to ensure icon paths use the correct static URL.
     """
-    return await send_from_directory('resources', 'manifest.json', mimetype='application/manifest+json')
+    import json
+    
+    # Generate manifest with correct icon URLs using url_for
+    manifest_data = {
+        "name": "SyncLyrics",
+        "short_name": "SyncLyrics",
+        "description": "Real-time synchronized lyrics display",
+        "start_url": "/",
+        "scope": "/",
+        "display": "fullscreen",
+        "orientation": "any",
+        "theme_color": "#1db954",
+        "background_color": "#000000",
+        "categories": ["music", "entertainment"],
+        "icons": [
+            {
+                "src": url_for('static', filename='images/icon-192.png'),
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any"
+            },
+            {
+                "src": url_for('static', filename='images/icon-512.png'),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any"
+            },
+            {
+                "src": url_for('static', filename='images/icon-maskable.png'),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable"
+            }
+        ]
+    }
+    
+    # Return as JSON with correct MIME type
+    response = await jsonify(manifest_data)
+    response.headers['Content-Type'] = 'application/manifest+json'
+    return response
 
 # --- Settings API (Unchanged) ---
 
