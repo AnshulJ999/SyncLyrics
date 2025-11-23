@@ -506,15 +506,43 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
 # --- Main Function ---
 
 async def get_current_song_meta_data() -> Optional[dict]:
-    """Main orchestrator to get song data from configured sources with hybrid enrichment."""
+    """
+    Main orchestrator to get song data from configured sources with hybrid enrichment.
+    
+    CRITICAL FIX: Checks if song changed before using cache to prevent stale metadata
+    from being returned when a song change occurs within the cache interval.
+    """
     current_time = time.time()
     last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
     is_active = getattr(get_current_song_meta_data, '_is_active', True)
     last_active_time = getattr(get_current_song_meta_data, '_last_active_time', 0)
     
     required_interval = ACTIVE_INTERVAL if is_active else IDLE_INTERVAL
+    
+    # CRITICAL FIX: Check if song changed before using cache
+    # If song changed, we MUST fetch fresh data even if within interval
+    # This prevents the race condition where:
+    # 1. Song A is playing, metadata is cached
+    # 2. User skips to Song B
+    # 3. Cache still returns Song A metadata (within interval)
+    # 4. System thinks no change occurred, displays Song A lyrics for Song B
+    last_song = getattr(get_current_song_meta_data, '_last_song', None)
+    
+    # Only use cache if within interval AND song hasn't changed
     if (current_time - last_check) < required_interval:
-        return getattr(get_current_song_meta_data, '_last_result', None)
+        cached_result = getattr(get_current_song_meta_data, '_last_result', None)
+        if cached_result:
+            # Verify the cached result matches the last known song
+            # This prevents returning stale metadata when song changed but cache hasn't expired
+            cached_song_name = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
+            if last_song == cached_song_name:
+                # Song hasn't changed, safe to use cache
+                return cached_result
+            else:
+                # Song changed! Invalidate cache and fetch fresh data
+                # This ensures we detect song changes immediately, not after cache expires
+                logger.debug(f"Song changed in cache ({last_song} -> {cached_song_name}), invalidating cache to fetch fresh data")
+                get_current_song_meta_data._last_check_time = 0  # Force refresh by resetting check time
     
     get_current_song_meta_data._last_check_time = current_time
     

@@ -34,6 +34,7 @@ current_song_data = None
 current_song_lyrics = None
 current_song_provider: Optional[str] = None  # Tracks which provider is currently serving lyrics
 _db_lock = asyncio.Lock()  # Protects read/modify/write cycle for DB files
+_update_lock = asyncio.Lock()  # Protects against race conditions in `_update_song` - ensures only one song update happens at a time
 _backfill_tracker: Set[str] = set()  # Avoid duplicate backfill runs per song
 
 # ==========================================
@@ -445,76 +446,84 @@ async def _update_song():
     CRITICAL: Updates current_song_data IMMEDIATELY when song changes to prevent
     race conditions where lyrics from the previous song are displayed after
     a rapid song change.
+    
+    Uses a lock to ensure only one update happens at a time, preventing
+    concurrent calls from causing inconsistent state.
     """
     global current_song_lyrics, current_song_data, current_song_provider
 
-    new_song_data = await get_current_song_meta_data()
+    # CRITICAL FIX: Use lock to prevent concurrent updates
+    # This ensures only one song update happens at a time, preventing race conditions
+    # where multiple calls to _update_song() could interleave and cause wrong lyrics
+    # to be displayed for the current song
+    async with _update_lock:
+        new_song_data = await get_current_song_meta_data()
 
-    # If no song or empty song, clear lyrics
-    if new_song_data is None or (not new_song_data["artist"].strip() and not new_song_data["title"].strip()):
-        current_song_lyrics = None
-        current_song_data = new_song_data
-        return
+        # If no song or empty song, clear lyrics
+        if new_song_data is None or (not new_song_data["artist"].strip() and not new_song_data["title"].strip()):
+            current_song_lyrics = None
+            current_song_data = new_song_data
+            return
 
-    # Check if song changed
-    should_fetch_lyrics = current_song_data is None or (
-        current_song_data["artist"] != new_song_data["artist"] or
-        current_song_data["title"] != new_song_data["title"]
-    )
+        # Check if song changed
+        should_fetch_lyrics = current_song_data is None or (
+            current_song_data["artist"] != new_song_data["artist"] or
+            current_song_data["title"] != new_song_data["title"]
+        )
 
-    if should_fetch_lyrics:
-        # CRITICAL FIX: Clear old lyrics and update current_song_data IMMEDIATELY when song changes
-        # This prevents race conditions where:
-        # 1. Song B starts while fetching lyrics for Song A
-        # 2. The system doesn't know the song changed because current_song_data wasn't updated
-        # 3. Lyrics from Song A get displayed for Song B
-        current_song_lyrics = None  # Clear old lyrics immediately to prevent stale display
-        current_song_data = new_song_data
-        
-        # Reset provider when song changes so UI shows correct info during fetch
-        # This prevents showing the previous song's provider while searching for new lyrics
-        current_song_provider = None
-        
-        # Store song identifier to validate after async fetch completes
-        # This ensures we don't set lyrics if the song changed again during fetch
-        target_artist = new_song_data["artist"]
-        target_title = new_song_data["title"]
-        
-        # 1. Try Local DB First (Zero Latency)
-        local_lyrics = _load_from_db(target_artist, target_title)
-        if local_lyrics:
-            # Validate song hasn't changed during DB load (should be instant, but be safe)
-            if (current_song_data and 
-                current_song_data["artist"] == target_artist and 
-                current_song_data["title"] == target_title):
-                current_song_lyrics = local_lyrics
-
-                saved_providers = _get_saved_provider_names(target_artist, target_title)
-                missing = [
-                    provider
-                    for provider in providers
-                    if provider.enabled and provider.name not in saved_providers
-                ]
-                if missing:
-                    logger.info(f"Backfill triggered for {target_artist} - {target_title} (missing: {', '.join(p.name for p in missing)})")
-                    _backfill_missing_providers(target_artist, target_title, missing)
-        else:
-            # 2. Try Internet (Smart Race)
-            # This can take time, so we validate after fetch completes
-            fetched_lyrics = await _get_lyrics(target_artist, target_title)
+        if should_fetch_lyrics:
+            # CRITICAL FIX: Clear old lyrics and update current_song_data IMMEDIATELY when song changes
+            # This prevents race conditions where:
+            # 1. Song B starts while fetching lyrics for Song A
+            # 2. The system doesn't know the song changed because current_song_data wasn't updated
+            # 3. Lyrics from Song A get displayed for Song B
+            current_song_lyrics = None  # Clear old lyrics immediately to prevent stale display
+            current_song_data = new_song_data
             
-            # CRITICAL: Only set lyrics if song hasn't changed during fetch
-            # This prevents stale lyrics from being displayed after rapid song changes
-            if (current_song_data and 
-                current_song_data["artist"] == target_artist and 
-                current_song_data["title"] == target_title):
-                current_song_lyrics = fetched_lyrics
+            # Reset provider when song changes so UI shows correct info during fetch
+            # This prevents showing the previous song's provider while searching for new lyrics
+            current_song_provider = None
+            
+            # Store song identifier to validate after async fetch completes
+            # This ensures we don't set lyrics if the song changed again during fetch
+            target_artist = new_song_data["artist"]
+            target_title = new_song_data["title"]
+            
+            # 1. Try Local DB First (Zero Latency)
+            local_lyrics = _load_from_db(target_artist, target_title)
+            if local_lyrics:
+                # Validate song hasn't changed during DB load (should be instant, but be safe)
+                if (current_song_data and 
+                    current_song_data["artist"] == target_artist and 
+                    current_song_data["title"] == target_title):
+                    current_song_lyrics = local_lyrics
+
+                    saved_providers = _get_saved_provider_names(target_artist, target_title)
+                    missing = [
+                        provider
+                        for provider in providers
+                        if provider.enabled and provider.name not in saved_providers
+                    ]
+                    if missing:
+                        logger.info(f"Backfill triggered for {target_artist} - {target_title} (missing: {', '.join(p.name for p in missing)})")
+                        _backfill_missing_providers(target_artist, target_title, missing)
             else:
-                # Song changed during fetch - discard these lyrics
-                logger.debug(f"Discarded lyrics for {target_artist} - {target_title} (song changed during fetch)")
-    else:
-        # Song hasn't changed, just update the metadata (position, etc.)
-        current_song_data = new_song_data
+                # 2. Try Internet (Smart Race)
+                # This can take time, so we validate after fetch completes
+                fetched_lyrics = await _get_lyrics(target_artist, target_title)
+                
+                # CRITICAL: Only set lyrics if song hasn't changed during fetch
+                # This prevents stale lyrics from being displayed after rapid song changes
+                if (current_song_data and 
+                    current_song_data["artist"] == target_artist and 
+                    current_song_data["title"] == target_title):
+                    current_song_lyrics = fetched_lyrics
+                else:
+                    # Song changed during fetch - discard these lyrics
+                    logger.debug(f"Discarded lyrics for {target_artist} - {target_title} (song changed during fetch)")
+        else:
+            # Song hasn't changed, just update the metadata (position, etc.)
+            current_song_data = new_song_data
 
 async def _get_lyrics(artist: str, title: str):
     """
