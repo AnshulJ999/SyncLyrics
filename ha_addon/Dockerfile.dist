@@ -1,6 +1,9 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
+# Build Argument for Branch (Default: main)
+ARG BRANCH=main
+
 # Install requirements for add-on + git to clone the app
 RUN \
     apk add --no-cache \
@@ -12,9 +15,7 @@ RUN \
 WORKDIR /app
 
 # Clone the latest Stable code from GitHub
-# We clone specifically the folder/branch we want. 
-# Assuming 'main' branch.
-RUN git clone https://github.com/AnshulJ999/SyncLyrics.git .
+RUN git clone -b ${BRANCH} https://github.com/AnshulJ999/SyncLyrics.git .
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
