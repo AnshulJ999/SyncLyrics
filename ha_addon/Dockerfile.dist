@@ -10,12 +10,22 @@ RUN \
     python3 \
     py3-pip \
     jq \
-    git
+    git \
+    gcc \
+    musl-dev \
+    jpeg-dev \
+    zlib-dev
 
 WORKDIR /app
 
 # Clone the latest Stable code from GitHub
 RUN git clone -b ${BRANCH} https://github.com/AnshulJ999/SyncLyrics.git .
+
+# Remove Desktop/Windows dependencies that break Headless Linux
+RUN sed -i '/winsdk/d' requirements.txt && \
+    sed -i '/pywin32/d' requirements.txt && \
+    sed -i '/pystray/d' requirements.txt && \
+    sed -i '/desktop-notifier/d' requirements.txt
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages

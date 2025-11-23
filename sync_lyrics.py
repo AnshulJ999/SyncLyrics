@@ -7,7 +7,11 @@ from os import path
 import time
 from time import sleep
 from typing import NoReturn
-from pystray import Icon, Menu, MenuItem
+try:
+    from pystray import Icon, Menu, MenuItem
+    HAS_TRAY = True
+except ImportError:
+    HAS_TRAY = False
 from PIL import Image
 from config import DEBUG, RESOURCES_DIR
 from lyrics import get_timed_lyrics
@@ -119,6 +123,10 @@ def run_tray() -> NoReturn:
     """
     global _tray_icon
     
+    if not HAS_TRAY:
+        logger.warning("System tray not available (headless mode or missing dependencies)")
+        return
+
     import socket
     # Get local IP address for web interface links
     hostname = socket.gethostname()
@@ -188,9 +196,12 @@ async def main() -> NoReturn:
         logger.error(f"Failed to initialize mDNS: {e}")
     
     # Start the tray icon in a separate thread since it's blocking
-    logger.info("Starting system tray...")
-    _tray_thread = th.Thread(target=run_tray, daemon=False)
-    _tray_thread.start()
+    if HAS_TRAY:
+        logger.info("Starting system tray...")
+        _tray_thread = th.Thread(target=run_tray, daemon=False)
+        _tray_thread.start()
+    else:
+        logger.info("System tray disabled (headless mode or missing dependency).")
 
     # Get active display methods
     methods = [method for method, active in get_state()["representationMethods"].items() 
