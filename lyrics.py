@@ -227,7 +227,10 @@ def _backfill_missing_providers(
     _backfill_tracker.add(song_key)
 
     async def run_backfill() -> None:
-        """Runs each missing provider without blocking the main playback."""
+        """
+        Runs each missing provider without blocking the main playback.
+        Stops once we have 3 providers saved to avoid unnecessary requests.
+        """
         try:
             tasks: Set[asyncio.Task] = set()
             provider_map: Dict[asyncio.Task, object] = {}
@@ -250,6 +253,15 @@ def _backfill_missing_providers(
             pending = tasks
 
             while pending:
+                # Check if we already have 3 providers saved - if so, stop backfilling
+                saved_providers = _get_saved_provider_names(artist, title)
+                if len(saved_providers) >= 3:
+                    logger.info(f"Backfill stopped for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
+                    # Cancel remaining tasks to avoid unnecessary requests
+                    for task in pending:
+                        task.cancel()
+                    break
+
                 # Wait for at least one task to complete
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
 
@@ -264,6 +276,16 @@ def _backfill_missing_providers(
                         if lyrics:
                             await _save_to_db(artist, title, lyrics, provider.name)
                             logger.info(f"Backfill saved lyrics from {provider.name}")
+                            
+                            # Check again after saving - if we now have 3 providers, stop
+                            saved_providers = _get_saved_provider_names(artist, title)
+                            if len(saved_providers) >= 3:
+                                logger.info(f"Backfill completed for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
+                                # Cancel remaining tasks
+                                for task in pending:
+                                    task.cancel()
+                                pending = set()  # Clear pending to exit loop
+                                break
                     except Exception as exc:
                         logger.debug(f"Backfill provider error ({getattr(provider, 'name', 'Unknown')}): {exc}")
         finally:
@@ -499,14 +521,19 @@ async def _update_song():
                     current_song_lyrics = local_lyrics
 
                     saved_providers = _get_saved_provider_names(target_artist, target_title)
-                    missing = [
-                        provider
-                        for provider in providers
-                        if provider.enabled and provider.name not in saved_providers
-                    ]
-                    if missing:
-                        logger.info(f"Backfill triggered for {target_artist} - {target_title} (missing: {', '.join(p.name for p in missing)})")
-                        _backfill_missing_providers(target_artist, target_title, missing)
+                    # Only backfill if we have fewer than 3 providers saved
+                    # This prevents unnecessary requests to unreliable providers
+                    if len(saved_providers) < 3:
+                        missing = [
+                            provider
+                            for provider in providers
+                            if provider.enabled and provider.name not in saved_providers
+                        ]
+                        if missing:
+                            logger.info(f"Backfill triggered for {target_artist} - {target_title} (have {len(saved_providers)}/3 providers, missing: {', '.join(p.name for p in missing)})")
+                            _backfill_missing_providers(target_artist, target_title, missing)
+                    else:
+                        logger.debug(f"Skipping backfill for {target_artist} - {target_title} (already have {len(saved_providers)} providers)")
             else:
                 # 2. Try Internet (Smart Race)
                 # This can take time, so we validate after fetch completes

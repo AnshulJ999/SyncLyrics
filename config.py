@@ -157,7 +157,7 @@ PROVIDERS = {
     },
     "musicxmatch": {
         "enabled": conf("providers.musicxmatch.enabled", True),
-        "priority": conf("providers.musicxmatch.priority", 2),
+        "priority": conf("providers.musicxmatch.priority", 5),
         "timeout": conf("providers.musicxmatch.timeout", 10),
         "retries": conf("providers.musicxmatch.retries", 3),
         "cache_duration": conf("providers.musicxmatch.cache_duration", 86400)

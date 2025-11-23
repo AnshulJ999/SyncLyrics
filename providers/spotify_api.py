@@ -54,8 +54,9 @@ class SpotifyAPI:
         
         # Request tracking
         self.request_stats = {
-            'total_requests': 0,
-            'cached_responses': 0,
+            'total_requests': 0,  # Total API calls made to Spotify
+            'total_function_calls': 0,  # Total calls to get_current_track() (includes cache hits)
+            'cached_responses': 0,  # Number of times cache was used (not API calls)
             'api_calls': {
                 'current_playback': 0,
                 'search': 0,
@@ -230,6 +231,9 @@ class SpotifyAPI:
         if not self.initialized:
             logger.warning("Spotify API not initialized, skipping track fetch")
             return None
+        
+        # Track total function calls for statistics
+        self.request_stats['total_function_calls'] += 1
             
         current_time = time.time()
 
@@ -386,16 +390,22 @@ class SpotifyAPI:
 
     def get_request_stats(self) -> Dict[str, Any]:
         """Get current API request statistics"""
-        total_requests = self.request_stats['total_requests']
+        total_requests = self.request_stats['total_requests']  # API calls only
+        total_function_calls = self.request_stats['total_function_calls']  # All function calls
         cached_responses = self.request_stats['cached_responses']
         
+        # Calculate cache hit rate based on total function calls, not just API calls
+        # This gives a realistic percentage (cache hits / total calls)
+        cache_hit_rate = (cached_responses / max(total_function_calls, 1)) * 100
+        
         return {
-            'Total Requests': total_requests,
-            'Cached Responses': cached_responses,
+            'Total Requests': total_requests,  # API calls to Spotify
+            'Total Function Calls': total_function_calls,  # All calls to get_current_track()
+            'Cached Responses': cached_responses,  # Cache hits
             'API Calls': self.request_stats['api_calls'],
             'Errors': self.request_stats['errors'],
             'Cache Age': f"{time.time() - self._last_metadata_check:.1f}s",
-            'Cache Hit Rate': f"{(cached_responses / max(total_requests, 1)) * 100:.1f}%"
+            'Cache Hit Rate': f"{cache_hit_rate:.1f}%"  # Now calculated correctly
         }
 
     # Playback Control Methods
