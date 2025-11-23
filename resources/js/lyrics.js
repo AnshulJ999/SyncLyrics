@@ -403,9 +403,25 @@ function setupSettingsPanel() {
     if (!settingsToggle || !settingsPanel) return;
 
     // Toggle panel
-    settingsToggle.addEventListener('click', () => {
+    settingsToggle.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent click from bubbling to document
         const isVisible = settingsPanel.style.display !== 'none';
         settingsPanel.style.display = isVisible ? 'none' : 'block';
+    });
+
+    // Close panel when clicking outside of it
+    document.addEventListener('click', (e) => {
+        // Check if click is outside the settings panel and toggle button
+        if (settingsPanel.style.display !== 'none' &&
+            !settingsPanel.contains(e.target) &&
+            !settingsToggle.contains(e.target)) {
+            settingsPanel.style.display = 'none';
+        }
+    });
+
+    // Prevent panel from closing when clicking inside it
+    settingsPanel.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent click from bubbling to document
     });
 
     // Sync checkboxes with current config
@@ -562,10 +578,8 @@ function updateAlbumArt(trackInfo) {
     const hasContent = (trackInfo.album_art_url && displayConfig.showAlbumArt) || displayConfig.showTrackInfo;
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 
-    // Ensure background is correct if art changed
-    if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
-        updateBackground();
-    }
+    // Note: updateBackground() is called when src changes (line 569)
+    // No need for forced call here since lastTrackInfo is now updated before this function is called
 }
 
 function updateTrackInfo(trackInfo) {
@@ -628,6 +642,14 @@ function attachControlHandlers() {
         playPauseBtn.addEventListener('click', async () => {
             try {
                 await fetch('/api/playback/play-pause', { method: 'POST' });
+                // Force immediate update of track info to reflect new play/pause state
+                // This ensures the button icon updates immediately
+                setTimeout(async () => {
+                    const trackInfo = await getCurrentTrack();
+                    if (trackInfo && !trackInfo.error) {
+                        updateControlState(trackInfo);
+                    }
+                }, 200); // Small delay to allow server to process the state change
             } catch (error) {
                 console.error('Play/Pause error:', error);
             }
@@ -660,10 +682,16 @@ function updateControlState(trackInfo) {
     if (playPauseBtn) {
         playPauseBtn.disabled = !canControl;
         // Update play/pause icon via CSS classes
-        if (trackInfo.is_playing) {
+        // Ensure we always update the state, even if it hasn't changed
+        // Default to paused if is_playing is undefined or false
+        const isPlaying = trackInfo.is_playing === true;
+
+        if (isPlaying) {
+            // Remove paused class and add playing class
             playPauseBtn.classList.remove('paused');
             playPauseBtn.classList.add('playing');
         } else {
+            // Remove playing class and add paused class
             playPauseBtn.classList.remove('playing');
             playPauseBtn.classList.add('paused');
         }
@@ -878,6 +906,10 @@ async function updateLoop() {
 
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
+            // Update lastTrackInfo FIRST so updateBackground() has current data
+            // This fixes the stale data issue without needing forced updateBackground() calls
+            lastTrackInfo = trackInfo;
+
             // Update all UI components
             updateAlbumArt(trackInfo);
             updateTrackInfo(trackInfo);
@@ -889,8 +921,6 @@ async function updateLoop() {
             if (lyrics) {
                 setLyricsInDom(lyrics);
             }
-
-            lastTrackInfo = trackInfo;
         }
 
         lastCheckTime = Date.now();

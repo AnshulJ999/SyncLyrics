@@ -328,12 +328,25 @@ class SpotifyAPI:
                 logger.debug(f"Track changed: {old_track_id} -> {new_track_id}, invalidating cache to prevent stale data")
                 self._metadata_cache = None  # Clear cache to force fresh data
             
+            # Get highest quality album art (Spotify API returns images sorted largest to smallest)
+            # To be absolutely sure we get the largest, we explicitly find it by dimensions
+            album_images = current['item']['album'].get('images', [])
+            album_art_url = None
+            if album_images:
+                # Find the image with the largest dimensions (width * height)
+                # This ensures we always get the highest quality available, even if API order changes
+                largest_image = max(album_images, 
+                                  key=lambda img: (img.get('width', 0) or 0) * (img.get('height', 0) or 0),
+                                  default=album_images[0] if album_images else None)
+                if largest_image:
+                    album_art_url = largest_image['url']
+            
             # Update cache with new track data
             self._metadata_cache = {
                 'title': current['item']['name'],
                 'artist': current['item']['artists'][0]['name'],
                 'album': current['item']['album']['name'],
-                'album_art': current['item']['album']['images'][0]['url'] if current['item']['album']['images'] else None,
+                'album_art': album_art_url,
                 'track_id': new_track_id,
                 'url': current['item']['external_urls']['spotify'],
                 'duration_ms': current['item']['duration_ms'],
@@ -381,12 +394,25 @@ class SpotifyAPI:
                 return None
                 
             track = results['tracks']['items'][0]
+            # Get highest quality album art (Spotify API returns images sorted largest to smallest)
+            # To be absolutely sure we get the largest, we explicitly find it by dimensions
+            album_images = track['album'].get('images', [])
+            album_art_url = None
+            if album_images:
+                # Find the image with the largest dimensions (width * height)
+                # This ensures we always get the highest quality available, even if API order changes
+                largest_image = max(album_images,
+                                  key=lambda img: (img.get('width', 0) or 0) * (img.get('height', 0) or 0),
+                                  default=album_images[0] if album_images else None)
+                if largest_image:
+                    album_art_url = largest_image['url']
+            
             return {
                 'title': track['name'],
                 'artist': track['artists'][0]['name'],
                 'album': track['album']['name'],
                 'url': track['external_urls']['spotify'],
-                'album_art': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                'album_art': album_art_url,
                 'duration_ms': track['duration_ms'],
                 'progress_ms': 0  # Not applicable for search results
             }
