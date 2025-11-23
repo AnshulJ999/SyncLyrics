@@ -15,6 +15,7 @@ let displayConfig = {
     showProvider: true,  // NEW
     useAlbumColors: false,
     artBackground: false,
+    softAlbumArt: false,  // Soft album art background (medium blur, no scaling, balanced)
     sharpAlbumArt: false  // Sharp album art background (no blur, no scaling, super sharp and clear)
 };
 
@@ -69,19 +70,31 @@ async function getConfig() {
         if (config.blurStrength !== undefined) {
             document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
-        // Set sharp album art mode from config only if URL didn't explicitly set it
+        // Set soft album art mode from config only if URL didn't explicitly set it
         // URL parameters take precedence over server config
         const urlParams = new URLSearchParams(window.location.search);
+        if (config.softAlbumArt !== undefined && !urlParams.has('softAlbumArt')) {
+            displayConfig.softAlbumArt = config.softAlbumArt;
+            // Enforce mutual exclusivity when setting from server config
+            if (displayConfig.softAlbumArt) {
+                displayConfig.artBackground = false;
+                displayConfig.sharpAlbumArt = false;
+            }
+            applySoftMode();
+        }
+        // Set sharp album art mode from config only if URL didn't explicitly set it
+        // URL parameters take precedence over server config
         if (config.sharpAlbumArt !== undefined && !urlParams.has('sharpAlbumArt')) {
             displayConfig.sharpAlbumArt = config.sharpAlbumArt;
             // Enforce mutual exclusivity when setting from server config
             if (displayConfig.sharpAlbumArt) {
                 displayConfig.artBackground = false;
+                displayConfig.softAlbumArt = false;
             }
             applySharpMode();
         }
 
-        console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Sharp=${config.sharpAlbumArt}`);
+        console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);
 
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -154,8 +167,19 @@ function updateBackground() {
     const bgLayer = document.getElementById('background-layer');
     const bgOverlay = document.getElementById('background-overlay');
 
-    // Check for sharp album art background first (takes priority)
+    // Check for album art backgrounds in priority order: Sharp > Soft > Blur
     if (displayConfig.sharpAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
+        // Fix: Encode URI to handle spaces/symbols in local paths
+        // We use encodeURI to allow the full URL structure but escape spaces
+        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        bgLayer.style.backgroundImage = `url("${safeUrl}")`;
+
+        bgLayer.classList.add('visible');
+        bgOverlay.classList.add('visible');
+        // Remove gradient from body when art background is active
+        document.body.style.background = 'transparent';
+    }
+    else if (displayConfig.softAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
         // Fix: Encode URI to handle spaces/symbols in local paths
         // We use encodeURI to allow the full URL structure but escape spaces
         const safeUrl = encodeURI(lastTrackInfo.album_art_url);
@@ -188,11 +212,26 @@ function updateBackground() {
         document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
     }
 
-    // Apply sharp mode styling
+    // Apply mode styling
+    applySoftMode();
     applySharpMode();
 
     // Add subtle animation
     document.body.style.transition = 'background 1s ease-in-out';
+}
+
+/**
+ * Apply soft mode styling for medium blur album art background
+ * This function toggles the 'soft-mode' class on the body element
+ * which is used by CSS to apply medium blur effects
+ */
+function applySoftMode() {
+    // Toggle soft-mode class on body based on softAlbumArt setting
+    if (displayConfig.softAlbumArt) {
+        document.body.classList.add('soft-mode');
+    } else {
+        document.body.classList.remove('soft-mode');
+    }
 }
 
 /**
@@ -270,13 +309,21 @@ function initializeDisplay() {
     if (params.has('artBackground')) {
         displayConfig.artBackground = params.get('artBackground') === 'true';
     }
+    if (params.has('softAlbumArt')) {
+        displayConfig.softAlbumArt = params.get('softAlbumArt') === 'true';
+    }
     if (params.has('sharpAlbumArt')) {
         displayConfig.sharpAlbumArt = params.get('sharpAlbumArt') === 'true';
     }
-    // Enforce mutual exclusivity: sharp album art takes priority over blurred
+    // Enforce mutual exclusivity: Sharp > Soft > Blur (priority order)
     if (displayConfig.sharpAlbumArt) {
         displayConfig.artBackground = false;
+        displayConfig.softAlbumArt = false;
+    } else if (displayConfig.softAlbumArt) {
+        displayConfig.artBackground = false;
+        displayConfig.sharpAlbumArt = false;
     } else if (displayConfig.artBackground) {
+        displayConfig.softAlbumArt = false;
         displayConfig.sharpAlbumArt = false;
     }
     if (params.has('showProvider')) {
@@ -295,7 +342,8 @@ function initializeDisplay() {
 
     // Apply visibility
     applyDisplayConfig();
-    // Apply sharp mode styling
+    // Apply mode styling
+    applySoftMode();
     applySharpMode();
 
     // Setup settings panel (if not minimal)
@@ -368,11 +416,12 @@ function setupSettingsPanel() {
     document.getElementById('opt-bottom-nav').checked = displayConfig.showBottomNav;
     document.getElementById('opt-colors').checked = displayConfig.useAlbumColors;
     document.getElementById('opt-art-bg').checked = displayConfig.artBackground;
+    document.getElementById('opt-soft-art-bg').checked = displayConfig.softAlbumArt;
     document.getElementById('opt-sharp-art-bg').checked = displayConfig.sharpAlbumArt;
     document.getElementById('opt-show-provider').checked = displayConfig.showProvider;
 
     // Handle checkbox changes
-    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg', 'opt-sharp-art-bg', 'opt-show-provider'];
+    const checkboxes = ['opt-album-art', 'opt-track-info', 'opt-controls', 'opt-progress', 'opt-bottom-nav', 'opt-colors', 'opt-art-bg', 'opt-soft-art-bg', 'opt-sharp-art-bg', 'opt-show-provider'];
 
     checkboxes.forEach(id => {
         const el = document.getElementById(id);
@@ -387,23 +436,50 @@ function setupSettingsPanel() {
                 if (id === 'opt-colors') displayConfig.useAlbumColors = e.target.checked;
                 if (id === 'opt-art-bg') {
                     displayConfig.artBackground = e.target.checked;
-                    // Make mutually exclusive with sharp album art
-                    if (e.target.checked && displayConfig.sharpAlbumArt) {
-                        displayConfig.sharpAlbumArt = false;
-                        document.getElementById('opt-sharp-art-bg').checked = false;
+                    // Make mutually exclusive with soft and sharp album art
+                    if (e.target.checked) {
+                        if (displayConfig.softAlbumArt) {
+                            displayConfig.softAlbumArt = false;
+                            document.getElementById('opt-soft-art-bg').checked = false;
+                        }
+                        if (displayConfig.sharpAlbumArt) {
+                            displayConfig.sharpAlbumArt = false;
+                            document.getElementById('opt-sharp-art-bg').checked = false;
+                        }
+                    }
+                }
+                if (id === 'opt-soft-art-bg') {
+                    displayConfig.softAlbumArt = e.target.checked;
+                    // Make mutually exclusive with blurred and sharp album art
+                    if (e.target.checked) {
+                        if (displayConfig.artBackground) {
+                            displayConfig.artBackground = false;
+                            document.getElementById('opt-art-bg').checked = false;
+                        }
+                        if (displayConfig.sharpAlbumArt) {
+                            displayConfig.sharpAlbumArt = false;
+                            document.getElementById('opt-sharp-art-bg').checked = false;
+                        }
                     }
                 }
                 if (id === 'opt-sharp-art-bg') {
                     displayConfig.sharpAlbumArt = e.target.checked;
-                    // Make mutually exclusive with blurred album art
-                    if (e.target.checked && displayConfig.artBackground) {
-                        displayConfig.artBackground = false;
-                        document.getElementById('opt-art-bg').checked = false;
+                    // Make mutually exclusive with blurred and soft album art
+                    if (e.target.checked) {
+                        if (displayConfig.artBackground) {
+                            displayConfig.artBackground = false;
+                            document.getElementById('opt-art-bg').checked = false;
+                        }
+                        if (displayConfig.softAlbumArt) {
+                            displayConfig.softAlbumArt = false;
+                            document.getElementById('opt-soft-art-bg').checked = false;
+                        }
                     }
                 }
                 if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
 
                 applyDisplayConfig();
+                applySoftMode();
                 applySharpMode();
                 updateUrlDisplay();
             });
@@ -449,9 +525,12 @@ function generateCurrentUrl() {
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
-    // Enforce mutual exclusivity: only add one of artBackground or sharpAlbumArt
+    // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt, or sharpAlbumArt
+    // Priority: Sharp > Soft > Blur
     if (displayConfig.sharpAlbumArt) {
         params.set('sharpAlbumArt', 'true');
+    } else if (displayConfig.softAlbumArt) {
+        params.set('softAlbumArt', 'true');
     } else if (displayConfig.artBackground) {
         params.set('artBackground', 'true');
     }
@@ -471,7 +550,7 @@ function updateAlbumArt(trackInfo) {
             !albumArt.src.endsWith(trackInfo.album_art_url)) {
 
             albumArt.src = trackInfo.album_art_url;
-            if (displayConfig.artBackground || displayConfig.sharpAlbumArt) updateBackground();
+            if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) updateBackground();
         }
         albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
     } else {
@@ -484,7 +563,7 @@ function updateAlbumArt(trackInfo) {
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 
     // Ensure background is correct if art changed
-    if (displayConfig.artBackground || displayConfig.sharpAlbumArt) {
+    if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
         updateBackground();
     }
 }

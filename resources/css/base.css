@@ -793,6 +793,27 @@ body.sharp-mode .background-overlay {
     background: rgba(0, 0, 0, 0.2) !important;
 }
 
+/* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
+/* Soft mode: Medium blur album art background - balanced between sharp and blurred */
+/* Provides good image clarity with better text readability than sharp mode */
+body.soft-mode .background-layer {
+    /* Medium blur (6px) - provides softness while maintaining image clarity */
+    filter: blur(6px) !important;
+    /* Remove scaling transform to show image at native size (no upscaling artifacts) */
+    transform: none !important;
+    -webkit-transform: none !important;
+    /* Use high-quality rendering for photos */
+    image-rendering: auto;
+}
+
+body.soft-mode .background-overlay {
+    /* Light backdrop blur (10px) - softens edges without major haziness */
+    backdrop-filter: blur(10px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
+    /* Medium dark overlay for better text contrast and readability */
+    background: rgba(0, 0, 0, 0.35) !important;
+}
+
 /* ========== SPOTIFY LOGIN OVERLAY ========== */
 .spotify-login-overlay {
     /* Full screen overlay */
