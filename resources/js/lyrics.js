@@ -15,7 +15,7 @@ let displayConfig = {
     showProvider: true,  // NEW
     useAlbumColors: false,
     artBackground: false,
-    sharpAlbumArt: false  // Sharp album art background (minimal blur, no scaling, better readability)
+    sharpAlbumArt: false  // Sharp album art background (no blur, no scaling, super sharp and clear)
 };
 
 let lastTrackInfo = null;

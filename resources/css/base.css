@@ -766,12 +766,12 @@ body[data-minimal="true"] .album-art {
     display: block;
 }
 
-/* ========== SHARP MODE (Minimal Blur, No Scaling) ========== */
-/* Sharp mode: Clear album art with minimal blur for better text readability */
-/* Much sharper than "Blur Album Art Background" but with slight softening for readability */
+/* ========== SHARP MODE (No Blur, No Scaling) ========== */
+/* Sharp mode: Super sharp and clear album art with no blur effects */
+/* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
-    /* Very light blur (3px) - keeps image sharp but reduces harsh edges for better readability */
-    filter: blur(3px) !important;
+    /* Remove all blur filters for maximum sharpness and clarity */
+    filter: none !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
