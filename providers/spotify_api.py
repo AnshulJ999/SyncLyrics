@@ -37,6 +37,7 @@ class SpotifyAPI:
         self._last_metadata_check = 0
         self._metadata_cache = None
         self._cache_enabled = SPOTIFY["cache"]["enabled"]
+        self._last_track_id = None  # Track the current track ID to detect track changes
         
         # Smart caching settings
         self.active_ttl = 6.0   # Default: Poll every 6s when playing (interpolate in between)
@@ -175,9 +176,22 @@ class SpotifyAPI:
         return False
 
     def _calculate_progress(self, cached_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Interpolate progress_ms based on elapsed time since cache"""
+        """
+        Interpolate progress_ms based on elapsed time since cache.
+        
+        CRITICAL FIX: Validates track_id before interpolating to prevent returning
+        stale data from a previous track when the track changed but cache is still valid.
+        """
         if not cached_data or not cached_data.get('is_playing'):
             return cached_data
+        
+        # CRITICAL FIX: Don't interpolate if track ID changed
+        # This prevents returning wrong song data during the transition period
+        # If _last_track_id is set and doesn't match cached track_id, this is stale data
+        current_track_id = cached_data.get('track_id')
+        if self._last_track_id is not None and current_track_id != self._last_track_id:
+            logger.debug(f"Track ID mismatch in cache ({self._last_track_id} vs {current_track_id}), returning None to prevent stale data")
+            return None
             
         elapsed = (time.time() - self._last_metadata_check) * 1000
         new_progress = cached_data['progress_ms'] + elapsed
@@ -273,6 +287,7 @@ class SpotifyAPI:
             if not current or not current.get('item'):
                 logger.debug("No track currently playing")
                 self._metadata_cache = None # Clear cache if nothing playing
+                self._last_track_id = None  # Clear track ID when no track is playing
                 self._last_metadata_check = current_time
                 
                 # If we forced a refresh but got nothing, mark it as a failure to backoff
@@ -287,18 +302,32 @@ class SpotifyAPI:
             if should_force and not is_playing:
                 self._last_force_refresh_failure_time = current_time
             
-            # Update cache
+            # CRITICAL FIX: Detect track change and invalidate cache
+            # Get the new track ID from the API response
+            new_track_id = current['item']['id']
+            
+            # If track changed, invalidate cache to prevent interpolation of old song data
+            if self._metadata_cache and self._metadata_cache.get('track_id') != new_track_id:
+                old_track_id = self._metadata_cache.get('track_id')
+                logger.debug(f"Track changed: {old_track_id} -> {new_track_id}, invalidating cache to prevent stale data")
+                self._metadata_cache = None  # Clear cache to force fresh data
+            
+            # Update cache with new track data
             self._metadata_cache = {
                 'title': current['item']['name'],
                 'artist': current['item']['artists'][0]['name'],
                 'album': current['item']['album']['name'],
                 'album_art': current['item']['album']['images'][0]['url'] if current['item']['album']['images'] else None,
-                'track_id': current['item']['id'],
+                'track_id': new_track_id,
                 'url': current['item']['external_urls']['spotify'],
                 'duration_ms': current['item']['duration_ms'],
                 'progress_ms': current['progress_ms'],
                 'is_playing': is_playing
             }
+            
+            # CRITICAL FIX: Store track ID for validation in _calculate_progress
+            # This ensures we can detect if cached data is from a different track
+            self._last_track_id = new_track_id
             self._last_metadata_check = current_time
             
             return self._metadata_cache
