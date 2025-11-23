@@ -69,9 +69,15 @@ async function getConfig() {
         if (config.blurStrength !== undefined) {
             document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
-        // Set sharp album art mode from config
-        if (config.sharpAlbumArt !== undefined) {
+        // Set sharp album art mode from config only if URL didn't explicitly set it
+        // URL parameters take precedence over server config
+        const urlParams = new URLSearchParams(window.location.search);
+        if (config.sharpAlbumArt !== undefined && !urlParams.has('sharpAlbumArt')) {
             displayConfig.sharpAlbumArt = config.sharpAlbumArt;
+            // Enforce mutual exclusivity when setting from server config
+            if (displayConfig.sharpAlbumArt) {
+                displayConfig.artBackground = false;
+            }
             applySharpMode();
         }
 
@@ -267,6 +273,12 @@ function initializeDisplay() {
     if (params.has('sharpAlbumArt')) {
         displayConfig.sharpAlbumArt = params.get('sharpAlbumArt') === 'true';
     }
+    // Enforce mutual exclusivity: sharp album art takes priority over blurred
+    if (displayConfig.sharpAlbumArt) {
+        displayConfig.artBackground = false;
+    } else if (displayConfig.artBackground) {
+        displayConfig.sharpAlbumArt = false;
+    }
     if (params.has('showProvider')) {
         displayConfig.showProvider = params.get('showProvider') === 'true';
     }
@@ -436,9 +448,13 @@ function generateCurrentUrl() {
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
-    if (!displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
-    if (displayConfig.artBackground) params.set('artBackground', 'true');
-    if (displayConfig.sharpAlbumArt) params.set('sharpAlbumArt', 'true');
+    if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
+    // Enforce mutual exclusivity: only add one of artBackground or sharpAlbumArt
+    if (displayConfig.sharpAlbumArt) {
+        params.set('sharpAlbumArt', 'true');
+    } else if (displayConfig.artBackground) {
+        params.set('artBackground', 'true');
+    }
 
     return params.toString() ? `${base}?${params.toString()}` : base;
 }
