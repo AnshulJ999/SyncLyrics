@@ -78,7 +78,8 @@ class SpotifyAPI:
                     client_id=SPOTIFY["client_id"],
                     client_secret=SPOTIFY["client_secret"],
                     redirect_uri=SPOTIFY["redirect_uri"],
-                    scope=SPOTIFY["scope"]
+                    scope=SPOTIFY["scope"],
+                    open_browser=False
                 ),
                 requests_timeout=self.timeout,
                 retries=self.max_retries

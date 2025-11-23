@@ -12,7 +12,11 @@ class MDNSService:
     Allows accessing the app via http://synclyrics.local
     """
     def __init__(self, port: int):
-        self.port = port
+        try:
+            self.port = int(port)
+        except (ValueError, TypeError):
+            self.port = 9012 # Fallback default
+            logger.warning(f"Invalid port '{port}' passed to mDNS, using default 9012")
         self.zeroconf: Optional[Zeroconf] = None
         self.info: Optional[ServiceInfo] = None
 
