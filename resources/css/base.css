@@ -450,8 +450,8 @@ body {
 }
 
 .album-art {
-    width: 100px;
-    height: 100px;
+    width: clamp(90px, 12vw, 110px);
+    height: clamp(90px, 12vw, 110px);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     transition: all 0.5s ease;
@@ -477,7 +477,7 @@ body {
 }
 
 .track-title {
-    font-size: 1.2rem;
+    font-size: clamp(1.1rem, 3vw, 1.3rem);
     font-weight: 600;
     color: white;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -487,7 +487,7 @@ body {
 }
 
 .track-artist {
-    font-size: 0.95rem;
+    font-size: clamp(0.9rem, 2.5vw, 1rem);
     color: rgba(255, 255, 255, 0.75);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
     margin-top: 0.3rem;
@@ -532,19 +532,39 @@ body.hide-nav #player-ui-container {
 
 .progress-bar {
     height: 6px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
     overflow: hidden;
     margin-bottom: 0.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.9));
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.7) 0%,
+        rgba(255, 255, 255, 0.95) 50%,
+        rgba(255, 255, 255, 0.7) 100%
+    );
     border-radius: 3px;
     transition: width 0.1s linear;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+    position: relative;
+}
+
+/* Thumb indicator at end of progress bar */
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    right: -4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
 }
 
 .progress-time {
@@ -657,8 +677,8 @@ body[data-minimal="true"] .album-art {
     }
 
     .album-art {
-        width: 80px;
-        height: 80px;
+        width: clamp(60px, 10vw, 100px);
+        height: clamp(60px, 10vw, 100px);
     }
 
     .track-title {
