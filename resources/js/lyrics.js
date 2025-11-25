@@ -498,6 +498,9 @@ function setupSettingsPanel() {
                 applySoftMode();
                 applySharpMode();
                 updateUrlDisplay();
+                
+                // Update browser URL without page reload (enables refresh persistence & direct URL copy)
+                history.replaceState(null, '', generateCurrentUrl());
             });
         }
     });
