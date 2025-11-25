@@ -103,5 +103,12 @@
     "media_source.gnome.priority": 2,
     "spotify.redirect_uri": "http://localhost:9012/callback",
     "spotify.cache.metadata_ttl": 2.0,
-    "spotify.cache.enabled": true
+    "spotify.cache.enabled": true,
+    "album_art.timeout": 5,
+    "album_art.retries": 2,
+    "album_art.lastfm_api_key": null,
+    "album_art.enable_itunes": true,
+    "album_art.enable_lastfm": true,
+    "album_art.enable_spotify_enhanced": true,
+    "album_art.min_resolution": 1000
 }

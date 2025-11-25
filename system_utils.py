@@ -8,6 +8,7 @@ import config
 from config import DEBUG
 from state_manager import get_state, set_state
 from providers.spotify_api import get_shared_spotify_client
+from providers.album_art import get_album_art_provider
 from logging_config import get_logger
 from config import CACHE_DIR
 import os
@@ -461,6 +462,26 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         colors = ("#24273a", "#363b54")  # Default
         album_art_url = track.get("album_art")
         
+        # Try to get high-resolution album art
+        if album_art_url:
+            try:
+                # Get high-res album art provider
+                art_provider = get_album_art_provider()
+                
+                # Try to get high-resolution version
+                high_res_url = await art_provider.get_high_res_art(
+                    artist=track["artist"],
+                    title=track["title"],
+                    album=track.get("album"),
+                    spotify_url=album_art_url
+                )
+                
+                if high_res_url and high_res_url != album_art_url:
+                    logger.info(f"Upgraded album art from Spotify to high-res source for {track['artist']} - {track['title']}")
+                    album_art_url = high_res_url
+            except Exception as e:
+                logger.debug(f"Failed to get high-res album art, using Spotify default: {e}")
+        
         if album_art_url:
             try:
                 # Check if we need to download new art (track changed)
@@ -641,8 +662,21 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 
                 if title_match and (artist_match or not win_artist):
                     # Steal Album Art (Prefer Spotify as it is usually higher quality)
-                    if spotify_data.get("album_art_url"):
-                        result["album_art_url"] = spotify_data.get("album_art_url")
+                    # Try to get high-res version
+                    spotify_art_url = spotify_data.get("album_art_url")
+                    if spotify_art_url:
+                        try:
+                            art_provider = get_album_art_provider()
+                            high_res_url = await art_provider.get_high_res_art(
+                                artist=spotify_data.get("artist", ""),
+                                title=spotify_data.get("title", ""),
+                                album=spotify_data.get("album"),
+                                spotify_url=spotify_art_url
+                            )
+                            result["album_art_url"] = high_res_url if high_res_url else spotify_art_url
+                        except Exception as e:
+                            logger.debug(f"Failed to get high-res art in hybrid mode: {e}")
+                            result["album_art_url"] = spotify_art_url
                     
                     # Steal Colors from Spotify (now properly extracted!)
                     if spotify_data.get("colors"):

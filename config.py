@@ -229,6 +229,16 @@ FEATURES = {
     "album_art_colors": conf("features.album_art_colors", True)
 }
 
+ALBUM_ART = {
+    "timeout": conf("album_art.timeout", 5),
+    "retries": conf("album_art.retries", 2),
+    "lastfm_api_key": conf("album_art.lastfm_api_key"),
+    "enable_itunes": conf("album_art.enable_itunes", True),
+    "enable_lastfm": conf("album_art.enable_lastfm", True),
+    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", True),
+    "min_resolution": conf("album_art.min_resolution", 1000)
+}
+
 # Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})
