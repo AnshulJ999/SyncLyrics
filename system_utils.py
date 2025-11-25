@@ -375,11 +375,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     _last_windows_track_id = current_track_id
                     
                     # Set URL to local server route
-                    # We use a timestamp to bust cache
-                    album_art_url = f"/cover-art?t={int(time.time())}"
+                    # Use track ID as cache buster instead of timestamp
+                    # This prevents image flickering - URL only changes when track changes
+                    album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
             elif thumbnail_ref:
                 # Track hasn't changed, use existing cached art
-                album_art_url = f"/cover-art?t={int(time.time())}"
+                # Use same track-based cache buster to maintain URL stability
+                album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
         except Exception as e:
             # logger.debug(f"Failed to extract Windows thumbnail: {e}")
             pass
