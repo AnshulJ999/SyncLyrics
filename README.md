@@ -1,15 +1,26 @@
-# 🎵 SyncLyrics
+# SyncLyrics
+
+## Description
 
 A lightweight, cross-platform desktop application that displays synchronized lyrics for your currently playing song on Spotify and Windows Media.
 
-![Main UI](screenshots/SyncLyrics_Main_UI.png)
+Notes: Forked by me for personal use. It focuses on Windows 10/11 and Spotify desktop client. I can't guarantee it will work on other OS or other music players.
+
+![Main UI](<screenshots/SyncLyrics Main UI.png>)
+
+_Main UI_
+
+![Minimal Mode](<screenshots/Minimal Mode.png>) 
+
+_Minimal Mode can be accessed by adding ?minimal=true to the URL_
 
 ## ✨ Features
-*   **Instant Sync:** Fetches time-synced lyrics from LRCLib, NetEase, Spotify, and QQ Music.
+*   **Instant Sync:** Fetches time-synced lyrics from multiple providers like LRCLib, NetEase, Spotify, and QQ Music (configurable).
 *   **Parallel Search:** Queries all providers simultaneously for zero lag.
 *   **Cross-Platform:** Works on Windows (native media integration) and Linux (via playerctl).
 *   **Customizable:** Dark/Light themes, transparency, and minimized "Overlay" mode.
 *   **Resource Efficient:** Smart caching ensures <1% CPU usage.
+
 
 ## 🚀 Installation
 
@@ -62,6 +73,10 @@ Pull requests are welcome! Please make sure to update tests as appropriate.
 ## 📜 License
 [MIT](LICENSE)
 
+## Disclaimer (AI Usage)
+
+Much of the app has been coded with AI assistance (vibe-coded), so please keep an open mind. 
+
 ## ❤️ Credits
 Based on the original work by [Konstantinos Petrakis](https://github.com/konstantinospetrakis).
 
@@ -69,6 +84,3 @@ Based on the original work by [Konstantinos Petrakis](https://github.com/konstan
 *   [Lyricify](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
 *   [Syncedlyrics](https://github.com/moehmeni/syncedlyrics)
 *   [spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api)
-
-
-
