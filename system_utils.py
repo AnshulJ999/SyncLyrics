@@ -468,16 +468,33 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # Get high-res album art provider
                 art_provider = get_album_art_provider()
                 
-                # Try to get high-resolution version
-                high_res_url = await art_provider.get_high_res_art(
+                # Store original Spotify URL to detect if we actually upgraded
+                original_spotify_url = album_art_url
+                
+                # Try to get high-resolution version (cache will prevent repeated API calls)
+                high_res_result = await art_provider.get_high_res_art(
                     artist=track["artist"],
                     title=track["title"],
                     album=track.get("album"),
                     spotify_url=album_art_url
                 )
                 
-                if high_res_url and high_res_url != album_art_url:
-                    logger.info(f"Upgraded album art from Spotify to high-res source for {track['artist']} - {track['title']}")
+                # Unpack result: (url, resolution_info) or None
+                if high_res_result:
+                    high_res_url, resolution_info = high_res_result
+                else:
+                    high_res_url = None
+                    resolution_info = None
+                
+                # Only log and update if we got a different URL
+                # Track last logged track to prevent spam on every poll
+                if high_res_url and high_res_url != original_spotify_url:
+                    # Only log once per track (track by track_id if available, otherwise artist+title)
+                    track_id = track.get("track_id") or f"{track['artist']}::{track['title']}"
+                    if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
+                       _get_current_song_meta_data_spotify._last_logged_track_id != track_id:
+                        logger.info(f"Upgraded album art from Spotify to high-res source for {track['artist']} - {track['title']}: {resolution_info}")
+                        _get_current_song_meta_data_spotify._last_logged_track_id = track_id
                     album_art_url = high_res_url
             except Exception as e:
                 logger.debug(f"Failed to get high-res album art, using Spotify default: {e}")
@@ -667,12 +684,17 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     if spotify_art_url:
                         try:
                             art_provider = get_album_art_provider()
-                            high_res_url = await art_provider.get_high_res_art(
+                            high_res_result = await art_provider.get_high_res_art(
                                 artist=spotify_data.get("artist", ""),
                                 title=spotify_data.get("title", ""),
                                 album=spotify_data.get("album"),
                                 spotify_url=spotify_art_url
                             )
+                            # Unpack result: (url, resolution_info) or None
+                            if high_res_result:
+                                high_res_url, _ = high_res_result
+                            else:
+                                high_res_url = None
                             result["album_art_url"] = high_res_url if high_res_url else spotify_art_url
                         except Exception as e:
                             logger.debug(f"Failed to get high-res art in hybrid mode: {e}")
