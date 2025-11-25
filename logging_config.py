@@ -31,7 +31,7 @@ _logging_initialized = False
 
 def setup_logging(
     console_level: str = "INFO",
-    file_level: str = "INFO",
+    file_level: str = "DEBUG",
     console: bool = True,
     log_file: Optional[str] = None,
     log_providers: bool = True

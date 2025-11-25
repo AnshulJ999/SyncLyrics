@@ -495,16 +495,19 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     async def background_upgrade_art():
                         """Background task to fetch high-res art and update metadata"""
                         try:
+                            logger.info(f"Starting background album art upgrade for {captured_artist} - {captured_title} (album: {captured_album or 'N/A'})")
                             # Wait a tiny bit to let the initial response return first
                             await asyncio.sleep(0.1)
                             
                             # Fetch high-res art (iTunes → Last.fm → Spotify fallback)
+                            logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
                             high_res_result = await art_provider.get_high_res_art(
                                 artist=captured_artist,
                                 title=captured_title,
                                 album=captured_album,
                                 spotify_url=original_spotify_url
                             )
+                            logger.debug(f"get_high_res_art returned: {high_res_result}")
                             
                             # Check if track changed during fetch (race condition protection)
                             # Get current track from Spotify cache to verify
@@ -527,7 +530,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
                                         _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
                         except Exception as e:
-                            logger.debug(f"Background art upgrade failed: {e}")
+                            logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
                     
                     # Start background task (non-blocking)
                     asyncio.create_task(background_upgrade_art())

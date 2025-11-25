@@ -106,8 +106,8 @@
     "spotify.cache.enabled": true,
     "album_art.timeout": 5,
     "album_art.retries": 2,
-    "album_art.enable_itunes": true,
+    "album_art.enable_itunes": false,
     "album_art.enable_lastfm": true,
-    "album_art.enable_spotify_enhanced": true,
+    "album_art.enable_spotify_enhanced": false,
     "album_art.min_resolution": 3000
 }

@@ -47,6 +47,15 @@ class AlbumArtProvider:
         self.enable_lastfm = album_art_config.get("enable_lastfm", True)
         self.enable_spotify_enhanced = album_art_config.get("enable_spotify_enhanced", True)
         
+        # Debug logging for configuration
+        api_key_status = "set" if self.lastfm_api_key else "missing"
+        if self.lastfm_api_key:
+            # Don't log the actual key, but show first/last chars for verification
+            masked_key = f"{self.lastfm_api_key[:4]}...{self.lastfm_api_key[-4:]}" if len(self.lastfm_api_key) > 8 else "***"
+            logger.info(f"AlbumArtProvider initialized - iTunes: {self.enable_itunes}, Last.fm: {self.enable_lastfm} (API key: {api_key_status} [{masked_key}]), Spotify Enhanced: {self.enable_spotify_enhanced}")
+        else:
+            logger.warning(f"AlbumArtProvider initialized - iTunes: {self.enable_itunes}, Last.fm: {self.enable_lastfm} (API key: {api_key_status} - check .env file!), Spotify Enhanced: {self.enable_spotify_enhanced}")
+        
         # Minimum resolution threshold (default: prefer 3000x3000 or higher for best quality)
         self.min_resolution = album_art_config.get("min_resolution", 3000)
         
@@ -288,7 +297,12 @@ class AlbumArtProvider:
         Returns:
             Tuple of (image_url, resolution) or None if not found
         """
-        if not self.enable_lastfm or not self.lastfm_api_key:
+        if not self.enable_lastfm:
+            logger.debug(f"Last.fm disabled in _get_lastfm_art for {artist} - {title}")
+            return None
+        
+        if not self.lastfm_api_key:
+            logger.warning(f"Last.fm API key is missing! Check .env file for LASTFM_API_KEY. Artist: {artist}, Title: {title}")
             return None
             
         try:
@@ -302,24 +316,46 @@ class AlbumArtProvider:
                 "format": "json"
             }
             
+            logger.debug(f"Last.fm API request: {url} with params: method={params['method']}, artist={artist}, track={title}")
             response = requests.get(url, params=params, timeout=self.timeout)
+            
             if response.status_code != 200:
+                logger.warning(f"Last.fm API returned status {response.status_code} for {artist} - {title}")
                 return None
                 
             data = response.json()
-            if "error" in data or "track" not in data:
+            logger.debug(f"Last.fm API response for {artist} - {title}: {str(data)[:500]}...")  # Log first 500 chars of response
+            
+            # Check for API errors
+            if "error" in data:
+                error_code = data.get("error")
+                error_message = data.get("message", "Unknown error")
+                logger.warning(f"Last.fm API error {error_code}: {error_message} for {artist} - {title}")
                 return None
                 
+            if "track" not in data:
+                logger.warning(f"Last.fm: No track data in response for {artist} - {title}. Response keys: {list(data.keys())}")
+                return None
+            
             track = data["track"]
+            if not track:
+                logger.warning(f"Last.fm: Track data is empty for {artist} - {title}")
+                return None
+                
             album_data = track.get("album", {})
             
             if not album_data:
+                logger.warning(f"Last.fm: No album data for track {artist} - {title}. Track keys: {list(track.keys()) if isinstance(track, dict) else 'not a dict'}")
                 return None
+            
+            logger.info(f"Last.fm: Found album data for {artist} - {title}. Album keys: {list(album_data.keys()) if isinstance(album_data, dict) else 'not a dict'}")
                 
             # Last.fm provides images in different sizes:
             # small, medium, large, extralarge
             # extralarge is typically 1000x1000px or larger
             images = album_data.get("image", [])
+            
+            logger.debug(f"Last.fm: Found {len(images)} image(s) for {artist} - {title}. Images: {images}")
             
             # Find the largest image
             largest_url = None
@@ -327,22 +363,78 @@ class AlbumArtProvider:
             size_map = {"small": 34, "medium": 64, "large": 174, "extralarge": 1000}
             
             for img in images:
-                size_text = img.get("#text", "")
-                size_value = size_map.get(size_text.lower(), 0)
-                if size_value > largest_size and img.get("#text"):
-                    largest_url = img.get("#text")
+                if not isinstance(img, dict):
+                    logger.debug(f"Last.fm: Skipping non-dict image entry: {img}")
+                    continue
+                size_text = img.get("size", "")  # Last.fm uses "size" not "#text" for the size field
+                url = img.get("#text", "")  # URL is in "#text" field
+                
+                # Try to extract actual size from URL path (e.g., /i/u/300x300/ or /i/u/1000x1000/)
+                actual_size_from_url = 0
+                if url:
+                    import re
+                    # Match patterns like /300x300/, /1000x1000/, /174s/, etc.
+                    size_match = re.search(r'/(\d+)x?(\d+)?[s/]', url)
+                    if size_match:
+                        width = int(size_match.group(1))
+                        height = int(size_match.group(2)) if size_match.group(2) else width
+                        actual_size_from_url = max(width, height)
+                
+                # Use size_map for fallback, but prefer actual URL size if available
+                mapped_size = size_map.get(size_text.lower(), 0)
+                size_value = actual_size_from_url if actual_size_from_url > 0 else mapped_size
+                
+                logger.debug(f"Last.fm: Image entry - size: '{size_text}', url: '{url[:50] if url else 'empty'}...', mapped_size: {mapped_size}, actual_url_size: {actual_size_from_url}, final_size: {size_value}")
+                if size_value > largest_size and url:
+                    largest_url = url
                     largest_size = size_value
             
-            if largest_url and largest_size >= self.min_resolution:
-                logger.info(f"Last.fm: Found album art ({largest_size}x{largest_size}) for {artist} - {title}")
-                return (largest_url, largest_size)
-            elif largest_url:
-                logger.debug(f"Last.fm: Found album art but resolution ({largest_size}x{largest_size}) below threshold")
-                
-        except Exception as e:
-            logger.debug(f"Last.fm API error: {e}")
+            logger.debug(f"Last.fm: Selected largest image - size: {largest_size}, url: {largest_url[:50] if largest_url else 'None'}...")
             
-        return None
+            # Last.fm API returns URLs with size segments like /300x300/, /174s/, etc.
+            # To get the original full-size image, we need to REMOVE the size segment entirely
+            # Example: .../i/u/300x300/hash.jpg -> .../i/u/hash.jpg (original full-size, often 1000x1000+)
+            if largest_url:
+                import re
+                # Remove size segments like /300x300/, /174s/, /64s/, /34s/ from the URL
+                # Pattern matches: /digitsxdigits/ or /digits+s/ followed by /
+                # More precise pattern to avoid breaking the URL structure
+                original_url = re.sub(r'/\d+x?\d*[s]/', '/', largest_url)
+                # Handle the case where size segment is at the end (with trailing slash)
+                original_url = re.sub(r'/\d+x\d+/', '/', original_url)
+                # Fix any double slashes that might result (but preserve ://)
+                original_url = re.sub(r'(?<!:)/+', '/', original_url)
+                
+                if original_url != largest_url:
+                    logger.info(f"Last.fm: Removing size segment from URL to get original full-size image")
+                    logger.debug(f"Last.fm: Original URL: {largest_url[:80]}...")
+                    logger.debug(f"Last.fm: Modified URL: {original_url[:80]}...")
+                    largest_url = original_url
+                    # We don't know the actual size until we download it, but assume it's >= 1000
+                    # The actual resolution will be verified when the image is downloaded
+                    largest_size = 1000  # Conservative estimate, actual size will be verified
+            
+            if largest_url:
+                if largest_size >= self.min_resolution:
+                    logger.info(f"Last.fm: Found album art ({largest_size}x{largest_size}) for {artist} - {title}")
+                    return (largest_url, largest_size)
+                elif largest_size >= 1000:
+                    # Last.fm max is 1000px, which is still better than Spotify's 640px
+                    # Return it even if below min_resolution threshold
+                    logger.info(f"Last.fm: Found album art ({largest_size}x{largest_size}) for {artist} - {title} (below min_resolution {self.min_resolution}, but better than Spotify)")
+                    return (largest_url, largest_size)
+                else:
+                    logger.debug(f"Last.fm: Found album art but resolution ({largest_size}x{largest_size}) too low")
+                
+        except requests.exceptions.Timeout:
+            logger.warning(f"Last.fm API timeout ({self.timeout}s) for {artist} - {title}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Last.fm API request failed: {e} for {artist} - {title}")
+            return None
+        except Exception as e:
+            logger.error(f"Last.fm API call failed with unexpected error: {type(e).__name__}: {e} for {artist} - {title}")
+            return None
     
     def _get_cache_key(self, artist: str, title: str, album: Optional[str] = None) -> str:
         """
@@ -407,9 +499,12 @@ class AlbumArtProvider:
         cache_key = self._get_cache_key(artist, title, album)
         if cache_key in self._cache:
             cached_result = self._cache[cache_key]
-            # Return cached result silently (no log spam)
+            # Log cache hit for debugging
+            logger.debug(f"Album art cache hit for {artist} - {title} (key: {cache_key}): {cached_result}")
             # Cache stores (url, resolution_info) tuples
             return cached_result  # Returns (URL, resolution_info) or None (cached failure)
+        
+        logger.debug(f"Album art cache miss for {artist} - {title} (key: {cache_key}), fetching from sources...")
         
         loop = asyncio.get_event_loop()
         
@@ -492,8 +587,13 @@ class AlbumArtProvider:
         
         # 2. Try Last.fm API (requires API key, up to 1000x1000px)
         # Run in executor since it makes blocking requests
-        if self.enable_lastfm and self.lastfm_api_key:
+        if not self.enable_lastfm:
+            logger.debug(f"Last.fm disabled in config for {artist} - {title}")
+        elif not self.lastfm_api_key:
+            logger.debug(f"Last.fm API key not configured (check .env file) for {artist} - {title}")
+        else:
             try:
+                logger.debug(f"Attempting Last.fm API call for {artist} - {title}")
                 lastfm_result = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
@@ -509,6 +609,8 @@ class AlbumArtProvider:
                     resolution_info = f"{resolution}x{resolution} (Last.fm)"
                     logger.info(f"Using Last.fm album art ({resolution}x{resolution}) for {artist} - {title}")
                     return (url, resolution_info)
+                else:
+                    logger.debug(f"Last.fm returned no result for {artist} - {title}")
             except asyncio.TimeoutError:
                 logger.debug(f"Last.fm API timeout for {artist} - {title}")
             except Exception as e:
@@ -530,4 +632,10 @@ def get_album_art_provider() -> AlbumArtProvider:
     if _album_art_provider_instance is None:
         _album_art_provider_instance = AlbumArtProvider()
     return _album_art_provider_instance
+
+def reset_album_art_provider() -> None:
+    """Reset the singleton instance (useful when config changes)"""
+    global _album_art_provider_instance
+    _album_art_provider_instance = None
+    logger.debug("AlbumArtProvider singleton reset - will reinitialize on next access")
 
