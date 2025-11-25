@@ -18,8 +18,7 @@ from lyrics import get_timed_lyrics
 from state_manager import get_state
 from server import app
 from logging_config import setup_logging, get_logger
-from providers.spotify_api import SpotifyAPI
-# from system_utils import _get_current_song_meta_data_spotify
+# NOTE: SpotifyAPI is accessed via get_shared_spotify_client() singleton throughout the app
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import signal

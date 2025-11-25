@@ -7,7 +7,7 @@ from typing import Optional
 import config
 from config import DEBUG
 from state_manager import get_state, set_state
-from providers.spotify_api import SpotifyAPI
+from providers.spotify_api import get_shared_spotify_client
 from logging_config import get_logger
 from config import CACHE_DIR
 import os
@@ -26,7 +26,8 @@ IDLE_INTERVAL = config.LYRICS["display"]["idle_interval"]
 IDLE_WAIT_TIME = config.LYRICS["display"]["idle_wait_time"]
 
 # Globals
-spotify_client = None
+# NOTE: spotify_client is now obtained via get_shared_spotify_client() for singleton pattern
+# This ensures all stats are consolidated across the entire app
 _last_state_log_time = 0
 STATE_LOG_INTERVAL = 100  # Log app state every 100 seconds
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
@@ -127,7 +128,7 @@ def _remove_text_inside_parentheses_and_brackets(text: str) -> str:
 
 def _log_app_state() -> None:
     """Log key application state periodically."""
-    global _last_state_log_time, spotify_client
+    global _last_state_log_time
     current_time = time.time()
     
     if current_time - _last_state_log_time < STATE_LOG_INTERVAL:
@@ -164,6 +165,8 @@ def _log_app_state() -> None:
         logger.info(state_summary)
 
         # Log Spotify API stats if available (this is the important one for rate limits)
+        # Use shared singleton instance to get consolidated stats from entire app
+        spotify_client = get_shared_spotify_client()
         if spotify_client and spotify_client.initialized:
             try:
                 stats = spotify_client.get_request_stats()
@@ -415,12 +418,12 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
 async def _get_current_song_meta_data_spotify(target_title: str = None, target_artist: str = None, force_refresh: bool = False) -> Optional[dict]:
     """Spotify API metadata fetcher with standardized output."""
-    global spotify_client, _last_spotify_art_url
+    global _last_spotify_art_url
     try:
-        if spotify_client is None:
-            spotify_client = SpotifyAPI()
-            
-        if not spotify_client.initialized:
+        # Use shared singleton instance (consolidates all stats across the app)
+        spotify_client = get_shared_spotify_client()
+        
+        if spotify_client is None or not spotify_client.initialized:
             return None
 
         # Track metadata fetch (always, not just in debug mode)
@@ -594,6 +597,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
     
     # Adjust Spotify API polling speed based on mode
     # Fast mode (2.0s) for Spotify-only to reduce latency, Normal mode (6.0s) when Windows Media is active
+    spotify_client = get_shared_spotify_client()
     if spotify_client and spotify_client.initialized:
         if is_spotify_only:
             spotify_client.set_fast_mode(True)  # Fast mode: 2.0s polling for lower latency
@@ -609,6 +613,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
             spotify_cached_paused = False
             
             # Check Spotify cache state to determine if we need to wake it up
+            # spotify_client already obtained above via get_shared_spotify_client()
             if spotify_client and spotify_client._metadata_cache:
                 spotify_cached_paused = not spotify_client._metadata_cache.get('is_playing', False)
             

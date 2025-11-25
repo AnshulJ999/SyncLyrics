@@ -16,7 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import logging
 from .base import LyricsProvider
-from providers.spotify_api import SpotifyAPI
+from providers.spotify_api import get_shared_spotify_client
 from logging_config import get_logger
 from config import get_provider_config
 
@@ -38,9 +38,9 @@ class SpotifyLyrics(LyricsProvider):
         
         # Initialize API settings from config
         self.api_url = config.get('base_url', 'https://spotify-lyrics-api-azure.vercel.app')
-        self.spotify = SpotifyAPI()
-        if not self.spotify.initialized:
-            logger.error("Failed to initialize Spotify client in SpotifyLyrics")
+        # NOTE: We use get_shared_spotify_client() lazily in get_lyrics() instead of storing
+        # an instance here. This ensures all API calls use the singleton instance and
+        # statistics are consolidated across the entire app.
             
     async def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
         """Get lyrics for a track by searching Spotify"""
@@ -50,12 +50,15 @@ class SpotifyLyrics(LyricsProvider):
                 logger.debug("Spotify - Empty artist and title, skipping lyrics search")
                 return None
 
-            if not self.spotify.initialized:
+            # Get the shared singleton instance (consolidates all stats)
+            spotify_client = get_shared_spotify_client()
+            
+            if spotify_client is None or not spotify_client.initialized:
                 logger.error("Spotify client not initialized")
                 return None
                 
             # First try to get currently playing track
-            track = await self.spotify.get_current_track()
+            track = await spotify_client.get_current_track()
             
             # If no track is playing or it's a different track, search for the requested track
             if not track or (
@@ -63,7 +66,7 @@ class SpotifyLyrics(LyricsProvider):
                 track.get('title') != title
             ):
                 logger.info(f"Spotify - Searching Spotify for {artist} - {title}")
-                track = self.spotify.search_track(artist, title)
+                track = spotify_client.search_track(artist, title)
                 if not track:
                     logger.info(f"No track found on Spotify for: {artist} - {title}")
                     return None

@@ -11,9 +11,8 @@ from config import LYRICS, RESOURCES_DIR
 from settings import settings
 from logging_config import get_logger
 
-# Import shared Spotify instance if needed for controls
-from system_utils import spotify_client 
-from providers.spotify_api import SpotifyAPI
+# Import shared Spotify singleton for controls - ensures all stats are consolidated
+from providers.spotify_api import get_shared_spotify_client
 
 logger = get_logger(__name__)
 
@@ -29,15 +28,14 @@ app.secret_key = "secret key"
 # --- Helper Functions ---
 
 def get_spotify_client():
-    """Helper to get the active Spotify client from system_utils or create one"""
-    # We try to reuse the one from system_utils to share the session/cache
-    from system_utils import spotify_client
-    if spotify_client and spotify_client.initialized:
-        return spotify_client
+    """
+    Helper to get the shared Spotify singleton client.
     
-    # Fallback: Create new if not exists (e.g. first run)
-    new_client = SpotifyAPI()
-    return new_client if new_client.initialized else None
+    This ensures all API calls across the app use the same instance,
+    so statistics are accurately consolidated and caching is efficient.
+    """
+    client = get_shared_spotify_client()
+    return client if client and client.initialized else None
 
 @app.context_processor
 async def inject_cache_version() -> dict:
@@ -57,19 +55,10 @@ async def index() -> str:
     spotify_auth_url = None
     spotify_needs_auth = False
     
-    # Try to get existing client, or create a new one to check auth status
-    client = get_spotify_client()
+    # Use the shared singleton client (ensures all stats consolidated)
+    client = get_shared_spotify_client()
     
-    # If no client exists or client exists but isn't initialized, we need auth
-    if not client:
-        # Create a new client just to get the auth URL (even if not initialized)
-        try:
-            client = SpotifyAPI()
-        except Exception as e:
-            logger.error(f"Failed to create Spotify client for auth check: {e}")
-            client = None
-    
-    # If we have a client (existing or new) that isn't initialized, get auth URL
+    # If we have a client that isn't initialized, get auth URL so user can log in
     if client and not client.initialized:
         # Get the auth URL for Spotify login
         try:
@@ -474,22 +463,15 @@ async def spotify_callback():
         </html>
         """, 400
     
-    # Get the Spotify client and complete authentication
-    client = get_spotify_client()
-    if not client:
-        # If client doesn't exist, create a new one
-        client = SpotifyAPI()
+    # Get the shared singleton client and complete authentication
+    # The singleton ensures all parts of the app share the same authenticated instance
+    client = get_shared_spotify_client()
     
     # Complete the authentication flow
     success = await client.complete_auth(code)
     
     if success:
-        # Update the global spotify_client in system_utils so it's reused
-        from system_utils import spotify_client as global_client
-        if global_client is None or not global_client.initialized:
-            import system_utils
-            system_utils.spotify_client = client
-        
+        # No need to update globals - the singleton pattern handles this automatically
         logger.info("Spotify authentication successful")
         return """
         <html>

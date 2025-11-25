@@ -26,6 +26,41 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
+# ===========================================
+# Singleton Pattern for Shared SpotifyAPI
+# ===========================================
+# This ensures only ONE SpotifyAPI instance exists across the entire app.
+# All modules (system_utils, spotify_lyrics, etc.) share the same instance,
+# so statistics are consolidated and caching is efficient.
+
+_spotify_client_instance: Optional['SpotifyAPI'] = None
+
+def get_shared_spotify_client() -> Optional['SpotifyAPI']:
+    """
+    Returns the shared SpotifyAPI singleton instance.
+    Creates the instance on first call (lazy initialization).
+    
+    This ensures:
+    - All API calls are tracked in one place (accurate statistics)
+    - Single cache (more efficient, avoids duplicate requests)
+    - Single auth flow (no confusion with multiple tokens)
+    
+    Returns:
+        SpotifyAPI instance, or None if initialization fails
+    """
+    global _spotify_client_instance
+    if _spotify_client_instance is None:
+        _spotify_client_instance = SpotifyAPI()
+    return _spotify_client_instance
+
+def reset_shared_spotify_client() -> None:
+    """
+    Resets the shared SpotifyAPI instance.
+    Used for testing or when re-authentication is needed.
+    """
+    global _spotify_client_instance
+    _spotify_client_instance = None
+
 class SpotifyAPI:
     def __init__(self):
         """Initialize Spotify API with credentials from environment variables and settings"""
