@@ -287,6 +287,27 @@ async def clear_provider_preference_endpoint():
     else:
         return jsonify({"status": "error", "message": "Failed to clear preference"}), 500
 
+@app.route("/api/lyrics/delete", methods=['DELETE'])
+async def delete_cached_lyrics_endpoint():
+    """Delete all cached lyrics for current song (use when lyrics are wrong)"""
+    from lyrics import delete_cached_lyrics, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    if not artist or not title:
+        return jsonify({"error": "Invalid song data"}), 400
+    
+    result = await delete_cached_lyrics(artist, title)
+    
+    if result['status'] == 'success':
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 500
+
 # --- Playback Control API (The New Features) ---
 
 @app.route("/cover-art")

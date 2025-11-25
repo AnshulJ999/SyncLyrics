@@ -475,6 +475,46 @@ async def clear_provider_preference(artist: str, title: str) -> bool:
         logger.error(f"Error clearing preference: {e}")
         return False
 
+async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:
+    """
+    Delete all cached lyrics for a song from the local database.
+    Use this when cached lyrics are wrong and you want to re-fetch from providers.
+    
+    Returns:
+        {
+            'status': 'success' | 'error',
+            'message': str
+        }
+    """
+    global current_song_lyrics, current_song_provider
+    
+    db_path = _get_db_path(artist, title)
+    
+    if not db_path:
+        return {'status': 'error', 'message': 'Could not determine database path'}
+    
+    if not os.path.exists(db_path):
+        return {'status': 'success', 'message': 'No cached lyrics to delete'}
+    
+    try:
+        async with _db_lock:
+            os.remove(db_path)
+            logger.info(f"Deleted cached lyrics for {artist} - {title}")
+        
+        # Clear current lyrics so they get re-fetched
+        current_song_lyrics = None
+        current_song_provider = None
+        
+        # Trigger re-fetch by forcing an update
+        # We reset the song data to force a fresh fetch on next poll
+        global current_song_data
+        current_song_data = None
+        
+        return {'status': 'success', 'message': 'Cached lyrics deleted. Will re-fetch on next update.'}
+    except Exception as e:
+        logger.error(f"Error deleting cached lyrics: {e}")
+        return {'status': 'error', 'message': f'Failed to delete: {str(e)}'}
+
 # ==========================================
 # Main Logic
 # ==========================================

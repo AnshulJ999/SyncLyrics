@@ -833,6 +833,33 @@ async function clearProviderPreference() {
     }
 }
 
+async function deleteCachedLyrics() {
+    // Confirm before deleting
+    if (!confirm('Delete all cached lyrics for this song?\n\nThis will remove lyrics from all providers and re-fetch them fresh.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/lyrics/delete', {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            hideProviderModal();
+            showToast('Cached lyrics deleted. Re-fetching...');
+            // Force a refresh of lyrics display
+            lastLyrics = null;
+        } else {
+            showToast(result.message || 'Failed to delete lyrics', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting cached lyrics:', error);
+        showToast('Failed to delete cached lyrics', 'error');
+    }
+}
+
 function showToast(message, type = 'success') {
     // Simple toast notification
     const toast = document.createElement('div');
@@ -876,6 +903,12 @@ function setupProviderUI() {
     const clearBtn = document.getElementById('provider-clear-preference');
     if (clearBtn) {
         clearBtn.addEventListener('click', clearProviderPreference);
+    }
+    
+    // Delete cached lyrics button
+    const deleteBtn = document.getElementById('lyrics-delete-cache');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteCachedLyrics);
     }
 
     // Provider selection (event delegation)
