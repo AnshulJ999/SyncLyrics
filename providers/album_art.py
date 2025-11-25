@@ -68,6 +68,11 @@ class AlbumArtProvider:
         self._cache = {}
         self._cache_size = 100  # Limit cache size to prevent memory leaks
         
+        # Track logged tracks to prevent duplicate log messages
+        # Key: "artist::title", Value: True (if already logged)
+        self._logged_tracks = set()
+        self._logged_tracks_size = 200  # Limit size to prevent memory leaks
+        
     def _try_enhance_spotify_url(self, spotify_url: str) -> Optional[str]:
         """
         Try to enhance Spotify image URL to get higher resolution.
@@ -271,10 +276,11 @@ class AlbumArtProvider:
                     
                     if enhanced_url != artwork_url:
                         artwork_url = enhanced_url
-                        # We don't know the actual size until download, but assume it's high-res (3000-5000px)
+                        # We don't know the actual size until download - could be 1500px, 3000px, or 5000px
                         # The actual resolution will be verified when the image is downloaded
-                        resolution = 5000  # Conservative estimate for original full-size
-                        logger.debug(f"iTunes: Enhanced to original full-size (estimated 3000-5000px) using 9999x9999 method")
+                        # Use a placeholder that indicates it's unknown/estimated
+                        resolution = 0  # 0 = unknown, will be verified on download
+                        logger.debug(f"iTunes: Enhanced to original full-size using 9999x9999 method (actual size will be verified on download)")
                     else:
                         # Fallback: try specific high-res sizes if 9999x9999 replacement didn't work
                         for target_size in [3000, 2000, 1000]:
@@ -288,7 +294,19 @@ class AlbumArtProvider:
                                     logger.debug(f"iTunes: Enhanced to {target_size}x{target_size}")
                                     break
                 
-                logger.info(f"iTunes: Found album art ({resolution}x{resolution}) for {artist} - {title}")
+                # Only log once per track to avoid duplicate logs from multiple background tasks
+                log_key = f"{artist.lower().strip()}::{title.lower().strip()}"
+                if log_key not in self._logged_tracks:
+                    if resolution == 0:
+                        # Unknown size (using 9999x9999 method) - actual size will be verified on download
+                        logger.info(f"iTunes: Found album art (original full-size, actual resolution will be verified) for {artist} - {title}")
+                    else:
+                        logger.info(f"iTunes: Found album art ({resolution}x{resolution}) for {artist} - {title}")
+                    self._logged_tracks.add(log_key)
+                    # Cleanup old entries if cache is too large
+                    if len(self._logged_tracks) > self._logged_tracks_size:
+                        # Remove oldest entries (simple: clear half when full)
+                        self._logged_tracks = set(list(self._logged_tracks)[self._logged_tracks_size // 2:])
                 return (artwork_url, resolution)
                 
         except Exception as e:
@@ -582,15 +600,33 @@ class AlbumArtProvider:
                 )
                 if itunes_result:
                     url, resolution = itunes_result
-                    if resolution >= self.min_resolution:
-                        # Found high-res image, return immediately
-                        resolution_info = f"{resolution}x{resolution} (iTunes)"
-                        logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
-                        return (url, resolution_info)
-                    elif resolution >= 1000:
-                        # Good enough quality, return it
-                        resolution_info = f"{resolution}x{resolution} (iTunes)"
-                        logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
+                    # Only log once per track to avoid duplicate logs from multiple background tasks
+                    log_key = f"{artist.lower().strip()}::{title.lower().strip()}"
+                    if log_key not in self._logged_tracks:
+                        if resolution == 0:
+                            # Unknown size (using 9999x9999 method) - actual size will be verified on download
+                            resolution_info = "original full-size (iTunes, actual size will be verified)"
+                            logger.info(f"Using iTunes album art (original full-size, actual resolution will be verified) for {artist} - {title}")
+                            self._logged_tracks.add(log_key)
+                            return (url, resolution_info)
+                        elif resolution >= self.min_resolution:
+                            # Found high-res image, return immediately
+                            resolution_info = f"{resolution}x{resolution} (iTunes)"
+                            logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
+                            self._logged_tracks.add(log_key)
+                            return (url, resolution_info)
+                        elif resolution >= 1000:
+                            # Good enough quality, return it
+                            resolution_info = f"{resolution}x{resolution} (iTunes)"
+                            logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
+                            self._logged_tracks.add(log_key)
+                            return (url, resolution_info)
+                    else:
+                        # Already logged, just return without logging
+                        if resolution == 0:
+                            resolution_info = "original full-size (iTunes, actual size will be verified)"
+                        else:
+                            resolution_info = f"{resolution}x{resolution} (iTunes)"
                         return (url, resolution_info)
                     # If iTunes returned <1000px, continue to try Last.fm
             except asyncio.TimeoutError:

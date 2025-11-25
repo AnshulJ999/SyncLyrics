@@ -34,6 +34,8 @@ STATE_LOG_INTERVAL = 100  # Log app state every 100 seconds
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
 _metadata_fetch_counters = {'spotify': 0, 'windows_media': 0}
 _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
+# Track running background art upgrade tasks to prevent duplicates
+_running_art_upgrade_tasks = {}  # Key: track_id, Value: asyncio.Task
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (color1, color2)
@@ -492,48 +494,65 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 else:
                     # 2. Not cached - start background task to fetch high-res
                     # Return Spotify URL immediately for instant UI, upgrade happens in background
-                    async def background_upgrade_art():
-                        """Background task to fetch high-res art and update metadata"""
-                        try:
-                            logger.info(f"Starting background album art upgrade for {captured_artist} - {captured_title} (album: {captured_album or 'N/A'})")
-                            # Wait a tiny bit to let the initial response return first
-                            await asyncio.sleep(0.1)
-                            
-                            # Fetch high-res art (iTunes → Last.fm → Spotify fallback)
-                            logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
-                            high_res_result = await art_provider.get_high_res_art(
-                                artist=captured_artist,
-                                title=captured_title,
-                                album=captured_album,
-                                spotify_url=original_spotify_url
-                            )
-                            logger.debug(f"get_high_res_art returned: {high_res_result}")
-                            
-                            # Check if track changed during fetch (race condition protection)
-                            # Get current track from Spotify cache to verify
-                            current_spotify_client = get_shared_spotify_client()
-                            if current_spotify_client and current_spotify_client._metadata_cache:
-                                current_track = current_spotify_client._metadata_cache
-                                current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
-                                if current_track_id != captured_track_id:
-                                    logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
-                                    return
-                            
-                            # If we got a better URL, it's now cached for next poll
-                            # The frontend will pick it up on the next metadata poll (0.1s later)
-                            if high_res_result:
-                                high_res_url, resolution_info = high_res_result
-                                if high_res_url != original_spotify_url:
-                                    # Log the upgrade
-                                    if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
-                                       _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
-                                        logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
-                                        _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
-                        except Exception as e:
-                            logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
-                    
-                    # Start background task (non-blocking)
-                    asyncio.create_task(background_upgrade_art())
+                    # Check if a background task is already running for this track
+                    if captured_track_id in _running_art_upgrade_tasks:
+                        # Task already running, skip creating duplicate
+                        logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
+                    else:
+                        async def background_upgrade_art():
+                            """Background task to fetch high-res art and update metadata"""
+                            try:
+                                # Only log once per track (check if we've logged this track before)
+                                if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_startup_track_id') or \
+                                   _get_current_song_meta_data_spotify._last_logged_startup_track_id != captured_track_id:
+                                    logger.info(f"Starting background album art upgrade for {captured_artist} - {captured_title} (album: {captured_album or 'N/A'})")
+                                    _get_current_song_meta_data_spotify._last_logged_startup_track_id = captured_track_id
+                                # Wait a tiny bit to let the initial response return first
+                                await asyncio.sleep(0.1)
+                                
+                                # Fetch high-res art (iTunes → Last.fm → Spotify fallback)
+                                logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
+                                high_res_result = await art_provider.get_high_res_art(
+                                    artist=captured_artist,
+                                    title=captured_title,
+                                    album=captured_album,
+                                    spotify_url=original_spotify_url
+                                )
+                                logger.debug(f"get_high_res_art returned: {high_res_result}")
+                                
+                                # Check if track changed during fetch (race condition protection)
+                                # Get current track from Spotify cache to verify
+                                current_spotify_client = get_shared_spotify_client()
+                                if current_spotify_client and current_spotify_client._metadata_cache:
+                                    current_track = current_spotify_client._metadata_cache
+                                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                                    if current_track_id != captured_track_id:
+                                        logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
+                                        return
+                                
+                                # If we got a better URL, it's now cached for next poll
+                                # The frontend will pick it up on the next metadata poll (0.1s later)
+                                if high_res_result:
+                                    high_res_url, resolution_info = high_res_result
+                                    if high_res_url != original_spotify_url:
+                                        # Log the upgrade
+                                        if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
+                                           _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
+                                            logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
+                                            _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
+                            except Exception as e:
+                                logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
+                            finally:
+                                # Remove from running tasks when done
+                                _running_art_upgrade_tasks.pop(captured_track_id, None)
+                        
+                        # Start background task (non-blocking) and track it
+                        task = asyncio.create_task(background_upgrade_art())
+                        _running_art_upgrade_tasks[captured_track_id] = task
+                        
+                        # Start background task (non-blocking) and track it
+                        task = asyncio.create_task(background_upgrade_art())
+                        _running_art_upgrade_tasks[captured_track_id] = task
                     
             except Exception as e:
                 logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
@@ -563,8 +582,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             from PIL import Image
                             with Image.open(art_path) as img:
                                 actual_width, actual_height = img.size
-                                if actual_width != 640 or actual_height != 640:
-                                    logger.debug(f"Downloaded album art actual resolution: {actual_width}x{actual_height}")
+                                # Always log actual resolution at INFO level for high-res sources
+                                # This helps verify if the 9999x9999 method actually worked
+                                logger.info(f"Downloaded album art actual resolution: {actual_width}x{actual_height}")
                         except Exception:
                             pass  # Ignore errors in resolution check
                         
@@ -750,21 +770,31 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 # Not cached - use Spotify immediately, upgrade in background
                                 result["album_art_url"] = spotify_art_url
                                 
-                                # Start background task to fetch high-res
-                                async def background_upgrade_hybrid():
-                                    try:
-                                        await asyncio.sleep(0.1)
-                                        high_res_result = await art_provider.get_high_res_art(
-                                            artist=spotify_data.get("artist", ""),
-                                            title=spotify_data.get("title", ""),
-                                            album=spotify_data.get("album"),
-                                            spotify_url=spotify_art_url
-                                        )
-                                        # Result is cached, will be picked up on next poll
-                                    except Exception as e:
-                                        logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
-                                
-                                asyncio.create_task(background_upgrade_hybrid())
+                                # Check if a background task is already running for this track
+                                hybrid_track_id = f"{spotify_data.get('artist', '')}::{spotify_data.get('title', '')}"
+                                if hybrid_track_id in _running_art_upgrade_tasks:
+                                    # Task already running, skip creating duplicate
+                                    logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                else:
+                                    # Start background task to fetch high-res
+                                    async def background_upgrade_hybrid():
+                                        try:
+                                            await asyncio.sleep(0.1)
+                                            high_res_result = await art_provider.get_high_res_art(
+                                                artist=spotify_data.get("artist", ""),
+                                                title=spotify_data.get("title", ""),
+                                                album=spotify_data.get("album"),
+                                                spotify_url=spotify_art_url
+                                            )
+                                            # Result is cached, will be picked up on next poll
+                                        except Exception as e:
+                                            logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
+                                        finally:
+                                            # Remove from running tasks when done
+                                            _running_art_upgrade_tasks.pop(hybrid_track_id, None)
+                                    
+                                    task = asyncio.create_task(background_upgrade_hybrid())
+                                    _running_art_upgrade_tasks[hybrid_track_id] = task
                         except Exception as e:
                             logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
                             result["album_art_url"] = spotify_art_url
