@@ -301,11 +301,18 @@ async def delete_cached_lyrics_endpoint():
 
 @app.route("/cover-art")
 async def get_cover_art():
-    """Serves the locally cached album art from Windows Media."""
+    """Serves the locally cached album art, preferring Spotify/high-res over Windows Media."""
     from config import CACHE_DIR
     import os
     from system_utils import get_cached_art_path
     
+    # Prefer Spotify art if it exists (higher quality)
+    spotify_art = CACHE_DIR / "spotify_art.jpg"
+    if spotify_art.exists():
+        from quart import send_file
+        return await send_file(spotify_art, mimetype='image/jpeg')
+    
+    # Fallback to Windows Media art (only if Spotify art doesn't exist)
     art_path = get_cached_art_path()
     if art_path and art_path.exists():
         from quart import send_file

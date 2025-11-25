@@ -270,22 +270,34 @@ class AlbumArtProvider:
             
         return None
     
-    def _get_cache_key(self, artist: str, title: str) -> str:
-        """Generate normalized cache key from artist and title"""
-        return f"{artist.lower().strip()}::{title.lower().strip()}"
+    def _get_cache_key(self, artist: str, title: str, album: Optional[str] = None) -> str:
+        """
+        Generate normalized cache key from artist and album (preferred) or title (fallback).
+        Album-level caching: same album = same art for all tracks.
+        """
+        artist_norm = artist.lower().strip()
+        if album:
+            # Album-level cache: same album = same art for all tracks
+            return f"{artist_norm}::{album.lower().strip()}"
+        else:
+            # Fallback to track-level cache if no album
+            return f"{artist_norm}::{title.lower().strip()}"
     
-    def is_cached(self, artist: str, title: str) -> bool:
-        """Check if high-res art is cached for this track"""
+    def is_cached(self, artist: str, title: str, album: Optional[str] = None) -> bool:
+        """Check if high-res art is cached for this album/track"""
         if not artist or not title:
             return False
-        cache_key = self._get_cache_key(artist, title)
+        cache_key = self._get_cache_key(artist, title, album)
         return cache_key in self._cache and self._cache[cache_key] is not None
     
-    def get_from_cache(self, artist: str, title: str) -> Optional[Tuple[str, str]]:
-        """Get cached high-res art if available, returns (url, resolution_info) or None"""
+    def get_from_cache(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Tuple[str, str]]:
+        """
+        Get cached high-res art if available, returns (url, resolution_info) or None.
+        Uses album-level cache if album is provided (same album = same art for all tracks).
+        """
         if not artist or not title:
             return None
-        cache_key = self._get_cache_key(artist, title)
+        cache_key = self._get_cache_key(artist, title, album)
         cached_result = self._cache.get(cache_key)
         if cached_result and cached_result is not None:
             return cached_result  # Returns (url, resolution_info) tuple
@@ -317,7 +329,8 @@ class AlbumArtProvider:
             return None
         
         # Check cache first (instant return, prevents API spam)
-        cache_key = self._get_cache_key(artist, title)
+        # Use album-level cache if available (same album = same art for all tracks)
+        cache_key = self._get_cache_key(artist, title, album)
         if cache_key in self._cache:
             cached_result = self._cache[cache_key]
             # Return cached result silently (no log spam)

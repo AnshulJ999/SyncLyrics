@@ -477,7 +477,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 captured_track_id = track.get("track_id") or f"{captured_artist}::{captured_title}"
                 
                 # 1. Check cache first - if we have cached high-res, use it immediately
-                cached_result = art_provider.get_from_cache(captured_artist, captured_title)
+                # Use album-level cache (same album = same art for all tracks)
+                cached_result = art_provider.get_from_cache(captured_artist, captured_title, captured_album)
                 if cached_result:
                     cached_url, cached_resolution_info = cached_result
                     # Only use cached result if it's better than Spotify (not the Spotify fallback)
@@ -730,9 +731,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             art_provider = get_album_art_provider()
                             
                             # Check cache first - if cached high-res exists, use it immediately
+                            # Use album-level cache (same album = same art for all tracks)
                             cached_result = art_provider.get_from_cache(
                                 spotify_data.get("artist", ""),
-                                spotify_data.get("title", "")
+                                spotify_data.get("title", ""),
+                                spotify_data.get("album")  # Album-level cache
                             )
                             if cached_result:
                                 cached_url, _ = cached_result
