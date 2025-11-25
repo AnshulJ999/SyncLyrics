@@ -2,11 +2,11 @@
 High-Resolution Album Art Provider
 Attempts to retrieve high-resolution album art from multiple sources:
 1. Enhanced Spotify (try to get larger sizes, up to 3000x3000px)
-2. iTunes/Apple Music API (up to 3000x3000px, free, no auth, rate limited to 20 req/min)
-3. Last.fm API (up to 1000x1000px, requires API key)
+2. iTunes/Apple Music API (up to 5000x5000px using Ben Dodson method, free, no auth, rate limited to 20 req/min)
+3. Last.fm API (up to 1000x1000px+ by removing size segments, requires API key)
 4. Fallback to Spotify's default 640x640px
 
-Goal: Get highest quality possible (prefer 3000x3000px) for large displays.
+Goal: Get highest quality possible (prefer 3000x3000px+) for large displays.
 """
 import sys
 from pathlib import Path
@@ -121,8 +121,8 @@ class AlbumArtProvider:
     def _get_itunes_art(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Tuple[str, int]]:
         """
         Get album art from iTunes/Apple Music API.
-        Returns up to 3000x3000px images, free, no authentication required.
-        Rate limited to 20 requests/minute per IP.
+        Uses Ben Dodson method (9999x9999 URL) to get original full-size images (often 3000-5000px).
+        Free, no authentication required. Rate limited to 20 requests/minute per IP.
         
         Validates album name match to ensure we get the correct album art (not a different version).
         
@@ -258,22 +258,35 @@ class AlbumArtProvider:
             
             if artwork_url:
                 # Replace image size in URL to get maximum resolution
-                # iTunes URLs can be modified: .../100x100bb.jpg -> .../3000x3000bb.jpg
-                # Try highest quality first (3000, 2000, 1000)
-                # Trust the URL modification - frontend will handle failures
-                if resolution < 3000:
-                    # Try to get highest quality version (Apple's magic URL pattern)
-                    for target_size in [3000, 2000, 1000]:
-                        if resolution < target_size:
-                            enhanced_url = artwork_url.replace(f"{resolution}x{resolution}bb", f"{target_size}x{target_size}bb")
-                            # Also try without 'bb' suffix
-                            if enhanced_url == artwork_url:
-                                enhanced_url = artwork_url.replace(f"{resolution}x{resolution}", f"{target_size}x{target_size}")
-                            if enhanced_url != artwork_url:
-                                artwork_url = enhanced_url
-                                resolution = target_size
-                                logger.debug(f"iTunes: Enhanced to {target_size}x{target_size}")
-                                break
+                # iTunes URLs can be modified: .../100x100bb.jpg -> .../9999x9999bb.jpg
+                # Using Ben Dodson method: 9999x9999 returns the original full-size image (often 3000-5000px)
+                # Try 9999x9999 first to get the original, then fallback to specific sizes if needed
+                if resolution < 9999:
+                    # First, try the Ben Dodson method: use 9999x9999 to get original full-size
+                    # This will return the largest available original (often 3000-5000px)
+                    enhanced_url = artwork_url.replace(f"{resolution}x{resolution}bb", "9999x9999bb")
+                    # Also try without 'bb' suffix
+                    if enhanced_url == artwork_url:
+                        enhanced_url = artwork_url.replace(f"{resolution}x{resolution}", "9999x9999")
+                    
+                    if enhanced_url != artwork_url:
+                        artwork_url = enhanced_url
+                        # We don't know the actual size until download, but assume it's high-res (3000-5000px)
+                        # The actual resolution will be verified when the image is downloaded
+                        resolution = 5000  # Conservative estimate for original full-size
+                        logger.debug(f"iTunes: Enhanced to original full-size (estimated 3000-5000px) using 9999x9999 method")
+                    else:
+                        # Fallback: try specific high-res sizes if 9999x9999 replacement didn't work
+                        for target_size in [3000, 2000, 1000]:
+                            if resolution < target_size:
+                                enhanced_url = artwork_url.replace(f"{resolution}x{resolution}bb", f"{target_size}x{target_size}bb")
+                                if enhanced_url == artwork_url:
+                                    enhanced_url = artwork_url.replace(f"{resolution}x{resolution}", f"{target_size}x{target_size}")
+                                if enhanced_url != artwork_url:
+                                    artwork_url = enhanced_url
+                                    resolution = target_size
+                                    logger.debug(f"iTunes: Enhanced to {target_size}x{target_size}")
+                                    break
                 
                 logger.info(f"iTunes: Found album art ({resolution}x{resolution}) for {artist} - {title}")
                 return (artwork_url, resolution)
