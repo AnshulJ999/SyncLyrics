@@ -553,6 +553,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
             cached_song_name = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
             if last_song == cached_song_name:
                 # Song hasn't changed, safe to use cache
+                # CRITICAL FIX: Update _last_song to stay in sync with cached data
+                # Without this, the next call will see a mismatch and invalidate cache unnecessarily
+                get_current_song_meta_data._last_song = cached_song_name
                 return cached_result
             else:
                 # Song changed! Invalidate cache and fetch fresh data
