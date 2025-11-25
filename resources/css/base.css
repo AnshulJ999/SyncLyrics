@@ -785,37 +785,32 @@ body[data-minimal="true"] .album-art {
     display: block;
 }
 
-/* ========== SHARP MODE (No Blur, No Scaling) ========== */
+/* ========== SHARP MODE (No Blur, High Res) ========== */
 /* Sharp mode: Super sharp and clear album art with no blur effects */
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
     /* Remove all blur filters for maximum sharpness and clarity */
     filter: none !important;
-    /* Remove scaling transform to show image at native size (no upscaling artifacts) */
-    transform: translateZ(0) !important;
-    -webkit-transform: translateZ(0) !important;
-    /* Hardware acceleration without scaling - improves rendering quality */
-    will-change: opacity, background-image !important;
-    /* Optimize image rendering for maximum sharpness */
-    /* Use high-quality rendering - auto is best for photos (smooth scaling) */
-    image-rendering: auto;
-    /* WebKit-specific optimization for sharper contrast on high-DPI displays */
-    -webkit-image-rendering: -webkit-optimize-contrast;
-    /* Force hardware acceleration for better quality */
+    /* Reset transforms to prevent scaling blur */
+    transform: none !important;
+    -webkit-transform: none !important;
+    /* Force High Quality Scaling - use best algorithm (Lanczos/Bicubic) for downscaling */
+    image-rendering: auto; /* Standard fallback */
+    image-rendering: -webkit-optimize-contrast; /* Chrome/Edge magic for sharpness */
+    /* Performance hints for smooth transitions */
+    will-change: opacity, background-image;
+    /* Hardware acceleration (safe) */
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
-    /* Ensure crisp rendering */
-    -webkit-font-smoothing: antialiased;
-    /* Optimize text rendering for better clarity */
-    text-rendering: optimizeLegibility;
 }
 
 body.sharp-mode .background-overlay {
     /* Remove backdrop blur that causes haziness - this was the main culprit! */
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    /* Keep a subtle dark overlay for text readability, but much lighter than blurred mode */
-    background: rgba(0, 0, 0, 0.2) !important;
+    /* Vignette gradient: vibrant center, dark edges for text readability */
+    /* Keeps the center of the 3000px art vibrant while darkening edges for text contrast */
+    background: radial-gradient(circle at center, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.75) 100%) !important;
 }
 
 /* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
