@@ -28,8 +28,9 @@ IDLE_WAIT_TIME = config.LYRICS["display"]["idle_wait_time"]
 # Globals
 spotify_client = None
 _last_state_log_time = 0
-STATE_LOG_INTERVAL = 100
-_request_counters = {'spotify': 0, 'windows_media': 0}
+STATE_LOG_INTERVAL = 100  # Log app state every 100 seconds
+# Track metadata fetch calls (not the same as API calls - one fetch may use cache)
+_metadata_fetch_counters = {'spotify': 0, 'windows_media': 0}
 _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
 
 # Cache for color extraction to avoid re-processing the same image
@@ -144,47 +145,52 @@ def _log_app_state() -> None:
     state['active_source'] = last_source
     set_state(state)
 
-    # --- FIXED LOGGING LOGIC ---
+    # --- LOGGING LOGIC ---
     # We log if the level is INFO or lower, regardless of "Debug Mode" toggle.
     if logger.isEnabledFor(logging.INFO):
-        request_stats = (
-            f"|- API Requests:\n"
-            f"|  |- Spotify: {_request_counters['spotify']}\n"
-            f"|  `- Windows Media: {_request_counters['windows_media']}\n"
-        )
-        
         current_time_str = time.strftime("%I:%M %p - %b %d, %Y")
         
-    # Base state summary
+        # Base state summary
         state_summary = (
             f"\nApplication State Summary:\n"
             f"|- Time: {current_time_str}\n"
             f"|- Mode: {'Active' if is_active else 'Idle'}\n"
             f"|- Current Song: {last_song}\n"
             f"|- Active Source: {last_source}\n"
-            f"{request_stats}"
+            f"|- Metadata Fetches:\n"
+            f"|  |- Spotify: {_metadata_fetch_counters['spotify']}\n"
+            f"|  `- Windows Media: {_metadata_fetch_counters['windows_media']}\n"
         )
         logger.info(state_summary)
 
-        # Log Spotify API stats if available
+        # Log Spotify API stats if available (this is the important one for rate limits)
         if spotify_client and spotify_client.initialized:
             try:
                 stats = spotify_client.get_request_stats()
+                
+                # Calculate requests per hour for rate limit awareness
+                # Spotify's rate limit is typically ~180 requests/minute
+                total_requests = stats['Total Requests']
+                
                 spotify_stats = (
                     "\nSpotify API Statistics:\n"
-                    f"|- Total Requests: {stats['Total Requests']}\n"
-                    f"|- Cached Responses: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
-                    "|- API Calls:\n"
+                    f"|- Total API Requests: {total_requests}\n"
+                    f"|- Total Function Calls: {stats['Total Function Calls']}\n"
+                    f"|- Cache Hits: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
+                    f"|- API Calls by Endpoint:\n"
                 )
             
                 for endpoint, count in stats['API Calls'].items():
-                    spotify_stats += f"|  |- {endpoint}: {count}\n"
+                    if count > 0:  # Only show endpoints that have been called
+                        spotify_stats += f"|  |- {endpoint}: {count}\n"
                 
-                # Only show errors if they exist or if we are in Detailed mode
-                if DEBUG.get("log_detailed", False) or sum(stats['Errors'].values()) > 0:
-                    spotify_stats += "|- Errors:\n"
+                # Always show errors section if there are any errors
+                total_errors = sum(stats['Errors'].values())
+                if total_errors > 0:
+                    spotify_stats += f"|- Errors ({total_errors} total):\n"
                     for error_type, count in stats['Errors'].items():
-                        spotify_stats += f"|  |- {error_type}: {count}\n"
+                        if count > 0:  # Only show error types that occurred
+                            spotify_stats += f"|  |- {error_type}: {count}\n"
                 
                 spotify_stats += f"`- Cache Age: {stats['Cache Age']}"
                 logger.info(spotify_stats)
@@ -294,7 +300,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
     if not MediaManager: return None
 
     try:
-        if DEBUG["enabled"]: _request_counters['windows_media'] += 1
+        # Track metadata fetch (always, not just in debug mode)
+        _metadata_fetch_counters['windows_media'] += 1
             
         if _win_media_manager is None:
             _win_media_manager = await MediaManager.request_async()
@@ -416,7 +423,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         if not spotify_client.initialized:
             return None
 
-        if DEBUG["enabled"]: _request_counters['spotify'] += 1
+        # Track metadata fetch (always, not just in debug mode)
+        _metadata_fetch_counters['spotify'] += 1
 
         track = None
         

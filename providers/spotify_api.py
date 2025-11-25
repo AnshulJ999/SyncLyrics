@@ -53,18 +53,23 @@ class SpotifyAPI:
         self._last_force_refresh_failure_time = 0
         
         # Request tracking
+        # Tracks ALL Spotify API calls for rate limit monitoring
+        # Spotify's rate limit is typically ~180 requests/minute for most endpoints
         self.request_stats = {
-            'total_requests': 0,  # Total API calls made to Spotify
+            'total_requests': 0,  # Total API calls made to Spotify (the key metric for rate limits)
             'total_function_calls': 0,  # Total calls to get_current_track() (includes cache hits)
-            'cached_responses': 0,  # Number of times cache was used (not API calls)
+            'cached_responses': 0,  # Number of times cache was used (avoided API calls)
             'api_calls': {
-                'current_playback': 0,
-                'search': 0,
+                'current_playback': 0,  # /me/player calls
+                'current_user': 0,  # /me calls (auth test)
+                'search': 0,  # /search calls
+                'playback_control': 0,  # pause/resume/next/previous calls
                 'other': 0
             },
             'errors': {
                 'timeout': 0,
                 'rate_limit': 0,
+                'auth': 0,  # Authentication errors
                 'other': 0
             }
         }
@@ -141,49 +146,45 @@ class SpotifyAPI:
             logger.debug("Spotify API: Normal mode (active_ttl=6.0s)")
 
     def is_spotify_healthy(self) -> bool:
-        """Quick health check for Spotify API"""
+        """
+        Quick health check for Spotify API.
+        Returns True if API is responding, False if in backoff or API is down.
+        Note: This makes a real API call so use sparingly.
+        """
         try:
-            # Check if we are in backoff
+            # Check if we are in backoff period
             if time.time() < self._backoff_until:
                 return False
+            
+            if not self.initialized:
+                return False
                 
-            # Try a simple API call
-            response = requests.get(
-                "https://api.spotify.com/v1/me/player",
-                headers=self.headers,
-                timeout=3  # Short timeout
-            )
-            self.logger.info(f"Spotify health check successful (status code: {response.status_code})")
-            return response.status_code in [200, 204]  # 204 means no track playing
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['current_user'] += 1
+            
+            # Use spotipy to make the API call (handles auth automatically)
+            self.sp.current_user()
+            logger.debug("Spotify health check successful")
+            return True
         except Exception as e:
-            self.logger.error(f"Spotify health check failed: {e}")
+            self.request_stats['errors']['other'] += 1
+            logger.debug(f"Spotify health check failed: {e}")
             return False
 
-    def _get_spotify_client(self) -> spotipy.Spotify:
-        """Create authenticated Spotify client with timeout settings"""
-        try:
-            return spotipy.Spotify(
-                auth_manager=SpotifyOAuth(
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    redirect_uri=self.redirect_uri,
-                    scope=self.scope
-                ),
-                requests_timeout=self.timeout,
-                retries=self.max_retries
-            )
-        except Exception as e:
-            logger.error(f"Failed to initialize Spotify client: {e}")
-            raise
-
     def _test_connection(self) -> bool:
-        """Test API connection with retries"""
+        """Test API connection with retries. Tracks API calls for statistics."""
         for attempt in range(self.max_retries):
             try:
+                # Track this API call (current_user endpoint)
+                self.request_stats['total_requests'] += 1
+                self.request_stats['api_calls']['current_user'] += 1
+                
                 self.sp.current_user()  # Simple API call to test connection
                 logger.info("Successfully connected to Spotify API")
                 return True
             except Exception as e:
+                self.request_stats['errors']['auth'] += 1
                 logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
                 time.sleep(self.retry_delay)
         return False
@@ -427,84 +428,118 @@ class SpotifyAPI:
             return None
 
     def get_request_stats(self) -> Dict[str, Any]:
-        """Get current API request statistics"""
+        """
+        Get current API request statistics for monitoring rate limits.
+        
+        Spotify's rate limits are approximately:
+        - ~180 requests/minute for most endpoints
+        - Rolling window based on app + user combination
+        
+        Returns dict with all tracking metrics.
+        """
         total_requests = self.request_stats['total_requests']  # API calls only
         total_function_calls = self.request_stats['total_function_calls']  # All function calls
         cached_responses = self.request_stats['cached_responses']
         
         # Calculate cache hit rate based on total function calls, not just API calls
         # This gives a realistic percentage (cache hits / total calls)
+        # Higher = better for rate limiting (more requests avoided via cache)
         cache_hit_rate = (cached_responses / max(total_function_calls, 1)) * 100
         
+        # Calculate cache efficiency: how many API calls we saved
+        # If we had 100 function calls, 80 were cached, we only made 20 API calls
+        # Cache efficiency = 80% (we avoided 80% of potential API calls)
+        cache_efficiency = (cached_responses / max(total_function_calls, 1)) * 100
+        
         return {
-            'Total Requests': total_requests,  # API calls to Spotify
+            'Total Requests': total_requests,  # Actual API calls to Spotify (key metric for rate limits)
             'Total Function Calls': total_function_calls,  # All calls to get_current_track()
-            'Cached Responses': cached_responses,  # Cache hits
-            'API Calls': self.request_stats['api_calls'],
-            'Errors': self.request_stats['errors'],
+            'Cached Responses': cached_responses,  # Times we used cache instead of API
+            'API Calls': self.request_stats['api_calls'],  # Breakdown by endpoint
+            'Errors': self.request_stats['errors'],  # Errors by type
             'Cache Age': f"{time.time() - self._last_metadata_check:.1f}s",
-            'Cache Hit Rate': f"{cache_hit_rate:.1f}%"  # Now calculated correctly
+            'Cache Hit Rate': f"{cache_hit_rate:.1f}%"  # Percentage of calls that hit cache
         }
 
     # Playback Control Methods
     
     async def pause_playback(self) -> bool:
-        """Pause current playback"""
+        """Pause current playback. Tracks API call for statistics."""
         if not self.initialized:
             logger.warning("Spotify API not initialized")
             return False
             
         try:
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['playback_control'] += 1
+            
             logger.info("Pausing playback")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.sp.pause_playback)
             return True
         except Exception as e:
+            self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to pause playback: {e}")
             return False
     
     async def resume_playback(self) -> bool:
-        """Resume current playback"""
+        """Resume current playback. Tracks API call for statistics."""
         if not self.initialized:
             logger.warning("Spotify API not initialized")
             return False
             
         try:
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['playback_control'] += 1
+            
             logger.info("Resuming playback")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.sp.start_playback)
             return True
         except Exception as e:
+            self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to resume playback: {e}")
             return False
     
     async def next_track(self) -> bool:
-        """Skip to next track"""
+        """Skip to next track. Tracks API call for statistics."""
         if not self.initialized:
             logger.warning("Spotify API not initialized")
             return False
             
         try:
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['playback_control'] += 1
+            
             logger.info("Skipping to next track")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.sp.next_track)
             return True
         except Exception as e:
+            self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to skip to next track: {e}")
             return False
     
     async def previous_track(self) -> bool:
-        """Go to previous track"""
+        """Go to previous track. Tracks API call for statistics."""
         if not self.initialized:
             logger.warning("Spotify API not initialized")
             return False
             
         try:
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['playback_control'] += 1
+            
             logger.info("Going to previous track")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.sp.previous_track)
             return True
         except Exception as e:
+            self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to go to previous track: {e}")
             return False
     
