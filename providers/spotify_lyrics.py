@@ -61,10 +61,19 @@ class SpotifyLyrics(LyricsProvider):
             track = await spotify_client.get_current_track()
             
             # If no track is playing or it's a different track, search for the requested track
-            if not track or (
-                track.get('artist') != artist and 
-                track.get('title') != title
-            ):
+            # Use case-insensitive comparison to avoid unnecessary searches due to casing differences
+            # CRITICAL: Use OR not AND - we must search if EITHER artist OR title differs
+            # Using AND caused a bug where skipping to a different song by the same artist
+            # would use the cached track URL (wrong song) because only title differed
+            track_matches = False
+            if track:
+                current_artist = track.get('artist', '').lower().strip()
+                current_title = track.get('title', '').lower().strip()
+                target_artist = artist.lower().strip()
+                target_title = title.lower().strip()
+                track_matches = (current_artist == target_artist and current_title == target_title)
+            
+            if not track_matches:
                 logger.info(f"Spotify - Searching Spotify for {artist} - {title}")
                 track = spotify_client.search_track(artist, title)
                 if not track:
