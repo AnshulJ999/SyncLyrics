@@ -232,11 +232,12 @@ FEATURES = {
 ALBUM_ART = {
     "timeout": conf("album_art.timeout", 5),
     "retries": conf("album_art.retries", 2),
-    "lastfm_api_key": conf("album_art.lastfm_api_key"),
+    # Note: lastfm_api_key is NOT in config - it's only read from environment variable
+    # for security (should be in .env file, not settings.json)
     "enable_itunes": conf("album_art.enable_itunes", True),
     "enable_lastfm": conf("album_art.enable_lastfm", True),
     "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", True),
-    "min_resolution": conf("album_art.min_resolution", 1000)
+    "min_resolution": conf("album_art.min_resolution", 3000)  # Prefer 3000x3000px for best quality
 }
 
 # Helper functions

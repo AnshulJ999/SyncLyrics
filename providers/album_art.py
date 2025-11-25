@@ -1,10 +1,12 @@
 """
 High-Resolution Album Art Provider
 Attempts to retrieve high-resolution album art from multiple sources:
-1. Enhanced Spotify (try to get larger sizes)
-2. iTunes/Apple Music API (up to 1000x1000px, free, no auth)
+1. Enhanced Spotify (try to get larger sizes, up to 3000x3000px)
+2. iTunes/Apple Music API (up to 3000x3000px, free, no auth, rate limited to 20 req/min)
 3. Last.fm API (up to 1000x1000px, requires API key)
 4. Fallback to Spotify's default 640x640px
+
+Goal: Get highest quality possible (prefer 3000x3000px) for large displays.
 """
 import sys
 from pathlib import Path
@@ -36,16 +38,17 @@ class AlbumArtProvider:
         self.timeout = album_art_config.get("timeout", 5)
         self.retries = album_art_config.get("retries", 2)
         
-        # Last.fm API key (optional, from env or config)
-        self.lastfm_api_key = album_art_config.get("lastfm_api_key") or os.getenv("LASTFM_API_KEY")
+        # Last.fm API key (optional, from env only - never from settings.json for security)
+        # Get from environment variable only (should be in .env file)
+        self.lastfm_api_key = os.getenv("LASTFM_API_KEY")
         
         # Enable/disable specific sources
         self.enable_itunes = album_art_config.get("enable_itunes", True)
         self.enable_lastfm = album_art_config.get("enable_lastfm", True)
         self.enable_spotify_enhanced = album_art_config.get("enable_spotify_enhanced", True)
         
-        # Minimum resolution threshold (default: prefer 1000x1000 or higher)
-        self.min_resolution = album_art_config.get("min_resolution", 1000)
+        # Minimum resolution threshold (default: prefer 3000x3000 or higher for best quality)
+        self.min_resolution = album_art_config.get("min_resolution", 3000)
         
         # Overall timeout for the entire high-res art fetching process
         self.overall_timeout = self.timeout * 3  # Allow time for multiple sources
@@ -76,8 +79,8 @@ class AlbumArtProvider:
             # Some Spotify URLs have format like: .../640x640.jpg or .../ab67616d0000b273...
             # We can try requesting larger sizes by modifying the URL
             
-            # Method 1: Try replacing 640 with larger sizes
-            for size in [1000, 1200, 1600, 2000, 3000]:
+            # Method 1: Try replacing 640 with larger sizes (try highest quality first)
+            for size in [3000, 2000, 1600, 1200, 1000]:
                 enhanced = spotify_url.replace('640', str(size))
                 if enhanced != spotify_url:
                     # Trust the URL modification - frontend will handle failures
@@ -88,14 +91,15 @@ class AlbumArtProvider:
             parsed = urlparse(spotify_url)
             query_params = parse_qs(parsed.query)
             
-            # Try different size parameters
+            # Try different size parameters (try highest quality first)
             for size_param in ['size', 'w', 'width', 'dimension']:
-                query_params[size_param] = ['1000']
-                new_query = urlencode(query_params, doseq=True)
-                enhanced_url = urlunparse(parsed._replace(query=new_query))
-                if enhanced_url != spotify_url:
-                    logger.debug(f"Enhanced Spotify URL with size parameter")
-                    return enhanced_url
+                for size in [3000, 2000, 1000]:
+                    query_params[size_param] = [str(size)]
+                    new_query = urlencode(query_params, doseq=True)
+                    enhanced_url = urlunparse(parsed._replace(query=new_query))
+                    if enhanced_url != spotify_url:
+                        logger.debug(f"Enhanced Spotify URL with size parameter ({size}x{size})")
+                        return enhanced_url
                     
         except Exception as e:
             logger.debug(f"Failed to enhance Spotify URL: {e}")
@@ -105,7 +109,8 @@ class AlbumArtProvider:
     def _get_itunes_art(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Tuple[str, int]]:
         """
         Get album art from iTunes/Apple Music API.
-        Returns up to 1000x1000px images, free, no authentication required.
+        Returns up to 3000x3000px images, free, no authentication required.
+        Rate limited to 20 requests/minute per IP.
         
         Args:
             artist: Artist name
@@ -167,15 +172,22 @@ class AlbumArtProvider:
             
             if artwork_url:
                 # Replace image size in URL to get maximum resolution
-                # iTunes URLs can be modified: .../100x100bb.jpg -> .../1000x1000bb.jpg
+                # iTunes URLs can be modified: .../100x100bb.jpg -> .../3000x3000bb.jpg
+                # Try highest quality first (3000, 2000, 1000)
                 # Trust the URL modification - frontend will handle failures
-                if resolution < 1000:
-                    # Try to get 1000x1000 version (Apple's magic URL pattern)
-                    enhanced_url = artwork_url.replace("100x100bb", "1000x1000bb")
-                    if enhanced_url != artwork_url:
-                        artwork_url = enhanced_url
-                        resolution = 1000
-                        logger.debug(f"iTunes: Enhanced to 1000x1000")
+                if resolution < 3000:
+                    # Try to get highest quality version (Apple's magic URL pattern)
+                    for target_size in [3000, 2000, 1000]:
+                        if resolution < target_size:
+                            enhanced_url = artwork_url.replace(f"{resolution}x{resolution}bb", f"{target_size}x{target_size}bb")
+                            # Also try without 'bb' suffix
+                            if enhanced_url == artwork_url:
+                                enhanced_url = artwork_url.replace(f"{resolution}x{resolution}", f"{target_size}x{target_size}")
+                            if enhanced_url != artwork_url:
+                                artwork_url = enhanced_url
+                                resolution = target_size
+                                logger.debug(f"iTunes: Enhanced to {target_size}x{target_size}")
+                                break
                 
                 logger.info(f"iTunes: Found album art ({resolution}x{resolution}) for {artist} - {title}")
                 return (artwork_url, resolution)
