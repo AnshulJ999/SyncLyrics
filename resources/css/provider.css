@@ -369,7 +369,10 @@
 /* Responsive */
 @media (max-width: 600px) {
     .provider-info {
-        top: 10px;
+        top: 24px; /* Match settings icon top position */
+        bottom: auto; /* Override bottom positioning */
+        right: calc(20px + 40px + 8px); /* To the left of 40px settings icon with 8px gap */
+        left: auto; /* Ensure left is not set */
     }
 
     .provider-badge {
@@ -380,5 +383,13 @@
     .provider-modal-content {
         padding: 20px;
         width: 95%;
+    }
+}
+
+/* Very small mobile - match smaller settings icon position */
+@media (max-width: 480px) {
+    .provider-info {
+        top: 0.5rem; /* Match settings icon on very small mobile */
+        right: calc(0.5rem + 40px + 8px);
     }
 }
