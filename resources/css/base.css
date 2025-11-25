@@ -792,16 +792,22 @@ body.sharp-mode .background-layer {
     /* Remove all blur filters for maximum sharpness and clarity */
     filter: none !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
-    transform: none !important;
-    -webkit-transform: none !important;
+    transform: translateZ(0) !important;
+    -webkit-transform: translateZ(0) !important;
+    /* Hardware acceleration without scaling - improves rendering quality */
+    will-change: opacity, background-image !important;
     /* Optimize image rendering for maximum sharpness */
     /* Use high-quality rendering - auto is best for photos (smooth scaling) */
     image-rendering: auto;
-    /* Force hardware acceleration for better quality (without transforms) */
+    /* WebKit-specific optimization for sharper contrast on high-DPI displays */
+    -webkit-image-rendering: -webkit-optimize-contrast;
+    /* Force hardware acceleration for better quality */
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     /* Ensure crisp rendering */
     -webkit-font-smoothing: antialiased;
+    /* Optimize text rendering for better clarity */
+    text-rendering: optimizeLegibility;
 }
 
 body.sharp-mode .background-overlay {
