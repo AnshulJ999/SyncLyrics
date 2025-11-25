@@ -51,7 +51,8 @@ class AlbumArtProvider:
         self.min_resolution = album_art_config.get("min_resolution", 3000)
         
         # Overall timeout for the entire high-res art fetching process
-        self.overall_timeout = self.timeout * 3  # Allow time for multiple sources
+        # Sequential: iTunes (3s) → Last.fm (3s) = max 6s total
+        self.overall_timeout = 6.0  # Allow time for sequential sources (3s each)
         
         # In-memory cache to prevent API spam on every poll
         # Key: "artist::title" (normalized), Value: cached URL or None
@@ -273,6 +274,23 @@ class AlbumArtProvider:
         """Generate normalized cache key from artist and title"""
         return f"{artist.lower().strip()}::{title.lower().strip()}"
     
+    def is_cached(self, artist: str, title: str) -> bool:
+        """Check if high-res art is cached for this track"""
+        if not artist or not title:
+            return False
+        cache_key = self._get_cache_key(artist, title)
+        return cache_key in self._cache and self._cache[cache_key] is not None
+    
+    def get_from_cache(self, artist: str, title: str) -> Optional[Tuple[str, str]]:
+        """Get cached high-res art if available, returns (url, resolution_info) or None"""
+        if not artist or not title:
+            return None
+        cache_key = self._get_cache_key(artist, title)
+        cached_result = self._cache.get(cache_key)
+        if cached_result and cached_result is not None:
+            return cached_result  # Returns (url, resolution_info) tuple
+        return None
+    
     async def get_high_res_art(
         self, 
         artist: str, 
@@ -282,18 +300,18 @@ class AlbumArtProvider:
     ) -> Optional[Tuple[str, str]]:
         """
         Get high-resolution album art from multiple sources.
-        Tries sources in order of preference and returns the first high-res image found.
+        Sequential approach: iTunes → Last.fm → Spotify fallback (640px).
         All blocking network operations run in thread executor to avoid blocking event loop.
         
         Args:
             artist: Artist name
             title: Track title
             album: Album name (optional)
-            spotify_url: Existing Spotify album art URL (optional, will try to enhance)
+            spotify_url: Existing Spotify album art URL (optional, used as fallback)
             
         Returns:
             Tuple of (URL, resolution_info) or None if not found.
-            resolution_info format: "3000x3000 (Spotify enhanced)" or "3000x3000 (iTunes)" etc.
+            resolution_info format: "3000x3000 (iTunes)" or "1000x1000 (Last.fm)" or "640x640 (Spotify default)"
         """
         if not artist or not title:
             return None
@@ -348,89 +366,70 @@ class AlbumArtProvider:
         album: Optional[str],
         spotify_url: Optional[str]
     ) -> Optional[Tuple[str, str]]:
-        """Internal method that does the actual work, with all blocking calls in executor"""
-        # Try sources in order of preference
-        sources = []
-        
-        # 1. Try enhancing Spotify URL (fastest, if we have it)
-        # This makes blocking requests, so run in executor
-        if spotify_url and self.enable_spotify_enhanced:
-            try:
-                enhanced = await loop.run_in_executor(
-                    None,
-                    self._try_enhance_spotify_url,
-                    spotify_url
-                )
-                if enhanced:
-                    # Note: Spotify URL modification doesn't guarantee higher resolution
-                    # We modify the URL but Spotify may still serve 640x640
-                    # Mark as "unknown" since we can't verify without downloading
-                    resolution_info = "unknown (Spotify URL modified, may still be 640x640)"
-                    logger.info(f"Using enhanced Spotify URL for {artist} - {title} (resolution unknown)")
-                    return (enhanced, resolution_info)
-            except Exception as e:
-                logger.debug(f"Failed to enhance Spotify URL: {e}")
-        
-        # 2. Try iTunes API (free, good quality, no auth)
+        """
+        Internal method that does the actual work, with all blocking calls in executor.
+        Sequential approach: iTunes → Last.fm → Spotify fallback.
+        Timeout: 3 seconds per source.
+        """
+        # 1. Try iTunes API first (best quality, up to 3000x3000px, free, no auth)
         # Run in executor since it makes blocking requests
         if self.enable_itunes:
             try:
-                itunes_result = await loop.run_in_executor(
-                    None,
-                    self._get_itunes_art,
-                    artist,
-                    title,
-                    album
+                itunes_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        self._get_itunes_art,
+                        artist,
+                        title,
+                        album
+                    ),
+                    timeout=3.0
                 )
                 if itunes_result:
-                    sources.append(("iTunes", itunes_result))
+                    url, resolution = itunes_result
+                    if resolution >= self.min_resolution:
+                        # Found high-res image, return immediately
+                        resolution_info = f"{resolution}x{resolution} (iTunes)"
+                        logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
+                        return (url, resolution_info)
+                    elif resolution >= 1000:
+                        # Good enough quality, return it
+                        resolution_info = f"{resolution}x{resolution} (iTunes)"
+                        logger.info(f"Using iTunes album art ({resolution}x{resolution}) for {artist} - {title}")
+                        return (url, resolution_info)
+                    # If iTunes returned <1000px, continue to try Last.fm
+            except asyncio.TimeoutError:
+                logger.debug(f"iTunes API timeout for {artist} - {title}")
             except Exception as e:
                 logger.debug(f"iTunes API call failed: {e}")
         
-        # 3. Try Last.fm API (requires API key, but good quality)
+        # 2. Try Last.fm API (requires API key, up to 1000x1000px)
         # Run in executor since it makes blocking requests
         if self.enable_lastfm and self.lastfm_api_key:
             try:
-                lastfm_result = await loop.run_in_executor(
-                    None,
-                    self._get_lastfm_art,
-                    artist,
-                    title,
-                    album
+                lastfm_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        self._get_lastfm_art,
+                        artist,
+                        title,
+                        album
+                    ),
+                    timeout=3.0
                 )
                 if lastfm_result:
-                    sources.append(("Last.fm", lastfm_result))
+                    url, resolution = lastfm_result
+                    resolution_info = f"{resolution}x{resolution} (Last.fm)"
+                    logger.info(f"Using Last.fm album art ({resolution}x{resolution}) for {artist} - {title}")
+                    return (url, resolution_info)
+            except asyncio.TimeoutError:
+                logger.debug(f"Last.fm API timeout for {artist} - {title}")
             except Exception as e:
                 logger.debug(f"Last.fm API call failed: {e}")
         
-        # Try all sources and pick the best one
-        best_url = None
-        best_resolution = 0
-        best_source = "Unknown"
-        
-        for source_name, result in sources:
-            if result:
-                url, resolution = result
-                if resolution >= self.min_resolution:
-                    # Found a high-res image, use it immediately
-                    resolution_info = f"{resolution}x{resolution} ({source_name})"
-                    logger.info(f"Using {source_name} album art ({resolution}x{resolution}) for {artist} - {title}")
-                    return (url, resolution_info)
-                elif resolution > best_resolution:
-                    # Keep track of best resolution found so far
-                    best_url = url
-                    best_resolution = resolution
-                    best_source = source_name
-        
-        # If we found something but it's below threshold, use it anyway
-        if best_url:
-            resolution_info = f"{best_resolution}x{best_resolution} ({best_source}, below {self.min_resolution}px threshold)"
-            logger.info(f"Using {best_resolution}x{best_resolution} album art (below {self.min_resolution}px threshold) for {artist} - {title}")
-            return (best_url, resolution_info)
-        
-        # Fallback to Spotify URL if provided
+        # 3. Fallback to Spotify URL (640x640px)
         if spotify_url:
-            logger.debug(f"Falling back to Spotify URL for {artist} - {title}")
+            logger.debug(f"Falling back to Spotify URL (640x640) for {artist} - {title}")
             return (spotify_url, "640x640 (Spotify default)")
         
         return None

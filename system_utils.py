@@ -462,42 +462,77 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         colors = ("#24273a", "#363b54")  # Default
         album_art_url = track.get("album_art")
         
-        # Try to get high-resolution album art
+        # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
             try:
                 # Get high-res album art provider
                 art_provider = get_album_art_provider()
                 
-                # Store original Spotify URL to detect if we actually upgraded
+                # Store original Spotify URL as fallback
                 original_spotify_url = album_art_url
+                # Capture track info for background task (prevents race conditions)
+                captured_artist = track["artist"]
+                captured_title = track["title"]
+                captured_album = track.get("album")
+                captured_track_id = track.get("track_id") or f"{captured_artist}::{captured_title}"
                 
-                # Try to get high-resolution version (cache will prevent repeated API calls)
-                high_res_result = await art_provider.get_high_res_art(
-                    artist=track["artist"],
-                    title=track["title"],
-                    album=track.get("album"),
-                    spotify_url=album_art_url
-                )
-                
-                # Unpack result: (url, resolution_info) or None
-                if high_res_result:
-                    high_res_url, resolution_info = high_res_result
+                # 1. Check cache first - if we have cached high-res, use it immediately
+                cached_result = art_provider.get_from_cache(captured_artist, captured_title)
+                if cached_result:
+                    cached_url, cached_resolution_info = cached_result
+                    # Only use cached result if it's better than Spotify (not the Spotify fallback)
+                    if cached_url != original_spotify_url:
+                        album_art_url = cached_url
+                        # Log upgrade if not already logged for this track
+                        if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
+                           _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
+                            logger.info(f"Using cached high-res album art for {captured_artist} - {captured_title}: {cached_resolution_info}")
+                            _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
                 else:
-                    high_res_url = None
-                    resolution_info = None
-                
-                # Only log and update if we got a different URL
-                # Track last logged track to prevent spam on every poll
-                if high_res_url and high_res_url != original_spotify_url:
-                    # Only log once per track (track by track_id if available, otherwise artist+title)
-                    track_id = track.get("track_id") or f"{track['artist']}::{track['title']}"
-                    if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
-                       _get_current_song_meta_data_spotify._last_logged_track_id != track_id:
-                        logger.info(f"Upgraded album art from Spotify to high-res source for {track['artist']} - {track['title']}: {resolution_info}")
-                        _get_current_song_meta_data_spotify._last_logged_track_id = track_id
-                    album_art_url = high_res_url
+                    # 2. Not cached - start background task to fetch high-res
+                    # Return Spotify URL immediately for instant UI, upgrade happens in background
+                    async def background_upgrade_art():
+                        """Background task to fetch high-res art and update metadata"""
+                        try:
+                            # Wait a tiny bit to let the initial response return first
+                            await asyncio.sleep(0.1)
+                            
+                            # Fetch high-res art (iTunes → Last.fm → Spotify fallback)
+                            high_res_result = await art_provider.get_high_res_art(
+                                artist=captured_artist,
+                                title=captured_title,
+                                album=captured_album,
+                                spotify_url=original_spotify_url
+                            )
+                            
+                            # Check if track changed during fetch (race condition protection)
+                            # Get current track from Spotify cache to verify
+                            current_spotify_client = get_shared_spotify_client()
+                            if current_spotify_client and current_spotify_client._metadata_cache:
+                                current_track = current_spotify_client._metadata_cache
+                                current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                                if current_track_id != captured_track_id:
+                                    logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
+                                    return
+                            
+                            # If we got a better URL, it's now cached for next poll
+                            # The frontend will pick it up on the next metadata poll (0.1s later)
+                            if high_res_result:
+                                high_res_url, resolution_info = high_res_result
+                                if high_res_url != original_spotify_url:
+                                    # Log the upgrade
+                                    if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
+                                       _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
+                                        logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
+                                        _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
+                        except Exception as e:
+                            logger.debug(f"Background art upgrade failed: {e}")
+                    
+                    # Start background task (non-blocking)
+                    asyncio.create_task(background_upgrade_art())
+                    
             except Exception as e:
-                logger.debug(f"Failed to get high-res album art, using Spotify default: {e}")
+                logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
         
         if album_art_url:
             try:
@@ -688,26 +723,44 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 artist_match = win_artist in spot_artist or spot_artist in win_artist
                 
                 if title_match and (artist_match or not win_artist):
-                    # Steal Album Art (Prefer Spotify as it is usually higher quality)
-                    # Try to get high-res version
+                    # Steal Album Art (Progressive Enhancement: return Spotify immediately, upgrade in background)
                     spotify_art_url = spotify_data.get("album_art_url")
                     if spotify_art_url:
                         try:
                             art_provider = get_album_art_provider()
-                            high_res_result = await art_provider.get_high_res_art(
-                                artist=spotify_data.get("artist", ""),
-                                title=spotify_data.get("title", ""),
-                                album=spotify_data.get("album"),
-                                spotify_url=spotify_art_url
+                            
+                            # Check cache first - if cached high-res exists, use it immediately
+                            cached_result = art_provider.get_from_cache(
+                                spotify_data.get("artist", ""),
+                                spotify_data.get("title", "")
                             )
-                            # Unpack result: (url, resolution_info) or None
-                            if high_res_result:
-                                high_res_url, _ = high_res_result
+                            if cached_result:
+                                cached_url, _ = cached_result
+                                if cached_url != spotify_art_url:
+                                    result["album_art_url"] = cached_url
+                                else:
+                                    result["album_art_url"] = spotify_art_url
                             else:
-                                high_res_url = None
-                            result["album_art_url"] = high_res_url if high_res_url else spotify_art_url
+                                # Not cached - use Spotify immediately, upgrade in background
+                                result["album_art_url"] = spotify_art_url
+                                
+                                # Start background task to fetch high-res
+                                async def background_upgrade_hybrid():
+                                    try:
+                                        await asyncio.sleep(0.1)
+                                        high_res_result = await art_provider.get_high_res_art(
+                                            artist=spotify_data.get("artist", ""),
+                                            title=spotify_data.get("title", ""),
+                                            album=spotify_data.get("album"),
+                                            spotify_url=spotify_art_url
+                                        )
+                                        # Result is cached, will be picked up on next poll
+                                    except Exception as e:
+                                        logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
+                                
+                                asyncio.create_task(background_upgrade_hybrid())
                         except Exception as e:
-                            logger.debug(f"Failed to get high-res art in hybrid mode: {e}")
+                            logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
                             result["album_art_url"] = spotify_art_url
                     
                     # Steal Colors from Spotify (now properly extracted!)
