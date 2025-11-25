@@ -115,10 +115,12 @@ class AlbumArtProvider:
         Returns up to 3000x3000px images, free, no authentication required.
         Rate limited to 20 requests/minute per IP.
         
+        Validates album name match to ensure we get the correct album art (not a different version).
+        
         Args:
             artist: Artist name
             title: Track title
-            album: Album name (optional, helps with accuracy)
+            album: Album name (optional, used for validation to ensure correct match)
             
         Returns:
             Tuple of (image_url, resolution) or None if not found
@@ -127,7 +129,7 @@ class AlbumArtProvider:
             return None
             
         try:
-            # Build search query
+            # Build search query - prefer album if available for better accuracy
             search_term = f"{artist} {title}"
             if album:
                 search_term = f"{artist} {album}"
@@ -138,7 +140,7 @@ class AlbumArtProvider:
                 "term": search_term,
                 "media": "music",
                 "entity": "song",
-                "limit": 1
+                "limit": 10  # Get multiple results to find best match
             }
             
             response = requests.get(url, params=params, timeout=self.timeout)
@@ -148,8 +150,80 @@ class AlbumArtProvider:
             data = response.json()
             if not data.get("results"):
                 return None
+            
+            # Normalize album name for comparison (if provided)
+            target_album_normalized = None
+            if album:
+                target_album_normalized = album.lower().strip()
+                # Remove common suffixes that might differ between platforms
+                for suffix in [" (deluxe edition)", " (deluxe)", " (remastered)", " (remaster)", " (expanded edition)"]:
+                    if target_album_normalized.endswith(suffix.lower()):
+                        target_album_normalized = target_album_normalized[:-len(suffix)]
+                        break
+            
+            # Find best matching track
+            best_match = None
+            best_score = 0
+            
+            for track in data["results"]:
+                itunes_album = track.get("collectionName", "").lower().strip()
+                itunes_artist = track.get("artistName", "").lower().strip()
+                itunes_title = track.get("trackName", "").lower().strip()
                 
-            track = data["results"][0]
+                # Normalize iTunes album name (remove common suffixes)
+                itunes_album_normalized = itunes_album
+                for suffix in [" (deluxe edition)", " (deluxe)", " (remastered)", " (remaster)", " (expanded edition)"]:
+                    if itunes_album_normalized.endswith(suffix.lower()):
+                        itunes_album_normalized = itunes_album_normalized[:-len(suffix)]
+                        break
+                
+                # Score the match
+                score = 0
+                
+                # Artist match (required)
+                if artist.lower().strip() in itunes_artist or itunes_artist in artist.lower().strip():
+                    score += 10
+                else:
+                    continue  # Skip if artist doesn't match
+                
+                # Album match (high priority if album name provided)
+                if target_album_normalized:
+                    if itunes_album_normalized == target_album_normalized:
+                        score += 50  # Exact album match
+                    elif target_album_normalized in itunes_album_normalized or itunes_album_normalized in target_album_normalized:
+                        score += 30  # Partial album match
+                else:
+                    # No album to compare, check title match
+                    if title.lower().strip() in itunes_title or itunes_title in title.lower().strip():
+                        score += 20
+                
+                # Track title match (lower priority than album)
+                if title.lower().strip() in itunes_title or itunes_title in title.lower().strip():
+                    score += 10
+                
+                # Prefer higher resolution results
+                if track.get("artworkUrl1000"):
+                    score += 5
+                elif track.get("artworkUrl512"):
+                    score += 3
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = track
+            
+            # Use best match, or fall back to first result if no good match found
+            if best_match and best_score >= 10:  # At least artist match required
+                track = best_match
+                if target_album_normalized and best_score < 40:
+                    # Album name provided but no good match - log warning
+                    itunes_album = track.get("collectionName", "Unknown")
+                    logger.debug(f"iTunes: Album name mismatch - Spotify: '{album}', iTunes: '{itunes_album}' (using best match anyway)")
+            else:
+                # Fall back to first result
+                track = data["results"][0]
+                if target_album_normalized:
+                    itunes_album = track.get("collectionName", "Unknown")
+                    logger.debug(f"iTunes: No good match found, using first result - Spotify: '{album}', iTunes: '{itunes_album}'")
             
             # Get artwork URL - iTunes provides different sizes
             # artworkUrl100 = 100x100
