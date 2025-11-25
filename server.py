@@ -156,7 +156,7 @@ async def manifest():
     }
     
     # Return as JSON with correct MIME type
-    response = await jsonify(manifest_data)
+    response = jsonify(manifest_data)
     response.headers['Content-Type'] = 'application/manifest+json'
     return response
 
