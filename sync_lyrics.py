@@ -1,3 +1,13 @@
+import sys
+import os
+
+# Safety fix for running with pythonw.exe (no console)
+# When using pythonw, stdout/stderr are None, causing crashes if anything tries to print
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 import asyncio
 import webbrowser
 import threading as th
@@ -22,8 +32,6 @@ from logging_config import setup_logging, get_logger
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import signal
-import os
-import sys
 from context import queue
 from queue import Empty
 

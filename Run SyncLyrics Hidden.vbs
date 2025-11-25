@@ -5,7 +5,6 @@
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
-' Get the directory where this script is located
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 pythonScript = fso.BuildPath(scriptDir, "sync_lyrics.py")
 
@@ -15,21 +14,19 @@ If Not fso.FileExists(pythonScript) Then
     WScript.Quit 1
 End If
 
-' Check if debug mode is requested
+' Force working directory to script location
+shell.CurrentDirectory = scriptDir
+
+' Check debug arg
 debugMode = False
 If WScript.Arguments.Count > 0 Then
-    If LCase(WScript.Arguments(0)) = "/debug" Or LCase(WScript.Arguments(0)) = "-debug" Then
-        debugMode = True
-    End If
+    If InStr(LCase(WScript.Arguments(0)), "debug") > 0 Then debugMode = True
 End If
 
-' Build the Python command
 If debugMode Then
-    ' Debug mode - show console with output
-    cmd = "cmd.exe /k ""title SyncLyrics Debug && python """ & pythonScript & """"""
-    shell.Run cmd, 1, False  ' 1 = normal window, don't wait
+    ' Visible console
+    shell.Run "cmd /k python """ & pythonScript & """", 1, False
 Else
-    ' Silent mode - completely hidden using pythonw.exe
-    cmd = "pythonw.exe """ & pythonScript & """"
-    shell.Run cmd, 0, False  ' 0 = hidden window, don't wait
+    ' Invisible - assumes pythonw is in PATH
+    shell.Run "pythonw """ & pythonScript & """", 0, False
 End If
