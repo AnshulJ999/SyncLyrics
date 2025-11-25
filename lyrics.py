@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 import os
+import tempfile
 from typing import Optional, List, Tuple, Dict, Set, Any
 
 from system_utils import get_current_song_meta_data
@@ -170,9 +171,26 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> Non
             # It should only be modified via set_provider_preference(), not during automatic saves
             data["saved_lyrics"][source] = lyrics
             
-            # Save merged data
-            with open(db_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+            # Save merged data using atomic write pattern
+            # This prevents corruption if app crashes during write:
+            # 1. Write to temp file first
+            # 2. Use os.replace() to atomically swap (this is atomic on all platforms)
+            dir_path = os.path.dirname(db_path)
+            try:
+                # Create temp file in same directory (required for atomic rename)
+                fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                # Atomic replace - if this fails, original file is untouched
+                os.replace(temp_path, db_path)
+            except Exception as write_err:
+                # Clean up temp file if it exists
+                if 'temp_path' in locals() and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                raise write_err
                 
             logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers)")
         except Exception as e:

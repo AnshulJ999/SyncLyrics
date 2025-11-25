@@ -103,10 +103,13 @@ async def extract_dominant_colors(image_path: Path) -> list:
     if path_str in _color_cache:
         return _color_cache[path_str]
     
-    # Prevent cache from growing indefinitely - clear if too large
+    # Prevent cache from growing indefinitely - remove oldest entry if too large
+    # Using pop(next(iter(...))) removes the oldest entry (first inserted)
+    # This is better than clear() which would cause a performance spike
     if len(_color_cache) > _MAX_CACHE_SIZE:
-        _color_cache.clear()
-        logger.debug(f"Color cache cleared (exceeded {_MAX_CACHE_SIZE} entries)")
+        oldest_key = next(iter(_color_cache))
+        _color_cache.pop(oldest_key)
+        logger.debug(f"Color cache: removed oldest entry (size was {_MAX_CACHE_SIZE + 1})")
     
     # Run CPU-bound task in thread executor to avoid blocking event loop
     loop = asyncio.get_running_loop()
