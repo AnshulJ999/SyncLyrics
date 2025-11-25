@@ -519,6 +519,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         with open(art_path, "wb") as f:
                             f.write(response.content)
                         
+                        # Verify actual image resolution
+                        try:
+                            from PIL import Image
+                            with Image.open(art_path) as img:
+                                actual_width, actual_height = img.size
+                                if actual_width != 640 or actual_height != 640:
+                                    logger.debug(f"Downloaded album art actual resolution: {actual_width}x{actual_height}")
+                        except Exception:
+                            pass  # Ignore errors in resolution check
+                        
                         # Invalidate cache for this path because the content changed
                         # Since we reuse the same filename for all Spotify art, we need to
                         # clear the old cached colors when a new image is downloaded

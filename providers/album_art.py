@@ -80,11 +80,13 @@ class AlbumArtProvider:
             # We can try requesting larger sizes by modifying the URL
             
             # Method 1: Try replacing 640 with larger sizes (try highest quality first)
+            # NOTE: This is experimental - Spotify may not actually serve higher res
+            # even if we modify the URL. The actual resolution is unknown until downloaded.
             for size in [3000, 2000, 1600, 1200, 1000]:
                 enhanced = spotify_url.replace('640', str(size))
                 if enhanced != spotify_url:
-                    # Trust the URL modification - frontend will handle failures
-                    logger.debug(f"Enhanced Spotify URL to {size}x{size}")
+                    # URL modified, but actual resolution is unknown
+                    logger.debug(f"Modified Spotify URL (attempted {size}x{size}, actual resolution unknown)")
                     return enhanced
             
             # Method 2: Try appending size parameters (some CDNs support this)
@@ -360,13 +362,11 @@ class AlbumArtProvider:
                     spotify_url
                 )
                 if enhanced:
-                    # Try to extract resolution from URL (look for size patterns)
-                    resolution_info = "enhanced (Spotify)"
-                    for size in [3000, 2000, 1600, 1200, 1000]:
-                        if str(size) in enhanced:
-                            resolution_info = f"{size}x{size} (Spotify enhanced)"
-                            break
-                    logger.info(f"Using enhanced Spotify URL for {artist} - {title}")
+                    # Note: Spotify URL modification doesn't guarantee higher resolution
+                    # We modify the URL but Spotify may still serve 640x640
+                    # Mark as "unknown" since we can't verify without downloading
+                    resolution_info = "unknown (Spotify URL modified, may still be 640x640)"
+                    logger.info(f"Using enhanced Spotify URL for {artist} - {title} (resolution unknown)")
                     return (enhanced, resolution_info)
             except Exception as e:
                 logger.debug(f"Failed to enhance Spotify URL: {e}")
