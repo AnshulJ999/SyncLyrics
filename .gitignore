@@ -15,6 +15,10 @@ full_project_code.txt
 share_project.py
 .cursor
 
+
+album_art_database
+
+
 # resources/images/icon.ico
 lyrics_database/
 cache/
