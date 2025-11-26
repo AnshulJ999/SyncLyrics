@@ -1173,8 +1173,12 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         if album_art_url and not album_art_url.startswith('/'):
             try:
                 # Check if we need to download new art (track changed)
-                if not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
-                   _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url:
+                # CRITICAL FIX: Only download if URL changed OR file is missing
+                current_art_exists = (CACHE_DIR / "spotify_art.jpg").exists()
+                
+                if (not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
+                   _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url) or \
+                   not current_art_exists:
                     
                     # Download album art in thread executor to avoid blocking event loop
                     # This prevents lyrics animation from freezing during slow network requests

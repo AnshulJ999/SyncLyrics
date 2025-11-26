@@ -810,7 +810,7 @@ body.sharp-mode .background-overlay {
     -webkit-backdrop-filter: none !important;
     /* Vignette gradient: vibrant center, dark edges for text readability */
     /* Keeps the center of the 3000px art vibrant while darkening edges for text contrast */
-    background: radial-gradient(circle at center, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.75) 100%) !important;
+   /* background: radial-gradient(circle at center, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.75) 100%) !important;*/
 }
 
 /* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
