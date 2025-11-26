@@ -437,6 +437,26 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
         logger.error(f"Failed to save album DB metadata: {e}")
         return False
 
+def _download_and_save_sync(url: str, path: Path) -> bool:
+    """
+    Helper function to run download and save in thread executor.
+    This performs blocking I/O operations (network request and image processing).
+    
+    Args:
+        url: URL to download image from
+        path: Path where to save the JPG file
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        response = requests.get(url, timeout=10, stream=True)
+        response.raise_for_status()
+        return save_image_as_jpg(response.content, path)
+    except Exception as e:
+        logger.warning(f"Download failed for {url}: {e}")
+        return False
+
 async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> None:
     """
     Background task to fetch all album art options and save them to the database.
@@ -483,6 +503,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         preferred_provider = None
         highest_resolution = 0
         
+        # Get event loop for running blocking I/O in executor
+        loop = asyncio.get_running_loop()
+        
         for option in options:
             provider_name = option["provider"]
             url = option["url"]
@@ -500,23 +523,26 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             # Download image if we don't have it or if it's missing
             if not image_path.exists() or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
                 try:
-                    # Download image
-                    response = requests.get(url, timeout=10, stream=True)
-                    response.raise_for_status()
+                    # Run blocking download/convert in executor to avoid freezing the event loop
+                    success = await loop.run_in_executor(
+                        None,
+                        _download_and_save_sync,
+                        url,
+                        image_path
+                    )
                     
-                    # Read image data
-                    image_data = response.content
-                    
-                    # Save as JPG
-                    if save_image_as_jpg(image_data, image_path):
+                    if success:
                         logger.info(f"Downloaded and saved {provider_name} art for {artist} - {album or title}")
                         
-                        # Get actual resolution from saved image
+                        # Get actual resolution from saved image (also run in executor since it's I/O)
                         try:
-                            with Image.open(image_path) as img:
-                                actual_width, actual_height = img.size
-                                resolution = max(actual_width, actual_height)
-                                resolution_str = f"{actual_width}x{actual_height}"
+                            def get_image_resolution(path: Path) -> tuple:
+                                with Image.open(path) as img:
+                                    return img.size
+                            
+                            actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, image_path)
+                            resolution = max(actual_width, actual_height)
+                            resolution_str = f"{actual_width}x{actual_height}"
                         except:
                             pass
                     else:
@@ -526,12 +552,15 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                     logger.warning(f"Failed to download {provider_name} art: {e}")
                     continue
             else:
-                # Image exists, get resolution from file
+                # Image exists, get resolution from file (run in executor to avoid blocking)
                 try:
-                    with Image.open(image_path) as img:
-                        actual_width, actual_height = img.size
-                        resolution = max(actual_width, actual_height)
-                        resolution_str = f"{actual_width}x{actual_height}"
+                    def get_image_resolution_existing(path: Path) -> tuple:
+                        with Image.open(path) as img:
+                            return img.size
+                    
+                    actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, image_path)
+                    resolution = max(actual_width, actual_height)
+                    resolution_str = f"{actual_width}x{actual_height}"
                 except:
                     # Fallback to metadata if available
                     if existing_metadata and provider_name in existing_metadata.get("providers", {}):
@@ -829,6 +858,10 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         colors = ("#24273a", "#363b54")  # Default
         album_art_url = track.get("album_art")
         
+        # CRITICAL FIX: Store original Spotify URL for background tasks
+        # (album_art_url might be overwritten with local path if DB hit occurs)
+        raw_spotify_url = album_art_url
+        
         # Capture track info for DB check and background tasks
         captured_artist = track["artist"]
         captured_title = track["title"]
@@ -858,10 +891,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     logger.info(f"Using album art from database for {captured_artist} - {captured_album or captured_title}")
                     
                     # Trigger background task to ensure DB is up-to-date (non-blocking)
+                    # Use raw_spotify_url (not album_art_url which is now a local path)
                     if captured_track_id not in _running_art_upgrade_tasks:
                         async def background_refresh_db():
                             try:
-                                await ensure_album_art_db(captured_artist, captured_album, captured_title, album_art_url)
+                                await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
                             except Exception as e:
                                 logger.debug(f"Background DB refresh failed: {e}")
                             finally:
@@ -884,8 +918,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # Get high-res album art provider
                 art_provider = get_album_art_provider()
                 
-                # Store original Spotify URL as fallback
-                original_spotify_url = album_art_url
+                # Store original Spotify URL as fallback (use raw_spotify_url, not album_art_url)
+                original_spotify_url = raw_spotify_url
                 # Capture track info for background task (prevents race conditions)
                 captured_artist = track["artist"]
                 captured_title = track["title"]
