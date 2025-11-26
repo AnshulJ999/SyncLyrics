@@ -547,3 +547,65 @@
         font-size: 0.9rem;
     }
 }
+
+/* DESKTOP SPLIT VIEW (New) */
+@media (min-width: 768px) {
+    .provider-modal-content {
+        max-width: 900px;
+        width: 90%;
+        max-height: 80vh;
+        min-height: 500px; /* Ensure modal has minimum height for split view */
+        overflow-y: hidden; /* Prevent body scroll, use inner scroll */
+        display: flex;
+        flex-direction: column;
+    }
+
+    .provider-content-wrapper {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        overflow: hidden;
+        flex: 1; /* Take remaining height */
+        min-height: 0; /* CRITICAL: Allows nested flex/grid scrolling to work properly */
+    }
+
+    .provider-tabs {
+        display: none; /* Hide tabs on desktop */
+    }
+
+    .provider-tab-content {
+        display: flex !important; /* Force show both */
+        flex-direction: column;
+        overflow: hidden;
+        height: 100%;
+    }
+
+    /* Scrollable areas within columns */
+    .provider-list, 
+    #album-art-grid {
+        overflow-y: auto;
+        padding-right: 8px; /* Space for scrollbar */
+        flex: 1;
+        /* Custom Scrollbar for inner lists */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Headers for columns (simulated) */
+    .provider-tab-content::before {
+        content: attr(data-title);
+        display: block;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        flex-shrink: 0; /* Prevent header from being squished when content is long */
+    }
+    
+    .provider-modal-footer {
+        margin-top: auto; /* Push to bottom if content is short */
+        flex-shrink: 0; /* Prevent footer from being squished when content is long */
+    }
+}

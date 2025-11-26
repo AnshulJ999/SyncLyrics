@@ -772,10 +772,11 @@ async function showProviderModal() {
             providerList.appendChild(providerItem);
         });
 
-        // Load album art options (if available)
-        await loadAlbumArtTab();
-
-        // Show modal
+        // ALWAYS load album art, not just if tab is active
+        // This ensures desktop view (which shows both) is populated
+        loadAlbumArtTab(); // Remove await so it runs in parallel with UI showing
+        
+        // Show modal (modal already declared on line 738)
         modal.classList.remove('hidden');
 
     } catch (error) {

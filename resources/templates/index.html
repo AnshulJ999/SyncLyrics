@@ -75,22 +75,28 @@
             <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
             <button class="provider-tab" data-tab="album-art">Album Art</button>
         </div>
-        <div id="provider-tab-content-lyrics" class="provider-tab-content active">
-            <div id="provider-list" class="provider-list">
-                <!-- Populated dynamically -->
+        
+        <!-- WRAPPER FOR DESKTOP GRID -->
+        <div class="provider-content-wrapper">
+            <!-- Added data-title for CSS pseudo-element header -->
+            <div id="provider-tab-content-lyrics" class="provider-tab-content active" data-title="Lyrics Source">
+                <div id="provider-list" class="provider-list">
+                    <!-- Populated dynamically -->
+                </div>
+                <div class="provider-modal-footer">
+                    <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
+                    <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+                </div>
             </div>
-            <div class="provider-modal-footer">
-                <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
-                <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
-            </div>
-        </div>
-        <div id="provider-tab-content-album-art" class="provider-tab-content">
-            <div id="album-art-grid" class="art-grid">
-                <!-- Populated dynamically -->
-            </div>
-            <div class="provider-modal-footer">
-                <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
-                    Select an album art to use for this album
+            
+            <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
+                <div id="album-art-grid" class="art-grid">
+                    <!-- Populated dynamically -->
+                </div>
+                <div class="provider-modal-footer">
+                    <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
+                        Select an album art to use for this album
+                    </div>
                 </div>
             </div>
         </div>
