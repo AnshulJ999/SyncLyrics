@@ -327,8 +327,11 @@ async def get_album_art_options():
     preferred_provider = db_metadata.get("preferred_provider")
     
     for provider_name, provider_data in providers.items():
-        # Build image URL for serving (use folder name from metadata)
-        folder_name = f"{artist} - {album or db_metadata.get('album', '')}"
+        # Build image URL for serving (use same folder name logic as get_album_db_folder)
+        from system_utils import get_album_db_folder
+        folder_path = get_album_db_folder(artist, album or db_metadata.get('album'))
+        folder_name = folder_path.name  # Get the actual sanitized folder name
+        
         # URL encode the folder name and filename
         from urllib.parse import quote
         encoded_folder = quote(folder_name, safe='')
@@ -416,12 +419,25 @@ async def set_album_art_preference():
             temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
             
             shutil.copy2(db_image_path, temp_path)
-            try:
-                import os
-                os.replace(temp_path, cache_path)
-            except OSError as e:
-                logger.warning(f"Could not atomically replace current_art{original_extension}: {e}")
+            
+            # Atomic replace with retry for Windows file locking (matching system_utils.py logic)
+            replaced = False
+            for attempt in range(3):
                 try:
+                    import os
+                    os.replace(temp_path, cache_path)
+                    replaced = True
+                    break
+                except OSError:
+                    if attempt < 2:
+                        await asyncio.sleep(0.1)  # Wait briefly before retry
+                    else:
+                        logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
+            
+            # Clean up temp file if replace failed
+            if not replaced:
+                try:
+                    import os
                     os.remove(temp_path)
                 except:
                     pass

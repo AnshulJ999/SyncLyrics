@@ -91,6 +91,12 @@ def setup_logging(
     logging.getLogger('PIL').setLevel(logging.WARNING)
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
     
+    # ADD THESE LINES TO SILENCE NOISE:
+    logging.getLogger('spotipy').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('requests').setLevel(logging.WARNING)
+    logging.getLogger('charset_normalizer').setLevel(logging.WARNING)
+    
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):
         sys.stdout.reconfigure(encoding='utf-8')
