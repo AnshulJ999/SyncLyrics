@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 import asyncio
 import requests
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import logging
 import os
@@ -671,6 +671,134 @@ class AlbumArtProvider:
             return (spotify_url, "640x640 (Spotify default)")
         
         return None
+    
+    def _get_spotify_art(self, spotify_url: Optional[str]) -> Optional[Tuple[str, int]]:
+        """
+        Get Spotify album art URL and resolution.
+        Spotify typically provides 640x640px images.
+        
+        Args:
+            spotify_url: Spotify album art URL
+            
+        Returns:
+            Tuple of (image_url, resolution) or None if not found
+        """
+        if not spotify_url:
+            return None
+        
+        # Try to enhance the URL to get higher resolution
+        enhanced_url = self._try_enhance_spotify_url(spotify_url)
+        if enhanced_url:
+            # Resolution is unknown until download, but assume 640x640 minimum
+            return (enhanced_url, 640)
+        
+        # Return original URL with estimated resolution
+        return (spotify_url, 640)
+    
+    async def get_all_art_options(
+        self,
+        artist: str,
+        album: Optional[str],
+        title: str,
+        spotify_url: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch album art from all enabled providers in parallel.
+        Returns a list of all found candidates (not just the first good one).
+        
+        Args:
+            artist: Artist name
+            album: Album name (optional)
+            title: Track title
+            spotify_url: Existing Spotify album art URL (optional)
+            
+        Returns:
+            List of dictionaries with format:
+            [
+                {
+                    "provider": "iTunes",
+                    "url": "https://...",
+                    "resolution": "3000x3000",
+                    "width": 3000,
+                    "height": 3000
+                },
+                ...
+            ]
+        """
+        if not artist or not title:
+            return []
+        
+        options = []
+        loop = asyncio.get_event_loop()
+        
+        # Create tasks for all providers in parallel
+        tasks = []
+        
+        # Task 1: iTunes
+        if self.enable_itunes:
+            tasks.append((
+                "iTunes",
+                loop.run_in_executor(None, self._get_itunes_art, artist, title, album)
+            ))
+        
+        # Task 2: Last.fm
+        if self.enable_lastfm and self.lastfm_api_key:
+            tasks.append((
+                "LastFM",
+                loop.run_in_executor(None, self._get_lastfm_art, artist, title, album)
+            ))
+        
+        # Task 3: Spotify
+        if spotify_url:
+            tasks.append((
+                "Spotify",
+                loop.run_in_executor(None, self._get_spotify_art, spotify_url)
+            ))
+        
+        # Wait for all tasks to complete (with timeout)
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*[task[1] for task in tasks], return_exceptions=True),
+                timeout=self.overall_timeout
+            )
+            
+            # Process results
+            for i, (provider_name, _) in enumerate(tasks):
+                result = results[i]
+                
+                if isinstance(result, Exception):
+                    logger.debug(f"{provider_name} art fetch failed: {result}")
+                    continue
+                
+                if result:
+                    url, resolution = result
+                    
+                    # Handle unknown resolution (0 means unknown, will be verified on download)
+                    if resolution == 0:
+                        # For unknown resolution, we'll set a placeholder that indicates it needs verification
+                        # The actual resolution will be determined when the image is downloaded
+                        width = height = 0  # Will be determined on download
+                        resolution_str = "unknown (will verify on download)"
+                    else:
+                        width = height = resolution
+                        resolution_str = f"{resolution}x{resolution}"
+                    
+                    options.append({
+                        "provider": provider_name,
+                        "url": url,
+                        "resolution": resolution_str,
+                        "width": width,
+                        "height": height
+                    })
+                    
+                    logger.debug(f"{provider_name}: Found album art ({resolution_str}) for {artist} - {title}")
+        
+        except asyncio.TimeoutError:
+            logger.debug(f"get_all_art_options timed out after {self.overall_timeout}s")
+        except Exception as e:
+            logger.error(f"Error in get_all_art_options: {e}")
+        
+        return options
 
 # Singleton instance
 _album_art_provider_instance: Optional[AlbumArtProvider] = None

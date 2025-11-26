@@ -68,15 +68,31 @@
 <div id="provider-modal" class="provider-modal hidden">
     <div class="provider-modal-content">
         <div class="provider-modal-header">
-            <h3>Select Lyrics Provider</h3>
+            <h3>Select Provider</h3>
             <button id="provider-modal-close" class="modal-close">×</button>
         </div>
-        <div id="provider-list" class="provider-list">
-            <!-- Populated dynamically -->
+        <div class="provider-tabs">
+            <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
+            <button class="provider-tab" data-tab="album-art">Album Art</button>
         </div>
-        <div class="provider-modal-footer">
-            <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
-            <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+        <div id="provider-tab-content-lyrics" class="provider-tab-content active">
+            <div id="provider-list" class="provider-list">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="provider-modal-footer">
+                <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
+                <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+            </div>
+        </div>
+        <div id="provider-tab-content-album-art" class="provider-tab-content">
+            <div id="album-art-grid" class="art-grid">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="provider-modal-footer">
+                <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
+                    Select an album art to use for this album
+                </div>
+            </div>
         </div>
     </div>
 </div>

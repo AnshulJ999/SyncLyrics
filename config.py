@@ -50,8 +50,9 @@ def conf(key, default=None):
 RESOURCES_DIR = ROOT_DIR / "resources"
 DATABASE_DIR = ROOT_DIR / "lyrics_database"
 CACHE_DIR = ROOT_DIR / "cache"
+ALBUM_ART_DB_DIR = ROOT_DIR / "album_art_database"
 
-for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR]:
+for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 DEBUG = {
@@ -226,7 +227,8 @@ FEATURES = {
     "parallel_provider_fetch": conf("features.parallel_provider_fetch", True),
     "provider_stats": conf("features.provider_stats", False),
     "auto_theme": conf("features.auto_theme", True),
-    "album_art_colors": conf("features.album_art_colors", True)
+    "album_art_colors": conf("features.album_art_colors", True),
+    "album_art_db": conf("features.album_art_db", True)
 }
 
 ALBUM_ART = {

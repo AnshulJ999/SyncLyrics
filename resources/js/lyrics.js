@@ -726,6 +726,7 @@ function updateProviderDisplay(providerName) {
 
 async function showProviderModal() {
     try {
+        // Load lyrics providers
         const response = await fetch('/api/providers/available');
         const data = await response.json();
 
@@ -771,11 +772,114 @@ async function showProviderModal() {
             providerList.appendChild(providerItem);
         });
 
+        // Load album art options (if available)
+        await loadAlbumArtTab();
+
         // Show modal
         modal.classList.remove('hidden');
 
     } catch (error) {
         console.error('Error loading providers:', error);
+    }
+}
+
+async function loadAlbumArtTab() {
+    try {
+        const response = await fetch('/api/album-art/options');
+        const data = await response.json();
+
+        if (data.error) {
+            // No album art database entry - that's okay, just show empty state
+            const grid = document.getElementById('album-art-grid');
+            if (grid) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No album art options available yet. They will be populated in the background.</div>';
+            }
+            return;
+        }
+
+        const grid = document.getElementById('album-art-grid');
+        if (!grid) return;
+
+        grid.innerHTML = '';
+
+        if (!data.options || data.options.length === 0) {
+            grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No album art options available yet.</div>';
+            return;
+        }
+
+        // Build art grid
+        data.options.forEach(option => {
+            const card = document.createElement('div');
+            card.className = 'art-card';
+            if (option.is_preferred) {
+                card.classList.add('selected');
+            }
+            card.dataset.provider = option.provider;
+
+            card.innerHTML = `
+                <img src="${option.image_url}" alt="${option.provider}" class="art-card-image" loading="lazy" onerror="this.parentElement.classList.add('loading')">
+                <div class="art-card-overlay">
+                    <div class="art-card-provider">${option.provider}</div>
+                    <div class="art-card-resolution">${option.resolution}</div>
+                </div>
+                ${option.is_preferred ? '<div class="art-card-badge">Selected</div>' : ''}
+            `;
+
+            // Add click handler
+            card.addEventListener('click', () => selectAlbumArt(option.provider));
+
+            grid.appendChild(card);
+        });
+
+    } catch (error) {
+        console.error('Error loading album art options:', error);
+        const grid = document.getElementById('album-art-grid');
+        if (grid) {
+            grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">Error loading album art options.</div>';
+        }
+    }
+}
+
+async function selectAlbumArt(providerName) {
+    try {
+        const response = await fetch('/api/album-art/preference', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: providerName })
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            // Update UI to show selected state
+            const cards = document.querySelectorAll('.art-card');
+            cards.forEach(card => {
+                card.classList.remove('selected');
+                const badge = card.querySelector('.art-card-badge');
+                if (badge) badge.remove();
+            });
+
+            const selectedCard = document.querySelector(`.art-card[data-provider="${providerName}"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+                // Add badge if it doesn't exist
+                if (!selectedCard.querySelector('.art-card-badge')) {
+                    selectedCard.insertAdjacentHTML('afterbegin', '<div class="art-card-badge">Selected</div>');
+                }
+            }
+
+            // Refresh the page to show new album art
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+
+            showToast(`Switched to ${providerName} album art`);
+        } else {
+            showToast(`Error: ${result.error || result.message}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error selecting album art:', error);
+        showToast('Failed to switch album art', 'error');
     }
 }
 
@@ -892,6 +996,34 @@ function setupProviderUI() {
     if (modalClose) {
         modalClose.addEventListener('click', hideProviderModal);
     }
+
+    // Tab switching
+    const tabs = document.querySelectorAll('.provider-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.tab;
+            
+            // Update tab active state
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Update content visibility
+            const contents = document.querySelectorAll('.provider-tab-content');
+            contents.forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            const activeContent = document.getElementById(`provider-tab-content-${tabName}`);
+            if (activeContent) {
+                activeContent.classList.add('active');
+            }
+            
+            // Load album art tab if switching to it
+            if (tabName === 'album-art') {
+                loadAlbumArtTab();
+            }
+        });
+    });
 
     const modal = document.getElementById('provider-modal');
     if (modal) {

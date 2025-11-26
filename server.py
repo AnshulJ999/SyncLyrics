@@ -297,6 +297,187 @@ async def delete_cached_lyrics_endpoint():
     else:
         return jsonify(result), 500
 
+# --- Album Art Database API ---
+
+@app.route("/api/album-art/options", methods=['GET'])
+async def get_album_art_options():
+    """Get available album art options for current track from database"""
+    from system_utils import get_current_song_meta_data, load_album_art_from_db
+    
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    
+    if not artist:
+        return jsonify({"error": "Invalid song data"}), 400
+    
+    # Load from database
+    db_result = load_album_art_from_db(artist, album)
+    if not db_result:
+        return jsonify({"error": "No album art database entry found"}), 404
+    
+    db_metadata = db_result["metadata"]
+    
+    # Format response for frontend
+    options = []
+    providers = db_metadata.get("providers", {})
+    preferred_provider = db_metadata.get("preferred_provider")
+    
+    for provider_name, provider_data in providers.items():
+        # Build image URL for serving (use folder name from metadata)
+        folder_name = f"{artist} - {album or db_metadata.get('album', '')}"
+        # URL encode the folder name and filename
+        from urllib.parse import quote
+        encoded_folder = quote(folder_name, safe='')
+        encoded_filename = quote(provider_data.get('filename', f'{provider_name}.jpg'), safe='')
+        image_url = f"/api/album-art/image/{encoded_folder}/{encoded_filename}"
+        
+        options.append({
+            "provider": provider_name,
+            "url": provider_data.get("url"),  # Original URL
+            "image_url": image_url,  # Local server URL
+            "resolution": provider_data.get("resolution", "unknown"),
+            "width": provider_data.get("width", 0),
+            "height": provider_data.get("height", 0),
+            "is_preferred": provider_name == preferred_provider
+        })
+    
+    return jsonify({
+        "artist": artist,
+        "album": album or db_metadata.get("album", ""),
+        "is_single": db_metadata.get("is_single", False),
+        "preferred_provider": preferred_provider,
+        "options": options
+    })
+
+@app.route("/api/album-art/preference", methods=['POST'])
+async def set_album_art_preference():
+    """Set preferred album art provider for current track"""
+    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata
+    from config import ALBUM_ART_DB_DIR, CACHE_DIR
+    import shutil
+    from datetime import datetime
+    
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"error": "No song playing"}), 404
+    
+    data = await request.get_json()
+    provider_name = data.get('provider')
+    
+    if not provider_name:
+        return jsonify({"error": "No provider specified"}), 400
+    
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    
+    if not artist:
+        return jsonify({"error": "Invalid song data"}), 400
+    
+    # Load existing metadata
+    db_result = load_album_art_from_db(artist, album)
+    if not db_result:
+        return jsonify({"error": "No album art database entry found"}), 404
+    
+    db_metadata = db_result["metadata"]
+    providers = db_metadata.get("providers", {})
+    
+    if provider_name not in providers:
+        return jsonify({"error": f"Provider '{provider_name}' not found in database"}), 404
+    
+    # Update preferred provider
+    db_metadata["preferred_provider"] = provider_name
+    db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+    
+    # Save updated metadata
+    folder = get_album_db_folder(artist, album)
+    if not save_album_db_metadata(folder, db_metadata):
+        return jsonify({"error": "Failed to save preference"}), 500
+    
+    # Copy selected image to cache for immediate use
+    provider_data = providers[provider_name]
+    filename = provider_data.get("filename", f"{provider_name}.jpg")
+    db_image_path = folder / filename
+    
+    if db_image_path.exists():
+        try:
+            # Clean up old art first
+            from system_utils import cleanup_old_art
+            cleanup_old_art()
+            
+            # Copy to cache atomically
+            cache_path = CACHE_DIR / "current_art.jpg"
+            temp_path = CACHE_DIR / "current_art.jpg.tmp"
+            
+            shutil.copy2(db_image_path, temp_path)
+            try:
+                import os
+                os.replace(temp_path, cache_path)
+            except OSError as e:
+                logger.warning(f"Could not atomically replace current_art.jpg: {e}")
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to copy selected art to cache: {e}")
+    
+    return jsonify({
+        "status": "success",
+        "message": f"Preferred provider set to {provider_name}",
+        "provider": provider_name
+    })
+
+@app.route("/api/album-art/image/<folder_name>/<filename>", methods=['GET'])
+async def serve_album_art_image(folder_name: str, filename: str):
+    """Serve album art images from database"""
+    from config import ALBUM_ART_DB_DIR
+    from quart import Response
+    from urllib.parse import unquote
+    import os
+    
+    try:
+        # Decode URL-encoded folder name and filename
+        decoded_folder = unquote(folder_name)
+        decoded_filename = unquote(filename)
+        
+        # Build full path
+        image_path = ALBUM_ART_DB_DIR / decoded_folder / decoded_filename
+        
+        # Security check: ensure path is within ALBUM_ART_DB_DIR
+        try:
+            image_path.resolve().relative_to(ALBUM_ART_DB_DIR.resolve())
+        except ValueError:
+            # Path outside ALBUM_ART_DB_DIR - security violation
+            logger.warning(f"Security violation: Attempted to access path outside ALBUM_ART_DB_DIR: {image_path}")
+            return "", 403
+        
+        if not image_path.exists():
+            return "", 404
+        
+        # Read and serve image
+        with open(image_path, 'rb') as f:
+            image_data = f.read()
+        
+        # Determine mimetype (should be JPG, but check extension)
+        ext = image_path.suffix.lower()
+        mime = 'image/jpeg'  # Default
+        if ext == '.png': mime = 'image/png'
+        elif ext == '.bmp': mime = 'image/bmp'
+        elif ext == '.gif': mime = 'image/gif'
+        
+        return Response(
+            image_data,
+            mimetype=mime,
+            headers={'Cache-Control': 'public, max-age=86400'}  # Cache for 24 hours
+        )
+    except Exception as e:
+        logger.error(f"Error serving album art image: {e}")
+        return "", 500
+
 # --- Playback Control API (The New Features) ---
 
 @app.route("/cover-art")

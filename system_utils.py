@@ -3,9 +3,9 @@ import platform
 import re
 import time
 import asyncio
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import config
-from config import DEBUG
+from config import DEBUG, FEATURES, ALBUM_ART_DB_DIR
 from state_manager import get_state, set_state
 from providers.spotify_api import get_shared_spotify_client
 from providers.album_art import get_album_art_provider
@@ -17,6 +17,10 @@ from PIL import Image
 from pathlib import Path
 import requests
 import logging
+import json
+import shutil
+from datetime import datetime
+from io import BytesIO
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -300,6 +304,353 @@ def cleanup_old_art() -> None:
             # Silently ignore errors (file might be in use or already deleted)
             logger.debug(f"Could not remove old art file {ext}: {e}")
 
+# ==========================================
+# Album Art Database Functions
+# ==========================================
+
+def sanitize_folder_name(name: str) -> str:
+    """
+    Sanitize a string to be safe for use as a folder name.
+    Replaces illegal characters with underscores for cross-platform compatibility.
+    
+    Args:
+        name: String to sanitize
+        
+    Returns:
+        Sanitized string safe for folder names
+    """
+    if not name:
+        return "Unknown"
+    
+    # Replace illegal characters for Windows/Linux/Docker compatibility
+    # Illegal chars: / \ : * ? " < > |
+    illegal_chars = r'[<>:"/\\|?*]'
+    sanitized = re.sub(illegal_chars, '_', name)
+    
+    # Remove leading/trailing spaces and dots (Windows doesn't allow these)
+    sanitized = sanitized.strip(' .')
+    
+    # Truncate if too long (Windows has 260 char path limit, but we'll be conservative)
+    if len(sanitized) > 100:
+        sanitized = sanitized[:100]
+    
+    # If empty after sanitization, use fallback
+    if not sanitized:
+        sanitized = "Unknown"
+    
+    return sanitized
+
+def get_album_db_folder(artist: str, album: Optional[str]) -> Path:
+    """
+    Get the database folder path for an album.
+    Uses Artist - Album format, with fallback to Artist - Title if no album.
+    
+    Args:
+        artist: Artist name
+        album: Album name (optional, falls back to title if None)
+        
+    Returns:
+        Path to the album database folder
+    """
+    safe_artist = sanitize_folder_name(artist or "Unknown")
+    
+    # Use album if available, otherwise we'll use title when called
+    if album:
+        safe_album = sanitize_folder_name(album)
+        folder_name = f"{safe_artist} - {safe_album}"
+    else:
+        # This will be used when album is None - caller should pass title
+        folder_name = safe_artist
+    
+    return ALBUM_ART_DB_DIR / folder_name
+
+def save_image_as_jpg(image_data: bytes, output_path: Path) -> bool:
+    """
+    Convert and save image data as optimized JPG.
+    Handles any input format (PNG, JPG, etc.) and converts to JPG.
+    
+    Args:
+        image_data: Raw image bytes
+        output_path: Path where to save the JPG file
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Open image from bytes
+        img = Image.open(BytesIO(image_data))
+        
+        # Convert to RGB if necessary (removes alpha channel for JPG)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            # Create white background for transparent images
+            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = rgb_img
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Save as optimized JPG (quality 95 for good balance of size/quality)
+        img.save(output_path, 'JPEG', quality=95, optimize=True)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save image as JPG to {output_path}: {e}")
+        return False
+
+def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
+    """
+    Save album art database metadata JSON file atomically.
+    
+    Args:
+        folder: Path to the album folder
+        metadata: Dictionary containing metadata to save
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        metadata_path = folder / "metadata.json"
+        temp_path = folder / "metadata.json.tmp"
+        
+        # Ensure folder exists
+        folder.mkdir(parents=True, exist_ok=True)
+        
+        # Write to temp file first
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        
+        # Atomic replace
+        try:
+            os.replace(temp_path, metadata_path)
+            return True
+        except OSError as e:
+            logger.error(f"Failed to atomically replace metadata.json: {e}")
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+            return False
+    except Exception as e:
+        logger.error(f"Failed to save album DB metadata: {e}")
+        return False
+
+async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> None:
+    """
+    Background task to fetch all album art options and save them to the database.
+    Downloads images from all providers and saves them as JPG files.
+    Creates metadata.json with URLs, resolutions, and preferences.
+    
+    Args:
+        artist: Artist name
+        album: Album name (optional)
+        title: Track title
+        spotify_url: Spotify album art URL (optional)
+    """
+    # Check if feature is enabled
+    if not FEATURES.get("album_art_db", True):
+        return
+    
+    try:
+        # Get album art provider
+        art_provider = get_album_art_provider()
+        
+        # Fetch all options in parallel
+        options = await art_provider.get_all_art_options(artist, album, title, spotify_url)
+        
+        if not options:
+            logger.debug(f"No album art options found for {artist} - {album or title}")
+            return
+        
+        # Get folder path
+        folder = get_album_db_folder(artist, album or title)
+        folder.mkdir(parents=True, exist_ok=True)
+        
+        # Check if metadata already exists (to avoid re-downloading)
+        metadata_path = folder / "metadata.json"
+        existing_metadata = None
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    existing_metadata = json.load(f)
+            except:
+                pass
+        
+        # Download and save images for each provider
+        providers_data = {}
+        preferred_provider = None
+        highest_resolution = 0
+        
+        for option in options:
+            provider_name = option["provider"]
+            url = option["url"]
+            resolution_str = option["resolution"]
+            
+            # Extract resolution for comparison
+            width = option.get("width", 0)
+            height = option.get("height", 0)
+            resolution = max(width, height) if width > 0 and height > 0 else 0
+            
+            # Check if we already have this image
+            image_filename = f"{provider_name}.jpg"
+            image_path = folder / image_filename
+            
+            # Download image if we don't have it or if it's missing
+            if not image_path.exists() or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
+                try:
+                    # Download image
+                    response = requests.get(url, timeout=10, stream=True)
+                    response.raise_for_status()
+                    
+                    # Read image data
+                    image_data = response.content
+                    
+                    # Save as JPG
+                    if save_image_as_jpg(image_data, image_path):
+                        logger.info(f"Downloaded and saved {provider_name} art for {artist} - {album or title}")
+                        
+                        # Get actual resolution from saved image
+                        try:
+                            with Image.open(image_path) as img:
+                                actual_width, actual_height = img.size
+                                resolution = max(actual_width, actual_height)
+                                resolution_str = f"{actual_width}x{actual_height}"
+                        except:
+                            pass
+                    else:
+                        logger.warning(f"Failed to save {provider_name} art for {artist} - {album or title}")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Failed to download {provider_name} art: {e}")
+                    continue
+            else:
+                # Image exists, get resolution from file
+                try:
+                    with Image.open(image_path) as img:
+                        actual_width, actual_height = img.size
+                        resolution = max(actual_width, actual_height)
+                        resolution_str = f"{actual_width}x{actual_height}"
+                except:
+                    # Fallback to metadata if available
+                    if existing_metadata and provider_name in existing_metadata.get("providers", {}):
+                        existing_provider_data = existing_metadata["providers"][provider_name]
+                        resolution_str = existing_provider_data.get("resolution", resolution_str)
+            
+            # Store provider data
+            providers_data[provider_name] = {
+                "url": url,
+                "resolution": resolution_str,
+                "width": width if width > 0 else 0,
+                "height": height if height > 0 else 0,
+                "filename": image_filename,
+                "downloaded": image_path.exists()
+            }
+            
+            # Track highest resolution for auto-selection
+            if resolution > highest_resolution:
+                highest_resolution = resolution
+                preferred_provider = provider_name
+        
+        # Use existing preference if available, otherwise use highest resolution
+        if existing_metadata and "preferred_provider" in existing_metadata:
+            preferred_provider = existing_metadata["preferred_provider"]
+        
+        # Create metadata structure
+        metadata = {
+            "artist": artist,
+            "album": album or title,
+            "is_single": album is None or album.lower() == title.lower(),
+            "preferred_provider": preferred_provider,
+            "created_at": existing_metadata.get("created_at") if existing_metadata else datetime.utcnow().isoformat() + "Z",
+            "last_accessed": datetime.utcnow().isoformat() + "Z",
+            "providers": providers_data
+        }
+        
+        # Save metadata
+        if save_album_db_metadata(folder, metadata):
+            logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
+        else:
+            logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
+    
+    except Exception as e:
+        logger.error(f"Error in ensure_album_art_db: {e}")
+
+def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Load album art from database if available.
+    Returns the preferred image path if found.
+    
+    Args:
+        artist: Artist name
+        album: Album name (optional)
+        
+    Returns:
+        Dictionary with 'path' (Path to image) and 'metadata' (full metadata dict) if found, None otherwise
+    """
+    # Check if feature is enabled
+    if not FEATURES.get("album_art_db", True):
+        return None
+    
+    try:
+        folder = get_album_db_folder(artist, album)
+        metadata_path = folder / "metadata.json"
+        
+        if not metadata_path.exists():
+            return None
+        
+        # Load metadata
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        # Get preferred provider
+        preferred_provider = metadata.get("preferred_provider")
+        if not preferred_provider:
+            # Auto-select highest resolution if no preference
+            providers = metadata.get("providers", {})
+            if not providers:
+                return None
+            
+            highest_res = 0
+            preferred_provider = None
+            for provider_name, provider_data in providers.items():
+                width = provider_data.get("width", 0)
+                height = provider_data.get("height", 0)
+                res = max(width, height)
+                if res > highest_res:
+                    highest_res = res
+                    preferred_provider = provider_name
+            
+            if not preferred_provider:
+                # Fallback to first available
+                preferred_provider = list(providers.keys())[0]
+        
+        # Get image path
+        providers = metadata.get("providers", {})
+        if preferred_provider not in providers:
+            return None
+        
+        provider_data = providers[preferred_provider]
+        filename = provider_data.get("filename", f"{preferred_provider}.jpg")
+        image_path = folder / filename
+        
+        if not image_path.exists():
+            return None
+        
+        # Update last_accessed
+        metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+        save_album_db_metadata(folder, metadata)
+        
+        return {
+            "path": image_path,
+            "metadata": metadata
+        }
+    
+    except Exception as e:
+        logger.debug(f"Error loading album art from DB: {e}")
+        return None
+
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
     global _win_media_manager
@@ -478,6 +829,55 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         colors = ("#24273a", "#363b54")  # Default
         album_art_url = track.get("album_art")
         
+        # Capture track info for DB check and background tasks
+        captured_artist = track["artist"]
+        captured_title = track["title"]
+        captured_album = track.get("album")
+        captured_track_id = track.get("track_id") or f"{captured_artist}::{captured_title}"
+        
+        # Check Album Art Database first (fast path - zero delay if cached)
+        db_result = load_album_art_from_db(captured_artist, captured_album)
+        if db_result:
+            db_image_path = db_result["path"]
+            db_metadata = db_result["metadata"]
+            
+            # Atomic copy from DB to cache for immediate use
+            try:
+                # Clean up old art first
+                cleanup_old_art()
+                
+                # Copy DB image to cache as JPG
+                cache_path = CACHE_DIR / "current_art.jpg"
+                temp_path = CACHE_DIR / "current_art.jpg.tmp"
+                
+                # Copy file atomically
+                shutil.copy2(db_image_path, temp_path)
+                try:
+                    os.replace(temp_path, cache_path)
+                    album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
+                    logger.info(f"Using album art from database for {captured_artist} - {captured_album or captured_title}")
+                    
+                    # Trigger background task to ensure DB is up-to-date (non-blocking)
+                    if captured_track_id not in _running_art_upgrade_tasks:
+                        async def background_refresh_db():
+                            try:
+                                await ensure_album_art_db(captured_artist, captured_album, captured_title, album_art_url)
+                            except Exception as e:
+                                logger.debug(f"Background DB refresh failed: {e}")
+                            finally:
+                                _running_art_upgrade_tasks.pop(captured_track_id, None)
+                        
+                        task = asyncio.create_task(background_refresh_db())
+                        _running_art_upgrade_tasks[captured_track_id] = task
+                except OSError as e:
+                    logger.debug(f"Could not atomically replace current_art.jpg: {e}")
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+            except Exception as e:
+                logger.debug(f"Failed to copy DB image to cache: {e}")
+        
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
             try:
@@ -505,64 +905,67 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                            _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
                             logger.info(f"Using cached high-res album art for {captured_artist} - {captured_title}: {cached_resolution_info}")
                             _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
-                else:
-                    # 2. Not cached - start background task to fetch high-res
-                    # Return Spotify URL immediately for instant UI, upgrade happens in background
-                    # Check if a background task is already running for this track
-                    if captured_track_id in _running_art_upgrade_tasks:
-                        # Task already running, skip creating duplicate
-                        logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
                     else:
-                        async def background_upgrade_art():
-                            """Background task to fetch high-res art and update metadata"""
-                            try:
-                                # Only log once per track (check if we've logged this track before)
-                                if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_startup_track_id') or \
-                                   _get_current_song_meta_data_spotify._last_logged_startup_track_id != captured_track_id:
-                                    logger.info(f"Starting background album art upgrade for {captured_artist} - {captured_title} (album: {captured_album or 'N/A'})")
-                                    _get_current_song_meta_data_spotify._last_logged_startup_track_id = captured_track_id
-                                # Wait a tiny bit to let the initial response return first
-                                await asyncio.sleep(0.1)
-                                
-                                # Fetch high-res art (iTunes → Last.fm → Spotify fallback)
-                                logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
-                                high_res_result = await art_provider.get_high_res_art(
-                                    artist=captured_artist,
-                                    title=captured_title,
-                                    album=captured_album,
-                                    spotify_url=original_spotify_url
-                                )
-                                logger.debug(f"get_high_res_art returned: {high_res_result}")
-                                
-                                # Check if track changed during fetch (race condition protection)
-                                # Get current track from Spotify cache to verify
-                                current_spotify_client = get_shared_spotify_client()
-                                if current_spotify_client and current_spotify_client._metadata_cache:
-                                    current_track = current_spotify_client._metadata_cache
-                                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
-                                    if current_track_id != captured_track_id:
-                                        logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
-                                        return
-                                
-                                # If we got a better URL, it's now cached for next poll
-                                # The frontend will pick it up on the next metadata poll (0.1s later)
-                                if high_res_result:
-                                    high_res_url, resolution_info = high_res_result
-                                    if high_res_url != original_spotify_url:
-                                        # Log the upgrade
-                                        if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
-                                           _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
-                                            logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
-                                            _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
-                            except Exception as e:
-                                logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
-                            finally:
-                                # Remove from running tasks when done
-                                _running_art_upgrade_tasks.pop(captured_track_id, None)
-                        
-                        # Start background task (non-blocking) and track it
-                        task = asyncio.create_task(background_upgrade_art())
-                        _running_art_upgrade_tasks[captured_track_id] = task
+                        # 2. Not cached - start background task to fetch high-res AND populate DB
+                        # Return Spotify URL immediately for instant UI, upgrade happens in background
+                        # Check if a background task is already running for this track
+                        if captured_track_id in _running_art_upgrade_tasks:
+                            # Task already running, skip creating duplicate
+                            logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
+                        else:
+                            async def background_upgrade_art():
+                                """Background task to fetch high-res art, update cache, and populate DB"""
+                                try:
+                                    # Only log once per track (check if we've logged this track before)
+                                    if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_startup_track_id') or \
+                                       _get_current_song_meta_data_spotify._last_logged_startup_track_id != captured_track_id:
+                                        logger.info(f"Starting background album art upgrade for {captured_artist} - {captured_title} (album: {captured_album or 'N/A'})")
+                                        _get_current_song_meta_data_spotify._last_logged_startup_track_id = captured_track_id
+                                    # Wait a tiny bit to let the initial response return first
+                                    await asyncio.sleep(0.1)
+                                    
+                                    # Populate Album Art Database (fetches all options and saves them)
+                                    await ensure_album_art_db(captured_artist, captured_album, captured_title, original_spotify_url)
+                                    
+                                    # Also fetch high-res art for immediate cache (legacy behavior)
+                                    logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
+                                    high_res_result = await art_provider.get_high_res_art(
+                                        artist=captured_artist,
+                                        title=captured_title,
+                                        album=captured_album,
+                                        spotify_url=original_spotify_url
+                                    )
+                                    logger.debug(f"get_high_res_art returned: {high_res_result}")
+                                    
+                                    # Check if track changed during fetch (race condition protection)
+                                    # Get current track from Spotify cache to verify
+                                    current_spotify_client = get_shared_spotify_client()
+                                    if current_spotify_client and current_spotify_client._metadata_cache:
+                                        current_track = current_spotify_client._metadata_cache
+                                        current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                                        if current_track_id != captured_track_id:
+                                            logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
+                                            return
+                                    
+                                    # If we got a better URL, it's now cached for next poll
+                                    # The frontend will pick it up on the next metadata poll (0.1s later)
+                                    if high_res_result:
+                                        high_res_url, resolution_info = high_res_result
+                                        if high_res_url != original_spotify_url:
+                                            # Log the upgrade
+                                            if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
+                                               _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
+                                                logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
+                                                _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
+                                except Exception as e:
+                                    logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
+                                finally:
+                                    # Remove from running tasks when done
+                                    _running_art_upgrade_tasks.pop(captured_track_id, None)
+                            
+                            # Start background task (non-blocking) and track it
+                            task = asyncio.create_task(background_upgrade_art())
+                            _running_art_upgrade_tasks[captured_track_id] = task
                     
             except Exception as e:
                 logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
