@@ -419,12 +419,25 @@ async def set_album_art_preference():
             temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
             
             shutil.copy2(db_image_path, temp_path)
-            try:
-                import os
-                os.replace(temp_path, cache_path)
-            except OSError as e:
-                logger.warning(f"Could not atomically replace current_art{original_extension}: {e}")
+            
+            # Atomic replace with retry for Windows file locking (matching system_utils.py logic)
+            replaced = False
+            for attempt in range(3):
                 try:
+                    import os
+                    os.replace(temp_path, cache_path)
+                    replaced = True
+                    break
+                except OSError:
+                    if attempt < 2:
+                        await asyncio.sleep(0.1)  # Wait briefly before retry
+                    else:
+                        logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
+            
+            # Clean up temp file if replace failed
+            if not replaced:
+                try:
+                    import os
                     os.remove(temp_path)
                 except:
                     pass

@@ -524,8 +524,12 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         title: Track title
         spotify_url: Spotify album art URL (optional)
     """
+    logger.debug(f"DEBUG: Entering ensure_album_art_db for {artist} - {title}")  # Debug Log 1
+
     # Check if feature is enabled
-    if not FEATURES.get("album_art_db", True):
+    enabled = FEATURES.get("album_art_db", True)
+    logger.debug(f"DEBUG: album_art_db enabled: {enabled}")  # Debug Log 2
+    if not enabled:
         return
     
     try:
@@ -533,7 +537,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         art_provider = get_album_art_provider()
         
         # Fetch all options in parallel
+        logger.debug(f"DEBUG: Calling get_all_art_options...")  # Debug Log 3
         options = await art_provider.get_all_art_options(artist, album, title, spotify_url)
+        logger.debug(f"DEBUG: get_all_art_options returned {len(options)} options")  # Debug Log 4
         
         if not options:
             logger.debug(f"No album art options found for {artist} - {album or title}")
@@ -852,25 +858,18 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     # Write to temp file first
                     with open(temp_path, "wb") as f:
                         f.write(byte_data)
-                        # Atomic replace with retry for Windows file locking
-                        replaced = False
-                        for attempt in range(3):
-                            try:
-                                os.replace(temp_path, art_path)
-                                replaced = True
-                                break
-                            except OSError:
-                                if attempt < 2:
-                                    await asyncio.sleep(0.1)  # Wait briefly before retry
-                                else:
-                                    logger.debug(f"Could not atomically replace current_art{ext} after 3 attempts (file may be locked)")
-                        
-                        # Clean up temp file if replace failed
-                        if not replaced:
-                            try:
-                                os.remove(temp_path)
-                            except:
-                                pass
+                    # Atomic replace (fails if destination is open on Windows, but that's acceptable)
+                    try:
+                        os.replace(temp_path, art_path)
+                    except OSError as e:
+                        # If replace fails (e.g., file is open), log and continue
+                        # The file will be updated on the next write cycle
+                        logger.debug(f"Could not atomically replace current_art{ext}: {e}")
+                        # Clean up temp file
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
                     
                     # Update last track ID
                     _last_windows_track_id = current_track_id
@@ -979,20 +978,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 
                 # Copy file atomically (preserves pristine quality)
                 shutil.copy2(db_image_path, temp_path)
-                # Atomic replace with retry for Windows file locking
-                replaced = False
-                for attempt in range(3):
-                    try:
-                        os.replace(temp_path, cache_path)
-                        replaced = True
-                        break
-                    except OSError:
-                        if attempt < 2:
-                            await asyncio.sleep(0.1)  # Wait briefly before retry
-                        else:
-                            logger.debug(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
-                
-                if replaced:
+                try:
+                    os.replace(temp_path, cache_path)
                     album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
                     logger.info(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
                     
@@ -1009,8 +996,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         
                         task = asyncio.create_task(background_refresh_db())
                         _running_art_upgrade_tasks[captured_track_id] = task
-                else:
-                    # Clean up temp file if replace failed
+                except OSError as e:
+                    logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
                     try:
                         os.remove(temp_path)
                     except:
@@ -1131,21 +1118,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # Write to temp file first
                         with open(temp_path, "wb") as f:
                             f.write(response.content)
-                        # Atomic replace with retry for Windows file locking
-                        replaced = False
-                        for attempt in range(3):
-                            try:
-                                os.replace(temp_path, art_path)
-                                replaced = True
-                                break
-                            except OSError:
-                                if attempt < 2:
-                                    await asyncio.sleep(0.1)  # Wait briefly before retry
-                                else:
-                                    logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
-                        
-                        # Clean up temp file if replace failed
-                        if not replaced:
+                        # Atomic replace (fails if destination is open on Windows, but that's acceptable)
+                        try:
+                            os.replace(temp_path, art_path)
+                        except OSError as e:
+                            # If replace fails (e.g., file is open), log and continue
+                            # The file will be updated on the next write cycle
+                            logger.debug(f"Could not atomically replace spotify_art.jpg: {e}")
+                            # Clean up temp file
                             try:
                                 os.remove(temp_path)
                             except:
