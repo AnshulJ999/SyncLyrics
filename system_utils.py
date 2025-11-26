@@ -1007,7 +1007,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     
                     # Trigger background task to ensure DB is up-to-date (non-blocking)
                     # Use raw_spotify_url (not album_art_url which is now a local path)
-                    if captured_track_id not in _running_art_upgrade_tasks:
+                    # CRITICAL FIX: Only run this once per track to prevent infinite loops
+                    if captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+                        # Mark as checked immediately to prevent re-entry on next poll
+                        _db_checked_tracks.add(captured_track_id)
+                        
+                        # Limit set size to prevent memory leaks
+                        if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                            # Remove random element
+                            _db_checked_tracks.pop()
+
                         async def background_refresh_db():
                             try:
                                 await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
