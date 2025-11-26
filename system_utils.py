@@ -1,9 +1,10 @@
+from __future__ import annotations
 import subprocess
 import platform
 import re
 import time
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import config
 from config import DEBUG, FEATURES, ALBUM_ART_DB_DIR
 from state_manager import get_state, set_state
@@ -478,7 +479,7 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
         logger.error(f"Failed to save album DB metadata: {e}")
         return False
 
-def _download_and_save_sync(url: str, path: Path) -> tuple[bool, str]:
+def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     """
     Helper function to run download and save in thread executor.
     This performs blocking I/O operations (network request and file save).
