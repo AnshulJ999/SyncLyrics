@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('resources', 'resources'),
+        ('.env.example', '.'),
     ],
     hiddenimports=[
         'winsdk',
@@ -39,7 +40,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,  # Set to False for windowless (GUI) mode
+    console=False,  # Set to True to show console (for debugging)
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

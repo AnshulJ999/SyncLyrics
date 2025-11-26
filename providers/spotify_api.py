@@ -317,7 +317,6 @@ class SpotifyAPI:
                 required_ttl = self.active_ttl if is_playing else self.idle_ttl
             
             if (self._cache_enabled and 
-                self._metadata_cache and 
                 current_time - self._last_metadata_check < required_ttl):
                 
                 self.request_stats['cached_responses'] += 1

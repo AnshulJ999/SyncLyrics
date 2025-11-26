@@ -55,8 +55,42 @@ def build():
         else:
             print("WARNING: Source 'resources' directory not found!")
 
-        print("\nBuild completed successfully!")
-        print("Output directory: build_final/SyncLyrics")
+        # Copy .env.example to build output
+        print("Copying .env.example to output directory...")
+        src_env = Path(".env.example")
+        dst_env = Path("build_final/SyncLyrics/.env.example")
+        
+        if src_env.exists():
+            shutil.copy2(src_env, dst_env)
+            print(f"Copied .env.example to {dst_env}")
+            print("NOTE: Users should rename .env.example to .env and configure it!")
+        else:
+            print("WARNING: .env.example not found!")
+
+        # Copy VBS launchers to build output
+        print("Copying VBS launchers to output directory...")
+        vbs_launchers = ["Run SyncLyrics (EXE).vbs"]
+        for launcher in vbs_launchers:
+            src_vbs = Path(launcher)
+            dst_vbs = Path(f"build_final/{launcher}")
+            
+            if src_vbs.exists():
+                shutil.copy2(src_vbs, dst_vbs)
+                print(f"Copied {launcher} to build_final/")
+            else:
+                print(f"WARNING: {launcher} not found!")
+
+        print("\n" + "="*60)
+        print("Build completed successfully!")
+        print("="*60)
+        print(f"Output directory: build_final/SyncLyrics")
+        print(f"\nHow to run:")
+        print(f"  - Double-click: build_final/SyncLyrics/SyncLyrics.exe")
+        print(f"  - Or use VBS:   build_final/Run SyncLyrics (EXE).vbs")
+        print(f"\nIMPORTANT: Configure .env file before first run!")
+        print(f"  1. Copy .env.example to .env in build_final/SyncLyrics/")
+        print(f"  2. Edit .env with your Spotify API credentials")
+        print("="*60)
     except subprocess.CalledProcessError as e:
         print(f"\nBuild failed with exit code {e.returncode}")
         sys.exit(1)

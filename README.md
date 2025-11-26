@@ -28,6 +28,9 @@ _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 1.  Go to the **[Releases](../../releases)** page.
 2.  Download `SyncLyrics.zip`.
 3.  Extract and run `SyncLyrics.exe`.
+4.  **Configure the app:**
+    *   Rename `.env.example` to `.env` in the `SyncLyrics` folder.
+    *   (Optional) Add your Spotify Client ID/Secret for better reliability.
 
 ### Option 2: Run from Source
 1.  Install Python 3.10+.
@@ -45,10 +48,12 @@ _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 4.  Create your configuration:
     *   Rename `.env.example` to `.env`.
     *   (Optional) Add your Spotify Client ID/Secret for better reliability.
-5.  Run it:
-    ```bash
-    python sync_lyrics.py
-    ```
+5.  **Run the app:**
+    *   **Regular Use (Hidden):** Double-click `Run SyncLyrics.vbs`
+    *   **Debug Mode (Console Visible):** Double-click `Run Debug.vbs` or run:
+        ```bash
+        python sync_lyrics.py
+        ```
 
 ## 🛠️ Build
 To create a standalone executable:
