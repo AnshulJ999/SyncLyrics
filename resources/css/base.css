@@ -85,6 +85,10 @@ body {
     position: relative;
     /* Subtle text glow effect - REVERTED to original elegant style */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    /* Subtle Definition + Soft White Glow */
+    text-shadow: 
+        0 1px 2px rgba(0, 0, 0, 0.4),
+        0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 /* ========== LYRICS STATES ========== */
@@ -112,10 +116,13 @@ body {
     opacity: 1;
     font-weight: 500;
     
-    /* ORIGINAL HALO (Ethereal White Glow) */
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    /* HYBRID SHADOW: Crisp Black Definition + Ethereal White Halo */
+    text-shadow: 
+        0 2px 4px rgba(0, 0, 0, 0.5),   /* Definition */
+        0 0 20px rgba(255, 255, 255, 0.3); /* Glow */
     
-    transform: scale(1.02);
+    /* REMOVE standalone transform: scale(1.02); it does nothing here due to animation */
+    
     letter-spacing: 0.5px;
     animation: wave 3s ease-in-out infinite;
     position: relative;
@@ -133,8 +140,8 @@ body {
     /* Fades to transparent before reaching the box edges */
     background: radial-gradient(
         closest-side, 
-        rgba(0, 0, 0, 0.5) 0%,    /* Core contrast */
-        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
+        rgba(0, 0, 0, 0.6) 0%,    /* Core contrast */
+        rgba(0, 0, 0, 0.15) 60%,   /* Soft fade */
         transparent 100%          /* Invisible edges */
     );
     
@@ -152,18 +159,17 @@ body {
 
 /* ========== ANIMATIONS ========== */
 @keyframes wave {
-
-    /* Gentle floating animation for current line */
+    /* Gentle floating animation for current line + Scale */
     0% {
-        transform: translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 
     50% {
-        transform: translateY(-2px);
+        transform: scale(1.02) translateY(-2px);
     }
 
     100% {
-        transform: translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 }
 
