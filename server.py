@@ -305,25 +305,46 @@ async def get_cover_art():
     from config import CACHE_DIR
     import os
     from system_utils import get_cached_art_path
+    from quart import Response
     
     # Prefer Spotify art if it exists (higher quality)
     spotify_art = CACHE_DIR / "spotify_art.jpg"
     if spotify_art.exists():
-        from quart import send_file
-        return await send_file(spotify_art, mimetype='image/jpeg')
+        try:
+            # Read file into memory to avoid race conditions with concurrent writes
+            with open(spotify_art, 'rb') as f:
+                image_data = f.read()
+            return Response(
+                image_data,
+                mimetype='image/jpeg',
+                headers={'Cache-Control': 'public, max-age=3600'}
+            )
+        except (OSError, IOError) as e:
+            logger.warning(f"Failed to read Spotify art: {e}")
+            # Fall through to Windows Media art
     
     # Fallback to Windows Media art (only if Spotify art doesn't exist)
     art_path = get_cached_art_path()
     if art_path and art_path.exists():
-        from quart import send_file
-        # Determine mimetype based on extension
-        ext = art_path.suffix.lower()
-        mime = 'image/jpeg' # Default
-        if ext == '.png': mime = 'image/png'
-        elif ext == '.bmp': mime = 'image/bmp'
-        elif ext == '.gif': mime = 'image/gif'
-        
-        return await send_file(art_path, mimetype=mime)
+        try:
+            # Read file into memory to avoid race conditions with concurrent writes
+            with open(art_path, 'rb') as f:
+                image_data = f.read()
+            
+            # Determine mimetype based on extension
+            ext = art_path.suffix.lower()
+            mime = 'image/jpeg'  # Default
+            if ext == '.png': mime = 'image/png'
+            elif ext == '.bmp': mime = 'image/bmp'
+            elif ext == '.gif': mime = 'image/gif'
+            
+            return Response(
+                image_data,
+                mimetype=mime,
+                headers={'Cache-Control': 'public, max-age=3600'}
+            )
+        except (OSError, IOError) as e:
+            logger.warning(f"Failed to read album art: {e}")
     
     return "", 404
 

@@ -382,10 +382,24 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     # Clean up old art files before saving new one to prevent stale art bug
                     cleanup_old_art()
                     
-                    # Save to cache
+                    # Save to cache using atomic write to prevent race conditions
                     art_path = CACHE_DIR / f"current_art{ext}"
-                    with open(art_path, "wb") as f:
+                    temp_path = CACHE_DIR / f"current_art{ext}.tmp"
+                    # Write to temp file first
+                    with open(temp_path, "wb") as f:
                         f.write(byte_data)
+                    # Atomic replace (fails if destination is open on Windows, but that's acceptable)
+                    try:
+                        os.replace(temp_path, art_path)
+                    except OSError as e:
+                        # If replace fails (e.g., file is open), log and continue
+                        # The file will be updated on the next write cycle
+                        logger.debug(f"Could not atomically replace current_art{ext}: {e}")
+                        # Clean up temp file
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
                     
                     # Update last track ID
                     _last_windows_track_id = current_track_id
@@ -549,10 +563,6 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # Start background task (non-blocking) and track it
                         task = asyncio.create_task(background_upgrade_art())
                         _running_art_upgrade_tasks[captured_track_id] = task
-                        
-                        # Start background task (non-blocking) and track it
-                        task = asyncio.create_task(background_upgrade_art())
-                        _running_art_upgrade_tasks[captured_track_id] = task
                     
             except Exception as e:
                 logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
@@ -572,10 +582,24 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     )
                     
                     if response.status_code == 200:
-                        # Save to cache
+                        # Save to cache using atomic write to prevent race conditions
                         art_path = CACHE_DIR / "spotify_art.jpg"
-                        with open(art_path, "wb") as f:
+                        temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
+                        # Write to temp file first
+                        with open(temp_path, "wb") as f:
                             f.write(response.content)
+                        # Atomic replace (fails if destination is open on Windows, but that's acceptable)
+                        try:
+                            os.replace(temp_path, art_path)
+                        except OSError as e:
+                            # If replace fails (e.g., file is open), log and continue
+                            # The file will be updated on the next write cycle
+                            logger.debug(f"Could not atomically replace spotify_art.jpg: {e}")
+                            # Clean up temp file
+                            try:
+                                os.remove(temp_path)
+                            except:
+                                pass
                         
                         # Verify actual image resolution
                         try:
