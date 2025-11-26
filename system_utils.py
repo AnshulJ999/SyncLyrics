@@ -588,8 +588,12 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             
             image_path = folder / image_filename
             
+            # NEW: Explicitly check if the file exists on disk, even if metadata says it does
+            # This fixes cases where user might have deleted images but metadata.json remains
+            file_exists_on_disk = image_path.exists()
+
             # Download image if we don't have it or if it's missing
-            if not image_path.exists() or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
+            if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
                 try:
                     # Create a temporary path without extension (will be set by download function)
                     temp_path = folder / provider_name
@@ -994,7 +998,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 try:
                     os.replace(temp_path, cache_path)
                     album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
-                    logger.info(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
+                    # CHANGED: Downgrade to DEBUG to stop console spam on every poll
+                    # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
                     
                     # Trigger background task to ensure DB is up-to-date (non-blocking)
                     # Use raw_spotify_url (not album_art_url which is now a local path)

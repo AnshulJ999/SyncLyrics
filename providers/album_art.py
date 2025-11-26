@@ -437,7 +437,8 @@ class AlbumArtProvider:
                 original_url = re.sub(r'(?<!:)/+', '/', original_url)
                 
                 if original_url != largest_url:
-                    logger.info(f"Last.fm: Removing size segment from URL to get original full-size image")
+                    # CHANGED: Downgrade to DEBUG
+                    logger.debug(f"Last.fm: Removing size segment from URL to get original full-size image")
                     logger.debug(f"Last.fm: Original URL: {largest_url[:80]}...")
                     logger.debug(f"Last.fm: Modified URL: {original_url[:80]}...")
                     largest_url = original_url
