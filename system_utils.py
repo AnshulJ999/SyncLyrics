@@ -41,6 +41,9 @@ _metadata_fetch_counters = {'spotify': 0, 'windows_media': 0}
 _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
 # Track running background art upgrade tasks to prevent duplicates
 _running_art_upgrade_tasks = {}  # Key: track_id, Value: asyncio.Task
+# NEW: Track which songs we've already checked/populated the DB for to prevent infinite loops
+_db_checked_tracks = set()
+_MAX_DB_CHECKED_SIZE = 100
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (color1, color2)
@@ -672,7 +675,8 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             }
             
             # Track highest resolution for auto-selection
-            if resolution > highest_resolution:
+            # FIX: Only select as preferred if the file was successfully downloaded/exists
+            if resolution > highest_resolution and image_path.exists():
                 highest_resolution = resolution
                 preferred_provider = provider_name
         
@@ -1059,12 +1063,20 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     # This ensures DB is populated even if we have a memory cache hit
                     
                     # CRITICAL FIX: Don't run background task if we just loaded from DB
-                    # Use the explicit flag instead of string matching for reliability
-                    if not found_in_db:
+                    # OR if we have already checked/populated the DB for this track in this session
+                    if not found_in_db and captured_track_id not in _db_checked_tracks:
                         if captured_track_id in _running_art_upgrade_tasks:
-                            # Task already running, skip creating duplicate
+                            # Task already running
                             logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
                         else:
+                            # Mark as checked immediately to prevent re-entry on next poll
+                            _db_checked_tracks.add(captured_track_id)
+                            
+                            # Limit set size to prevent memory leaks
+                            if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                                # Remove random element (sets are unordered) - simple cleanup
+                                _db_checked_tracks.pop()
+                            
                             async def background_upgrade_art():
                                 """Background task to fetch high-res art, update cache, and populate DB"""
                                 try:
