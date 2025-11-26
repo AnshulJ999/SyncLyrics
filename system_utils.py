@@ -968,6 +968,15 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             try:
                 # Clean up old art first
                 cleanup_old_art()
+
+                # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our high-res DB art
+                # server.py prefers spotify_art.jpg, so we must delete it to force fallback to current_art.*
+                spotify_art_path = CACHE_DIR / "spotify_art.jpg"
+                if spotify_art_path.exists():
+                    try:
+                        os.remove(spotify_art_path)
+                    except Exception:
+                        pass
                 
                 # Get the original file extension from the DB image (preserves format)
                 original_extension = db_image_path.suffix or '.jpg'
@@ -1128,14 +1137,21 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # Write to temp file first
                         with open(temp_path, "wb") as f:
                             f.write(response.content)
-                        # Atomic replace (fails if destination is open on Windows, but that's acceptable)
-                        try:
-                            os.replace(temp_path, art_path)
-                        except OSError as e:
-                            # If replace fails (e.g., file is open), log and continue
-                            # The file will be updated on the next write cycle
-                            logger.debug(f"Could not atomically replace spotify_art.jpg: {e}")
-                            # Clean up temp file
+                        # Atomic replace with retry for Windows file locking
+                        replaced = False
+                        for attempt in range(3):
+                            try:
+                                os.replace(temp_path, art_path)
+                                replaced = True
+                                break
+                            except OSError:
+                                if attempt < 2:
+                                    await asyncio.sleep(0.1)  # Wait briefly before retry
+                                else:
+                                    logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
+                        
+                        # Clean up temp file if replace failed
+                        if not replaced:
                             try:
                                 os.remove(temp_path)
                             except:

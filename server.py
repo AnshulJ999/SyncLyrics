@@ -410,11 +410,20 @@ async def set_album_art_preference():
             # Clean up old art first
             from system_utils import cleanup_old_art
             cleanup_old_art()
+
+            # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our selected art
+            import os
+            spotify_art_path = CACHE_DIR / "spotify_art.jpg"
+            if spotify_art_path.exists():
+                try:
+                    os.remove(spotify_art_path)
+                except Exception:
+                    pass
             
             # Get the original file extension from the DB image (preserves format)
             original_extension = db_image_path.suffix or '.jpg'
             
-            # Copy to cache atomically with original extension (e.g., current_art.png, current_art.jpg)
+            # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
             cache_path = CACHE_DIR / f"current_art{original_extension}"
             temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
             
@@ -518,7 +527,7 @@ async def get_cover_art():
             return Response(
                 image_data,
                 mimetype='image/jpeg',
-                headers={'Cache-Control': 'public, max-age=3600'}
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
             )
         except (OSError, IOError) as e:
             logger.warning(f"Failed to read Spotify art: {e}")
@@ -543,7 +552,7 @@ async def get_cover_art():
             return Response(
                 image_data,
                 mimetype=mime,
-                headers={'Cache-Control': 'public, max-age=3600'}
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
             )
         except (OSError, IOError) as e:
             logger.warning(f"Failed to read album art: {e}")
