@@ -150,6 +150,7 @@ class SettingsManager:
             "features.provider_stats": Setting("Stats", bool, False, False, "Features", "Track provider stats", "switch"),
             "features.auto_theme": Setting("Auto Theme", bool, True, False, "Features", "Auto-switch theme", "switch"),
             "features.album_art_colors": Setting("Art Colors", bool, True, False, "Features", "Use album art colors", "switch"),
+            "features.album_art_db": Setting("Album Art DB", bool, True, False, "Features", "Enable album art database", "switch"),
 
             # Media Source
             "media_source.spotify.enabled": Setting("Spotify Source", bool, True, True, "Media", "Enable Spotify source", "switch"),
@@ -188,15 +189,33 @@ class SettingsManager:
             try:
                 with open(SETTINGS_FILE, 'r') as f:
                     saved = json.load(f)
-                    # Update keys that exist in definitions
+                    # Update keys
                     for key, val in saved.items():
+                        # LENIENT MODE: Allow loading keys even if not in definitions
                         if key in self._definitions:
+                            # Type conversion if known
                             self._settings[key] = self._definitions[key].validate_and_convert(val)
+                        else:
+                            # Store as-is if unknown
+                            self._settings[key] = val
             except Exception as e:
                 logger.error(f"Failed to load settings.json: {e}")
 
-    def get(self, key: str) -> Any:
-        return self._settings.get(key, self._definitions[key].default)
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get a setting value.
+        Priority:
+        1. Loaded value (from JSON or Schema Default)
+        2. Schema Default (if key in definitions but not in settings dict yet)
+        3. Provided 'default' argument (if key unknown)
+        """
+        if key in self._settings:
+            return self._settings[key]
+        
+        if key in self._definitions:
+            return self._definitions[key].default
+            
+        return default
 
     def set(self, key: str, value: Any) -> bool:
         if key not in self._definitions:
