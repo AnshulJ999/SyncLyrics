@@ -397,7 +397,7 @@ async def set_album_art_preference():
     if not save_album_db_metadata(folder, db_metadata):
         return jsonify({"error": "Failed to save preference"}), 500
     
-    # Copy selected image to cache for immediate use
+    # Copy selected image to cache for immediate use (preserving original format)
     provider_data = providers[provider_name]
     filename = provider_data.get("filename", f"{provider_name}.jpg")
     db_image_path = folder / filename
@@ -408,16 +408,19 @@ async def set_album_art_preference():
             from system_utils import cleanup_old_art
             cleanup_old_art()
             
-            # Copy to cache atomically
-            cache_path = CACHE_DIR / "current_art.jpg"
-            temp_path = CACHE_DIR / "current_art.jpg.tmp"
+            # Get the original file extension from the DB image (preserves format)
+            original_extension = db_image_path.suffix or '.jpg'
+            
+            # Copy to cache atomically with original extension (e.g., current_art.png, current_art.jpg)
+            cache_path = CACHE_DIR / f"current_art{original_extension}"
+            temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
             
             shutil.copy2(db_image_path, temp_path)
             try:
                 import os
                 os.replace(temp_path, cache_path)
             except OSError as e:
-                logger.warning(f"Could not atomically replace current_art.jpg: {e}")
+                logger.warning(f"Could not atomically replace current_art{original_extension}: {e}")
                 try:
                     os.remove(temp_path)
                 except:
@@ -462,12 +465,13 @@ async def serve_album_art_image(folder_name: str, filename: str):
         with open(image_path, 'rb') as f:
             image_data = f.read()
         
-        # Determine mimetype (should be JPG, but check extension)
+        # Determine mimetype based on file extension (preserves original format)
         ext = image_path.suffix.lower()
         mime = 'image/jpeg'  # Default
         if ext == '.png': mime = 'image/png'
         elif ext == '.bmp': mime = 'image/bmp'
         elif ext == '.gif': mime = 'image/gif'
+        elif ext == '.webp': mime = 'image/webp'
         
         return Response(
             image_data,
@@ -512,12 +516,13 @@ async def get_cover_art():
             with open(art_path, 'rb') as f:
                 image_data = f.read()
             
-            # Determine mimetype based on extension
+            # Determine mimetype based on extension (preserves original format)
             ext = art_path.suffix.lower()
             mime = 'image/jpeg'  # Default
             if ext == '.png': mime = 'image/png'
             elif ext == '.bmp': mime = 'image/bmp'
             elif ext == '.gif': mime = 'image/gif'
+            elif ext == '.webp': mime = 'image/webp'
             
             return Response(
                 image_data,

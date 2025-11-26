@@ -278,8 +278,9 @@ def get_cached_art_path() -> Optional[Path]:
     """
     Finds the cached album art file by checking common image extensions.
     Returns the first matching file found.
+    Supports: JPG, PNG, BMP, GIF, WebP (preserves original format).
     """
-    for ext in ['.jpg', '.png', '.bmp', '.gif']:
+    for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
         path = CACHE_DIR / f"current_art{ext}"
         if path.exists():
             return path
@@ -289,12 +290,13 @@ def cleanup_old_art() -> None:
     """
     Removes previous album art files to prevent conflicts.
     
-    When switching songs, Windows might provide a different image format (e.g., PNG instead of JPG).
+    When switching songs, the image format might change (e.g., PNG instead of JPG).
     If we don't delete the old file, get_cached_art_path() might return the stale file
     because it checks extensions in order (.jpg first, then .png, etc.).
     This function ensures only the current song's art exists.
+    Supports: JPG, PNG, BMP, GIF, WebP (preserves original format).
     """
-    for ext in ['.jpg', '.png', '.bmp', '.gif']:
+    for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
         try:
             path = CACHE_DIR / f"current_art{ext}"
             if path.exists():
@@ -364,40 +366,79 @@ def get_album_db_folder(artist: str, album: Optional[str]) -> Path:
     
     return ALBUM_ART_DB_DIR / folder_name
 
-def save_image_as_jpg(image_data: bytes, output_path: Path) -> bool:
+def save_image_original(image_data: bytes, output_path: Path, file_extension: str = None) -> bool:
     """
-    Convert and save image data as optimized JPG.
-    Handles any input format (PNG, JPG, etc.) and converts to JPG.
+    Save image data in its original format without conversion.
+    Preserves the pristine quality of the source image.
     
     Args:
-        image_data: Raw image bytes
-        output_path: Path where to save the JPG file
+        image_data: Raw image bytes from the provider
+        output_path: Path where to save the image file (should include correct extension)
+        file_extension: Optional file extension (e.g., '.jpg', '.png'). 
+                       If not provided, will be inferred from output_path.
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Open image from bytes
-        img = Image.open(BytesIO(image_data))
+        # Ensure output_path has the correct extension
+        if file_extension:
+            # Replace extension if provided
+            output_path = output_path.with_suffix(file_extension)
         
-        # Convert to RGB if necessary (removes alpha channel for JPG)
-        if img.mode in ('RGBA', 'LA', 'P'):
-            # Create white background for transparent images
-            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'P':
-                img = img.convert('RGBA')
-            rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-            img = rgb_img
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Save as optimized JPG (quality 95 for good balance of size/quality)
-        img.save(output_path, 'JPEG', quality=95, optimize=True)
+        # Write original bytes directly (no conversion = no quality loss)
+        with open(output_path, 'wb') as f:
+            f.write(image_data)
         
         return True
     except Exception as e:
-        logger.error(f"Failed to save image as JPG to {output_path}: {e}")
+        logger.error(f"Failed to save image to {output_path}: {e}")
         return False
+
+def determine_image_extension(url: str, content_type: str = None) -> str:
+    """
+    Determine the appropriate file extension for an image based on URL or Content-Type.
+    
+    Args:
+        url: Image URL (may contain extension in path)
+        content_type: HTTP Content-Type header (e.g., 'image/png', 'image/jpeg')
+        
+    Returns:
+        File extension with dot (e.g., '.jpg', '.png', '.webp')
+    """
+    # First, try to get extension from Content-Type header (most reliable)
+    if content_type:
+        content_type_lower = content_type.lower().split(';')[0].strip()
+        if 'image/jpeg' in content_type_lower or 'image/jpg' in content_type_lower:
+            return '.jpg'
+        elif 'image/png' in content_type_lower:
+            return '.png'
+        elif 'image/webp' in content_type_lower:
+            return '.webp'
+        elif 'image/gif' in content_type_lower:
+            return '.gif'
+        elif 'image/bmp' in content_type_lower:
+            return '.bmp'
+    
+    # Fallback: try to extract from URL
+    if url:
+        url_lower = url.lower()
+        # Check common image extensions in URL
+        for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
+            if ext in url_lower:
+                # Find the last occurrence to get the actual extension
+                idx = url_lower.rfind(ext)
+                if idx > 0:
+                    return ext
+        
+        # Check for query parameters that might indicate format
+        if 'format=jpg' in url_lower or 'format=jpeg' in url_lower:
+            return '.jpg'
+        elif 'format=png' in url_lower:
+            return '.png'
+    
+    # Default to JPG if we can't determine (most common format)
+    return '.jpg'
 
 def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
     """
@@ -437,30 +478,43 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
         logger.error(f"Failed to save album DB metadata: {e}")
         return False
 
-def _download_and_save_sync(url: str, path: Path) -> bool:
+def _download_and_save_sync(url: str, path: Path) -> tuple[bool, str]:
     """
     Helper function to run download and save in thread executor.
-    This performs blocking I/O operations (network request and image processing).
+    This performs blocking I/O operations (network request and file save).
+    Preserves the original image format without conversion.
     
     Args:
         url: URL to download image from
-        path: Path where to save the JPG file
+        path: Path where to save the image file (extension will be determined automatically)
         
     Returns:
-        True if successful, False otherwise
+        Tuple of (success: bool, extension: str)
+        - success: True if download and save succeeded, False otherwise
+        - extension: File extension used (e.g., '.jpg', '.png')
     """
     try:
         response = requests.get(url, timeout=10, stream=True)
         response.raise_for_status()
-        return save_image_as_jpg(response.content, path)
+        
+        # Get Content-Type from response headers
+        content_type = response.headers.get('Content-Type', '')
+        
+        # Determine file extension from URL or Content-Type
+        file_extension = determine_image_extension(url, content_type)
+        
+        # Save original image bytes (no conversion = pristine quality)
+        success = save_image_original(response.content, path, file_extension)
+        
+        return (success, file_extension)
     except Exception as e:
         logger.warning(f"Download failed for {url}: {e}")
-        return False
+        return (False, '.jpg')  # Return default extension on failure
 
 async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> None:
     """
     Background task to fetch all album art options and save them to the database.
-    Downloads images from all providers and saves them as JPG files.
+    Downloads images from all providers and saves them in their original format (pristine quality).
     Creates metadata.json with URLs, resolutions, and preferences.
     
     Args:
@@ -516,23 +570,52 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             height = option.get("height", 0)
             resolution = max(width, height) if width > 0 and height > 0 else 0
             
-            # Check if we already have this image
-            image_filename = f"{provider_name}.jpg"
+            # Check if we already have this image (check metadata for correct filename)
+            image_filename = None
+            if existing_metadata and provider_name in existing_metadata.get("providers", {}):
+                # Use existing filename from metadata (preserves original extension)
+                image_filename = existing_metadata["providers"][provider_name].get("filename", f"{provider_name}.jpg")
+            else:
+                # Default filename (will be updated after download with correct extension)
+                image_filename = f"{provider_name}.jpg"
+            
             image_path = folder / image_filename
             
             # Download image if we don't have it or if it's missing
             if not image_path.exists() or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
                 try:
-                    # Run blocking download/convert in executor to avoid freezing the event loop
-                    success = await loop.run_in_executor(
+                    # Create a temporary path without extension (will be set by download function)
+                    temp_path = folder / provider_name
+                    
+                    # Run blocking download/save in executor to avoid freezing the event loop
+                    # Returns (success: bool, extension: str)
+                    success, file_extension = await loop.run_in_executor(
                         None,
                         _download_and_save_sync,
                         url,
-                        image_path
+                        temp_path
                     )
                     
                     if success:
-                        logger.info(f"Downloaded and saved {provider_name} art for {artist} - {album or title}")
+                        # Update filename with correct extension
+                        image_filename = f"{provider_name}{file_extension}"
+                        image_path = folder / image_filename
+                        
+                        # If temp file has different name, rename it
+                        temp_path_with_ext = temp_path.with_suffix(file_extension)
+                        if temp_path_with_ext.exists() and temp_path_with_ext != image_path:
+                            # Move to final location
+                            try:
+                                os.replace(temp_path_with_ext, image_path)
+                            except:
+                                # If replace fails, try copy then delete
+                                shutil.copy2(temp_path_with_ext, image_path)
+                                try:
+                                    os.remove(temp_path_with_ext)
+                                except:
+                                    pass
+                        
+                        logger.info(f"Downloaded and saved {provider_name} art ({file_extension}) for {artist} - {album or title}")
                         
                         # Get actual resolution from saved image (also run in executor since it's I/O)
                         try:
@@ -567,13 +650,13 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                         existing_provider_data = existing_metadata["providers"][provider_name]
                         resolution_str = existing_provider_data.get("resolution", resolution_str)
             
-            # Store provider data
+            # Store provider data (with actual filename including extension)
             providers_data[provider_name] = {
                 "url": url,
                 "resolution": resolution_str,
                 "width": width if width > 0 else 0,
                 "height": height if height > 0 else 0,
-                "filename": image_filename,
+                "filename": image_filename,  # Now includes correct extension (e.g., "iTunes.png")
                 "downloaded": image_path.exists()
             }
             
@@ -874,21 +957,24 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             db_image_path = db_result["path"]
             db_metadata = db_result["metadata"]
             
-            # Atomic copy from DB to cache for immediate use
+            # Atomic copy from DB to cache for immediate use (preserving original format)
             try:
                 # Clean up old art first
                 cleanup_old_art()
                 
-                # Copy DB image to cache as JPG
-                cache_path = CACHE_DIR / "current_art.jpg"
-                temp_path = CACHE_DIR / "current_art.jpg.tmp"
+                # Get the original file extension from the DB image (preserves format)
+                original_extension = db_image_path.suffix or '.jpg'
                 
-                # Copy file atomically
+                # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
+                cache_path = CACHE_DIR / f"current_art{original_extension}"
+                temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
+                
+                # Copy file atomically (preserves pristine quality)
                 shutil.copy2(db_image_path, temp_path)
                 try:
                     os.replace(temp_path, cache_path)
                     album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
-                    logger.info(f"Using album art from database for {captured_artist} - {captured_album or captured_title}")
+                    logger.info(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
                     
                     # Trigger background task to ensure DB is up-to-date (non-blocking)
                     # Use raw_spotify_url (not album_art_url which is now a local path)
@@ -904,7 +990,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         task = asyncio.create_task(background_refresh_db())
                         _running_art_upgrade_tasks[captured_track_id] = task
                 except OSError as e:
-                    logger.debug(f"Could not atomically replace current_art.jpg: {e}")
+                    logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
                     try:
                         os.remove(temp_path)
                     except:
