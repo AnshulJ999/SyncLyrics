@@ -83,7 +83,7 @@ body {
     transform: translateZ(0);
     -webkit-font-smoothing: antialiased;
     position: relative;
-    /* Subtle text glow effect */
+    /* Subtle text glow effect - REVERTED to original elegant style */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
@@ -111,7 +111,7 @@ body {
     font-size: clamp(1.5rem, 4vw, 3rem);
     opacity: 1;
     font-weight: 500;
-    /* Enhanced glow effect */
+    /* Enhanced glow effect - REVERTED to original elegant style */
     text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
     transform: scale(1.02);
     letter-spacing: 0.5px;
@@ -794,8 +794,8 @@ body.sharp-mode .background-layer {
     /* Reset transforms to prevent scaling blur */
     transform: none !important;
     -webkit-transform: none !important;
-    /* Force High Quality Scaling - use best algorithm (Lanczos/Bicubic) for downscaling */
-    image-rendering: auto; /* Standard fallback */
+    /* CHANGED: Use standard 'auto' for best photo quality (smoother than optimize-contrast) */
+    image-rendering: auto; 
     /* Performance hints for smooth transitions */
     will-change: opacity, background-image;
     /* Hardware acceleration (safe) */
@@ -809,7 +809,7 @@ body.sharp-mode .background-overlay {
     -webkit-backdrop-filter: none !important;
      /* FIX: Override the default flat black 0.6 opacity */
     /* Make it almost transparent to let the art shine */
-    background: rgba(0, 0, 0, 0.0) !important; 
+    background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;
     
     /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
     /* background: rgba(0, 0, 0, 0.1) !important; */
