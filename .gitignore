@@ -13,6 +13,8 @@ Unused/
 tests/
 full_project_code.txt
 share_project.py
+.cursorignore
+.cursor/
 
 # resources/images/icon.ico
 lyrics_database/
