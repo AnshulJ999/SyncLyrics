@@ -111,12 +111,43 @@ body {
     font-size: clamp(1.5rem, 4vw, 3rem);
     opacity: 1;
     font-weight: 500;
-    /* Enhanced glow effect - REVERTED to original elegant style */
+    
+    /* ORIGINAL HALO (Ethereal White Glow) */
     text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    
     transform: scale(1.02);
     letter-spacing: 0.5px;
-    /* Apply floating animation */
     animation: wave 3s ease-in-out infinite;
+    position: relative;
+    z-index: 10;
+    
+    /* DYNAMIC FADE PILL */
+    width: fit-content;
+    max-width: 90%;
+    margin: 0 auto;
+    /* More vertical padding to allow the fade to taper off */
+    padding: 15px 40px; 
+    
+    /* RADIAL GRADIENT FADE */
+    /* Darkest in the very center behind text */
+    /* Fades to transparent before reaching the box edges */
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.5) 0%,    /* Core contrast */
+        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
+        transparent 100%          /* Invisible edges */
+    );
+    
+    /* Remove standard box shadow and border radius */
+    box-shadow: none;
+    border-radius: 0; /* Gradient handles the shape */
+    
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+}
+
+/* REMOVE OLD PSEUDO-ELEMENT RIBBON if it exists */
+.current::before {
+    display: none;
 }
 
 /* ========== ANIMATIONS ========== */
@@ -809,8 +840,10 @@ body.sharp-mode .background-overlay {
     -webkit-backdrop-filter: none !important;
      /* FIX: Override the default flat black 0.6 opacity */
     /* Make it almost transparent to let the art shine */
-    background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;
-    
+ /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
+
+    background: rgba(0, 0, 0, 0.05) !important;
+
     /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
     /* background: rgba(0, 0, 0, 0.1) !important; */
     /* Vignette gradient: vibrant center, dark edges for text readability */
