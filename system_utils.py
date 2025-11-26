@@ -976,65 +976,83 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             db_image_path = db_result["path"]
             db_metadata = db_result["metadata"]
             
-            # Atomic copy from DB to cache for immediate use (preserving original format)
-            try:
-                # Clean up old art first
-                cleanup_old_art()
+            # Always set the URL to our local cache route
+            album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
 
-                # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our high-res DB art
-                # server.py prefers spotify_art.jpg, so we must delete it to force fallback to current_art.*
-                spotify_art_path = CACHE_DIR / "spotify_art.jpg"
-                if spotify_art_path.exists():
-                    try:
-                        os.remove(spotify_art_path)
-                    except Exception:
-                        pass
-                
-                # Get the original file extension from the DB image (preserves format)
-                original_extension = db_image_path.suffix or '.jpg'
-                
-                # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
-                cache_path = CACHE_DIR / f"current_art{original_extension}"
-                temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
-                
-                # Copy file atomically (preserves pristine quality)
-                shutil.copy2(db_image_path, temp_path)
+            # Check if we need to perform the physical file copy
+            should_copy = True
+            if hasattr(_get_current_song_meta_data_spotify, '_last_db_art_track_id') and \
+               _get_current_song_meta_data_spotify._last_db_art_track_id == captured_track_id:
+                # We already processed this track. Check if file actually exists.
+                if get_cached_art_path():
+                    should_copy = False
+            
+            if should_copy:
+                # Atomic copy from DB to cache for immediate use (preserving original format)
                 try:
-                    os.replace(temp_path, cache_path)
-                    album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
-                    # CHANGED: Downgrade to DEBUG to stop console spam on every poll
-                    # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
+                    # Clean up old art first
+                    cleanup_old_art()
+    
+                    # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our high-res DB art
+                    # server.py prefers spotify_art.jpg, so we must delete it to force fallback to current_art.*
+                    spotify_art_path = CACHE_DIR / "spotify_art.jpg"
+                    if spotify_art_path.exists():
+                        try:
+                            os.remove(spotify_art_path)
+                        except Exception:
+                            pass
                     
-                    # Trigger background task to ensure DB is up-to-date (non-blocking)
-                    # Use raw_spotify_url (not album_art_url which is now a local path)
-                    # CRITICAL FIX: Only run this once per track to prevent infinite loops
-                    if captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
-                        # Mark as checked immediately to prevent re-entry on next poll
-                        _db_checked_tracks.add(captured_track_id)
-                        
-                        # Limit set size to prevent memory leaks
-                        if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                            # Remove random element
-                            _db_checked_tracks.pop()
-
-                        async def background_refresh_db():
-                            try:
-                                await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
-                            except Exception as e:
-                                logger.debug(f"Background DB refresh failed: {e}")
-                            finally:
-                                _running_art_upgrade_tasks.pop(captured_track_id, None)
-                        
-                        task = asyncio.create_task(background_refresh_db())
-                        _running_art_upgrade_tasks[captured_track_id] = task
-                except OSError as e:
-                    logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
+                    # Get the original file extension from the DB image (preserves format)
+                    original_extension = db_image_path.suffix or '.jpg'
+                    
+                    # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
+                    cache_path = CACHE_DIR / f"current_art{original_extension}"
+                    temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
+                    
+                    # Copy file atomically (preserves pristine quality)
+                    shutil.copy2(db_image_path, temp_path)
                     try:
-                        os.remove(temp_path)
-                    except:
-                        pass
-            except Exception as e:
-                logger.debug(f"Failed to copy DB image to cache: {e}")
+                        os.replace(temp_path, cache_path)
+                        album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
+                        # CHANGED: Downgrade to DEBUG to stop console spam on every poll
+                        # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
+                        
+                        # Mark this track as processed so we don't copy again
+                        _get_current_song_meta_data_spotify._last_db_art_track_id = captured_track_id
+                        
+                        # Trigger background task to ensure DB is up-to-date (non-blocking)
+                        # Use raw_spotify_url (not album_art_url which is now a local path)
+                        # CRITICAL FIX: Only run this once per track to prevent infinite loops
+                        if captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+                            # Mark as checked immediately to prevent re-entry on next poll
+                            _db_checked_tracks.add(captured_track_id)
+                            
+                            # Limit set size to prevent memory leaks
+                            if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                                # Remove random element (sets are unordered) - simple cleanup
+                                _db_checked_tracks.pop()
+
+                            async def background_refresh_db():
+                                try:
+                                    await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
+                                except Exception as e:
+                                    logger.debug(f"Background DB refresh failed: {e}")
+                                finally:
+                                    _running_art_upgrade_tasks.pop(captured_track_id, None)
+                            
+                            task = asyncio.create_task(background_refresh_db())
+                            _running_art_upgrade_tasks[captured_track_id] = task
+                    except OSError as e:
+                        logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
+                except Exception as e:
+                    logger.debug(f"Failed to copy DB image to cache: {e}")
+            else:
+                # Even if we didn't copy, we need to set the URL correctly
+                album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
@@ -1150,7 +1168,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             except Exception as e:
                 logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
         
-        if album_art_url:
+        # CRITICAL FIX: Only attempt download if it's a remote URL (not a local path starting with /)
+        # This prevents 'MissingSchema' exceptions when using cached art
+        if album_art_url and not album_art_url.startswith('/'):
             try:
                 # Check if we need to download new art (track changed)
                 if not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
