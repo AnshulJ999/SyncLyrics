@@ -85,10 +85,6 @@ body {
     position: relative;
     /* Subtle text glow effect - REVERTED to original elegant style */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-    /* Subtle Definition + Soft White Glow */
-    text-shadow: 
-        0 1px 2px rgba(0, 0, 0, 0.4),
-        0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 /* ========== LYRICS STATES ========== */
@@ -100,8 +96,6 @@ body {
     font-size: clamp(0.8rem, 2vw, 1.4rem);
     transform: translateY(10px);
     filter: blur(1px);
-    /* Basic contrast shadow */
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 /* Lines immediately before/after current */
@@ -111,24 +105,6 @@ body {
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
     
-    /* SUBTLE PILL BACKGROUND for readability on light art */
-    width: fit-content;
-    margin: 0 auto;
-    padding: 5px 25px;
-    
-    background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Medium dark core */
-        rgba(0, 0, 0, 0.1) 60%,   /* Soft fade */
-        transparent 100%
-    );
-    
-    /* HYBRID SHADOW: Definition + Soft Glow */
-    text-shadow: 
-        0 1px 2px rgba(0, 0, 0, 0.5),
-        0 0 10px rgba(255, 255, 255, 0.1);
-        
-    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Currently active line */
@@ -137,17 +113,16 @@ body {
     opacity: 1;
     font-weight: 500;
     
-    /* HYBRID SHADOW: Crisp Black Definition + Ethereal White Halo */
-    text-shadow: 
-        0 2px 4px rgba(0, 0, 0, 0.5),   /* Definition */
-        0 0 20px rgba(255, 255, 255, 0.3); /* Glow */
-    
-    /* REMOVE standalone transform: scale(1.02); it does nothing here due to animation */
-    
     letter-spacing: 0.5px;
     animation: wave 3s ease-in-out infinite;
     position: relative;
     z-index: 10;
+    
+    /* Enhanced glow effect */
+
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+
+    transform: scale(1.02) translateY(0);
     
     /* DYNAMIC FADE PILL */
     width: fit-content;
@@ -156,26 +131,6 @@ body {
     /* More vertical padding to allow the fade to taper off */
     padding: 15px 40px; 
     
-    /* RADIAL GRADIENT FADE */
-    /* Darkest in the very center behind text */
-    /* Fades to transparent before reaching the box edges */
-    background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Core contrast */
-        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
-        transparent 100%          /* Invisible edges */
-    );
-    
-    /* Remove standard box shadow and border radius */
-    box-shadow: none;
-    border-radius: 0; /* Gradient handles the shape */
-    
-    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
-}
-
-/* REMOVE OLD PSEUDO-ELEMENT RIBBON if it exists */
-.current::before {
-    display: none;
 }
 
 /* ========== ANIMATIONS ========== */
@@ -848,29 +803,35 @@ body[data-minimal="true"] .album-art {
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
     /* Remove all blur filters for maximum sharpness and clarity */
-    filter: none !important;
+    /* filter: none !important; */
 
     filter: blur(0.5px) !important;
 
     /* Reset transforms to prevent scaling blur */
     transform: none !important;
     -webkit-transform: none !important;
-    /* CHANGED: Use standard 'auto' for best photo quality (smoother than optimize-contrast) */
+
+    /* KEY: Forces browser to use best smoothing algorithm (bicubic/lanczos) */
     image-rendering: high-quality; 
+    
     /* Performance hints for smooth transitions */
     will-change: opacity, background-image;
-    /* Hardware acceleration (safe) */
+    
+    /* Hardware acceleration */
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
 
 body.sharp-mode .background-overlay {
     /* Remove backdrop blur that causes haziness - this was the main culprit! */
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    /* backdrop-filter: none !important; */
+    /* -webkit-backdrop-filter: none !important; */
      /* FIX: Override the default flat black 0.6 opacity */
     /* Make it almost transparent to let the art shine */
  /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
+    backdrop-filter: blur(0.5px) saturate(105%) !important;
+    -webkit-backdrop-filter: blur(0.5px) saturate(105%) !important;
+
 
     background: rgba(0, 0, 0, 0.05) !important;
 
@@ -882,6 +843,36 @@ body.sharp-mode .background-overlay {
 
    /* background: radial-gradient(circle at center, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.75) 100%) !important;*/
 }
+
+/* ========== SHARP MODE SPECIFIC OVERRIDES ========== */
+/* Since Sharp Mode has almost no global overlay (5%), we need stronger local contrast for text */
+
+body.sharp-mode .current {
+    /* Darker center (70%) ensures readability even on pure white backgrounds */
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.4) 0%,    /* Darker core (was 0.4) */
+        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
+        transparent 100%
+    ) !important;
+    
+    /* Stronger definition shadow (instead of stroke) */
+    text-shadow: 
+        0 2px 4px rgba(0, 0, 0, 0.8),   /* Darker definition */
+        0 0 20px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Also slightly darken the adjacent lines in Sharp Mode */
+body.sharp-mode .previous,
+body.sharp-mode .next {
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.5) 0%,    /* Darker core (was 0.4) */
+        rgba(0, 0, 0, 0.1) 60%, 
+        transparent 100%
+    ) !important;
+}
+
 
 /* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
 /* Soft mode: Medium blur album art background - balanced between sharp and blurred */
@@ -1041,31 +1032,3 @@ body.soft-mode .background-overlay {
     margin-bottom: 0;
 }
 
-/* ========== SHARP MODE SPECIFIC OVERRIDES ========== */
-/* Since Sharp Mode has almost no global overlay (5%), we need stronger local contrast for text */
-
-body.sharp-mode .current {
-    /* Darker center (70%) ensures readability even on pure white backgrounds */
-    background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Darker core (was 0.4) */
-        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
-        transparent 100%
-    ) !important;
-    
-    /* Stronger definition shadow (instead of stroke) */
-    text-shadow: 
-        0 2px 4px rgba(0, 0, 0, 0.8),   /* Darker definition */
-        0 0 20px rgba(255, 255, 255, 0.3) !important;
-}
-
-/* Also slightly darken the adjacent lines in Sharp Mode */
-body.sharp-mode .previous,
-body.sharp-mode .next {
-    background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.5) 0%,    /* Darker core (was 0.4) */
-        rgba(0, 0, 0, 0.1) 60%, 
-        transparent 100%
-    ) !important;
-}

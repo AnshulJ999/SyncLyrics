@@ -53,7 +53,12 @@ def setup_logging(
     # Create timestamp-based log file name if not provided
     if not log_file:
         log_file = "app.log"
-    log_path = LOGS_DIR / log_file
+    
+    # Path for the standard INFO log
+    info_log_path = LOGS_DIR / log_file
+    
+    # Path for the DEBUG log
+    debug_log_path = LOGS_DIR / "debug.log"
     
     # Get the root logger
     root_logger = logging.getLogger()
@@ -69,17 +74,40 @@ def setup_logging(
         console_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT))
         root_logger.addHandler(console_handler)
     
-    # File handler (detailed format)
-    # Rotate logs: 1MB max size, keep 10 backups
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_path, 
+    # --- INFO File Handler (Session-based, High Backups) ---
+    # maxBytes=0 means it won't rotate by size automatically.
+    # We will force rotation on startup to create a new file per session.
+    info_file_handler = logging.handlers.RotatingFileHandler(
+        info_log_path, 
         maxBytes=1*1024*1024, 
-        backupCount=10, 
+        backupCount=15, 
         encoding='utf-8'
     )
-    file_handler.setLevel(getattr(logging, file_level.upper()))
-    file_handler.setFormatter(logging.Formatter(FILE_FORMAT))
-    root_logger.addHandler(file_handler)
+    
+    # Force rotation if file exists and has content (New session = new file)
+    if info_log_path.exists() and info_log_path.stat().st_size > 0:
+        info_file_handler.doRollover()
+        
+    info_file_handler.setLevel(logging.INFO)
+    info_file_handler.setFormatter(logging.Formatter(FILE_FORMAT))
+    root_logger.addHandler(info_file_handler)
+
+    # DEBUG File handler (Detailed debugging)
+    # Rotate logs: 1MB max size, keep 5 backups
+    debug_file_handler = logging.handlers.RotatingFileHandler(
+        debug_log_path, 
+        maxBytes=1*1024*1024, 
+        backupCount=5, 
+        encoding='utf-8'
+    )
+    
+    # Force rotation if file exists and has content
+    if debug_log_path.exists() and debug_log_path.stat().st_size > 0:
+        debug_file_handler.doRollover()
+        
+    debug_file_handler.setLevel(logging.DEBUG)
+    debug_file_handler.setFormatter(logging.Formatter(FILE_FORMAT))
+    root_logger.addHandler(debug_file_handler)
     
     # Configure specific loggers
     if log_providers:
@@ -105,8 +133,9 @@ def setup_logging(
     _logging_initialized = True
     
     # Log initial setup message
-    root_logger.info(f"Logging initialized - Console: {console_level}, File: {file_level}")
-    root_logger.debug(f"Log file: {log_path}")
+    root_logger.info(f"Logging initialized - Console: {console_level}")
+    root_logger.info(f"Info Log file: {info_log_path}")
+    root_logger.debug(f"Debug Log file: {debug_log_path}")
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the given name"""
