@@ -548,182 +548,182 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         if not enabled:
             return
     
-    try:
-        # Get album art provider
-        art_provider = get_album_art_provider()
-        
-        # Fetch all options in parallel
-        logger.debug(f"DEBUG: Calling get_all_art_options...")  # Debug Log 3
-        options = await art_provider.get_all_art_options(artist, album, title, spotify_url)
-        logger.debug(f"DEBUG: get_all_art_options returned {len(options)} options")  # Debug Log 4
-        
-        if not options:
-            logger.debug(f"No album art options found for {artist} - {album or title}")
-            return
-        
-        # Get folder path
-        folder = get_album_db_folder(artist, album or title)
-        folder.mkdir(parents=True, exist_ok=True)
-        
-        # Check if metadata already exists (to avoid re-downloading)
-        metadata_path = folder / "metadata.json"
-        existing_metadata = None
-        if metadata_path.exists():
-            try:
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    existing_metadata = json.load(f)
-            except:
-                pass
-        
-        # Download and save images for each provider
-        providers_data = {}
-        preferred_provider = None
-        highest_resolution = 0
-        
-        # Get event loop for running blocking I/O in executor
-        loop = asyncio.get_running_loop()
-        
-        for option in options:
-            provider_name = option["provider"]
-            url = option["url"]
-            resolution_str = option["resolution"]
+        try:
+            # Get album art provider
+            art_provider = get_album_art_provider()
             
-            # Extract resolution for comparison
-            width = option.get("width", 0)
-            height = option.get("height", 0)
-            resolution = max(width, height) if width > 0 and height > 0 else 0
+            # Fetch all options in parallel
+            logger.debug(f"DEBUG: Calling get_all_art_options...")  # Debug Log 3
+            options = await art_provider.get_all_art_options(artist, album, title, spotify_url)
+            logger.debug(f"DEBUG: get_all_art_options returned {len(options)} options")  # Debug Log 4
             
-            # Check if we already have this image (check metadata for correct filename)
-            image_filename = None
-            if existing_metadata and provider_name in existing_metadata.get("providers", {}):
-                # Use existing filename from metadata (preserves original extension)
-                image_filename = existing_metadata["providers"][provider_name].get("filename", f"{provider_name}.jpg")
-            else:
-                # Default filename (will be updated after download with correct extension)
-                image_filename = f"{provider_name}.jpg"
+            if not options:
+                logger.debug(f"No album art options found for {artist} - {album or title}")
+                return
             
-            image_path = folder / image_filename
+            # Get folder path
+            folder = get_album_db_folder(artist, album or title)
+            folder.mkdir(parents=True, exist_ok=True)
             
-            # NEW: Explicitly check if the file exists on disk, even if metadata says it does
-            # This fixes cases where user might have deleted images but metadata.json remains
-            file_exists_on_disk = image_path.exists()
-
-            # Download image if we don't have it or if it's missing
-            if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
+            # Check if metadata already exists (to avoid re-downloading)
+            metadata_path = folder / "metadata.json"
+            existing_metadata = None
+            if metadata_path.exists():
                 try:
-                    # Create a temporary path without extension (will be set by download function)
-                    temp_path = folder / provider_name
-                    
-                    # Run blocking download/save in executor to avoid freezing the event loop
-                    # Returns (success: bool, extension: str)
-                    success, file_extension = await loop.run_in_executor(
-                        None,
-                        _download_and_save_sync,
-                        url,
-                        temp_path
-                    )
-                    
-                    if success:
-                        # Update filename with correct extension
-                        image_filename = f"{provider_name}{file_extension}"
-                        image_path = folder / image_filename
-                        
-                        # If temp file has different name, rename it
-                        temp_path_with_ext = temp_path.with_suffix(file_extension)
-                        if temp_path_with_ext.exists() and temp_path_with_ext != image_path:
-                            # Move to final location
-                            try:
-                                os.replace(temp_path_with_ext, image_path)
-                            except:
-                                # If replace fails, try copy then delete
-                                shutil.copy2(temp_path_with_ext, image_path)
-                                try:
-                                    os.remove(temp_path_with_ext)
-                                except:
-                                    pass
-                        
-                        logger.info(f"Downloaded and saved {provider_name} art ({file_extension}) for {artist} - {album or title}")
-                        
-                        # Get actual resolution from saved image (also run in executor since it's I/O)
-                        try:
-                            def get_image_resolution(path: Path) -> tuple:
-                                with Image.open(path) as img:
-                                    return img.size
-                            
-                            actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, image_path)
-                            resolution = max(actual_width, actual_height)
-                            resolution_str = f"{actual_width}x{actual_height}"
-                            # Update width/height with actual values
-                            width = actual_width
-                            height = actual_height
-                        except:
-                            pass
-                    else:
-                        logger.warning(f"Failed to save {provider_name} art for {artist} - {album or title}")
-                        continue
-                except Exception as e:
-                    logger.warning(f"Failed to download {provider_name} art: {e}")
-                    continue
-            else:
-                # Image exists, get resolution from file (run in executor to avoid blocking)
-                try:
-                    def get_image_resolution_existing(path: Path) -> tuple:
-                        with Image.open(path) as img:
-                            return img.size
-                    
-                    actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, image_path)
-                    resolution = max(actual_width, actual_height)
-                    resolution_str = f"{actual_width}x{actual_height}"
-                    # Update width/height with actual values
-                    width = actual_width
-                    height = actual_height
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        existing_metadata = json.load(f)
                 except:
-                    # Fallback to metadata if available
-                    if existing_metadata and provider_name in existing_metadata.get("providers", {}):
-                        existing_provider_data = existing_metadata["providers"][provider_name]
-                        resolution_str = existing_provider_data.get("resolution", resolution_str)
+                    pass
             
-            # Store provider data (with actual filename including extension)
-            providers_data[provider_name] = {
-                "url": url,
-                "resolution": resolution_str,
-                "width": width,
-                "height": height,
-                "filename": image_filename,  # Now includes correct extension (e.g., "iTunes.png")
-                "downloaded": image_path.exists()
+            # Download and save images for each provider
+            providers_data = {}
+            preferred_provider = None
+            highest_resolution = 0
+            
+            # Get event loop for running blocking I/O in executor
+            loop = asyncio.get_running_loop()
+            
+            for option in options:
+                provider_name = option["provider"]
+                url = option["url"]
+                resolution_str = option["resolution"]
+                
+                # Extract resolution for comparison
+                width = option.get("width", 0)
+                height = option.get("height", 0)
+                resolution = max(width, height) if width > 0 and height > 0 else 0
+                
+                # Check if we already have this image (check metadata for correct filename)
+                image_filename = None
+                if existing_metadata and provider_name in existing_metadata.get("providers", {}):
+                    # Use existing filename from metadata (preserves original extension)
+                    image_filename = existing_metadata["providers"][provider_name].get("filename", f"{provider_name}.jpg")
+                else:
+                    # Default filename (will be updated after download with correct extension)
+                    image_filename = f"{provider_name}.jpg"
+                
+                image_path = folder / image_filename
+                
+                # NEW: Explicitly check if the file exists on disk, even if metadata says it does
+                # This fixes cases where user might have deleted images but metadata.json remains
+                file_exists_on_disk = image_path.exists()
+
+                # Download image if we don't have it or if it's missing
+                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
+                    try:
+                        # Create a temporary path without extension (will be set by download function)
+                        temp_path = folder / provider_name
+                        
+                        # Run blocking download/save in executor to avoid freezing the event loop
+                        # Returns (success: bool, extension: str)
+                        success, file_extension = await loop.run_in_executor(
+                            None,
+                            _download_and_save_sync,
+                            url,
+                            temp_path
+                        )
+                        
+                        if success:
+                            # Update filename with correct extension
+                            image_filename = f"{provider_name}{file_extension}"
+                            image_path = folder / image_filename
+                            
+                            # If temp file has different name, rename it
+                            temp_path_with_ext = temp_path.with_suffix(file_extension)
+                            if temp_path_with_ext.exists() and temp_path_with_ext != image_path:
+                                # Move to final location
+                                try:
+                                    os.replace(temp_path_with_ext, image_path)
+                                except:
+                                    # If replace fails, try copy then delete
+                                    shutil.copy2(temp_path_with_ext, image_path)
+                                    try:
+                                        os.remove(temp_path_with_ext)
+                                    except:
+                                        pass
+                            
+                            logger.info(f"Downloaded and saved {provider_name} art ({file_extension}) for {artist} - {album or title}")
+                            
+                            # Get actual resolution from saved image (also run in executor since it's I/O)
+                            try:
+                                def get_image_resolution(path: Path) -> tuple:
+                                    with Image.open(path) as img:
+                                        return img.size
+                                
+                                actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, image_path)
+                                resolution = max(actual_width, actual_height)
+                                resolution_str = f"{actual_width}x{actual_height}"
+                                # Update width/height with actual values
+                                width = actual_width
+                                height = actual_height
+                            except:
+                                pass
+                        else:
+                            logger.warning(f"Failed to save {provider_name} art for {artist} - {album or title}")
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Failed to download {provider_name} art: {e}")
+                        continue
+                else:
+                    # Image exists, get resolution from file (run in executor to avoid blocking)
+                    try:
+                        def get_image_resolution_existing(path: Path) -> tuple:
+                            with Image.open(path) as img:
+                                return img.size
+                        
+                        actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, image_path)
+                        resolution = max(actual_width, actual_height)
+                        resolution_str = f"{actual_width}x{actual_height}"
+                        # Update width/height with actual values
+                        width = actual_width
+                        height = actual_height
+                    except:
+                        # Fallback to metadata if available
+                        if existing_metadata and provider_name in existing_metadata.get("providers", {}):
+                            existing_provider_data = existing_metadata["providers"][provider_name]
+                            resolution_str = existing_provider_data.get("resolution", resolution_str)
+                
+                # Store provider data (with actual filename including extension)
+                providers_data[provider_name] = {
+                    "url": url,
+                    "resolution": resolution_str,
+                    "width": width,
+                    "height": height,
+                    "filename": image_filename,  # Now includes correct extension (e.g., "iTunes.png")
+                    "downloaded": image_path.exists()
+                }
+                
+                # Track highest resolution for auto-selection
+                # FIX: Only select as preferred if the file was successfully downloaded/exists
+                if resolution > highest_resolution and image_path.exists():
+                    highest_resolution = resolution
+                    preferred_provider = provider_name
+            
+            # Use existing preference if available, otherwise use highest resolution
+            if existing_metadata and "preferred_provider" in existing_metadata:
+                preferred_provider = existing_metadata["preferred_provider"]
+            
+            # Create metadata structure
+            metadata = {
+                "artist": artist,
+                "album": album or title,
+                "is_single": album is None or album.lower() == title.lower(),
+                "preferred_provider": preferred_provider,
+                "created_at": existing_metadata.get("created_at") if existing_metadata else datetime.utcnow().isoformat() + "Z",
+                "last_accessed": datetime.utcnow().isoformat() + "Z",
+                "providers": providers_data
             }
             
-            # Track highest resolution for auto-selection
-            # FIX: Only select as preferred if the file was successfully downloaded/exists
-            if resolution > highest_resolution and image_path.exists():
-                highest_resolution = resolution
-                preferred_provider = provider_name
+            # Save metadata
+            # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
+            # This prevents UI stutters if disk is busy or antivirus is scanning
+            if await loop.run_in_executor(None, save_album_db_metadata, folder, metadata):
+                logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
+            else:
+                logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
         
-        # Use existing preference if available, otherwise use highest resolution
-        if existing_metadata and "preferred_provider" in existing_metadata:
-            preferred_provider = existing_metadata["preferred_provider"]
-        
-        # Create metadata structure
-        metadata = {
-            "artist": artist,
-            "album": album or title,
-            "is_single": album is None or album.lower() == title.lower(),
-            "preferred_provider": preferred_provider,
-            "created_at": existing_metadata.get("created_at") if existing_metadata else datetime.utcnow().isoformat() + "Z",
-            "last_accessed": datetime.utcnow().isoformat() + "Z",
-            "providers": providers_data
-        }
-        
-        # Save metadata
-        # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
-        # This prevents UI stutters if disk is busy or antivirus is scanning
-        if await loop.run_in_executor(None, save_album_db_metadata, folder, metadata):
-            logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
-        else:
-            logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
-    
-    except Exception as e:
-        logger.error(f"Error in ensure_album_art_db: {e}")
+        except Exception as e:
+            logger.error(f"Error in ensure_album_art_db: {e}")
 
 def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
     """
