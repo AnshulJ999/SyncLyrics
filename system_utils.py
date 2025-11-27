@@ -466,18 +466,25 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
         with open(temp_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         
-        # Atomic replace
-        try:
-            os.replace(temp_path, metadata_path)
-            return True
-        except OSError as e:
-            logger.error(f"Failed to atomically replace metadata.json: {e}")
-            # Clean up temp file
+        # Atomic replace with retry for Windows file locking
+        for attempt in range(3):
             try:
-                os.remove(temp_path)
-            except:
-                pass
-            return False
+                if metadata_path.exists():
+                    os.remove(metadata_path)
+                os.replace(temp_path, metadata_path)
+                return True
+            except OSError as e:
+                if attempt < 2:
+                    # Wait briefly before retry (0.1s, 0.2s)
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    logger.error(f"Failed to atomically replace metadata.json after 3 attempts: {e}")
+                    # Clean up temp file
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                    return False
     except Exception as e:
         logger.error(f"Failed to save album DB metadata: {e}")
         return False
