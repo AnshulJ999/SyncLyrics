@@ -105,6 +105,13 @@ body {
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
     
+    /* STANDARD: No background pill by default */
+    background: none;
+    margin: 0 auto;
+    width: fit-content;
+    
+    /* STANDARD: Clean, elegant text shadow */
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 /* Currently active line */
@@ -113,24 +120,24 @@ body {
     opacity: 1;
     font-weight: 500;
     
+    /* STANDARD: Stronger glow for active line */
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    
+    transform: scale(1.02);
     letter-spacing: 0.5px;
+    
+    /* Apply floating animation */
     animation: wave 3s ease-in-out infinite;
     position: relative;
     z-index: 10;
     
-    /* Enhanced glow effect */
-
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-
-    transform: scale(1.02) translateY(0);
-    
-    /* DYNAMIC FADE PILL */
+    /* STANDARD: No background pill by default */
+    background: none;
     width: fit-content;
-    max-width: 90%;
+    padding: 0;
     margin: 0 auto;
-    /* More vertical padding to allow the fade to taper off */
-    padding: 15px 40px; 
-    
+    box-shadow: none;
+    border-radius: 0;
 }
 
 /* ========== ANIMATIONS ========== */
@@ -802,9 +809,7 @@ body[data-minimal="true"] .album-art {
 /* Sharp mode: Super sharp and clear album art with no blur effects */
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
-    /* Remove all blur filters for maximum sharpness and clarity */
-    /* filter: none !important; */
-
+    /* Micro-blur (0.5px) reduces jagged edges without looking blurry */
     filter: blur(0.5px) !important;
 
     /* Reset transforms to prevent scaling blur */
@@ -831,8 +836,7 @@ body.sharp-mode .background-overlay {
  /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
     backdrop-filter: blur(0.5px) saturate(105%) !important;
     -webkit-backdrop-filter: blur(0.5px) saturate(105%) !important;
-
-
+    /* Very transparent background (5%) to let the art shine */
     background: rgba(0, 0, 0, 0.05) !important;
 
     /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
@@ -848,29 +852,55 @@ body.sharp-mode .background-overlay {
 /* Since Sharp Mode has almost no global overlay (5%), we need stronger local contrast for text */
 
 body.sharp-mode .current {
-    /* Darker center (70%) ensures readability even on pure white backgrounds */
+    /* RADIAL GRADIENT FADE - Darkest in the very center behind text */
     background: radial-gradient(
         closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Darker core (was 0.4) */
+        rgba(0, 0, 0, 0.4) 0%,    /* Core contrast */
         rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
-        transparent 100%
+        transparent 100%          /* Invisible edges */
     ) !important;
     
-    /* Stronger definition shadow (instead of stroke) */
+    /* Layout for the pill */
+    width: fit-content;
+    max-width: 90%;
+    margin: 0 auto;
+    /* More vertical padding to allow the fade to taper off */
+    padding: 15px 40px; 
+    
+    /* Explicitly reset global box/border styles */
+    box-shadow: none;
+    border-radius: 0; 
+
+    /* HYBRID SHADOW: Crisp Black Definition + Ethereal White Halo */
     text-shadow: 
-        0 2px 4px rgba(0, 0, 0, 0.8),   /* Darker definition */
-        0 0 20px rgba(255, 255, 255, 0.3) !important;
+        0 2px 4px rgba(0, 0, 0, 0.5),   /* Definition */
+        0 0 20px rgba(255, 255, 255, 0.3) !important; /* Glow */
+    
+    /* Smooth transition for the pill effect */
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
 }
 
 /* Also slightly darken the adjacent lines in Sharp Mode */
 body.sharp-mode .previous,
 body.sharp-mode .next {
+    /* SUBTLE PILL BACKGROUND for readability on light art */
     background: radial-gradient(
         closest-side, 
-        rgba(0, 0, 0, 0.5) 0%,    /* Darker core (was 0.4) */
-        rgba(0, 0, 0, 0.1) 60%, 
+        rgba(0, 0, 0, 0.4) 0%,    /* Medium dark core */
+        rgba(0, 0, 0, 0.1) 60%,   /* Soft fade */
         transparent 100%
     ) !important;
+    
+    width: fit-content;
+    margin: 0 auto;
+    padding: 5px 25px;
+    
+    /* HYBRID SHADOW: Definition + Soft Glow */
+    text-shadow: 
+        0 1px 2px rgba(0, 0, 0, 0.5),
+        0 0 10px rgba(255, 255, 255, 0.1) !important;
+        
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 
