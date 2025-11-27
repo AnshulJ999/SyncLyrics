@@ -100,14 +100,35 @@ body {
     font-size: clamp(0.8rem, 2vw, 1.4rem);
     transform: translateY(10px);
     filter: blur(1px);
+    /* Basic contrast shadow */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 /* Lines immediately before/after current */
 .previous,
 .next {
-    opacity: 0.60;
+    opacity: 0.7; /* Increased from 0.6 for readability */
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
+    
+    /* SUBTLE PILL BACKGROUND for readability on light art */
+    width: fit-content;
+    margin: 0 auto;
+    padding: 5px 25px;
+    
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.4) 0%,    /* Medium dark core */
+        rgba(0, 0, 0, 0.1) 60%,   /* Soft fade */
+        transparent 100%
+    );
+    
+    /* HYBRID SHADOW: Definition + Soft Glow */
+    text-shadow: 
+        0 1px 2px rgba(0, 0, 0, 0.5),
+        0 0 10px rgba(255, 255, 255, 0.1);
+        
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Currently active line */
@@ -140,8 +161,8 @@ body {
     /* Fades to transparent before reaching the box edges */
     background: radial-gradient(
         closest-side, 
-        rgba(0, 0, 0, 0.6) 0%,    /* Core contrast */
-        rgba(0, 0, 0, 0.15) 60%,   /* Soft fade */
+        rgba(0, 0, 0, 0.4) 0%,    /* Core contrast */
+        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
         transparent 100%          /* Invisible edges */
     );
     
@@ -864,7 +885,7 @@ body.sharp-mode .background-overlay {
 /* Provides good image clarity with better text readability than sharp mode */
 body.soft-mode .background-layer {
     /* Medium blur (6px) - provides softness while maintaining image clarity */
-    filter: blur(6px) !important;
+    filter: blur(3px) !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
@@ -874,10 +895,10 @@ body.soft-mode .background-layer {
 
 body.soft-mode .background-overlay {
     /* Light backdrop blur (10px) - softens edges without major haziness */
-    backdrop-filter: blur(10px) saturate(140%) !important;
-    -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
+    backdrop-filter: blur(5px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(5px) saturate(140%) !important;
     /* Medium dark overlay for better text contrast and readability */
-    background: rgba(0, 0, 0, 0.35) !important;
+    background: rgba(0, 0, 0, 0.25) !important;
 }
 
 /* ========== SPOTIFY LOGIN OVERLAY ========== */
