@@ -640,6 +640,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                             actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, image_path)
                             resolution = max(actual_width, actual_height)
                             resolution_str = f"{actual_width}x{actual_height}"
+                            # Update width/height with actual values
+                            width = actual_width
+                            height = actual_height
                         except:
                             pass
                     else:
@@ -658,6 +661,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                     actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, image_path)
                     resolution = max(actual_width, actual_height)
                     resolution_str = f"{actual_width}x{actual_height}"
+                    # Update width/height with actual values
+                    width = actual_width
+                    height = actual_height
                 except:
                     # Fallback to metadata if available
                     if existing_metadata and provider_name in existing_metadata.get("providers", {}):
@@ -668,8 +674,8 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             providers_data[provider_name] = {
                 "url": url,
                 "resolution": resolution_str,
-                "width": width if width > 0 else 0,
-                "height": height if height > 0 else 0,
+                "width": width,
+                "height": height,
                 "filename": image_filename,  # Now includes correct extension (e.g., "iTunes.png")
                 "downloaded": image_path.exists()
             }

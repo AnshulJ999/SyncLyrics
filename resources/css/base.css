@@ -1037,3 +1037,32 @@ body.soft-mode .background-overlay {
     margin-top: 16px;
     margin-bottom: 0;
 }
+
+/* ========== SHARP MODE SPECIFIC OVERRIDES ========== */
+/* Since Sharp Mode has almost no global overlay (5%), we need stronger local contrast for text */
+
+body.sharp-mode .current {
+    /* Darker center (70%) ensures readability even on pure white backgrounds */
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.4) 0%,    /* Darker core (was 0.4) */
+        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
+        transparent 100%
+    ) !important;
+    
+    /* Stronger definition shadow (instead of stroke) */
+    text-shadow: 
+        0 2px 4px rgba(0, 0, 0, 0.8),   /* Darker definition */
+        0 0 20px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Also slightly darken the adjacent lines in Sharp Mode */
+body.sharp-mode .previous,
+body.sharp-mode .next {
+    background: radial-gradient(
+        closest-side, 
+        rgba(0, 0, 0, 0.5) 0%,    /* Darker core (was 0.4) */
+        rgba(0, 0, 0, 0.1) 60%, 
+        transparent 100%
+    ) !important;
+}
