@@ -35,7 +35,7 @@ IDLE_WAIT_TIME = config.LYRICS["display"]["idle_wait_time"]
 # NOTE: spotify_client is now obtained via get_shared_spotify_client() for singleton pattern
 # This ensures all stats are consolidated across the entire app
 _last_state_log_time = 0
-STATE_LOG_INTERVAL = 100  # Log app state every 100 seconds
+STATE_LOG_INTERVAL = 300  # Log app state every 300 seconds (5 minutes)
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
 _metadata_fetch_counters = {'spotify': 0, 'windows_media': 0}
 _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
@@ -44,6 +44,9 @@ _running_art_upgrade_tasks = {}  # Key: track_id, Value: asyncio.Task
 # NEW: Track which songs we've already checked/populated the DB for to prevent infinite loops
 _db_checked_tracks = set()
 _MAX_DB_CHECKED_SIZE = 100
+# OPTIMIZATION: Semaphore to limit concurrent background downloads (Fix #4)
+# Prevents network saturation if user skips many tracks quickly
+_art_download_semaphore = asyncio.Semaphore(2)
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (color1, color2)
@@ -534,13 +537,16 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         title: Track title
         spotify_url: Spotify album art URL (optional)
     """
-    logger.debug(f"DEBUG: Entering ensure_album_art_db for {artist} - {title}")  # Debug Log 1
+    # OPTIMIZATION: Acquire semaphore to limit concurrent downloads (Fix #4)
+    # This prevents network saturation if user skips many tracks quickly
+    async with _art_download_semaphore:
+        logger.debug(f"DEBUG: Entering ensure_album_art_db for {artist} - {title}")  # Debug Log 1
 
-    # Check if feature is enabled
-    enabled = FEATURES.get("album_art_db", True)
-    logger.debug(f"DEBUG: album_art_db enabled: {enabled}")  # Debug Log 2
-    if not enabled:
-        return
+        # Check if feature is enabled
+        enabled = FEATURES.get("album_art_db", True)
+        logger.debug(f"DEBUG: album_art_db enabled: {enabled}")  # Debug Log 2
+        if not enabled:
+            return
     
     try:
         # Get album art provider
@@ -709,13 +715,49 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         }
         
         # Save metadata
-        if save_album_db_metadata(folder, metadata):
+        # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
+        # This prevents UI stutters if disk is busy or antivirus is scanning
+        if await loop.run_in_executor(None, save_album_db_metadata, folder, metadata):
             logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
         else:
             logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
     
     except Exception as e:
         logger.error(f"Error in ensure_album_art_db: {e}")
+
+def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
+    """
+    Helper function to save Windows thumbnail in a thread (Fix #2).
+    This prevents blocking the event loop when writing large BMP files.
+    
+    Args:
+        path: Path where to save the thumbnail
+        data: Raw image bytes to write
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        # Write to temp file first
+        with open(temp_path, "wb") as f:
+            f.write(data)
+        # Atomic replace
+        if path.exists():
+            try:
+                os.remove(path)
+            except:
+                pass
+        os.replace(temp_path, path)
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to save Windows thumbnail: {e}")
+        try:
+            if temp_path.exists():
+                os.remove(temp_path)
+        except:
+            pass
+        return False
 
 def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[str, Any]]:
     """
@@ -790,6 +832,85 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
     except Exception as e:
         logger.debug(f"Error loading album art from DB: {e}")
         return None
+
+async def _download_spotify_art_background(url: str) -> None:
+    """
+    Background task to download Spotify art (Fix #3).
+    This allows the metadata function to return immediately without waiting for the download.
+    
+    Args:
+        url: Spotify album art URL to download
+    """
+    try:
+        # Check if file already exists and matches URL
+        if (CACHE_DIR / "spotify_art.jpg").exists():
+            if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') and \
+               _get_current_song_meta_data_spotify._last_spotify_art_url == url:
+                return
+
+        logger.debug(f"Starting background download of Spotify art: {url}")
+        
+        # Download in executor to avoid blocking
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: requests.get(url, timeout=5)
+        )
+        
+        if response.status_code == 200:
+            # Save to cache
+            art_path = CACHE_DIR / "spotify_art.jpg"
+            temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
+            
+            # Write to temp (blocking I/O in executor)
+            def write_file():
+                with open(temp_path, "wb") as f:
+                    f.write(response.content)
+            
+            await loop.run_in_executor(None, write_file)
+            
+            # Atomic replace with retry
+            replaced = False
+            for attempt in range(3):
+                try:
+                    os.replace(temp_path, art_path)
+                    replaced = True
+                    break
+                except OSError:
+                    if attempt < 2:
+                        await asyncio.sleep(0.1)
+                    else:
+                        logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
+            
+            if not replaced:
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                return
+
+            # Verify resolution (optional, fast enough)
+            try:
+                from PIL import Image
+                with Image.open(art_path) as img:
+                    logger.info(f"Downloaded album art actual resolution: {img.size[0]}x{img.size[1]}")
+            except:
+                pass
+
+            # Invalidate color cache
+            str_path = str(art_path)
+            if str_path in _color_cache:
+                del _color_cache[str_path]
+            
+            # Extract colors
+            colors = await extract_dominant_colors(art_path)
+            
+            # Update cache
+            _get_current_song_meta_data_spotify._last_spotify_art_url = url
+            _get_current_song_meta_data_spotify._last_spotify_colors = colors
+            
+    except Exception as e:
+        logger.debug(f"Background Spotify art download failed: {e}")
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
@@ -890,23 +1011,15 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                         # Clean up old art files before saving new one to prevent stale art bug
                         cleanup_old_art()
                         
-                        # Save to cache using atomic write to prevent race conditions
-                        temp_path = CACHE_DIR / f"current_art{ext}.tmp"
-                        # Write to temp file first
-                        with open(temp_path, "wb") as f:
-                            f.write(byte_data)
-                        # Atomic replace (fails if destination is open on Windows, but that's acceptable)
-                        try:
-                            os.replace(temp_path, art_path)
-                        except OSError as e:
-                            # If replace fails (e.g., file is open), log and continue
-                            # The file will be updated on the next write cycle
-                            logger.debug(f"Could not atomically replace current_art{ext}: {e}")
-                            # Clean up temp file
-                            try:
-                                os.remove(temp_path)
-                            except:
-                                pass
+                        # OPTIMIZATION: Run file write in executor (Fix #2)
+                        # This prevents blocking the event loop when writing large BMP files
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(
+                            None, 
+                            _save_windows_thumbnail_sync,
+                            art_path,
+                            byte_data
+                        )
                     
                     # Update last track ID
                     _last_windows_track_id = current_track_id
@@ -1212,65 +1325,13 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                    _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url) or \
                    not current_art_exists:
                     
-                    # Download album art in thread executor to avoid blocking event loop
-                    # This prevents lyrics animation from freezing during slow network requests
-                    loop = asyncio.get_running_loop()
-                    response = await loop.run_in_executor(
-                        None, 
-                        lambda: requests.get(album_art_url, timeout=5)
-                    )
+                    # OPTIMIZATION: Offload download to background task (Fix #3)
+                    # This returns metadata immediately without waiting for the image
+                    asyncio.create_task(_download_spotify_art_background(album_art_url))
                     
-                    if response.status_code == 200:
-                        # Save to cache using atomic write to prevent race conditions
-                        art_path = CACHE_DIR / "spotify_art.jpg"
-                        temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
-                        # Write to temp file first
-                        with open(temp_path, "wb") as f:
-                            f.write(response.content)
-                        # Atomic replace with retry for Windows file locking
-                        replaced = False
-                        for attempt in range(3):
-                            try:
-                                os.replace(temp_path, art_path)
-                                replaced = True
-                                break
-                            except OSError:
-                                if attempt < 2:
-                                    await asyncio.sleep(0.1)  # Wait briefly before retry
-                                else:
-                                    logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
-                        
-                        # Clean up temp file if replace failed
-                        if not replaced:
-                            try:
-                                os.remove(temp_path)
-                            except:
-                                pass
-                        
-                        # Verify actual image resolution
-                        try:
-                            from PIL import Image
-                            with Image.open(art_path) as img:
-                                actual_width, actual_height = img.size
-                                # Always log actual resolution at INFO level for high-res sources
-                                # This helps verify if the 9999x9999 method actually worked
-                                logger.info(f"Downloaded album art actual resolution: {actual_width}x{actual_height}")
-                        except Exception:
-                            pass  # Ignore errors in resolution check
-                        
-                        # Invalidate cache for this path because the content changed
-                        # Since we reuse the same filename for all Spotify art, we need to
-                        # clear the old cached colors when a new image is downloaded
-                        str_path = str(art_path)
-                        if str_path in _color_cache:
-                            del _color_cache[str_path]
-                        
-                        # Extract colors (now async, so we await it)
-                        colors = await extract_dominant_colors(art_path)
-                        
-                        # Cache the URL to avoid re-downloading
-                        _get_current_song_meta_data_spotify._last_spotify_art_url = album_art_url
-                        _get_current_song_meta_data_spotify._last_spotify_colors = colors
+                    # Use cached colors if available temporarily, or default
+                    if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_colors'):
+                        colors = _get_current_song_meta_data_spotify._last_spotify_colors
                 else:
                     # Use cached colors
                     if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_colors'):
