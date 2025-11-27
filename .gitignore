@@ -6,12 +6,13 @@ sync_lyrics.dist/
 sync_lyrics.onefile-build/
 sync_lyrics.bin
 sync_lyrics.exe
-sync_lyrics.spec
 build_final/
 build_output/
 Unused/
 tests/
 full_project_code.txt
+
+
 # share_project.py
 .cursor
 

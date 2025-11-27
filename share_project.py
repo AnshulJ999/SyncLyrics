@@ -38,9 +38,11 @@ SKIP_FILES = {
     'share_project.py',       # Don't include this script
     'full_project_code.txt',  # Don't include the output
     '.env',                   # Security: Never share secrets
-    'package-lock.json',      # Too much noise
+    'package-lock.json',  
+    'Run SyncLyrics Hidden.vbs',    # Too much noise
     'pnpm-lock.yaml',
     'poetry.lock',
+    'poetry.lock'
 }
 
 # 3. Binary/Junk extensions to skip (automatically skipped)
@@ -115,19 +117,20 @@ def should_skip(filepath, gitignore_patterns):
 
     # 1. Check specific file exclusion
     if filename in SKIP_FILES:
-        return True
+        return "Skip List"
 
     # 2. Check directory exclusion
+    # This checks if any parent folder of the file is in SKIP_FOLDERS
     if not set(parts).isdisjoint(SKIP_FOLDERS):
-        return True
+        return "Skip Folder"
 
     # 3. Check binary extension
     if is_binary_extension(filename):
-        return True
+        return "Binary"
         
     # 4. Check gitignore patterns
     if matches_gitignore(filepath, gitignore_patterns):
-        return True
+        return ".gitignore"
 
     return False
 
@@ -144,6 +147,7 @@ def merge_files():
     
     count = 0
     skipped_count = 0
+    skipped_details = []  # List to store skipped files for review
     
     try:
         with open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
@@ -164,8 +168,11 @@ def merge_files():
                         display_path = display_path[2:]
                     
                     # Check if we should skip this file
-                    if should_skip(filepath, gitignore_patterns):
+                    # In Python, non-empty strings are Truthy, so this works for "reason" strings too
+                    skip_reason = should_skip(filepath, gitignore_patterns)
+                    if skip_reason:
                         skipped_count += 1
+                        skipped_details.append(f"{display_path} [{skip_reason}]")
                         continue
                     
                     # Attempt to read and write the file
@@ -184,14 +191,23 @@ def merge_files():
                     except UnicodeDecodeError:
                         print(f"  ⚠️  Skipping Non-UTF8: {display_path}")
                         skipped_count += 1
+                        skipped_details.append(f"{display_path} [Non-UTF8]")
                     except Exception as e:
                         print(f"  ❌ Error reading {display_path}: {e}")
                         skipped_count += 1
+                        skipped_details.append(f"{display_path} [Error]")
 
             outfile.write("\n\n--- END OF PROJECT DUMP ---\n")
             
         print(f"\n✅ Done! {count} files merged into '{OUTPUT_FILE}'")
         print(f"🙈 Skipped {skipped_count} files based on configuration.")
+        
+        # Print the list of excluded files
+        if skipped_details:
+            print("\n--- Skipped Files Review ---")
+            for item in sorted(skipped_details):
+                print(f"  - {item}")
+            print("-" * 30)
         
     except Exception as e:
         print(f"\n❌ Critical Error: {e}")
