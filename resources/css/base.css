@@ -197,9 +197,10 @@ body {
 }
 
 .nav-link {
+    /* Merged styles */
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 1rem; /* Kept the more generous padding */
     border-radius: 0.5rem;
     transition: all 0.2s ease;
     background: none;
@@ -208,14 +209,10 @@ body {
     font-size: 0.9rem;
 }
 
-.nav-link:hover {
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(255, 255, 255, 0.1);
-}
-
+.nav-link:hover,
 .nav-link.active {
-    color: #fff;
-    background: rgba(59, 130, 246, 0.2);
+    color: white; /* Removed !important as specificity is now clean */
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .nav-link.exit-link {
@@ -230,24 +227,6 @@ body {
 /* Update content padding to account for bottom nav */
 #content {
     padding-bottom: 4rem;
-}
-
-/* ========== NAVIGATION ELEMENTS ========== */
-.nav-link {
-    /* Semi-transparent white text */
-    color: rgba(255, 255, 255, 0.7) !important;
-    padding: 0.3rem 0.8rem !important;
-    transition: all 0.3s ease;
-    font-size: clamp(0.8rem, 2vw, 0.9rem);
-    text-decoration: none;
-}
-
-/* Hover and active states for nav links */
-.nav-link:hover,
-.nav-link.active {
-    color: white !important;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
 }
 
 /* Exit button styling */
@@ -316,11 +295,6 @@ body[data-minimal="true"] #footer {
     display: none !important;
 }
 
-/* Transparent background in minimal mode */
-body[data-minimal="true"] {
-    background: transparent;
-}
-
 /* Adjust lyrics container in minimal mode */
 body[data-minimal="true"] #lyrics {
     min-height: 100vh;
@@ -355,21 +329,27 @@ body[data-minimal="true"] #lyrics {
 }
 
 /* ========== HOME ASSISTANT SPECIFIC STYLES ========== */
-/* Default transparent background */
-body {
+
+/* Minimal Mode overrides: Transparent background + Hidden UI */
+body[data-minimal="true"] {
     background: transparent;
 }
 
-/* Remove any background styles from #lyrics */
-#lyrics {
+body[data-minimal="true"] #lyrics {
     background: none;
+    min-height: 100vh;
+    padding: 0;
 }
 
-/* Add gradient background only for non-Home Assistant contexts */
-@media not all and (min-width: 600px) {
-    body {
-        background: linear-gradient(135deg, #24273a 0%, #363b54 100%);
-    }
+/* Hide elements in minimal mode */
+body[data-minimal="true"] .bottom-nav,
+body[data-minimal="true"] #header,
+body[data-minimal="true"] #footer,
+body[data-minimal="true"] .settings-toggle,
+body[data-minimal="true"] .track-header,
+body[data-minimal="true"] #player-ui-container,
+body[data-minimal="true"] .album-art {
+    display: none !important;
 }
 
 /* ========== SETTINGS TOGGLE ========== */
@@ -927,7 +907,7 @@ body.soft-mode .background-overlay {
     backdrop-filter: blur(5px) saturate(140%) !important;
     -webkit-backdrop-filter: blur(5px) saturate(140%) !important;
     /* Medium dark overlay for better text contrast and readability */
-    background: rgba(0, 0, 0, 0.25) !important;
+    background: rgba(0, 0, 0, 0.20) !important;
 }
 
 /* ========== SPOTIFY LOGIN OVERLAY ========== */
