@@ -460,8 +460,9 @@ body[data-minimal="true"] .album-art {
     opacity: 0;
 }
 
-/* Show album art only when it has a valid HTTP(S) URL */
-.album-art[src^="http"] {
+/* Show album art only when it has a valid HTTP(S) URL or local path */
+.album-art[src^="http"],
+.album-art[src^="/"] {
     opacity: 1;
 }
 
