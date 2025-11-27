@@ -849,11 +849,14 @@ body[data-minimal="true"] .album-art {
 body.sharp-mode .background-layer {
     /* Remove all blur filters for maximum sharpness and clarity */
     filter: none !important;
+
+    filter: blur(0.5px) !important;
+
     /* Reset transforms to prevent scaling blur */
     transform: none !important;
     -webkit-transform: none !important;
     /* CHANGED: Use standard 'auto' for best photo quality (smoother than optimize-contrast) */
-    image-rendering: auto; 
+    image-rendering: high-quality; 
     /* Performance hints for smooth transitions */
     will-change: opacity, background-image;
     /* Hardware acceleration (safe) */
