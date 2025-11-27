@@ -613,10 +613,21 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                     pass
             
             # Download and save images for each provider
-            providers_data = {}
+            # FIX: Initialize with existing data so we don't wipe out providers if a network call fails
+            providers_data = existing_metadata.get("providers", {}) if existing_metadata else {}
+            
             preferred_provider = None
             highest_resolution = 0
             
+            # Re-calculate highest resolution from EXISTING data first
+            for provider_name, data in providers_data.items():
+                width = data.get("width", 0)
+                height = data.get("height", 0)
+                res = max(width, height)
+                if res > highest_resolution and data.get("downloaded", False):
+                    highest_resolution = res
+                    preferred_provider = provider_name
+
             # Get event loop for running blocking I/O in executor
             loop = asyncio.get_running_loop()
             
