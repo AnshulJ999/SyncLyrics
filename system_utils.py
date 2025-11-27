@@ -863,27 +863,43 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     # Detect extension
                     ext = get_image_extension(byte_data)
                     
-                    # Clean up old art files before saving new one to prevent stale art bug
-                    cleanup_old_art()
-                    
-                    # Save to cache using atomic write to prevent race conditions
+                    # OPTIMIZATION: Check if file already exists with identical content
+                    # This prevents unnecessary disk writes when the same image is read repeatedly
                     art_path = CACHE_DIR / f"current_art{ext}"
-                    temp_path = CACHE_DIR / f"current_art{ext}.tmp"
-                    # Write to temp file first
-                    with open(temp_path, "wb") as f:
-                        f.write(byte_data)
-                    # Atomic replace (fails if destination is open on Windows, but that's acceptable)
-                    try:
-                        os.replace(temp_path, art_path)
-                    except OSError as e:
-                        # If replace fails (e.g., file is open), log and continue
-                        # The file will be updated on the next write cycle
-                        logger.debug(f"Could not atomically replace current_art{ext}: {e}")
-                        # Clean up temp file
+                    needs_write = True
+                    if art_path.exists():
                         try:
-                            os.remove(temp_path)
+                            with open(art_path, "rb") as f:
+                                existing_data = f.read()
+                            # Compare byte arrays - if identical, skip the write
+                            if existing_data == byte_data:
+                                needs_write = False
                         except:
+                            # If we can't read existing file, proceed with write
                             pass
+                    
+                    # Only write if content is actually different
+                    if needs_write:
+                        # Clean up old art files before saving new one to prevent stale art bug
+                        cleanup_old_art()
+                        
+                        # Save to cache using atomic write to prevent race conditions
+                        temp_path = CACHE_DIR / f"current_art{ext}.tmp"
+                        # Write to temp file first
+                        with open(temp_path, "wb") as f:
+                            f.write(byte_data)
+                        # Atomic replace (fails if destination is open on Windows, but that's acceptable)
+                        try:
+                            os.replace(temp_path, art_path)
+                        except OSError as e:
+                            # If replace fails (e.g., file is open), log and continue
+                            # The file will be updated on the next write cycle
+                            logger.debug(f"Could not atomically replace current_art{ext}: {e}")
+                            # Clean up temp file
+                            try:
+                                os.remove(temp_path)
+                            except:
+                                pass
                     
                     # Update last track ID
                     _last_windows_track_id = current_track_id
@@ -998,15 +1014,6 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 try:
                     # Clean up old art first
                     cleanup_old_art()
-    
-                    # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our high-res DB art
-                    # server.py prefers spotify_art.jpg, so we must delete it to force fallback to current_art.*
-                    spotify_art_path = CACHE_DIR / "spotify_art.jpg"
-                    if spotify_art_path.exists():
-                        try:
-                            os.remove(spotify_art_path)
-                        except Exception:
-                            pass
                     
                     # Get the original file extension from the DB image (preserves format)
                     original_extension = db_image_path.suffix or '.jpg'
@@ -1022,6 +1029,17 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
                         # CHANGED: Downgrade to DEBUG to stop console spam on every poll
                         # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
+                        
+                        # OPTIMIZATION: Only delete spotify_art.jpg AFTER successful copy
+                        # This ensures we don't delete it if the copy failed, and prevents
+                        # aggressive deletion on every poll loop. server.py prefers spotify_art.jpg,
+                        # so we delete it to force fallback to our high-res current_art.*
+                        spotify_art_path = CACHE_DIR / "spotify_art.jpg"
+                        if spotify_art_path.exists():
+                            try:
+                                os.remove(spotify_art_path)
+                            except Exception:
+                                pass
                         
                         # Mark this track as processed so we don't copy again
                         _get_current_song_meta_data_spotify._last_db_art_track_id = captured_track_id

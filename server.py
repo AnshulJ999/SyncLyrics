@@ -410,15 +410,6 @@ async def set_album_art_preference():
             # Clean up old art first
             from system_utils import cleanup_old_art
             cleanup_old_art()
-
-            # CRITICAL FIX: Remove stale spotify_art.jpg so server serves our selected art
-            import os
-            spotify_art_path = CACHE_DIR / "spotify_art.jpg"
-            if spotify_art_path.exists():
-                try:
-                    os.remove(spotify_art_path)
-                except Exception:
-                    pass
             
             # Get the original file extension from the DB image (preserves format)
             original_extension = db_image_path.suffix or '.jpg'
@@ -442,6 +433,19 @@ async def set_album_art_preference():
                         await asyncio.sleep(0.1)  # Wait briefly before retry
                     else:
                         logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
+            
+            # OPTIMIZATION: Only delete spotify_art.jpg AFTER successful copy
+            # This ensures we don't delete it if the copy failed, and prevents
+            # aggressive deletion. server.py prefers spotify_art.jpg, so we delete
+            # it to force fallback to our high-res current_art.*
+            if replaced:
+                import os
+                spotify_art_path = CACHE_DIR / "spotify_art.jpg"
+                if spotify_art_path.exists():
+                    try:
+                        os.remove(spotify_art_path)
+                    except Exception:
+                        pass
             
             # Clean up temp file if replace failed
             if not replaced:
