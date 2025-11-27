@@ -48,8 +48,31 @@ _MAX_DB_CHECKED_SIZE = 100
 # Prevents network saturation if user skips many tracks quickly
 _art_download_semaphore = asyncio.Semaphore(2)
 
+# Global set to track background tasks and prevent garbage collection (Fix: Task Tracking)
+_background_tasks = set()
+
+def create_tracked_task(coro):
+    """
+    Create a background task with automatic cleanup and error logging.
+    Prevents silent failures and ensures tasks complete even if references are lost.
+    """
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    
+    def cleanup(t):
+        _background_tasks.discard(t)
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass  # Expected during shutdown
+        except Exception as e:
+            logger.error(f"Background task failed: {e}", exc_info=True)
+    
+    task.add_done_callback(cleanup)
+    return task
+
 # Cache for color extraction to avoid re-processing the same image
-# Key: file_path, Value: (color1, color2)
+# Key: file_path, Value: (mtime, [color1, color2])
 # Limited to 50 entries to prevent memory leaks
 _color_cache = {}
 _MAX_CACHE_SIZE = 50
@@ -115,13 +138,19 @@ async def extract_dominant_colors(image_path: Path) -> list:
     """
     path_str = str(image_path)
     
-    # Check cache first
-    if path_str in _color_cache:
-        return _color_cache[path_str]
+    # Check cache first with mtime validation (Fix: Optimize Color Extraction)
+    try:
+        current_mtime = image_path.stat().st_mtime
+        if path_str in _color_cache:
+            cached_mtime, cached_colors = _color_cache[path_str]
+            if cached_mtime == current_mtime:
+                return cached_colors
+    except FileNotFoundError:
+        return ["#24273a", "#363b54"]
+    except Exception as e:
+        logger.debug(f"Error checking mtime for color cache: {e}")
     
     # Prevent cache from growing indefinitely - remove oldest entry if too large
-    # Using pop(next(iter(...))) removes the oldest entry (first inserted)
-    # This is better than clear() which would cause a performance spike
     if len(_color_cache) > _MAX_CACHE_SIZE:
         oldest_key = next(iter(_color_cache))
         _color_cache.pop(oldest_key)
@@ -131,8 +160,13 @@ async def extract_dominant_colors(image_path: Path) -> list:
     loop = asyncio.get_running_loop()
     final_colors = await loop.run_in_executor(None, extract_dominant_colors_sync, image_path)
     
-    # Cache the result
-    _color_cache[path_str] = final_colors
+    # Cache the result with current mtime
+    try:
+        current_mtime = image_path.stat().st_mtime
+        _color_cache[path_str] = (current_mtime, final_colors)
+    except:
+        pass
+        
     return final_colors
 
 # --- Helper Functions ---
@@ -833,84 +867,105 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
         logger.debug(f"Error loading album art from DB: {e}")
         return None
 
-async def _download_spotify_art_background(url: str) -> None:
+async def _download_spotify_art_background(url: str, track_id: str) -> None:
     """
     Background task to download Spotify art (Fix #3).
     This allows the metadata function to return immediately without waiting for the download.
+    Includes race condition protection using track_id validation.
     
     Args:
         url: Spotify album art URL to download
+        track_id: ID of the track requesting the art (for validation)
     """
-    try:
-        # Check if file already exists and matches URL
-        if (CACHE_DIR / "spotify_art.jpg").exists():
-            if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') and \
-               _get_current_song_meta_data_spotify._last_spotify_art_url == url:
-                return
+    # Use semaphore to limit concurrent downloads (Fix: Apply Semaphore)
+    async with _art_download_semaphore:
+        try:
+            # Check if file already exists and matches URL
+            if (CACHE_DIR / "spotify_art.jpg").exists():
+                if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') and \
+                   _get_current_song_meta_data_spotify._last_spotify_art_url == url:
+                    return
 
-        logger.debug(f"Starting background download of Spotify art: {url}")
-        
-        # Download in executor to avoid blocking
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None, 
-            lambda: requests.get(url, timeout=5)
-        )
-        
-        if response.status_code == 200:
-            # Save to cache
-            art_path = CACHE_DIR / "spotify_art.jpg"
-            temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
+            logger.debug(f"Starting background download of Spotify art: {url}")
             
-            # Write to temp (blocking I/O in executor)
-            def write_file():
-                with open(temp_path, "wb") as f:
-                    f.write(response.content)
+            # Download in executor to avoid blocking
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                None, 
+                lambda: requests.get(url, timeout=5)
+            )
             
-            await loop.run_in_executor(None, write_file)
-            
-            # Atomic replace with retry
-            replaced = False
-            for attempt in range(3):
+            if response.status_code == 200:
+                # Validation: Check if track is still current before saving (Fix: Race Condition)
+                spotify_client = get_shared_spotify_client()
+                if spotify_client and spotify_client._metadata_cache:
+                    current_track = spotify_client._metadata_cache
+                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                    if current_track_id != track_id:
+                        logger.debug(f"Track changed during download ({track_id} -> {current_track_id}), discarding art")
+                        return
+
+                # Save to cache
+                art_path = CACHE_DIR / "spotify_art.jpg"
+                temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
+                
+                # Write to temp (blocking I/O in executor)
+                def write_file():
+                    with open(temp_path, "wb") as f:
+                        f.write(response.content)
+                
+                await loop.run_in_executor(None, write_file)
+                
+                # Final Validation: Check one last time before atomic replace
+                if spotify_client and spotify_client._metadata_cache:
+                    current_track = spotify_client._metadata_cache
+                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                    if current_track_id != track_id:
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
+                        return
+
+                # Atomic replace with retry
+                replaced = False
+                for attempt in range(3):
+                    try:
+                        os.replace(temp_path, art_path)
+                        replaced = True
+                        break
+                    except OSError:
+                        if attempt < 2:
+                            await asyncio.sleep(0.1)
+                        else:
+                            logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
+                
+                if not replaced:
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                    return
+
+                # Verify resolution (optional, fast enough)
                 try:
-                    os.replace(temp_path, art_path)
-                    replaced = True
-                    break
-                except OSError:
-                    if attempt < 2:
-                        await asyncio.sleep(0.1)
-                    else:
-                        logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
-            
-            if not replaced:
-                try:
-                    os.remove(temp_path)
+                    from PIL import Image
+                    with Image.open(art_path) as img:
+                        logger.info(f"Downloaded album art actual resolution: {img.size[0]}x{img.size[1]}")
                 except:
                     pass
-                return
 
-            # Verify resolution (optional, fast enough)
-            try:
-                from PIL import Image
-                with Image.open(art_path) as img:
-                    logger.info(f"Downloaded album art actual resolution: {img.size[0]}x{img.size[1]}")
-            except:
-                pass
-
-            # Invalidate color cache
-            str_path = str(art_path)
-            if str_path in _color_cache:
-                del _color_cache[str_path]
-            
-            # Extract colors
-            colors = await extract_dominant_colors(art_path)
-            
-            # Update cache
-            _get_current_song_meta_data_spotify._last_spotify_art_url = url
-            _get_current_song_meta_data_spotify._last_spotify_colors = colors
-            
-    except Exception as e:
-        logger.debug(f"Background Spotify art download failed: {e}")
+                # Invalidate color cache (managed by extract_dominant_colors mtime check now)
+                
+                # Extract colors
+                colors = await extract_dominant_colors(art_path)
+                
+                # Update cache
+                _get_current_song_meta_data_spotify._last_spotify_art_url = url
+                _get_current_song_meta_data_spotify._last_spotify_colors = colors
+                
+        except Exception as e:
+            logger.debug(f"Background Spotify art download failed: {e}")
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
@@ -1184,7 +1239,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                 finally:
                                     _running_art_upgrade_tasks.pop(captured_track_id, None)
                             
-                            task = asyncio.create_task(background_refresh_db())
+                            # Use tracked task
+                            task = create_tracked_task(background_refresh_db())
                             _running_art_upgrade_tasks[captured_track_id] = task
                     except OSError as e:
                         logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
@@ -1307,7 +1363,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                     _running_art_upgrade_tasks.pop(captured_track_id, None)
                             
                             # Start background task (non-blocking) and track it
-                            task = asyncio.create_task(background_upgrade_art())
+                            # Use tracked task to prevent garbage collection issues
+                            task = create_tracked_task(background_upgrade_art())
                             _running_art_upgrade_tasks[captured_track_id] = task
                     
             except Exception as e:
@@ -1327,7 +1384,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     
                     # OPTIMIZATION: Offload download to background task (Fix #3)
                     # This returns metadata immediately without waiting for the image
-                    asyncio.create_task(_download_spotify_art_background(album_art_url))
+                    # Uses tracked task to prevent silent failures
+                    # Passes captured_track_id for race condition validation
+                    create_tracked_task(_download_spotify_art_background(album_art_url, captured_track_id))
                     
                     # Use cached colors if available temporarily, or default
                     if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_colors'):
@@ -1338,8 +1397,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         colors = _get_current_song_meta_data_spotify._last_spotify_colors
                         
             except Exception as e:
-                logger.debug(f"Failed to extract Spotify colors: {e}")
-                # Fall back to defaults
+                logger.debug(f"Failed to setup Spotify art download: {e}")
             
         # Return standardized structure with all fields
         return {
@@ -1529,7 +1587,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                                 # Remove from running tasks when done
                                                 _running_art_upgrade_tasks.pop(hybrid_track_id, None)
                                         
-                                        task = asyncio.create_task(background_upgrade_hybrid())
+                                        # Use tracked task
+                                        task = create_tracked_task(background_upgrade_hybrid())
                                         _running_art_upgrade_tasks[hybrid_track_id] = task
                         except Exception as e:
                             logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
