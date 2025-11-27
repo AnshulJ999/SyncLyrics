@@ -51,6 +51,9 @@ _art_download_semaphore = asyncio.Semaphore(2)
 # Global set to track background tasks and prevent garbage collection (Fix: Task Tracking)
 _background_tasks = set()
 
+# OPTIMIZATION: Track in-progress downloads to prevent polling loop from spawning duplicates
+_spotify_download_tracker = set()
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -966,6 +969,9 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                 
         except Exception as e:
             logger.debug(f"Background Spotify art download failed: {e}")
+        finally:
+            # FIX: Ensure URL is removed from tracker when done, even if error occurred
+            _spotify_download_tracker.discard(url)
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
@@ -1378,9 +1384,17 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # CRITICAL FIX: Only download if URL changed OR file is missing
                 current_art_exists = (CACHE_DIR / "spotify_art.jpg").exists()
                 
-                if (not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
+                # OPTIMIZATION: Check if this exact URL is already being downloaded by a background task
+                # This prevents the polling loop from spawning duplicates (Fix: Task Spam)
+                is_downloading = album_art_url in _spotify_download_tracker
+                
+                if not is_downloading and (
+                   (not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
                    _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url) or \
-                   not current_art_exists:
+                   not current_art_exists):
+                    
+                    # Mark as downloading to prevent duplicates
+                    _spotify_download_tracker.add(album_art_url)
                     
                     # OPTIMIZATION: Offload download to background task (Fix #3)
                     # This returns metadata immediately without waiting for the image
