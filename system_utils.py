@@ -1098,7 +1098,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 if cached_result:
                     cached_url, cached_resolution_info = cached_result
                     # Only use cached result if it's better than Spotify (not the Spotify fallback)
-                    if cached_url != original_spotify_url:
+                    # AND if we didn't just load a preferred image from the DB (which takes precedence)
+                    if cached_url != original_spotify_url and not found_in_db:
                         album_art_url = cached_url
                         # Log upgrade if not already logged for this track
                         if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
@@ -1413,50 +1414,55 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     spotify_art_url = spotify_data.get("album_art_url")
                     if spotify_art_url:
                         try:
-                            art_provider = get_album_art_provider()
-                            
-                            # Check cache first - if cached high-res exists, use it immediately
-                            # Use album-level cache (same album = same art for all tracks)
-                            cached_result = art_provider.get_from_cache(
-                                spotify_data.get("artist", ""),
-                                spotify_data.get("title", ""),
-                                spotify_data.get("album")  # Album-level cache
-                            )
-                            if cached_result:
-                                cached_url, _ = cached_result
-                                if cached_url != spotify_art_url:
-                                    result["album_art_url"] = cached_url
-                                else:
-                                    result["album_art_url"] = spotify_art_url
-                            else:
-                                # Not cached - use Spotify immediately, upgrade in background
+                            # CRITICAL FIX: If URL is local (starts with /), it means we loaded from DB (user preference).
+                            # Don't try to upgrade/override it with cached remote art.
+                            if spotify_art_url.startswith('/'):
                                 result["album_art_url"] = spotify_art_url
+                            else:
+                                art_provider = get_album_art_provider()
                                 
-                                # Check if a background task is already running for this track
-                                hybrid_track_id = f"{spotify_data.get('artist', '')}::{spotify_data.get('title', '')}"
-                                if hybrid_track_id in _running_art_upgrade_tasks:
-                                    # Task already running, skip creating duplicate
-                                    logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                # Check cache first - if cached high-res exists, use it immediately
+                                # Use album-level cache (same album = same art for all tracks)
+                                cached_result = art_provider.get_from_cache(
+                                    spotify_data.get("artist", ""),
+                                    spotify_data.get("title", ""),
+                                    spotify_data.get("album")  # Album-level cache
+                                )
+                                if cached_result:
+                                    cached_url, _ = cached_result
+                                    if cached_url != spotify_art_url:
+                                        result["album_art_url"] = cached_url
+                                    else:
+                                        result["album_art_url"] = spotify_art_url
                                 else:
-                                    # Start background task to fetch high-res
-                                    async def background_upgrade_hybrid():
-                                        try:
-                                            await asyncio.sleep(0.1)
-                                            high_res_result = await art_provider.get_high_res_art(
-                                                artist=spotify_data.get("artist", ""),
-                                                title=spotify_data.get("title", ""),
-                                                album=spotify_data.get("album"),
-                                                spotify_url=spotify_art_url
-                                            )
-                                            # Result is cached, will be picked up on next poll
-                                        except Exception as e:
-                                            logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
-                                        finally:
-                                            # Remove from running tasks when done
-                                            _running_art_upgrade_tasks.pop(hybrid_track_id, None)
+                                    # Not cached - use Spotify immediately, upgrade in background
+                                    result["album_art_url"] = spotify_art_url
                                     
-                                    task = asyncio.create_task(background_upgrade_hybrid())
-                                    _running_art_upgrade_tasks[hybrid_track_id] = task
+                                    # Check if a background task is already running for this track
+                                    hybrid_track_id = f"{spotify_data.get('artist', '')}::{spotify_data.get('title', '')}"
+                                    if hybrid_track_id in _running_art_upgrade_tasks:
+                                        # Task already running, skip creating duplicate
+                                        logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                    else:
+                                        # Start background task to fetch high-res
+                                        async def background_upgrade_hybrid():
+                                            try:
+                                                await asyncio.sleep(0.1)
+                                                high_res_result = await art_provider.get_high_res_art(
+                                                    artist=spotify_data.get("artist", ""),
+                                                    title=spotify_data.get("title", ""),
+                                                    album=spotify_data.get("album"),
+                                                    spotify_url=spotify_art_url
+                                                )
+                                                # Result is cached, will be picked up on next poll
+                                            except Exception as e:
+                                                logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
+                                            finally:
+                                                # Remove from running tasks when done
+                                                _running_art_upgrade_tasks.pop(hybrid_track_id, None)
+                                        
+                                        task = asyncio.create_task(background_upgrade_hybrid())
+                                        _running_art_upgrade_tasks[hybrid_track_id] = task
                         except Exception as e:
                             logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
                             result["album_art_url"] = spotify_art_url
