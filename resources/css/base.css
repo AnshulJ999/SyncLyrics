@@ -854,18 +854,20 @@ body.sharp-mode .background-overlay {
 body.sharp-mode .current {
     /* RADIAL GRADIENT FADE - Darkest in the very center behind text */
     background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Core contrast */
-        rgba(0, 0, 0, 0.2) 60%,   /* Soft fade */
-        transparent 100%          /* Invisible edges */
+        closest-side,
+        rgba(0, 0, 0, 0.22) 0%,    /* Very subtle core */
+        rgba(0, 0, 0, 0.08) 80%,   /* Extends far out before fading */
+        transparent 100%
     ) !important;
     
-    /* Layout for the pill */
+    /* Blends the dark pill with the album art color */
+    mix-blend-mode: luminosity; 
+    
+    /* Tighter padding = smaller shadow footprint */
+    padding: 10px 32px; 
     width: fit-content;
     max-width: 90%;
     margin: 0 auto;
-    /* More vertical padding to allow the fade to taper off */
-    padding: 15px 40px; 
     
     /* Explicitly reset global box/border styles */
     box-shadow: none;
@@ -885,15 +887,18 @@ body.sharp-mode .previous,
 body.sharp-mode .next {
     /* SUBTLE PILL BACKGROUND for readability on light art */
     background: radial-gradient(
-        closest-side, 
-        rgba(0, 0, 0, 0.4) 0%,    /* Medium dark core */
-        rgba(0, 0, 0, 0.1) 60%,   /* Soft fade */
+        closest-side,
+        rgba(0, 0, 0, 0.18) 0%,
+        rgba(0, 0, 0, 0.06) 75%,
         transparent 100%
     ) !important;
     
+    /* Inherit blend mode behavior */
+    mix-blend-mode: luminosity;
+    
+    padding: 4px 20px;
     width: fit-content;
     margin: 0 auto;
-    padding: 5px 25px;
     
     /* HYBRID SHADOW: Definition + Soft Glow */
     text-shadow: 
