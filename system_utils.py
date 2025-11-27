@@ -1225,10 +1225,32 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # Mark this track as processed so we don't copy again
                         _get_current_song_meta_data_spotify._last_db_art_track_id = captured_track_id
                         
-                        # Trigger background task to ensure DB is up-to-date (non-blocking)
+                        # Check if DB is already populated with ALL enabled providers
+                        # This logic respects user config: if Last.fm is disabled/no key, we won't look for it.
+                        existing_providers = set(db_metadata.get("providers", {}).keys())
+                        
+                        # Determine which providers SHOULD be there
+                        # Spotify is always a source if we are here (since we have raw_spotify_url)
+                        expected_providers = {"Spotify"}
+                        
+                        # Check if other providers are enabled in the singleton instance
+                        # We need to get the provider instance to check config
+                        from providers.album_art import get_album_art_provider
+                        art_provider = get_album_art_provider()
+                        
+                        if art_provider.enable_itunes:
+                            expected_providers.add("iTunes")
+                        
+                        if art_provider.enable_lastfm and art_provider.lastfm_api_key:
+                            expected_providers.add("LastFM")
+                            
+                        # If we have all expected providers, the DB is complete
+                        db_is_complete = expected_providers.issubset(existing_providers)
+                        
+                        # Trigger background task ONLY if DB is incomplete (and not already running)
                         # Use raw_spotify_url (not album_art_url which is now a local path)
                         # CRITICAL FIX: Only run this once per track to prevent infinite loops
-                        if captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+                        if not db_is_complete and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
                             # Mark as checked immediately to prevent re-entry on next poll
                             _db_checked_tracks.add(captured_track_id)
                             
