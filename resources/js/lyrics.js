@@ -38,6 +38,8 @@ let visualModeConfig = {
     slideshowEnabled: true,
     slideshowIntervalSeconds: 8
 }; 
+// ADD THIS: Global variable to store state
+let savedBackgroundState = null;
 
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
@@ -168,7 +170,7 @@ async function getLyrics() {
             updateThemeColor(data.colors[0]);
         }
 
-        // Update provider info (NEW)
+        // Update provider info
         if (data.provider) {
             updateProviderDisplay(data.provider);
         } else {
@@ -176,7 +178,7 @@ async function getLyrics() {
             updateProviderDisplay("None");
         }
 
-        return data.lyrics || data;
+        return data || data.lyrics;
     } catch (error) {
         console.error('Error fetching lyrics:', error);
         return null;
@@ -737,6 +739,18 @@ function attachControlHandlers() {
             }
         });
     }
+
+    // ADD THIS: Visual Mode Toggle Handler
+    const visualModeBtn = document.getElementById('btn-visual-mode');
+    if (visualModeBtn) {
+        visualModeBtn.addEventListener('click', () => {
+            if (visualModeActive) {
+                exitVisualMode();
+            } else {
+                enterVisualMode();
+            }
+        });
+    }
 }
 
 function updateControlState(trackInfo) {
@@ -1089,12 +1103,14 @@ async function fetchArtistImages(artistId) {
  * @param {boolean} lyricsAvailable - Whether lyrics are available
  * @param {boolean} isInstrumental - Whether the track is instrumental
  */
-function checkForVisualMode(lyricsAvailable, isInstrumental) {
+function checkForVisualMode(data, trackId) {
     // Don't check if visual mode is disabled
-    if (!visualModeConfig.enabled) {
-        return;
-    }
+    if (!visualModeConfig.enabled) return;
     
+    // Use flags from the backend response
+    const lyricsAvailable = data && data.has_lyrics;
+    const isInstrumental = data && data.is_instrumental;
+
     // Clear existing timer
     if (visualModeTimer) {
         clearTimeout(visualModeTimer);
@@ -1103,7 +1119,7 @@ function checkForVisualMode(lyricsAvailable, isInstrumental) {
     
     // Exit visual mode if lyrics are available and not instrumental
     if (lyricsAvailable && !isInstrumental) {
-        exitVisualMode();
+        if (visualModeActive) exitVisualMode();
         return;
     }
     
@@ -1111,7 +1127,13 @@ function checkForVisualMode(lyricsAvailable, isInstrumental) {
     if (!lyricsAvailable || isInstrumental) {
         const delayMs = visualModeConfig.delaySeconds * 1000;
         visualModeTimer = setTimeout(() => {
-            enterVisualMode();
+            // HARDENED: Check if track is still the same before entering
+            if (lastTrackInfo) {
+                const currentId = `${lastTrackInfo.artist} - ${lastTrackInfo.title}`;
+                if (currentId === trackId) {
+                    enterVisualMode();
+                }
+            }
         }, delayMs);
     }
 }
@@ -1131,10 +1153,13 @@ function enterVisualMode() {
         lyricsContainer.classList.add('visual-mode-hidden');
     }
     
+    // SAVE current state before changing
+    savedBackgroundState = getCurrentBackgroundStyle();
+
     // Auto-switch to sharp mode if configured
     if (visualModeConfig.autoSharp) {
-        const currentStyle = getCurrentBackgroundStyle();
-        if (currentStyle !== 'sharp') {
+        // Only apply if not already sharp to avoid unnecessary updates
+        if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
         }
     }
@@ -1163,7 +1188,11 @@ function exitVisualMode() {
         lyricsContainer.classList.remove('visual-mode-hidden');
     }
     
-    // Restore previous background style (will use saved preference when persistence is implemented)
+    // RESTORE previous background style
+    if (savedBackgroundState) {
+        applyBackgroundStyle(savedBackgroundState);
+        savedBackgroundState = null;
+    }
 }
 
 /**
@@ -1411,23 +1440,19 @@ async function updateLoop() {
             updateControlState(trackInfo);
 
             // Update lyrics
-            const lyrics = await getLyrics();
-            if (lyrics) {
-                setLyricsInDom(lyrics);
+            const data = await getLyrics();
+            
+            if (data) {
+                // 1. Update DOM with just the lyrics array
+                setLyricsInDom(data.lyrics || []);
                 
-                // Check if we should enter visual mode
-                // Lyrics is an array - check if it has meaningful content
-                const hasLyrics = Array.isArray(lyrics) && lyrics.some(line => 
-                    line && typeof line === 'string' && line.trim().length > 0 && 
-                    !line.toLowerCase().includes('no lyrics') && 
-                    !line.toLowerCase().includes('instrumental')
-                );
-                const isInstrumental = trackInfo.is_instrumental || false;
-                
-                checkForVisualMode(hasLyrics, isInstrumental);
+                // 2. Check for Visual Mode using the backend flags
+                // Pass the full data object and the track ID
+                checkForVisualMode(data, currentTrackId);
             } else {
-                // No lyrics available - check for visual mode
-                checkForVisualMode(false, false);
+                // Fallback if no data (e.g. API error)
+                // Pass a dummy object saying no lyrics
+                checkForVisualMode({ has_lyrics: false, is_instrumental: false }, currentTrackId);
             }
         } else {
             // No track playing - handle slideshow if enabled
