@@ -444,7 +444,7 @@ class AlbumArtProvider:
                     largest_url = original_url
                     # We don't know the actual size until we download it, but assume it's >= 1000
                     # The actual resolution will be verified when the image is downloaded
-                    largest_size = 1000  # Conservative estimate, actual size will be verified
+                    largest_size = 0  # Changed from 1000 to 0 to force verification
             
             if largest_url:
                 if largest_size >= self.min_resolution:

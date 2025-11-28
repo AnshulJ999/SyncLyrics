@@ -1208,8 +1208,21 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             if hasattr(_get_current_song_meta_data_spotify, '_last_db_art_track_id') and \
                _get_current_song_meta_data_spotify._last_db_art_track_id == captured_track_id:
                 # We already processed this track. Check if file actually exists.
-                if get_cached_art_path():
-                    should_copy = False
+                cached_art = get_cached_art_path()
+                if cached_art:
+                    # NEW FIX: Check resolution. If it's small (Windows thumb), force copy anyway.
+                    try:
+                        with Image.open(cached_art) as img:
+                            if img.width < 600 or img.height < 600:
+                                logger.debug(f"Cached art is low-res ({img.width}x{img.height}), forcing upgrade from DB")
+                                should_copy = True
+                            else:
+                                should_copy = False
+                    except:
+                        # If we can't read it, safer to overwrite
+                        should_copy = True
+                else:
+                    should_copy = True
             
             if should_copy:
                 # Atomic copy from DB to cache for immediate use (preserving original format)
