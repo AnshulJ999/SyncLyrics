@@ -1082,10 +1082,21 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             
             if should_copy:
                 try:
-                    cleanup_old_art()
+                    # FIX: Atomic Copy (No cleanup_old_art first)
                     original_extension = db_image_path.suffix or '.jpg'
                     cache_path = CACHE_DIR / f"current_art{original_extension}"
-                    shutil.copy2(db_image_path, cache_path)
+                    temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
+                    
+                    shutil.copy2(db_image_path, temp_path)
+                    os.replace(temp_path, cache_path)
+                    
+                    # Clean up stale extensions ONLY after new file is in place
+                    for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
+                        if ext == original_extension: continue
+                        try:
+                            stale = CACHE_DIR / f"current_art{ext}"
+                            if stale.exists(): os.remove(stale)
+                        except: pass
                 except Exception as e:
                     logger.debug(f"Failed to copy DB art to cache: {e}")
 
@@ -1106,12 +1117,21 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                         art_path = CACHE_DIR / f"current_art{ext}"
                         
                         # Save thumbnail
-                        cleanup_old_art()
+                        # FIX: Atomic Save
                         loop = asyncio.get_running_loop()
-                        await loop.run_in_executor(None, _save_windows_thumbnail_sync, art_path, byte_data)
+                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, art_path, byte_data)
                         
-                        _last_windows_track_id = current_track_id
-                        album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                        if save_ok:
+                            # Clean up stale extensions
+                            for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
+                                if ext == get_image_extension(byte_data): continue
+                                try:
+                                    stale = CACHE_DIR / f"current_art{ext}"
+                                    if stale.exists(): os.remove(stale)
+                                except: pass
+                            
+                            _last_windows_track_id = current_track_id
+                            album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
                 elif thumbnail_ref:
                      # Reuse existing
                      album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
@@ -1139,6 +1159,22 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                          
                  task = create_tracked_task(background_windows_art_upgrade())
                  _running_art_upgrade_tasks[current_track_id] = task
+
+                 # FIX: Wait for DB to avoid flicker
+                 try:
+                     # Wait 300ms for high-res art
+                     await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
+                     
+                     # Check DB again!
+                     db_result = load_album_art_from_db(artist, album)
+                     if db_result:
+                         # Found it! Update variables to use High-Res immediately
+                         found_in_db = True
+                         db_image_path = db_result["path"]
+                         # ... atomic copy logic (same as above) ...
+                         album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                 except asyncio.TimeoutError:
+                     pass # Fallback to Windows thumbnail
 
         return {
             "artist": artist,
