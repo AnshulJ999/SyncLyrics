@@ -21,6 +21,9 @@ let displayConfig = {
 
 let lastTrackInfo = null;
 
+// Global variable at the top of the file
+let pendingArtUrl = null; 
+
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
     // Try modern API first (Works on HTTPS / Localhost)
@@ -564,17 +567,48 @@ function updateAlbumArt(trackInfo) {
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        // Only update src if changed to avoid flickering
-        if (albumArt.src !== trackInfo.album_art_url &&
-            !albumArt.src.endsWith(trackInfo.album_art_url)) {
-
-            albumArt.src = trackInfo.album_art_url;
-            if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) updateBackground();
+        // Create absolute URL for reliable comparison
+        // This handles cases where one is relative (/cover-art) and one is absolute (http://...)
+        const targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
+        
+        // Check if src is actually different (using endsWith to handle relative/absolute mismatch)
+        if (albumArt.src !== targetUrl && !albumArt.src.endsWith(trackInfo.album_art_url)) {
+            
+            // Check if we are already loading this exact URL to avoid duplicate work
+            if (pendingArtUrl !== targetUrl) {
+                pendingArtUrl = targetUrl;
+                
+                const img = new Image();
+                
+                img.onload = () => {
+                    // CRITICAL: Check if this is STILL the URL we want to show
+                    // If the user skipped to another song while this was loading, pendingArtUrl will be different
+                    if (pendingArtUrl === targetUrl) {
+                        albumArt.src = targetUrl;
+                        
+                        // Update background only when image is ready
+                        if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
+                            updateBackground();
+                        }
+                        
+                        albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+                        pendingArtUrl = null; // Reset
+                    }
+                };
+                
+                img.onerror = () => {
+                    if (pendingArtUrl === targetUrl) pendingArtUrl = null;
+                };
+                
+                img.src = targetUrl;
+            }
+        } else {
+            // URL matches current, just ensure it's visible
+            albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
         }
-        albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
     } else {
-        // Hide album art if not available
         albumArt.style.display = 'none';
+        pendingArtUrl = null;
     }
 
     // Show/hide header based on whether we have art or track info
