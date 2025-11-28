@@ -707,8 +707,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                                 # Update width/height with actual values
                                 width = actual_width
                                 height = actual_height
-                            except:
-                                pass
+                                logger.info(f"Verified resolution for {provider_name}: {resolution_str}") # Add success log
+                            except Exception as e:
+                                logger.warning(f"Failed to verify resolution for {image_path}: {e}") # Log error
                         else:
                             logger.warning(f"Failed to save {provider_name} art for {artist} - {album or title}")
                             continue
@@ -728,7 +729,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
                         # Update width/height with actual values
                         width = actual_width
                         height = actual_height
-                    except:
+                        logger.info(f"Verified existing resolution for {provider_name}: {resolution_str}") # Add success log
+                    except Exception as e:
+                        logger.warning(f"Failed to verify existing resolution for {image_path}: {e}") # Log error
                         # Fallback to metadata if available
                         if existing_metadata and provider_name in existing_metadata.get("providers", {}):
                             existing_provider_data = existing_metadata["providers"][provider_name]
@@ -1359,10 +1362,20 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # If we have all expected providers, the DB is complete
                         db_is_complete = expected_providers.issubset(existing_providers)
                         
-                        # Trigger background task ONLY if DB is incomplete (and not already running)
+                        # SELF-HEAL: Check if any existing provider has invalid/unknown resolution
+                        # This ensures we re-run the check to fix metadata for files that were downloaded but have 0x0 resolution
+                        has_invalid_resolution = False
+                        if db_metadata:  # Corrected variable name
+                            for p_name, p_data in db_metadata.get("providers", {}).items():
+                                if p_data.get("downloaded") and (p_data.get("width", 0) == 0 or "unknown" in str(p_data.get("resolution", "")).lower()):
+                                    has_invalid_resolution = True
+                                    logger.debug(f"Found invalid resolution for {p_name}, triggering self-heal")
+                                    break
+
+                        # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
                         # Use raw_spotify_url (not album_art_url which is now a local path)
                         # CRITICAL FIX: Only run this once per track to prevent infinite loops
-                        if not db_is_complete and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+                        if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
                             # Mark as checked immediately to prevent re-entry on next poll
                             _db_checked_tracks.add(captured_track_id)
                             

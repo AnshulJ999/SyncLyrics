@@ -139,6 +139,9 @@ async function getLyrics() {
         // Update provider info (NEW)
         if (data.provider) {
             updateProviderDisplay(data.provider);
+        } else {
+            // Ensure provider button is visible even if no lyrics found (for Album Art selection)
+            updateProviderDisplay("None");
         }
 
         return data.lyrics || data;
