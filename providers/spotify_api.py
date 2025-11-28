@@ -87,6 +87,10 @@ class SpotifyAPI:
         self._last_valid_response_time = time.time()
         self._last_force_refresh_failure_time = 0
         
+        # Artist Image Cache
+        # Key: artist_id, Value: list of image URLs
+        self._artist_image_cache = {}
+        
         # Request tracking
         # Tracks ALL Spotify API calls for rate limit monitoring
         # Spotify's rate limit is typically ~180 requests/minute for most endpoints
@@ -383,6 +387,8 @@ class SpotifyAPI:
                 'album': current['item']['album']['name'],
                 'album_art': album_art_url,
                 'track_id': new_track_id,
+                'artist_id': current['item']['artists'][0]['id'] if current['item'].get('artists') else None,
+                'artist_name': current['item']['artists'][0]['name'] if current['item'].get('artists') else None,
                 'url': current['item']['external_urls']['spotify'],
                 'duration_ms': current['item']['duration_ms'],
                 'progress_ms': current['progress_ms'],
@@ -576,6 +582,59 @@ class SpotifyAPI:
             self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to go to previous track: {e}")
             return False
+    
+    async def get_artist_images(self, artist_id: str) -> list:
+        """
+        Fetch artist images from Spotify API.
+        
+        Args:
+            artist_id: Spotify artist ID
+            
+        Returns:
+            List of image URLs sorted by size (largest first)
+        """
+        if not artist_id:
+            return []
+
+        # Check cache first
+        if artist_id in self._artist_image_cache:
+            logger.debug(f"Returning cached images for artist {artist_id}")
+            return self._artist_image_cache[artist_id]
+
+        if not self.initialized:
+            logger.warning("Spotify API not initialized, cannot fetch artist images")
+            return []
+            
+        try:
+            # Track this API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['other'] += 1
+            
+            logger.debug(f"Fetching artist images for artist_id: {artist_id}")
+            loop = asyncio.get_event_loop()
+            artist = await loop.run_in_executor(None, self.sp.artist, artist_id)
+            
+            images = artist.get('images', [])
+            
+            # Sort by size (width * height), largest first
+            images_sorted = sorted(
+                images, 
+                key=lambda x: (x.get('width', 0) or 0) * (x.get('height', 0) or 0), 
+                reverse=True
+            )
+            
+            image_urls = [img['url'] for img in images_sorted]
+            logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)}")
+            
+            # Cache the results
+            self._artist_image_cache[artist_id] = image_urls
+            
+            return image_urls
+            
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Error fetching artist images for {artist_id}: {e}")
+            return []
     
     def get_auth_url(self) -> Optional[str]:
         """

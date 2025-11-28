@@ -89,10 +89,41 @@ async def lyrics() -> dict:
     if metadata and metadata.get("colors"):
         colors = metadata.get("colors")
     
+    provider = get_current_provider()
+    
+    # Determine flags
+    is_instrumental = False
+    has_lyrics = True
+    
+    if isinstance(lyrics_data, str):
+        # Handle error messages or status strings
+        msg = lyrics_data
+        has_lyrics = False
+        
+        # Check for specific status messages
+        if "instrumental" in msg.lower():
+            is_instrumental = True
+            
+        return {
+            "lyrics": [], 
+            "msg": msg,
+            "colors": colors, 
+            "provider": provider,
+            "has_lyrics": False,
+            "is_instrumental": is_instrumental
+        }
+    
+    # Check if lyrics are actually empty or just [...]
+    # (lyrics_data is a tuple of strings)
+    if not lyrics_data or all(not line for line in lyrics_data):
+         has_lyrics = False
+
     return {
         "lyrics": list(lyrics_data),
         "colors": colors,
-        "provider": get_current_provider()  # NEW: Add provider info
+        "provider": provider,
+        "has_lyrics": has_lyrics,
+        "is_instrumental": is_instrumental
     }
 
 @app.route("/current-track")
@@ -100,6 +131,7 @@ async def current_track() -> dict:
     """
     Returns detailed track info (Art, Progress, Duration).
     Used for the UI Header/Footer.
+    Includes artist_id for visual mode and artist image fetching.
     """
     try:
         metadata = await get_current_song_meta_data()
@@ -597,6 +629,36 @@ async def previous_track():
     await client.previous_track()
     return jsonify({"status": "success", "message": "Previous"})
 
+@app.route("/api/artist/images", methods=['GET'])
+async def get_artist_images():
+    """
+    Get artist images for the current or specified artist.
+    Returns a list of image URLs sorted by size (largest first).
+    """
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    # Get artist_id from query parameter or current track metadata
+    artist_id = request.args.get('artist_id')
+    
+    if not artist_id:
+        # Try to get from current track metadata
+        metadata = await get_current_song_meta_data()
+        if metadata and metadata.get('artist_id'):
+            artist_id = metadata.get('artist_id')
+        else:
+            return jsonify({"error": "No artist ID provided or available"}), 400
+    
+    # Fetch artist images from Spotify API
+    images = await client.get_artist_images(artist_id)
+    
+    return jsonify({
+        "artist_id": artist_id,
+        "images": images,
+        "count": len(images)
+    })
+
 # --- System Routes ---
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -666,7 +728,13 @@ async def get_client_config():
         "blurStrength": settings.get("ui.blur_strength"),
         "overlayOpacity": settings.get("ui.overlay_opacity"),
         "sharpAlbumArt": settings.get("ui.sharp_album_art"),
-        "softAlbumArt": settings.get("ui.soft_album_art")
+        "softAlbumArt": settings.get("ui.soft_album_art"),
+        # Visual Mode settings
+        "visualModeEnabled": settings.get("visual_mode.enabled"),
+        "visualModeDelaySeconds": settings.get("visual_mode.delay_seconds"),
+        "visualModeAutoSharp": settings.get("visual_mode.auto_sharp"),
+        "slideshowEnabled": settings.get("visual_mode.slideshow.enabled"),
+        "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds")
     }
 
 @app.route("/callback")

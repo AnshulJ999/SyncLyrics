@@ -1572,6 +1572,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 logger.debug(f"Failed to setup Spotify art download: {e}")
             
         # Return standardized structure with all fields
+        # Include artist_id and artist_name for visual mode and artist image fetching
         return {
             "artist": track["artist"],
             "title": track["title"],
@@ -1581,7 +1582,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "colors": colors,
             "album_art_url": album_art_url,
             "is_playing": True,
-            "source": "spotify"
+            "source": "spotify",
+            "artist_id": track.get("artist_id"),  # For fetching artist images
+            "artist_name": track.get("artist_name")  # For display purposes
         }
     except Exception as e:
         logger.error(f"Spotify API Error: {e}")
@@ -1774,8 +1777,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # Frontend will allow controls for this source type
                     result["source"] = "spotify_hybrid"
                     
- #                   if DEBUG["enabled"]:
- #                       logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
+                    # Copy Artist ID and Name for Visual Mode
+                    # This ensures artist slideshows work even when playing from Windows Media
+                    if spotify_data.get("artist_id"):
+                        result["artist_id"] = spotify_data.get("artist_id")
+                    if spotify_data.get("artist_name"):
+                        result["artist_name"] = spotify_data.get("artist_name")
+                    
+#                   if DEBUG["enabled"]:
+#                       logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
         except Exception as e:
             logger.error(f"Hybrid enrichment failed: {e}")
     

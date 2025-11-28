@@ -842,6 +842,11 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
     if current_song_data is None: return "No song playing"
     if current_song_lyrics is None: return "Lyrics not found"
     
+    # Check if explicitly marked as instrumental in the lyrics data
+    # (Some providers might return a single line like "Instrumental")
+    if len(current_song_lyrics) == 1 and "instrumental" in current_song_lyrics[0][1].lower():
+        return "Instrumental"
+
     idx = _find_current_lyric_index()
     
     # Handle instrumental / intro

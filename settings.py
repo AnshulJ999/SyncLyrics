@@ -172,6 +172,13 @@ class SettingsManager:
             "album_art.enable_lastfm": Setting("Last.fm", bool, True, False, "Album Art", "Enable Last.fm source", "switch"),
             "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, True, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
             "album_art.min_resolution": Setting("Min Resolution", int, 3000, False, "Album Art", "Preferred resolution (px)", "number", min_val=640, max_val=3000),
+            
+            # Visual Mode
+            "visual_mode.enabled": Setting("Visual Mode", bool, True, False, "Visual Mode", "Enable visual mode for instrumentals", "switch"),
+            "visual_mode.delay_seconds": Setting("Delay", int, 10, False, "Visual Mode", "Delay before hiding lyrics (s)", "slider", min_val=1, max_val=60),
+            "visual_mode.auto_sharp": Setting("Auto Sharp", bool, True, False, "Visual Mode", "Auto-switch to sharp mode in visual mode", "switch"),
+            "visual_mode.slideshow.enabled": Setting("Slideshow", bool, True, False, "Visual Mode", "Enable slideshow when no music", "switch"),
+            "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=30),
         }
         
         self.load_settings()

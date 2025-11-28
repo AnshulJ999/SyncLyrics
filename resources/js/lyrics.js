@@ -22,7 +22,22 @@ let displayConfig = {
 let lastTrackInfo = null;
 
 // Global variable at the top of the file
-let pendingArtUrl = null; 
+let pendingArtUrl = null;
+
+// Visual Mode State Management
+let visualModeActive = false;
+let visualModeTimer = null;
+let artistImages = [];
+let slideshowInterval = null;
+let currentSlideIndex = 0;
+let slideshowEnabled = false;  // Separate from visual mode - for when no music is playing
+let visualModeConfig = {
+    enabled: true,
+    delaySeconds: 10,
+    autoSharp: true,
+    slideshowEnabled: true,
+    slideshowIntervalSeconds: 8
+}; 
 
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
@@ -95,6 +110,23 @@ async function getConfig() {
                 displayConfig.softAlbumArt = false;
             }
             applySharpMode();
+        }
+
+        // Load visual mode settings from server
+        if (config.visualModeEnabled !== undefined) {
+            visualModeConfig.enabled = config.visualModeEnabled;
+        }
+        if (config.visualModeDelaySeconds !== undefined) {
+            visualModeConfig.delaySeconds = config.visualModeDelaySeconds;
+        }
+        if (config.visualModeAutoSharp !== undefined) {
+            visualModeConfig.autoSharp = config.visualModeAutoSharp;
+        }
+        if (config.slideshowEnabled !== undefined) {
+            visualModeConfig.slideshowEnabled = config.slideshowEnabled;
+        }
+        if (config.slideshowIntervalSeconds !== undefined) {
+            visualModeConfig.slideshowIntervalSeconds = config.slideshowIntervalSeconds;
         }
 
         console.log(`Config loaded: Interval=${updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);
@@ -1022,6 +1054,240 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
+// ========== VISUAL MODE FUNCTIONS ==========
+
+/**
+ * Fetch artist images from Spotify API
+ * @param {string} artistId - Spotify artist ID
+ * @returns {Promise<Array<string>>} Array of image URLs
+ */
+async function fetchArtistImages(artistId) {
+    if (!artistId) {
+        console.warn('No artist ID provided for image fetch');
+        return [];
+    }
+    
+    try {
+        const response = await fetch(`/api/artist/images?artist_id=${encodeURIComponent(artistId)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (data.images && data.images.length > 0) {
+            artistImages = data.images;
+            console.log(`Loaded ${artistImages.length} artist images`);
+            return artistImages;
+        }
+    } catch (error) {
+        console.error('Error fetching artist images:', error);
+    }
+    return [];
+}
+
+/**
+ * Check if we should enter visual mode based on lyrics availability
+ * @param {boolean} lyricsAvailable - Whether lyrics are available
+ * @param {boolean} isInstrumental - Whether the track is instrumental
+ */
+function checkForVisualMode(lyricsAvailable, isInstrumental) {
+    // Don't check if visual mode is disabled
+    if (!visualModeConfig.enabled) {
+        return;
+    }
+    
+    // Clear existing timer
+    if (visualModeTimer) {
+        clearTimeout(visualModeTimer);
+        visualModeTimer = null;
+    }
+    
+    // Exit visual mode if lyrics are available and not instrumental
+    if (lyricsAvailable && !isInstrumental) {
+        exitVisualMode();
+        return;
+    }
+    
+    // Start timer to enter visual mode if no lyrics or instrumental
+    if (!lyricsAvailable || isInstrumental) {
+        const delayMs = visualModeConfig.delaySeconds * 1000;
+        visualModeTimer = setTimeout(() => {
+            enterVisualMode();
+        }, delayMs);
+    }
+}
+
+/**
+ * Enter visual mode - hide lyrics and show visual experience
+ */
+function enterVisualMode() {
+    if (visualModeActive) return;
+    
+    console.log('Entering Visual Mode');
+    visualModeActive = true;
+    
+    // Hide lyrics container with fade
+    const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
+    if (lyricsContainer) {
+        lyricsContainer.classList.add('visual-mode-hidden');
+    }
+    
+    // Auto-switch to sharp mode if configured
+    if (visualModeConfig.autoSharp) {
+        const currentStyle = getCurrentBackgroundStyle();
+        if (currentStyle !== 'sharp') {
+            applyBackgroundStyle('sharp');
+        }
+    }
+    
+    // Start slideshow if we have artist images
+    if (artistImages.length > 0) {
+        startSlideshow();
+    }
+}
+
+/**
+ * Exit visual mode - show lyrics again
+ */
+function exitVisualMode() {
+    if (!visualModeActive) return;
+    
+    console.log('Exiting Visual Mode');
+    visualModeActive = false;
+    
+    // Stop slideshow
+    stopSlideshow();
+    
+    // Show lyrics container
+    const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
+    if (lyricsContainer) {
+        lyricsContainer.classList.remove('visual-mode-hidden');
+    }
+    
+    // Restore previous background style (will use saved preference when persistence is implemented)
+}
+
+/**
+ * Get current background style
+ * @returns {string} Current background style ('sharp', 'soft', 'blur', or 'none')
+ */
+function getCurrentBackgroundStyle() {
+    if (displayConfig.sharpAlbumArt) return 'sharp';
+    if (displayConfig.softAlbumArt) return 'soft';
+    if (displayConfig.artBackground) return 'blur';
+    return 'none';
+}
+
+/**
+ * Apply background style programmatically
+ * @param {string} style - Style to apply ('sharp', 'soft', 'blur', or 'none')
+ */
+function applyBackgroundStyle(style) {
+    // Reset all styles
+    displayConfig.sharpAlbumArt = false;
+    displayConfig.softAlbumArt = false;
+    displayConfig.artBackground = false;
+    
+    // Apply selected style
+    if (style === 'sharp') {
+        displayConfig.sharpAlbumArt = true;
+        applySharpMode();
+    } else if (style === 'soft') {
+        displayConfig.softAlbumArt = true;
+        applySoftMode();
+    } else if (style === 'blur') {
+        displayConfig.artBackground = true;
+    }
+    
+    updateBackground();
+}
+
+/**
+ * Start slideshow - cycle through artist images and album art
+ */
+function startSlideshow() {
+    if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+    }
+    
+    currentSlideIndex = 0;
+    
+    // Show first image immediately
+    showSlide(currentSlideIndex);
+    
+    // Then cycle through images
+    const intervalMs = visualModeConfig.slideshowIntervalSeconds * 1000;
+    slideshowInterval = setInterval(() => {
+        // Calculate total slides (artist images + 1 for album art)
+        const totalSlides = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
+        if (totalSlides > 0) {
+            currentSlideIndex = (currentSlideIndex + 1) % totalSlides;
+            showSlide(currentSlideIndex);
+        }
+    }, intervalMs);
+}
+
+/**
+ * Stop slideshow
+ */
+function stopSlideshow() {
+    if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
+    }
+    
+    // Clear slideshow images
+    const bgContainer = document.getElementById('background-layer');
+    if (bgContainer) {
+        const slideshowImages = bgContainer.querySelectorAll('.slideshow-image');
+        slideshowImages.forEach(img => img.remove());
+    }
+}
+
+/**
+ * Show a specific slide in the slideshow
+ * @param {number} index - Index of the slide to show
+ */
+function showSlide(index) {
+    const bgContainer = document.getElementById('background-layer');
+    if (!bgContainer) return;
+    
+    let imageUrl;
+    
+    // Last index is album art, rest are artist images
+    if (index >= artistImages.length) {
+        // Show album art
+        if (lastTrackInfo && lastTrackInfo.album_art_url) {
+            imageUrl = lastTrackInfo.album_art_url;
+        } else {
+            return; // No album art available
+        }
+    } else {
+        // Show artist image
+        imageUrl = artistImages[index];
+    }
+    
+    // Create new image element for crossfade
+    const newImg = document.createElement('div');
+    newImg.className = 'slideshow-image';
+    newImg.style.backgroundImage = `url(${imageUrl})`;
+    
+    // Add Ken Burns animation class
+    newImg.classList.add('ken-burns-effect');
+    
+    bgContainer.appendChild(newImg);
+    
+    // Fade in new image
+    setTimeout(() => {
+        newImg.classList.add('active');
+    }, 50);
+    
+    // Remove old images after transition
+    setTimeout(() => {
+        const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(.active)');
+        oldImages.forEach(img => img.remove());
+    }, 2000); // Match CSS transition duration
+}
+
 function setupProviderUI() {
     // Provider badge click handler
     const providerBadge = document.getElementById('provider-badge');
@@ -1097,6 +1363,8 @@ function setupProviderUI() {
 }
 
 async function updateLoop() {
+    let lastTrackId = null;
+    
     while (true) {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
@@ -1112,6 +1380,26 @@ async function updateLoop() {
 
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
+            // Detect track change
+            const currentTrackId = `${trackInfo.artist} - ${trackInfo.title}`;
+            const trackChanged = lastTrackId !== currentTrackId;
+            
+            if (trackChanged) {
+                // Track changed - fetch artist images and reset visual mode
+                lastTrackId = currentTrackId;
+                visualModeActive = false; // Reset visual mode state
+                if (visualModeTimer) {
+                    clearTimeout(visualModeTimer);
+                    visualModeTimer = null;
+                }
+                stopSlideshow();
+                
+                // Fetch artist images for potential visual mode
+                if (trackInfo.artist_id) {
+                    await fetchArtistImages(trackInfo.artist_id);
+                }
+            }
+            
             // Update lastTrackInfo FIRST so updateBackground() has current data
             // This fixes the stale data issue without needing forced updateBackground() calls
             lastTrackInfo = trackInfo;
@@ -1126,6 +1414,27 @@ async function updateLoop() {
             const lyrics = await getLyrics();
             if (lyrics) {
                 setLyricsInDom(lyrics);
+                
+                // Check if we should enter visual mode
+                // Lyrics is an array - check if it has meaningful content
+                const hasLyrics = Array.isArray(lyrics) && lyrics.some(line => 
+                    line && typeof line === 'string' && line.trim().length > 0 && 
+                    !line.toLowerCase().includes('no lyrics') && 
+                    !line.toLowerCase().includes('instrumental')
+                );
+                const isInstrumental = trackInfo.is_instrumental || false;
+                
+                checkForVisualMode(hasLyrics, isInstrumental);
+            } else {
+                // No lyrics available - check for visual mode
+                checkForVisualMode(false, false);
+            }
+        } else {
+            // No track playing - handle slideshow if enabled
+            if (visualModeConfig.slideshowEnabled && !slideshowInterval && artistImages.length > 0) {
+                startSlideshow();
+            } else if (!visualModeConfig.slideshowEnabled) {
+                stopSlideshow();
             }
         }
 
