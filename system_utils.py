@@ -1048,75 +1048,97 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             duration_ms = int(timeline.end_time.total_seconds() * 1000)
         except:
             pass
+
+        # Create track ID
+        global _last_windows_track_id
+        current_track_id = f"{artist}:{title}"
         
-        # Get thumbnail if available
+        # Flag to track if we found art in DB
+        found_in_db = False
         album_art_url = None
-        try:
-            # Create track ID to check if we need to re-fetch thumbnail
-            global _last_windows_track_id
-            current_track_id = f"{artist}:{title}"
+
+        # 1. Check Album Art Database first (Fast Path)
+        db_result = load_album_art_from_db(artist, album)
+        if db_result:
+            found_in_db = True
+            db_image_path = db_result["path"]
             
-            thumbnail_ref = info.thumbnail
-            # Only read thumbnail if track has changed or we don't have cached art
-            if thumbnail_ref and current_track_id != _last_windows_track_id:
-                # Open the stream
-                stream = await thumbnail_ref.open_read_async()
-                if stream:
-                    # Create DataReader
-                    reader = DataReader(stream)
-                    await reader.load_async(stream.size)
-                    
-                    # Read bytes directly into bytearray
-                    byte_data = bytearray(stream.size)
-                    reader.read_bytes(byte_data)
-                    
-                    # Detect extension
-                    ext = get_image_extension(byte_data)
-                    
-                    # OPTIMIZATION: Check if file already exists with identical content
-                    # This prevents unnecessary disk writes when the same image is read repeatedly
-                    art_path = CACHE_DIR / f"current_art{ext}"
-                    needs_write = True
-                    if art_path.exists():
-                        try:
-                            with open(art_path, "rb") as f:
-                                existing_data = f.read()
-                            # Compare byte arrays - if identical, skip the write
-                            if existing_data == byte_data:
-                                needs_write = False
-                        except:
-                            # If we can't read existing file, proceed with write
-                            pass
-                    
-                    # Only write if content is actually different
-                    if needs_write:
-                        # Clean up old art files before saving new one to prevent stale art bug
-                        cleanup_old_art()
+            # Use track ID as cache buster
+            album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+            
+            # Check if we need to copy to cache
+            should_copy = True
+            # Check if current cache file exists and is high-res
+            cached_art = get_cached_art_path()
+            if cached_art:
+                try:
+                    with Image.open(cached_art) as img:
+                        # If cached art is already large, don't re-copy needlessly
+                        # But if it's small (Windows thumb), force overwrite
+                        if img.width >= 900 and img.height >= 900:
+                            should_copy = False
+                except:
+                    should_copy = True
+            
+            if should_copy:
+                try:
+                    cleanup_old_art()
+                    original_extension = db_image_path.suffix or '.jpg'
+                    cache_path = CACHE_DIR / f"current_art{original_extension}"
+                    shutil.copy2(db_image_path, cache_path)
+                except Exception as e:
+                    logger.debug(f"Failed to copy DB art to cache: {e}")
+
+        # 2. Windows Thumbnail Extraction (Fallback)
+        # Only if not found in DB
+        if not found_in_db:
+            try:
+                thumbnail_ref = info.thumbnail
+                if thumbnail_ref and current_track_id != _last_windows_track_id:
+                    stream = await thumbnail_ref.open_read_async()
+                    if stream:
+                        reader = DataReader(stream)
+                        await reader.load_async(stream.size)
+                        byte_data = bytearray(stream.size)
+                        reader.read_bytes(byte_data)
                         
-                        # OPTIMIZATION: Run file write in executor (Fix #2)
-                        # This prevents blocking the event loop when writing large BMP files
+                        ext = get_image_extension(byte_data)
+                        art_path = CACHE_DIR / f"current_art{ext}"
+                        
+                        # Save thumbnail
+                        cleanup_old_art()
                         loop = asyncio.get_running_loop()
-                        await loop.run_in_executor(
-                            None, 
-                            _save_windows_thumbnail_sync,
-                            art_path,
-                            byte_data
-                        )
-                    
-                    # Update last track ID
-                    _last_windows_track_id = current_track_id
-                    
-                    # Set URL to local server route
-                    # Use track ID as cache buster instead of timestamp
-                    # This prevents image flickering - URL only changes when track changes
-                    album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
-            elif thumbnail_ref:
-                # Track hasn't changed, use existing cached art
-                # Use same track-based cache buster to maintain URL stability
-                album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
-        except Exception as e:
-            # logger.debug(f"Failed to extract Windows thumbnail: {e}")
-            pass
+                        await loop.run_in_executor(None, _save_windows_thumbnail_sync, art_path, byte_data)
+                        
+                        _last_windows_track_id = current_track_id
+                        album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                elif thumbnail_ref:
+                     # Reuse existing
+                     album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+            except Exception as e:
+                pass
+
+        # 3. Background High-Res Fetch (Progressive Upgrade)
+        # Only if not found in DB and not checked this session
+        if not found_in_db and current_track_id not in _db_checked_tracks:
+            if current_track_id not in _running_art_upgrade_tasks:
+                 _db_checked_tracks.add(current_track_id)
+                 if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                     _db_checked_tracks.pop()
+                     
+                 async def background_windows_art_upgrade():
+                     try:
+                         # Fetch and save to DB (no spotify_url available)
+                         await ensure_album_art_db(artist, album, title, None)
+                         # We don't need to do anything else; the NEXT poll loop 
+                         # will see the file in DB (step 1 above) and auto-upgrade the UI.
+                     except Exception as e:
+                         logger.debug(f"Windows background art fetch failed: {e}")
+                     finally:
+                         _running_art_upgrade_tasks.pop(current_track_id, None)
+                         
+                 task = create_tracked_task(background_windows_art_upgrade())
+                 _running_art_upgrade_tasks[current_track_id] = task
 
         return {
             "artist": artist,
