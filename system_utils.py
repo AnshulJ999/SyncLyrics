@@ -562,7 +562,7 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         logger.warning(f"Download failed for {url}: {e}")
         return (False, '.jpg')  # Return default extension on failure
 
-async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> None:
+async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> Optional[Tuple[str, str]]:
     """
     Background task to fetch all album art options and save them to the database.
     Downloads images from all providers and saves them in their original format (pristine quality).
@@ -573,6 +573,9 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         album: Album name (optional)
         title: Track title
         spotify_url: Spotify album art URL (optional)
+        
+    Returns:
+        Tuple of (preferred_url, resolution_str) of the selected art, or None if failed.
     """
     # OPTIMIZATION: Acquire semaphore to limit concurrent downloads (Fix #4)
     # This prevents network saturation if user skips many tracks quickly
@@ -583,7 +586,7 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
         enabled = FEATURES.get("album_art_db", True)
         logger.debug(f"DEBUG: album_art_db enabled: {enabled}")  # Debug Log 2
         if not enabled:
-            return
+            return None
     
         try:
             # Get album art provider
@@ -596,7 +599,7 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             
             if not options:
                 logger.debug(f"No album art options found for {artist} - {album or title}")
-                return
+                return None
             
             # Get folder path
             folder = get_album_db_folder(artist, album or title)
@@ -767,11 +770,18 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
             # This prevents UI stutters if disk is busy or antivirus is scanning
             if await loop.run_in_executor(None, save_album_db_metadata, folder, metadata):
                 logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
+                
+                # Return the preferred provider info for immediate cache update
+                if preferred_provider and preferred_provider in providers_data:
+                    p_data = providers_data[preferred_provider]
+                    return (p_data["url"], p_data["resolution"])
             else:
                 logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
         
         except Exception as e:
             logger.error(f"Error in ensure_album_art_db: {e}")
+            
+        return None
 
 def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
     """
@@ -1272,7 +1282,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
 
                             async def background_refresh_db():
                                 try:
-                                    await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
+                                    # This function now returns the best URL and resolution
+                                    return await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
                                 except Exception as e:
                                     logger.debug(f"Background DB refresh failed: {e}")
                                 finally:
@@ -1357,23 +1368,26 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                     
                                     # Populate Album Art Database (fetches all options and saves them)
                                     # CRITICAL: This must run even if we skip high-res fetch
+                                    high_res_result = None
                                     try:
                                         logger.info(f"Calling ensure_album_art_db for {captured_artist} - {captured_title}")
-                                        await ensure_album_art_db(captured_artist, captured_album, captured_title, original_spotify_url)
+                                        # Use the result from DB population directly (avoid redundant fetch)
+                                        high_res_result = await ensure_album_art_db(captured_artist, captured_album, captured_title, original_spotify_url)
+                                        
+                                        # Update the provider cache immediately
+                                        if high_res_result:
+                                            # Update cache manually since we skipped get_high_res_art
+                                            # We need to construct the cache key exactly like the provider does
+                                            cache_key = art_provider._get_cache_key(captured_artist, captured_title, captured_album)
+                                            art_provider._cache[cache_key] = high_res_result
+                                            logger.debug(f"Updated art provider cache from DB result for {captured_artist} - {captured_title}")
+                                            
                                     except Exception as e:
                                         logger.error(f"ensure_album_art_db failed: {e}")
                                     
-                                    # Also fetch high-res art for immediate cache (legacy behavior)
-                                    # Only need to do this if we didn't have a cache hit above, OR to refresh
-                                    # For now, we run it to ensure cache is up to date
-                                    logger.debug(f"Calling get_high_res_art for {captured_artist} - {captured_title}")
-                                    high_res_result = await art_provider.get_high_res_art(
-                                        artist=captured_artist,
-                                        title=captured_title,
-                                        album=captured_album,
-                                        spotify_url=original_spotify_url
-                                    )
-                                    logger.debug(f"get_high_res_art returned: {high_res_result}")
+                                    # REMOVED: Redundant call to art_provider.get_high_res_art
+                                    # This prevents the double-flicker (once for remote high-res, once for local DB)
+                                    # and saves sequential network requests since ensure_album_art_db already fetched everything in parallel.
                                     
                                     # Check if track changed during fetch (race condition protection)
                                     # Get current track from Spotify cache to verify
@@ -1388,13 +1402,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                     # If we got a better URL, it's now cached for next poll
                                     # The frontend will pick it up on the next metadata poll (0.1s later)
                                     if high_res_result:
-                                        high_res_url, resolution_info = high_res_result
-                                        if high_res_url != original_spotify_url:
-                                            # Log the upgrade
-                                            if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_track_id') or \
-                                               _get_current_song_meta_data_spotify._last_logged_track_id != captured_track_id:
-                                                logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {resolution_info}")
-                                                _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
+                                        # Update cache with the best URL and resolution
+                                        _get_current_song_meta_data_spotify._last_logged_track_id = captured_track_id
+                                        logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {high_res_result[1]}")
                                 except Exception as e:
                                     logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
                                 finally:
