@@ -1246,7 +1246,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         
                         # Check if other providers are enabled in the singleton instance
                         # We need to get the provider instance to check config
-                        from providers.album_art import get_album_art_provider
+                        # FIX: Removed redundant local import that was causing UnboundLocalError
                         art_provider = get_album_art_provider()
                         
                         if art_provider.enable_itunes:
@@ -1407,7 +1407,12 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             _running_art_upgrade_tasks[captured_track_id] = task
                     
             except Exception as e:
-                logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
+                # FIX: Log only once per track to prevent spam (but still catch errors)
+                if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_error_track_id') or \
+                   _get_current_song_meta_data_spotify._last_logged_error_track_id != captured_track_id:
+                     logger.debug(f"Failed to setup high-res album art, using Spotify default: {e}")
+                     _get_current_song_meta_data_spotify._last_logged_error_track_id = captured_track_id
+                pass # It is safe to keep this if you want, but it is not strictly needed anymore
         
         # CRITICAL FIX: Only attempt download if it's a remote URL (not a local path starting with /)
         # This prevents 'MissingSchema' exceptions when using cached art
