@@ -386,14 +386,14 @@ def sanitize_folder_name(name: str) -> str:
     
     return sanitized
 
-def get_album_db_folder(artist: str, album: Optional[str]) -> Path:
+def get_album_db_folder(artist: str, album: Optional[str] = None) -> Path:
     """
-    Get the database folder path for an album.
+    Get the database folder path for an album or artist images.
     Uses Artist - Album format, with fallback to Artist - Title if no album.
     
     Args:
         artist: Artist name
-        album: Album name (optional, falls back to title if None)
+        album: Album name (optional). If None, returns Artist-only folder.
         
     Returns:
         Path to the album database folder
@@ -1830,3 +1830,73 @@ async def get_current_song_meta_data() -> Optional[dict]:
     _log_app_state()
     
     return result
+
+async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None) -> List[str]:
+    """
+    Background task to fetch artist images and save them to the database.
+    """
+    # Use existing semaphore to prevent flooding
+    async with _art_download_semaphore:
+        try:
+            folder = get_album_db_folder(artist, None) # Artist-only folder
+            folder.mkdir(parents=True, exist_ok=True)
+            
+            metadata_path = folder / "metadata.json"
+            existing_metadata = {}
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        existing_metadata = json.load(f)
+                except: pass
+
+            # Fetch from Spotify if ID provided
+            images = []
+            if spotify_artist_id:
+                client = get_shared_spotify_client()
+                if client:
+                    # fetch remote URLs
+                    images = await client.get_artist_images(spotify_artist_id)
+
+            # Download and Save
+            saved_images = existing_metadata.get("images", [])
+            
+            # Simple deduplication set
+            existing_urls = {img.get('url') for img in saved_images if img.get('url')}
+            
+            loop = asyncio.get_running_loop()
+            
+            for idx, url in enumerate(images):
+                if url in existing_urls: continue
+                
+                # Filename: spotify_0.jpg, spotify_1.jpg etc.
+                filename = f"spotify_{idx}.jpg" # Simplified for now
+                file_path = folder / filename
+                
+                if not file_path.exists():
+                    success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
+                    if success:
+                        filename = f"spotify_{idx}{ext}"
+                        saved_images.append({
+                            "source": "spotify",
+                            "url": url,
+                            "filename": filename,
+                            "downloaded": True
+                        })
+            
+            # Save Metadata
+            metadata = {
+                "artist": artist,
+                "type": "artist_images",
+                "last_accessed": datetime.utcnow().isoformat() + "Z",
+                "images": saved_images
+            }
+            
+            await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+            
+            # Return list of LOCAL paths for the frontend
+            # We return paths relative to the DB root for the API to serve
+            return [f"/api/album-art/image/{folder.name}/{img['filename']}" for img in saved_images if img.get('downloaded')]
+
+        except Exception as e:
+            logger.error(f"Error ensuring artist image DB: {e}")
+            return []

@@ -842,13 +842,19 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
     if current_song_data is None: return "No song playing"
     if current_song_lyrics is None: return "Lyrics not found"
     
-    # Check if explicitly marked as instrumental in the lyrics data
-    # (Some providers might return a single line like "Instrumental")
-    if len(current_song_lyrics) == 1 and "instrumental" in current_song_lyrics[0][1].lower():
-        return "Instrumental"
-
     idx = _find_current_lyric_index()
+
+    # Explicit Flag Check (New)
+    is_instrumental = False
     
+    # 1. Check if the lyrics list itself has a special flag (we can attach this in providers)
+    # For now, we improve the text check to be less brittle
+    if len(current_song_lyrics) == 1:
+        text = current_song_lyrics[0][1].lower().strip()
+        # Check for known "Instrumental" markers from providers
+        if text in ["instrumental", "music only", "no lyrics", "non-lyrical"]:
+            is_instrumental = True
+            
     # Handle instrumental / intro
     if idx == -1:
         # Look ahead to see what the first lyric is

@@ -1,11 +1,11 @@
 from os import path
-from typing import Any
+from typing import Any, Optional, List
 import asyncio
 import time
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
 from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
-from system_utils import get_current_song_meta_data
+from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art
 from state_manager import *
 from config import LYRICS, RESOURCES_DIR
 from settings import settings
@@ -680,29 +680,27 @@ async def previous_track():
 @app.route("/api/artist/images", methods=['GET'])
 async def get_artist_images():
     """
-    Get artist images for the current or specified artist.
-    Returns a list of image URLs sorted by size (largest first).
+    Get artist images, preferring local DB, falling back to Spotify and caching.
     """
-    client = get_spotify_client()
-    if not client:
-        return jsonify({"error": "Spotify not connected"}), 503
-    
-    # Get artist_id from query parameter or current track metadata
     artist_id = request.args.get('artist_id')
     
-    if not artist_id:
-        # Try to get from current track metadata
-        metadata = await get_current_song_meta_data()
-        if metadata and metadata.get('artist_id'):
-            artist_id = metadata.get('artist_id')
-        else:
-            return jsonify({"error": "No artist ID provided or available"}), 400
+    # We also need the artist NAME to find the folder
+    # Try to get from current metadata if not passed
+    metadata = await get_current_song_meta_data()
+    artist_name = metadata.get('artist') if metadata else None
     
-    # Fetch artist images from Spotify API
-    images = await client.get_artist_images(artist_id)
+    if not artist_name:
+         return jsonify({"error": "No artist name available"}), 400
+
+    # 1. Try to ensure/fetch from DB (this handles caching automatically)
+    from system_utils import ensure_artist_image_db
+    
+    # This will return local URLs like /api/album-art/image/Artist/img.jpg
+    images = await ensure_artist_image_db(artist_name, artist_id)
     
     return jsonify({
         "artist_id": artist_id,
+        "artist_name": artist_name,
         "images": images,
         "count": len(images)
     })
