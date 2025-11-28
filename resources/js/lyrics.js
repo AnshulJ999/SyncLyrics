@@ -1528,8 +1528,11 @@ async function updateLoop() {
             const data = await getLyrics();
             
             if (data) {
-                // 1. Update DOM with just the lyrics array
-                setLyricsInDom(data.lyrics || []);
+                // 1. Update DOM
+                // If lyrics array is empty but we have a message, pass the message to setLyricsInDom
+                // This ensures "Instrumental" or error messages are displayed
+                const lyricsToDisplay = (data.lyrics && data.lyrics.length > 0) ? data.lyrics : (data.msg || []);
+                setLyricsInDom(lyricsToDisplay);
                 
                 // 2. Check for Visual Mode using the backend flags
                 // Pass the full data object and the track ID

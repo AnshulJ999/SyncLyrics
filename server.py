@@ -82,8 +82,9 @@ async def lyrics() -> dict:
     lyrics_data = await get_timed_lyrics_previous_and_next()
     metadata = await get_current_song_meta_data()
     
-    if isinstance(lyrics_data, str):
-        return {"msg": lyrics_data}
+    # Remove the early return for string type so we can wrap it properly
+    # if isinstance(lyrics_data, str):
+    #    return {"msg": lyrics_data}
     
     colors = ["#24273a", "#363b54"]
     if metadata and metadata.get("colors"):

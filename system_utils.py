@@ -1066,9 +1066,11 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 1. Check Album Art Database first (Fast Path)
         db_result = load_album_art_from_db(artist, album)
+        saved_background_style = None  # Variable to hold saved style preference
         if db_result:
             found_in_db = True
             db_image_path = db_result["path"]
+            saved_background_style = db_result.get("background_style")  # Capture saved style
             
             # Use track ID as cache buster
             album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
@@ -1212,7 +1214,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "colors": ("#24273a", "#363b54"),
             "album_art_url": album_art_url,
             "is_playing": True,
-            "source": "windows_media"
+            "source": "windows_media",
+            "background_style": saved_background_style  # Return saved style preference
         }
             
     except Exception as e:
