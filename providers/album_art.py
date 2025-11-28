@@ -195,7 +195,18 @@ class AlbumArtProvider:
                 score = 0
                 
                 # Artist match (required)
-                if artist.lower().strip() in itunes_artist or itunes_artist in artist.lower().strip():
+                artist_lower = artist.lower().strip()
+                itunes_artist_lower = itunes_artist # Already lower/stripped above
+                
+                # Exact match (best)
+                if artist_lower == itunes_artist_lower:
+                    score += 50
+                # Word-based match (good for "The Beatles" vs "Beatles")
+                # This prevents "Sting" from matching "Casting Crowns" while allowing partial word matches
+                elif artist_lower in itunes_artist_lower.split() or itunes_artist_lower in artist_lower.split():
+                    score += 30
+                # Lenient substring (fallback, lower score)
+                elif artist_lower in itunes_artist_lower or itunes_artist_lower in artist_lower:
                     score += 10
                 else:
                     continue  # Skip if artist doesn't match
@@ -446,17 +457,11 @@ class AlbumArtProvider:
                     # The actual resolution will be verified when the image is downloaded
                     largest_size = 0  # Changed from 1000 to 0 to force verification
             
+            # NEW: Return URL even if size is unknown (0)
+            # The actual resolution will be checked when image is downloaded and saved
             if largest_url:
-                if largest_size >= self.min_resolution:
-                    logger.info(f"Last.fm: Found album art ({largest_size}x{largest_size}) for {artist} - {title}")
-                    return (largest_url, largest_size)
-                elif largest_size >= 1000:
-                    # Last.fm max is 1000px, which is still better than Spotify's 640px
-                    # Return it even if below min_resolution threshold
-                    logger.info(f"Last.fm: Found album art ({largest_size}x{largest_size}) for {artist} - {title} (below min_resolution {self.min_resolution}, but better than Spotify)")
-                    return (largest_url, largest_size)
-                else:
-                    logger.debug(f"Last.fm: Found album art but resolution ({largest_size}x{largest_size}) too low")
+                logger.info(f"Last.fm: Found album art for {artist} - {title} (resolution will be verified on download)")
+                return (largest_url, 0)  # Return with 0 resolution, will be verified later
                 
         except requests.exceptions.Timeout:
             logger.warning(f"Last.fm API timeout ({self.timeout}s) for {artist} - {title}")
