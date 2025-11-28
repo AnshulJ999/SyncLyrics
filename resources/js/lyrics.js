@@ -1529,9 +1529,10 @@ async function updateLoop() {
             
             if (data) {
                 // 1. Update DOM
-                // If lyrics array is empty but we have a message, pass the message to setLyricsInDom
-                // This ensures "Instrumental" or error messages are displayed
-                const lyricsToDisplay = (data.lyrics && data.lyrics.length > 0) ? data.lyrics : (data.msg || []);
+                // If lyrics exist, show them. 
+                // If not, pass the WHOLE data object (which contains data.msg = "Instrumental") 
+                // so setLyricsInDom can display the status message properly.
+                const lyricsToDisplay = (data.lyrics && data.lyrics.length > 0) ? data.lyrics : data;
                 setLyricsInDom(lyricsToDisplay);
                 
                 // 2. Check for Visual Mode using the backend flags

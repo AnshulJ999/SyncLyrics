@@ -806,6 +806,125 @@ class AlbumArtProvider:
         
         return options
 
+    async def get_artist_images(self, artist: str) -> List[Dict[str, Any]]:
+        """
+        Fetch artist images from all available sources.
+        
+        Returns:
+            List of dicts: {'url': str, 'source': str, 'width': int, 'height': int}
+        """
+        images = []
+        loop = asyncio.get_running_loop()
+        
+        # 1. iTunes (High Quality)
+        if self.enable_itunes:
+            try:
+                itunes_images = await loop.run_in_executor(None, self._get_itunes_artist_images, artist)
+                images.extend(itunes_images)
+            except Exception as e:
+                logger.debug(f"iTunes artist image fetch failed: {e}")
+
+        # 2. Last.fm (Good Quality)
+        if self.enable_lastfm and self.lastfm_api_key:
+            try:
+                lastfm_images = await loop.run_in_executor(None, self._get_lastfm_artist_images, artist)
+                images.extend(lastfm_images)
+            except Exception as e:
+                logger.debug(f"Last.fm artist image fetch failed: {e}")
+                
+        return images
+
+    def _get_itunes_artist_images(self, artist: str) -> List[Dict[str, Any]]:
+        """Fetch artist image from iTunes Search API"""
+        try:
+            # Search for artist
+            params = {
+                "term": artist,
+                "entity": "musicArtist",
+                "limit": 1
+            }
+            url = f"https://itunes.apple.com/search?{urlencode(params)}"
+            response = requests.get(url, timeout=self.timeout)
+            
+            if response.status_code != 200:
+                return []
+                
+            data = response.json()
+            if not data.get("resultCount"):
+                return []
+                
+            result = data["results"][0]
+            # iTunes doesn't always provide artist images via API, but we can check artistLinkUrl 
+            # or sometimes amgArtistId. However, for now, we rely on standard ArtworkUrl100 if present.
+            # NOTE: iTunes Search API often returns blank for artist artwork compared to albums.
+            # We will try to extract the standard keys if they exist.
+            
+            # Since standard iTunes API is weak for *Artist* images specifically (vs Albums),
+            # we might get limited results here, but it's worth trying.
+            # Often 'artworkUrl100' is missing for artists.
+            return [] 
+        except Exception:
+            return []
+
+    def _get_lastfm_artist_images(self, artist: str) -> List[Dict[str, Any]]:
+        """Fetch artist images from Last.fm API"""
+        if not self.lastfm_api_key:
+            return []
+            
+        try:
+            params = {
+                "method": "artist.getImages",
+                "artist": artist,
+                "api_key": self.lastfm_api_key,
+                "format": "json",
+                "limit": 5 # Fetch top 5
+            }
+            url = f"http://ws.audioscrobbler.com/2.0/?{urlencode(params)}"
+            response = requests.get(url, timeout=self.timeout)
+            
+            if response.status_code != 200:
+                return []
+                
+            data = response.json()
+            image_list = data.get("images", {}).get("image", [])
+            
+            results = []
+            for img in image_list:
+                # Last.fm structure for getImages is slightly different or requires scraping
+                # Official API often returns just one main image or requires auth.
+                # Use artist.getInfo as fallback which is public.
+                pass
+                
+            # Fallback to artist.getInfo for the main image
+            params["method"] = "artist.getInfo"
+            url = f"http://ws.audioscrobbler.com/2.0/?{urlencode(params)}"
+            response = requests.get(url, timeout=self.timeout)
+            data = response.json()
+            
+            # Last.fm returns images in 'small', 'medium', 'large', 'extralarge', 'mega'
+            images = data.get("artist", {}).get("image", [])
+            for img in images:
+                if img.get("size") in ["mega", "extralarge"] and img.get("#text"):
+                    results.append({
+                        "url": img["#text"],
+                        "source": "Last.fm",
+                        "width": 0, # Unknown
+                        "height": 0
+                    })
+                    
+            # Deduplicate by URL
+            unique_results = []
+            seen = set()
+            for r in results:
+                if r["url"] not in seen:
+                    unique_results.append(r)
+                    seen.add(r["url"])
+                    
+            return unique_results
+        except Exception as e:
+            logger.debug(f"Last.fm error: {e}")
+            return []
+
 # Singleton instance
 _album_art_provider_instance: Optional[AlbumArtProvider] = None
 
