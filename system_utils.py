@@ -1471,10 +1471,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # This prevents the polling loop from spawning duplicates (Fix: Task Spam)
                 is_downloading = album_art_url in _spotify_download_tracker
                 
-                if not is_downloading and (
-                   (not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url') or \
-                   _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url) or \
-                   not current_art_exists):
+                # FIX: Properly group conditions so tracker check applies to all conditions
+                # Without this, if URL changed, condition would be True even if already downloading
+                if (
+                    not is_downloading
+                    and (
+                        not hasattr(_get_current_song_meta_data_spotify, '_last_spotify_art_url')
+                        or _get_current_song_meta_data_spotify._last_spotify_art_url != album_art_url
+                        or not current_art_exists
+                    )
+                ):
                     
                     # Mark as downloading to prevent duplicates
                     _spotify_download_tracker.add(album_art_url)
