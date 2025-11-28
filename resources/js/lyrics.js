@@ -40,6 +40,8 @@ let visualModeConfig = {
 }; 
 // ADD THIS: Global variable to store state
 let savedBackgroundState = null;
+// Phase 2: Track if user manually overrode style (to prevent auto-applying saved style)
+let manualStyleOverride = false;
 
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
@@ -891,6 +893,79 @@ async function loadAlbumArtTab() {
             return;
         }
 
+        // Phase 2: Add Background Style Controls at the top
+        const styleContainer = document.createElement('div');
+        styleContainer.className = 'style-controls-container';
+        styleContainer.style.cssText = 'grid-column: 1 / -1; margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;';
+        styleContainer.innerHTML = `
+            <h3 style="margin-top:0; margin-bottom:10px; font-size:14px; opacity:0.8;">Background Style</h3>
+            <div class="style-buttons" style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="style-btn" data-style="blur" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Blur</button>
+                <button class="style-btn" data-style="soft" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Soft</button>
+                <button class="style-btn" data-style="sharp" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Sharp</button>
+            </div>
+        `;
+        
+        grid.appendChild(styleContainer);
+        
+        // Add event listeners for style buttons
+        const styleBtns = styleContainer.querySelectorAll('.style-btn');
+        const currentStyle = getCurrentBackgroundStyle();
+        
+        styleBtns.forEach(btn => {
+            // Highlight current style
+            if (btn.dataset.style === currentStyle) {
+                btn.style.background = 'rgba(29, 185, 84, 0.3)';
+                btn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
+            }
+            
+            // Hover effects
+            btn.addEventListener('mouseenter', () => {
+                if (btn.dataset.style !== currentStyle) {
+                    btn.style.background = 'rgba(255,255,255,0.15)';
+                }
+            });
+            btn.addEventListener('mouseleave', () => {
+                if (btn.dataset.style !== currentStyle) {
+                    btn.style.background = 'rgba(255,255,255,0.1)';
+                }
+            });
+            
+            btn.addEventListener('click', async (e) => {
+                const style = e.target.dataset.style;
+                
+                // Apply locally immediately
+                applyBackgroundStyle(style);
+                manualStyleOverride = true; // User manually changed it
+                
+                // Update UI - reset all buttons, highlight selected
+                styleBtns.forEach(b => {
+                    b.style.background = 'rgba(255,255,255,0.1)';
+                    b.style.borderColor = 'rgba(255,255,255,0.2)';
+                });
+                e.target.style.background = 'rgba(29, 185, 84, 0.3)';
+                e.target.style.borderColor = 'rgba(29, 185, 84, 0.6)';
+                
+                // Save to server
+                try {
+                    const response = await fetch('/api/album-art/background-style', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ style: style })
+                    });
+                    const res = await response.json();
+                    if (res.status === 'success') {
+                        showToast(`Saved preference: ${style}`);
+                    } else {
+                        showToast(`Error: ${res.error || 'Failed to save'}`, 'error');
+                    }
+                } catch (err) {
+                    console.error('Error saving style:', err);
+                    showToast('Failed to save style preference', 'error');
+                }
+            });
+        });
+
         // Build art grid
         data.options.forEach(option => {
             const card = document.createElement('div');
@@ -1417,6 +1492,7 @@ async function updateLoop() {
                 // Track changed - fetch artist images and reset visual mode
                 lastTrackId = currentTrackId;
                 visualModeActive = false; // Reset visual mode state
+                manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
                 if (visualModeTimer) {
                     clearTimeout(visualModeTimer);
                     visualModeTimer = null;
@@ -1432,6 +1508,15 @@ async function updateLoop() {
             // Update lastTrackInfo FIRST so updateBackground() has current data
             // This fixes the stale data issue without needing forced updateBackground() calls
             lastTrackInfo = trackInfo;
+
+            // Phase 2: Apply saved background style if available (and not manually overridden)
+            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
+                const currentStyle = getCurrentBackgroundStyle();
+                if (currentStyle !== trackInfo.background_style) {
+                    console.log(`Applying saved background style: ${trackInfo.background_style}`);
+                    applyBackgroundStyle(trackInfo.background_style);
+                }
+            }
 
             // Update all UI components
             updateAlbumArt(trackInfo);

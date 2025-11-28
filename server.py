@@ -495,6 +495,54 @@ async def set_album_art_preference():
         "provider": provider_name
     })
 
+@app.route("/api/album-art/background-style", methods=['POST'])
+async def set_background_style():
+    """Set preferred background style for current album (Sharp, Soft, Blur) - Phase 2"""
+    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata
+    from datetime import datetime
+    
+    # Get current track info to know which album to update
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"error": "No song playing"}), 404
+    
+    data = await request.get_json()
+    style = data.get('style')  # 'sharp', 'soft', 'blur', or None to clear
+    
+    if not style:
+        return jsonify({"error": "No style specified"}), 400
+    
+    # Validate style value
+    if style not in ['sharp', 'soft', 'blur']:
+        return jsonify({"error": f"Invalid style '{style}'. Must be 'sharp', 'soft', or 'blur'"}), 400
+        
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    
+    if not artist:
+        return jsonify({"error": "Invalid song data"}), 400
+        
+    # Load existing metadata or create new if missing (though it should exist if art is there)
+    db_result = load_album_art_from_db(artist, album)
+    
+    if db_result:
+        db_metadata = db_result["metadata"]
+    else:
+        # If no DB entry exists yet, we can't save preference easily without creating the structure
+        # For now, return error if no art DB exists
+        return jsonify({"error": "No album art database entry found. Please wait for art to download."}), 404
+        
+    # Update style
+    db_metadata["background_style"] = style
+    db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+    
+    # Save
+    folder = get_album_db_folder(artist, album)
+    if save_album_db_metadata(folder, db_metadata):
+        return jsonify({"status": "success", "style": style, "message": f"Saved {style} preference"})
+    else:
+        return jsonify({"error": "Failed to save preference"}), 500
+
 @app.route("/api/album-art/image/<folder_name>/<filename>", methods=['GET'])
 async def serve_album_art_image(folder_name: str, filename: str):
     """Serve album art images from database"""

@@ -885,9 +885,13 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
         metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
         save_album_db_metadata(folder, metadata)
         
+        # Get saved background style (NEW for Phase 2)
+        background_style = metadata.get("background_style")
+        
         return {
             "path": image_path,
-            "metadata": metadata
+            "metadata": metadata,
+            "background_style": background_style  # Return saved style preference
         }
     
     except Exception as e:
@@ -1276,10 +1280,12 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
 
         # Check Album Art Database first (fast path - zero delay if cached)
         db_result = load_album_art_from_db(captured_artist, captured_album)
+        saved_background_style = None  # Variable to hold saved style preference
         if db_result:
             found_in_db = True
             db_image_path = db_result["path"]
             db_metadata = db_result["metadata"]
+            saved_background_style = db_result.get("background_style")  # Capture saved style
             
             # Always set the URL to our local cache route
             album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
@@ -1573,6 +1579,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             
         # Return standardized structure with all fields
         # Include artist_id and artist_name for visual mode and artist image fetching
+        # Include background_style for Phase 2: Visual Preference Persistence
         return {
             "artist": track["artist"],
             "title": track["title"],
@@ -1584,7 +1591,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "is_playing": True,
             "source": "spotify",
             "artist_id": track.get("artist_id"),  # For fetching artist images
-            "artist_name": track.get("artist_name")  # For display purposes
+            "artist_name": track.get("artist_name"),  # For display purposes
+            "background_style": saved_background_style  # Return saved style preference (Phase 2)
         }
     except Exception as e:
         logger.error(f"Spotify API Error: {e}")
@@ -1783,6 +1791,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         result["artist_id"] = spotify_data.get("artist_id")
                     if spotify_data.get("artist_name"):
                         result["artist_name"] = spotify_data.get("artist_name")
+                    
+                    # Copy Background Style preference (Phase 2)
+                    if spotify_data.get("background_style"):
+                        result["background_style"] = spotify_data.get("background_style")
                     
 #                   if DEBUG["enabled"]:
 #                       logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
