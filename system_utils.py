@@ -1171,8 +1171,28 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                          # Found it! Update variables to use High-Res immediately
                          found_in_db = True
                          db_image_path = db_result["path"]
-                         # ... atomic copy logic (same as above) ...
-                         album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                         
+                         # ACTUAL Atomic Copy Logic
+                         try:
+                             original_extension = db_image_path.suffix or '.jpg'
+                             cache_path = CACHE_DIR / f"current_art{original_extension}"
+                             temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
+                             
+                             shutil.copy2(db_image_path, temp_path)
+                             os.replace(temp_path, cache_path)
+                             
+                             # Clean up stale extensions ONLY after new file is in place
+                             for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
+                                 if ext == original_extension: continue
+                                 try:
+                                     stale = CACHE_DIR / f"current_art{ext}"
+                                     if stale.exists(): os.remove(stale)
+                                 except: pass
+                                 
+                             album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                         except Exception as e:
+                             logger.debug(f"Failed to copy DB art after wait: {e}")
+                             # If copy fails, we fall back to the Windows thumbnail which is already set
                  except asyncio.TimeoutError:
                      pass # Fallback to Windows thumbnail
 
