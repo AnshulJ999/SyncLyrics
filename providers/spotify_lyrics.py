@@ -98,7 +98,7 @@ class SpotifyLyrics(LyricsProvider):
                         # 404 might be temporary server issue (Vercel cold start, deployment issue)
                         # Retry 2-3 times before giving up
                         if attempt < self.retries - 1:
-                            backoff = 3 * (2 ** attempt)  # Exponential: 3s, 6s, 12s
+                            backoff = 2 * (2 ** attempt)  # Exponential: 3s, 6s, 12s
                             logger.warning(f"Spotify Proxy returned 404 (server might be unavailable), retry {attempt + 1}/{self.retries} in {backoff}s")
                             time.sleep(backoff)
                             continue
