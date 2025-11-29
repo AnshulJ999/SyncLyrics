@@ -180,6 +180,19 @@ async def extract_dominant_colors(image_path: Path) -> list:
 def _remove_text_inside_parentheses_and_brackets(text: str) -> str:
     return re.sub(r"\([^)]*\)|\[[^\]]*\]", '', text)
 
+def _normalize_track_id(artist: str, title: str) -> str:
+    """
+    Generates a consistent, source-agnostic track ID.
+    Used to prevent UI flickering when switching sources (e.g. Windows -> Spotify Hybrid).
+    """
+    if not artist: artist = ""
+    if not title: title = ""
+    
+    # Simple alphanumeric normalization
+    norm_artist = "".join(c for c in artist.lower() if c.isalnum())
+    norm_title = "".join(c for c in title.lower() if c.isalnum())
+    return f"{norm_artist}_{norm_title}"
+
 def _log_app_state() -> None:
     """Log key application state periodically."""
     global _last_state_log_time
@@ -1077,7 +1090,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # Create track ID
         global _last_windows_track_id
-        current_track_id = f"{artist}:{title}"
+        current_track_id = _normalize_track_id(artist, title)
         
         # Flag to track if we found art in DB
         found_in_db = False
@@ -1091,8 +1104,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             db_image_path = db_result["path"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
             
-            # Use track ID as cache buster
-            album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+            # Use stable ID for cache busting (only changes when track changes)
+            album_art_url = f"/cover-art?id={current_track_id}"
             
             # Check if we need to copy to cache
             should_copy = True
@@ -1159,10 +1172,10 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                                 except: pass
                             
                             _last_windows_track_id = current_track_id
-                            album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                            album_art_url = f"/cover-art?id={current_track_id}"
                 elif thumbnail_ref:
                      # Reuse existing
-                     album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                     album_art_url = f"/cover-art?id={current_track_id}"
             except Exception as e:
                 pass
 
@@ -1217,7 +1230,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                                      if stale.exists(): os.remove(stale)
                                  except: pass
                                  
-                             album_art_url = f"/cover-art?t={hash(current_track_id) % 100000}"
+                             album_art_url = f"/cover-art?id={current_track_id}"
                          except Exception as e:
                              logger.debug(f"Failed to copy DB art after wait: {e}")
                              # If copy fails, we fall back to the Windows thumbnail which is already set
@@ -1295,7 +1308,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         captured_artist = track["artist"]
         captured_title = track["title"]
         captured_album = track.get("album")
-        captured_track_id = track.get("track_id") or f"{captured_artist}::{captured_title}"
+        captured_track_id = _normalize_track_id(captured_artist, captured_title)
         
         # Flag to track if we found art in DB
         found_in_db = False
@@ -1309,8 +1322,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             db_metadata = db_result["metadata"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
             
-            # Always set the URL to our local cache route
-            album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
+            # Always set the URL to our local cache route with stable ID
+            album_art_url = f"/cover-art?id={captured_track_id}"
 
             # Check if we need to perform the physical file copy
             should_copy = True
@@ -1350,7 +1363,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     shutil.copy2(db_image_path, temp_path)
                     try:
                         os.replace(temp_path, cache_path)
-                        album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
+                        album_art_url = f"/cover-art?id={captured_track_id}"
                         # CHANGED: Downgrade to DEBUG to stop console spam on every poll
                         # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
                         
@@ -1434,7 +1447,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     logger.debug(f"Failed to copy DB image to cache: {e}")
             else:
                 # Even if we didn't copy, we need to set the URL correctly
-                album_art_url = f"/cover-art?t={hash(captured_track_id) % 100000}"
+                album_art_url = f"/cover-art?id={captured_track_id}"
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
@@ -1448,7 +1461,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 captured_artist = track["artist"]
                 captured_title = track["title"]
                 captured_album = track.get("album")
-                captured_track_id = track.get("track_id") or f"{captured_artist}::{captured_title}"
+                captured_track_id = _normalize_track_id(captured_artist, captured_title)
                 
                 # 1. Check cache first - if we have cached high-res, use it immediately
                 # Use album-level cache (same album = same art for all tracks)
@@ -1858,7 +1871,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     """
     Background task to fetch artist images and save them to the database.
     """
-    # Temporarily disable artist image fetching while we work on the bug
+    # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
     return [] 
 
     # Prevent duplicate downloads for the same artist (Race Condition Fix)

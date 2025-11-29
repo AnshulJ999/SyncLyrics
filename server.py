@@ -149,7 +149,8 @@ async def current_track() -> dict:
             current_lyrics = lyrics_module.current_song_lyrics
             if current_lyrics and len(current_lyrics) == 1:
                 text = current_lyrics[0][1].lower().strip()
-                if text in ["instrumental", "music only", "no lyrics", "non-lyrical"]:
+                # Updated list to match lyrics.py
+                if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
                     is_instrumental = True
             
             metadata["is_instrumental"] = is_instrumental

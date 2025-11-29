@@ -852,7 +852,8 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
     if len(current_song_lyrics) == 1:
         text = current_song_lyrics[0][1].lower().strip()
         # Check for known "Instrumental" markers from providers
-        if text in ["instrumental", "music only", "no lyrics", "non-lyrical"]:
+        # Expanded list to catch more symbols and common provider placeholders
+        if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
             is_instrumental = True
             
     # Handle instrumental / intro
