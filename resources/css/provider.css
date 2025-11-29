@@ -98,12 +98,12 @@
 }
 
 .provider-modal-content {
-    background: rgba(30, 32, 48, 0.9);
+    background: rgba(30, 32, 48, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     padding: 32px;
-    max-width: 480px;
-    width: 90%;
+    max-width: 800px; /* INCREASED from 480px */
+    width: 95%; /* Wider on mobile */
     max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
@@ -608,4 +608,18 @@
         margin-top: auto; /* Push to bottom if content is short */
         flex-shrink: 0; /* Prevent footer from being squished when content is long */
     }
+}
+
+/* Header for Artist Images Section */
+.artist-images-header {
+    grid-column: 1 / -1; /* Force span across all columns */
+    width: 100%;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
+    font-size: 1rem;
+    font-weight: 600;
+    display: block; /* Ensure it behaves as a block within the grid flow */
 }

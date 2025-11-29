@@ -64,6 +64,14 @@
     </button>
 </div>
 
+<!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
+<button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
+    <!-- Music Note Icon (♪) -->
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+    </svg>
+</button>
+
 <!-- Provider Selection Modal (NEW) -->
 <div id="provider-modal" class="provider-modal hidden">
     <div class="provider-modal-content">
@@ -73,9 +81,8 @@
         </div>
         <div class="provider-tabs">
             <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
-            <button class="provider-tab" data-tab="album-art">Album Art</button>
-            <!-- NEW TAB -->
-            <button class="provider-tab" data-tab="artist-images">Artist Images</button>
+            <button class="provider-tab" data-tab="album-art">Album Art & Images</button>
+            <!-- REMOVED: Separate Artist Images Tab -->
         </div>
         
         <!-- WRAPPER FOR DESKTOP GRID -->
@@ -92,7 +99,7 @@
             </div>
             
             <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
-                <!-- NEW: Background Style Controls -->
+                <!-- Background Style Controls (Static - JS duplication removed) -->
                 <div class="style-controls-section">
                     <h4>Background Style</h4>
                     <div class="style-buttons">
@@ -108,22 +115,12 @@
                 </div>
                 <div class="provider-modal-footer">
                     <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
-                        Select an album art to use for this album
+                        Select an image to use
                     </div>
                 </div>
             </div>
 
-            <!-- NEW CONTENT FOR ARTIST IMAGES -->
-            <div id="provider-tab-content-artist-images" class="provider-tab-content" data-title="Artist Images">
-                <div id="artist-images-grid" class="art-grid">
-                    <!-- Populated dynamically -->
-                </div>
-                <div class="provider-modal-footer">
-                    <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
-                        Artist images used for Visual Mode slideshow
-                    </div>
-                </div>
-            </div>
+            <!-- REMOVED: Separate Artist Images Content Div -->
         </div>
     </div>
 </div>
@@ -153,12 +150,23 @@
 
     <!-- Playback Controls -->
     <div id="playback-controls" class="playback-controls">
-        <button id="btn-like" class="control-btn" title="Save to Liked Songs">♡</button> <!-- NEW Like Button -->
-        <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
-        <button id="btn-play-pause" class="control-btn play-pause-btn paused" title="Play/Pause"></button>
-        <button id="btn-next" class="control-btn" title="Next Track">►►</button>
-        <button id="btn-queue" class="control-btn" title="Show Queue">☰</button> <!-- NEW Queue Button -->
-        <button id="btn-visual-mode" class="control-btn" title="Toggle Visual Mode">👁️</button>
+        <!-- Left: Like Button -->
+        <div class="controls-left">
+            <button id="btn-like" class="control-btn" title="Save to Liked Songs">♡</button>
+        </div>
+
+        <!-- Center: Main Playback -->
+        <div class="controls-center">
+            <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
+            <button id="btn-play-pause" class="control-btn play-pause-btn paused" title="Play/Pause"></button>
+            <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+        </div>
+
+        <!-- Right: Queue Button -->
+        <div class="controls-right">
+            <button id="btn-queue" class="control-btn" title="Show Queue">☰</button>
+        </div>
+        <!-- REMOVED: Old Visual Mode Button -->
     </div>
 
     <!-- NEW: Queue Drawer -->

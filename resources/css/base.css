@@ -577,13 +577,71 @@ body.hide-nav #player-ui-container {
 /* ========== PLAYBACK CONTROLS ========== */
 .playback-controls {
     display: flex;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: rgba(26, 27, 38, 0.6);
-    backdrop-filter: blur(10px);
+    justify-content: space-between; /* Spreads Left, Center, Right */
+    align-items: center;
+    gap: 10px;
+    padding: 0.5rem 1.5rem; /* Increased side padding */
+    background: rgba(26, 27, 38, 0.7); /* Slightly darker for better contrast */
+    backdrop-filter: blur(15px);
     border-radius: 50px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     pointer-events: auto;
+    width: clamp(300px, 90%, 500px); /* Fixed width constraint for centering */
+    margin: 0 auto; /* Center the whole bar */
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.controls-left,
+.controls-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.controls-left {
+    justify-content: flex-start;
+}
+
+.controls-right {
+    justify-content: flex-end;
+}
+
+.controls-center {
+    flex: 2;
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem; /* Space between Prev/Play/Next */
+}
+
+/* New Lyric Toggle Button (Bottom Left) */
+.lyrics-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.lyrics-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .lyrics-toggle-btn {
+    display: none !important;
 }
 
 .control-btn {
@@ -1130,19 +1188,22 @@ body.soft-mode .background-overlay {
     position: fixed;
     top: 0;
     right: -350px; /* Hidden by default */
-    width: 320px;
+    width: 350px; /* Slightly wider */
+    max-width: 85vw; /* Responsive on mobile */
     height: 100vh;
-    background: rgba(20, 20, 30, 0.95);
+    height: 100dvh; /* Mobile viewport fix */
+    background: rgba(15, 15, 20, 0.98); /* Darker background */
     backdrop-filter: blur(20px);
     z-index: 2000;
     transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: -5px 0 30px rgba(0,0,0,0.5);
+    box-shadow: -10px 0 40px rgba(0,0,0,0.6);
     display: flex;
     flex-direction: column;
     padding: 20px;
-    border-left: 1px solid rgba(255,255,255,0.1);
+    border-left: 1px solid rgba(255,255,255,0.05);
 }
 
+/* RESTORED: Missing Queue Styles */
 .queue-drawer.open {
     right: 0;
 }
@@ -1170,10 +1231,31 @@ body.soft-mode .background-overlay {
     cursor: pointer;
 }
 
+/* Queue Backdrop for clicking outside */
+.queue-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.queue-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 .queue-list {
     flex: 1;
     overflow-y: auto;
     padding-right: 5px;
+    /* Smooth scrolling */
+    -webkit-overflow-scrolling: touch; 
 }
 
 .queue-item {

@@ -796,8 +796,8 @@ function attachControlHandlers() {
         });
     }
 
-    // ADD THIS: Visual Mode Toggle Handler
-    const visualModeBtn = document.getElementById('btn-visual-mode');
+    // UPDATED: New Lyric/Visual Mode Toggle Button
+    const visualModeBtn = document.getElementById('btn-lyrics-toggle');
     if (visualModeBtn) {
         visualModeBtn.addEventListener('click', () => {
             if (visualModeActive) {
@@ -942,33 +942,24 @@ async function loadAlbumArtTab() {
 
         grid.innerHTML = '';
 
-        if (!data.options || data.options.length === 0) {
-            grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No album art options available yet.</div>';
-            return;
-        }
-
-        // Phase 2: Add Background Style Controls at the top
-        const styleContainer = document.createElement('div');
-        styleContainer.className = 'style-controls-container';
-        styleContainer.style.cssText = 'grid-column: 1 / -1; margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;';
-        styleContainer.innerHTML = `
-            <h3 style="margin-top:0; margin-bottom:10px; font-size:14px; opacity:0.8;">Background Style</h3>
-            <div class="style-buttons" style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="style-btn" data-style="blur" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Blur</button>
-                <button class="style-btn" data-style="soft" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Soft</button>
-                <button class="style-btn" data-style="sharp" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Sharp</button>
-            </div>
-        `;
-
-        grid.appendChild(styleContainer);
-
-        // Add event listeners for style buttons
-        const styleBtns = styleContainer.querySelectorAll('.style-btn');
+        // REMOVED: JS Injection of Style Controls (Now Static in HTML)
+        
+        // UPDATE: Correctly target buttons (document scope) and ONLY update visual state
+        // Event listeners are now handled in DOMContentLoaded to prevent duplication
+        const styleBtns = document.querySelectorAll('.style-btn');
         const currentStyle = getCurrentBackgroundStyle();
 
         styleBtns.forEach(btn => {
+            // Reset state
+            btn.classList.remove('active');
+            btn.style.background = '';
+            btn.style.borderColor = '';
+
             // Highlight current style
             if (btn.dataset.style === currentStyle) {
+                btn.classList.add('active');
+                // Keep inline styles for specific highlight if needed, or rely on CSS .active class
+                // adhering to the previous logic:
                 btn.style.background = 'rgba(29, 185, 84, 0.3)';
                 btn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
             }
@@ -1043,6 +1034,44 @@ async function loadAlbumArtTab() {
 
             grid.appendChild(card);
         });
+
+        // NEW: Fetch and Append Artist Images to the SAME grid
+        if (lastTrackInfo && lastTrackInfo.artist_id) {
+            // Add a header/separator with correct grid positioning
+            const separator = document.createElement('div');
+            separator.className = 'artist-images-header';
+            separator.textContent = 'Artist Images';
+            grid.appendChild(separator);
+
+            // Fetch images (reuse existing function logic or global variable if already fetched)
+            // We'll use the global artistImages array if populated, or fetch if empty
+            let images = artistImages;
+            if (!images || images.length === 0) {
+                images = await fetchArtistImages(lastTrackInfo.artist_id);
+            }
+
+            if (images && images.length > 0) {
+                images.forEach((url, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'art-card';
+                    card.innerHTML = `
+                        <img src="${url}" class="art-card-image" loading="lazy">
+                        <div class="art-card-overlay">
+                            <div class="art-card-provider">Artist Image</div>
+                        </div>
+                    `;
+                    // Optional: Click to view/set as background logic could go here
+                    grid.appendChild(card);
+                });
+            } else {
+                const msg = document.createElement('div');
+                msg.style.gridColumn = '1 / -1';
+                msg.style.opacity = '0.5';
+                msg.style.fontSize = '0.85rem';
+                msg.textContent = 'No artist images found';
+                grid.appendChild(msg);
+            }
+        }
 
     } catch (error) {
         console.error('Error loading album art options:', error);
@@ -1801,6 +1830,9 @@ async function main() {
     // Attach control handlers
     attachControlHandlers();
 
+    // NEW: Setup Queue Interactions (Click outside, Swipe)
+    setupQueueInteractions();
+
     // Setup provider UI
     setupProviderUI();
 
@@ -1836,15 +1868,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- QUEUE FUNCTIONS ---
 
+// NEW: Queue Interactions
+function setupQueueInteractions() {
+    // 1. Click Outside to Close
+    // Create backdrop if it doesn't exist
+    let backdrop = document.querySelector('.queue-backdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.className = 'queue-backdrop';
+        document.body.appendChild(backdrop);
+        
+        backdrop.addEventListener('click', () => {
+            if (queueDrawerOpen) toggleQueueDrawer();
+        });
+    }
+
+    // 2. Swipe from Right Edge to Open
+    let touchStartX = 0;
+    
+    document.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+    }, {passive: true});
+
+    document.addEventListener('touchend', (e) => {
+        const touchEndX = e.changedTouches[0].screenX;
+        const screenWidth = window.innerWidth;
+        
+        // Conditions for Swipe Open:
+        // 1. Start near right edge (last 30px)
+        // 2. Swipe left (end < start)
+        // 3. Significant distance (> 50px)
+        // 4. Queue is currently closed
+        if (!queueDrawerOpen && 
+            touchStartX > (screenWidth - 40) && 
+            (touchStartX - touchEndX) > 50) {
+            toggleQueueDrawer();
+        }
+    }, {passive: true});
+}
+
+// UPDATE: Toggle Queue to handle Backdrop
 async function toggleQueueDrawer() {
     const drawer = document.getElementById('queue-drawer');
+    const backdrop = document.querySelector('.queue-backdrop');
+    
     queueDrawerOpen = !queueDrawerOpen;
     
     if (queueDrawerOpen) {
         drawer.classList.add('open');
+        if (backdrop) backdrop.classList.add('visible');
         await fetchAndRenderQueue();
     } else {
         drawer.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('visible');
     }
 }
 
@@ -1993,9 +2069,16 @@ function setupTouchControls() {
 }
 
 function handleSwipe(startX, startY, endX, endY) {
-    const minSwipeDistance = 50;
+    const minSwipeDistance = 90;
     const maxVerticalVariance = 50; // Ignore if scrolled up/down too much
     
+    // EDGE GUARD: Ignore swipes that start at the very right edge 
+    // to prevent conflict with Queue Drawer opening
+    const screenWidth = window.innerWidth;
+    if (startX > (screenWidth - 40)) {
+        return; 
+    }
+
     const diffX = endX - startX;
     const diffY = endY - startY;
     
