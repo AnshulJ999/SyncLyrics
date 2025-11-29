@@ -37,7 +37,7 @@ let visualModeConfig = {
     autoSharp: true,
     slideshowEnabled: true,
     slideshowIntervalSeconds: 8
-}; 
+};
 // ADD THIS: Global variable to store state
 let savedBackgroundState = null;
 // Phase 2: Track if user manually overrode style (to prevent auto-applying saved style)
@@ -582,10 +582,10 @@ function setupSettingsPanel() {
                 applySoftMode();
                 applySharpMode();
                 updateUrlDisplay();
-                
+
                 // Update browser URL without page reload (enables refresh persistence & direct URL copy)
                 history.replaceState(null, '', generateCurrentUrl());
-                
+
                 manualStyleOverride = true; // User manually changed style
             });
         }
@@ -653,36 +653,36 @@ function updateAlbumArt(trackInfo) {
         // Create absolute URL for reliable comparison
         // This handles cases where one is relative (/cover-art) and one is absolute (http://...)
         const targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
-        
+
         // Check if src is actually different (using endsWith to handle relative/absolute mismatch)
         if (albumArt.src !== targetUrl && !albumArt.src.endsWith(trackInfo.album_art_url)) {
-            
+
             // Check if we are already loading this exact URL to avoid duplicate work
             if (pendingArtUrl !== targetUrl) {
                 pendingArtUrl = targetUrl;
-                
+
                 const img = new Image();
-                
+
                 img.onload = () => {
                     // CRITICAL: Check if this is STILL the URL we want to show
                     // If the user skipped to another song while this was loading, pendingArtUrl will be different
                     if (pendingArtUrl === targetUrl) {
                         albumArt.src = targetUrl;
-                        
+
                         // Update background only when image is ready
                         if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
                             updateBackground();
                         }
-                        
+
                         albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
                         pendingArtUrl = null; // Reset
                     }
                 };
-                
+
                 img.onerror = () => {
                     if (pendingArtUrl === targetUrl) pendingArtUrl = null;
                 };
-                
+
                 img.src = targetUrl;
             }
         } else {
@@ -907,7 +907,7 @@ async function showProviderModal() {
         // ALWAYS load album art, not just if tab is active
         // This ensures desktop view (which shows both) is populated
         loadAlbumArtTab(); // Remove await so it runs in parallel with UI showing
-        
+
         // Show modal (modal already declared on line 738)
         modal.classList.remove('hidden');
 
@@ -952,20 +952,20 @@ async function loadAlbumArtTab() {
                 <button class="style-btn" data-style="sharp" style="flex:1; min-width:80px; padding:8px 16px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:white; cursor:pointer; transition:all 0.2s;">Sharp</button>
             </div>
         `;
-        
+
         grid.appendChild(styleContainer);
-        
+
         // Add event listeners for style buttons
         const styleBtns = styleContainer.querySelectorAll('.style-btn');
         const currentStyle = getCurrentBackgroundStyle();
-        
+
         styleBtns.forEach(btn => {
             // Highlight current style
             if (btn.dataset.style === currentStyle) {
                 btn.style.background = 'rgba(29, 185, 84, 0.3)';
                 btn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
             }
-            
+
             // Hover effects
             btn.addEventListener('mouseenter', () => {
                 if (btn.dataset.style !== currentStyle) {
@@ -977,14 +977,14 @@ async function loadAlbumArtTab() {
                     btn.style.background = 'rgba(255,255,255,0.1)';
                 }
             });
-            
+
             btn.addEventListener('click', async (e) => {
                 const style = e.target.dataset.style;
-                
+
                 // Apply locally immediately
                 applyBackgroundStyle(style);
                 manualStyleOverride = true; // User manually changed it
-                
+
                 // Update UI - reset all buttons, highlight selected
                 styleBtns.forEach(b => {
                     b.style.background = 'rgba(255,255,255,0.1)';
@@ -992,7 +992,7 @@ async function loadAlbumArtTab() {
                 });
                 e.target.style.background = 'rgba(29, 185, 84, 0.3)';
                 e.target.style.borderColor = 'rgba(29, 185, 84, 0.6)';
-                
+
                 // Save to server
                 try {
                     const response = await fetch('/api/album-art/background-style', {
@@ -1044,6 +1044,34 @@ async function loadAlbumArtTab() {
             grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">Error loading album art options.</div>';
         }
     }
+}
+
+// NEW FUNCTION: Load Artist Images Tab
+function loadArtistImagesTab() {
+    const grid = document.getElementById('artist-images-grid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    
+    if (!artistImages || artistImages.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No artist images available.</div>';
+        return;
+    }
+    
+    artistImages.forEach((url, index) => {
+        const card = document.createElement('div');
+        card.className = 'art-card';
+        // Non-interactive for now, just visual
+        
+        card.innerHTML = `
+            <img src="${url}" class="art-card-image" loading="lazy">
+            <div class="art-card-overlay">
+                <div class="art-card-provider">Image ${index + 1}</div>
+            </div>
+        `;
+        
+        grid.appendChild(card);
+    });
 }
 
 async function selectAlbumArt(providerName) {
@@ -1151,7 +1179,7 @@ async function deleteCachedLyrics() {
     if (!confirm('Delete all cached lyrics for this song?\n\nThis will remove lyrics from all providers and re-fetch them fresh.')) {
         return;
     }
-    
+
     try {
         const response = await fetch('/api/lyrics/delete', {
             method: 'DELETE'
@@ -1202,7 +1230,7 @@ async function fetchArtistImages(artistId) {
         console.warn('No artist ID provided for image fetch');
         return [];
     }
-    
+
     try {
         const response = await fetch(`/api/artist/images?artist_id=${encodeURIComponent(artistId)}`);
         if (!response.ok) {
@@ -1233,50 +1261,83 @@ function checkForVisualMode(data, trackId) {
     const lyricsAvailable = data && data.has_lyrics;
     const isInstrumental = data && data.is_instrumental;
 
-    // Clear existing timer
-    if (visualModeTimer) {
-        clearTimeout(visualModeTimer);
-        visualModeTimer = null;
-    }
-    
-    // Exit visual mode if lyrics are available and not instrumental
-    if (lyricsAvailable && !isInstrumental) {
-        if (visualModeActive) exitVisualMode();
-        return;
-    }
-    
-    // Start timer to enter visual mode if no lyrics or instrumental
-    if (!lyricsAvailable || isInstrumental) {
-        // Fast entry for confirmed instrumental
-        const delayMs = isInstrumental ? 2000 : (visualModeConfig.delaySeconds * 1000);
-        
+    // Condition to enter visual mode: No lyrics OR Instrumental
+    const shouldEnterVisualMode = !lyricsAvailable || isInstrumental;
+
+    if (shouldEnterVisualMode) {
+        // If already active, nothing to do
+        if (visualModeActive) return;
+
+        // If timer is already running, let it run (DON'T RESET IT)
+        // This fixes the issue where frequent updates kept resetting the timer
+        if (visualModeTimer) return;
+
+        // Start timer to enter visual mode
+        // Fast entry for confirmed instrumental (2s), otherwise configured delay
+        const delayMs = isInstrumental ? 6000 : (visualModeConfig.delaySeconds * 1000);
+
+        console.log(`Starting visual mode timer: ${delayMs}ms (Instrumental: ${isInstrumental})`);
+
         visualModeTimer = setTimeout(() => {
+            visualModeTimer = null; // Clear timer reference
+
             // HARDENED: Check if track is still the same before entering
+            // We re-verify against the latest track info
             if (lastTrackInfo) {
-                const currentId = `${lastTrackInfo.artist} - ${lastTrackInfo.title}`;
+                // Construct ID using same logic as updateLoop to ensure consistency
+                let currentId;
+                if (lastTrackInfo.track_id && lastTrackInfo.track_id.trim()) {
+                    currentId = lastTrackInfo.track_id.trim();
+                } else {
+                    const artist = (lastTrackInfo.artist || '').trim();
+                    const title = (lastTrackInfo.title || '').trim();
+                    if (artist && title) {
+                        currentId = `${artist} - ${title}`;
+                    } else if (title) {
+                        currentId = title;
+                    } else if (artist) {
+                        currentId = artist;
+                    } else {
+                        currentId = 'unknown';
+                    }
+                }
+
                 if (currentId === trackId) {
                     enterVisualMode();
+                } else {
+                    console.log('Track changed during timer, cancelling visual mode entry');
                 }
             }
         }, delayMs);
+    } else {
+        // Condition NOT met (we have lyrics and it's not instrumental)
+
+        // If active, exit
+        if (visualModeActive) {
+            exitVisualMode();
+        }
+
+        // If timer is running, cancel it
+        if (visualModeTimer) {
+            console.log('Lyrics found, cancelling visual mode timer');
+            clearTimeout(visualModeTimer);
+            visualModeTimer = null;
+        }
     }
 }
 
-/**
- * Enter visual mode - hide lyrics and show visual experience
- */
 function enterVisualMode() {
     if (visualModeActive) return;
-    
+
     console.log('Entering Visual Mode');
     visualModeActive = true;
-    
+
     // Hide lyrics container with fade
     const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
     if (lyricsContainer) {
         lyricsContainer.classList.add('visual-mode-hidden');
     }
-    
+
     // SAVE current state before changing
     savedBackgroundState = getCurrentBackgroundStyle();
 
@@ -1287,7 +1348,7 @@ function enterVisualMode() {
             applyBackgroundStyle('sharp');
         }
     }
-    
+
     // Start slideshow if we have artist images
     if (artistImages.length > 0) {
         startSlideshow();
@@ -1299,19 +1360,19 @@ function enterVisualMode() {
  */
 function exitVisualMode() {
     if (!visualModeActive) return;
-    
+
     console.log('Exiting Visual Mode');
     visualModeActive = false;
-    
+
     // Stop slideshow
     stopSlideshow();
-    
+
     // Show lyrics container
     const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
     if (lyricsContainer) {
         lyricsContainer.classList.remove('visual-mode-hidden');
     }
-    
+
     // RESTORE previous background style
     if (savedBackgroundState) {
         applyBackgroundStyle(savedBackgroundState);
@@ -1339,7 +1400,7 @@ function applyBackgroundStyle(style) {
     displayConfig.sharpAlbumArt = false;
     displayConfig.softAlbumArt = false;
     displayConfig.artBackground = false;
-    
+
     // Apply selected style
     if (style === 'sharp') {
         displayConfig.sharpAlbumArt = true;
@@ -1350,7 +1411,7 @@ function applyBackgroundStyle(style) {
     } else if (style === 'blur') {
         displayConfig.artBackground = true;
     }
-    
+
     updateBackground();
 }
 
@@ -1362,6 +1423,13 @@ function startSlideshow() {
         clearInterval(slideshowInterval);
     }
     
+    // GUARD: Ensure we have images before starting
+    const totalSlides = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
+    if (totalSlides === 0) {
+        console.log("Slideshow: No images available to show.");
+        return;
+    }
+
     currentSlideIndex = 0;
     
     // Show first image immediately
@@ -1370,10 +1438,10 @@ function startSlideshow() {
     // Then cycle through images
     const intervalMs = visualModeConfig.slideshowIntervalSeconds * 1000;
     slideshowInterval = setInterval(() => {
-        // Calculate total slides (artist images + 1 for album art)
-        const totalSlides = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
-        if (totalSlides > 0) {
-            currentSlideIndex = (currentSlideIndex + 1) % totalSlides;
+        // Re-calculate total slides in case art loaded/changed
+        const currentTotal = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
+        if (currentTotal > 0) {
+            currentSlideIndex = (currentSlideIndex + 1) % currentTotal;
             showSlide(currentSlideIndex);
         }
     }, intervalMs);
@@ -1434,10 +1502,15 @@ function showSlide(index) {
         newImg.classList.add('active');
     }, 50);
     
-    // Remove old images after transition
+    // DOM CLEANUP: Remove old images after transition
     setTimeout(() => {
         const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(.active)');
-        oldImages.forEach(img => img.remove());
+        oldImages.forEach(img => {
+            // Safety check: ensure we don't remove the image we just added
+            if (img !== newImg) {
+                img.remove();
+            }
+        });
     }, 2000); // Match CSS transition duration
 }
 
@@ -1459,25 +1532,28 @@ function setupProviderUI() {
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const tabName = tab.dataset.tab;
-            
+
             // Update tab active state
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            
+
             // Update content visibility
             const contents = document.querySelectorAll('.provider-tab-content');
             contents.forEach(content => {
                 content.classList.remove('active');
             });
-            
+
             const activeContent = document.getElementById(`provider-tab-content-${tabName}`);
             if (activeContent) {
                 activeContent.classList.add('active');
             }
-            
+
             // Load album art tab if switching to it
             if (tabName === 'album-art') {
                 loadAlbumArtTab();
+            } else if (tabName === 'artist-images') {
+                // Load artist images if switching to that tab
+                loadArtistImagesTab();
             }
         });
     });
@@ -1496,7 +1572,7 @@ function setupProviderUI() {
     if (clearBtn) {
         clearBtn.addEventListener('click', clearProviderPreference);
     }
-    
+
     // Delete cached lyrics button
     const deleteBtn = document.getElementById('lyrics-delete-cache');
     if (deleteBtn) {
@@ -1517,7 +1593,7 @@ function setupProviderUI() {
 
 async function updateLoop() {
     let lastTrackId = null;
-    
+
     while (true) {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
@@ -1555,9 +1631,9 @@ async function updateLoop() {
                     currentTrackId = 'unknown'; // Last resort
                 }
             }
-            
+
             const trackChanged = lastTrackId !== currentTrackId;
-            
+
             if (trackChanged) {
                 // Track changed - fetch artist images and reset visual mode
                 lastTrackId = currentTrackId;
@@ -1568,13 +1644,13 @@ async function updateLoop() {
                     visualModeTimer = null;
                 }
                 stopSlideshow();
-                
+
                 // Fetch artist images for potential visual mode
                 if (trackInfo.artist_id) {
                     await fetchArtistImages(trackInfo.artist_id);
                 }
             }
-            
+
             // Update lastTrackInfo FIRST so updateBackground() has current data
             // This fixes the stale data issue without needing forced updateBackground() calls
             lastTrackInfo = trackInfo;
@@ -1596,10 +1672,10 @@ async function updateLoop() {
 
             // Update lyrics
             const data = await getLyrics();
-            
+
             // Consolidate instrumental flag (prefer trackInfo as it comes from a fresher source or cache)
             const isInstrumental = trackInfo.is_instrumental || (data && data.is_instrumental);
-            
+
             if (data) {
                 // 1. Update DOM
                 // If lyrics exist, show them. 
@@ -1607,7 +1683,7 @@ async function updateLoop() {
                 // so setLyricsInDom can display the status message properly.
                 const lyricsToDisplay = (data.lyrics && data.lyrics.length > 0) ? data.lyrics : data;
                 setLyricsInDom(lyricsToDisplay);
-                
+
                 // 2. Check for Visual Mode using the backend flags
                 // Pass consolidated flags
                 data.is_instrumental = isInstrumental;

@@ -703,6 +703,9 @@ async def get_artist_images():
     if not artist_name:
          return jsonify({"error": "No artist name available"}), 400
 
+    # Log visual mode activity/fetching
+    logger.info(f"Fetching artist images for Visual Mode: {artist_name} ({artist_id})")
+
     # 1. Try to ensure/fetch from DB (this handles caching automatically)
     from system_utils import ensure_artist_image_db
     

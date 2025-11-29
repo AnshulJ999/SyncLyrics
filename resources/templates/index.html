@@ -74,6 +74,8 @@
         <div class="provider-tabs">
             <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
             <button class="provider-tab" data-tab="album-art">Album Art</button>
+            <!-- NEW TAB -->
+            <button class="provider-tab" data-tab="artist-images">Artist Images</button>
         </div>
         
         <!-- WRAPPER FOR DESKTOP GRID -->
@@ -96,6 +98,18 @@
                 <div class="provider-modal-footer">
                     <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
                         Select an album art to use for this album
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW CONTENT FOR ARTIST IMAGES -->
+            <div id="provider-tab-content-artist-images" class="provider-tab-content" data-title="Artist Images">
+                <div id="artist-images-grid" class="art-grid">
+                    <!-- Populated dynamically -->
+                </div>
+                <div class="provider-modal-footer">
+                    <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
+                        Artist images used for Visual Mode slideshow
                     </div>
                 </div>
             </div>
