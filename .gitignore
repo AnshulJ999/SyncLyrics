@@ -11,7 +11,7 @@ build_output/
 Unused/
 tests/
 full_project_code.txt
-
+features.md
 
 # share_project.py
 .cursor
