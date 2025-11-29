@@ -43,6 +43,9 @@ let savedBackgroundState = null;
 // Phase 2: Track if user manually overrode style (to prevent auto-applying saved style)
 let manualStyleOverride = false;
 
+// Global variable
+let visualModeTimerId = null;
+
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
     // Try modern API first (Works on HTTPS / Localhost)
@@ -1276,15 +1279,23 @@ function checkForVisualMode(data, trackId) {
         // Fast entry for confirmed instrumental (2s), otherwise configured delay
         const delayMs = isInstrumental ? 6000 : (visualModeConfig.delaySeconds * 1000);
 
-        console.log(`Starting visual mode timer: ${delayMs}ms (Instrumental: ${isInstrumental})`);
+        console.log(`[Visual Mode] Starting timer: ${delayMs}ms for ${trackId}`);
+
+        // Generate unique ID for this specific timer instance
+        const currentTimerId = Date.now();
+        visualModeTimerId = currentTimerId;
 
         visualModeTimer = setTimeout(() => {
             visualModeTimer = null; // Clear timer reference
 
-            // HARDENED: Check if track is still the same before entering
-            // We re-verify against the latest track info
+            // Verify THIS specific timer is still valid matches the global ID
+            if (visualModeTimerId !== currentTimerId) {
+                console.log('[Visual Mode] Timer invalidated (new timer started), aborting');
+                return;
+            }
+
             if (lastTrackInfo) {
-                // Construct ID using same logic as updateLoop to ensure consistency
+                // Re-verify track ID match
                 let currentId;
                 if (lastTrackInfo.track_id && lastTrackInfo.track_id.trim()) {
                     currentId = lastTrackInfo.track_id.trim();
@@ -1303,9 +1314,10 @@ function checkForVisualMode(data, trackId) {
                 }
 
                 if (currentId === trackId) {
+                    console.log('[Visual Mode] Activation conditions met, entering...');
                     enterVisualMode();
                 } else {
-                    console.log('Track changed during timer, cancelling visual mode entry');
+                    console.log(`[Visual Mode] Track changed (${trackId} vs ${currentId}), aborting`);
                 }
             }
         }, delayMs);
@@ -1319,9 +1331,10 @@ function checkForVisualMode(data, trackId) {
 
         // If timer is running, cancel it
         if (visualModeTimer) {
-            console.log('Lyrics found, cancelling visual mode timer');
+            console.log('[Visual Mode] Conditions no longer met, cancelling timer');
             clearTimeout(visualModeTimer);
             visualModeTimer = null;
+            visualModeTimerId = null; // Clear ID
         }
     }
 }
@@ -1423,10 +1436,12 @@ function startSlideshow() {
         clearInterval(slideshowInterval);
     }
     
-    // GUARD: Ensure we have images before starting
-    const totalSlides = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
+    // FIX: Check if we have EITHER artist images OR album art
+    const hasAlbumArt = lastTrackInfo && lastTrackInfo.album_art_url;
+    const totalSlides = artistImages.length + (hasAlbumArt ? 1 : 0);
+    
     if (totalSlides === 0) {
-        console.log("Slideshow: No images available to show.");
+        console.log("Slideshow: No images available to show (no artist images, no album art).");
         return;
     }
 

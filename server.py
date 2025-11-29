@@ -10,12 +10,16 @@ from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art
 from state_manager import *
-from config import LYRICS, RESOURCES_DIR
+from config import LYRICS, RESOURCES_DIR, ALBUM_ART_DB_DIR
 from settings import settings
 from logging_config import get_logger
 
 # Import shared Spotify singleton for controls - ensures all stats are consolidated
 from providers.spotify_api import get_shared_spotify_client
+
+import os
+from pathlib import Path
+import json
 
 logger = get_logger(__name__)
 
