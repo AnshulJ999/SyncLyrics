@@ -1675,7 +1675,8 @@ async function updateLoop() {
 
             const trackChanged = lastTrackId !== currentTrackId;
 
-            if (trackChanged) {
+            // FIX: Check like status on first load even if track hasn't "changed" (e.g. refresh)
+            if (trackChanged || (currentTrackId && !lastTrackId)) {
                 // Track changed - fetch artist images and reset visual mode
                 lastTrackId = currentTrackId;
                 visualModeActive = false; // Reset visual mode state
