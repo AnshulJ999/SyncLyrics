@@ -1391,7 +1391,8 @@ body.soft-mode .background-overlay {
     /* Ensure the grid respects the container width */
     width: 100%; 
     /* Ensure content flows naturally */
-    grid-auto-rows: max-content; 
+    grid-auto-rows: min-content; /* Changed from max-content to min-content to fit content exactly */
+    align-items: start; /* Align items to top of their cells */
 }
 
 /* Header for Artist Images Section */
@@ -1408,5 +1409,8 @@ body.soft-mode .background-overlay {
     /* Ensure it breaks the grid flow visually */
     display: flex;
     align-items: center;
+    /* Force it to start on a new row */
+    grid-row-start: auto;
+
 }
 

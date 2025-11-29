@@ -1883,28 +1883,8 @@ function setupQueueInteractions() {
         });
     }
 
-    // 2. Swipe from Right Edge to Open
-    let touchStartX = 0;
-    
-    document.addEventListener('touchstart', (e) => {
-        touchStartX = e.changedTouches[0].screenX;
-    }, {passive: true});
-
-    document.addEventListener('touchend', (e) => {
-        const touchEndX = e.changedTouches[0].screenX;
-        const screenWidth = window.innerWidth;
-        
-        // Conditions for Swipe Open:
-        // 1. Start near right edge (last 30px)
-        // 2. Swipe left (end < start)
-        // 3. Significant distance (> 50px)
-        // 4. Queue is currently closed
-        if (!queueDrawerOpen && 
-            touchStartX > (screenWidth - 40) && 
-            (touchStartX - touchEndX) > 50) {
-            toggleQueueDrawer();
-        }
-    }, {passive: true});
+    // REMOVED: Duplicate swipe logic. 
+    // Swipe handling is now centralized in setupTouchControls() -> handleSwipe()
 }
 
 // UPDATE: Toggle Queue to handle Backdrop
@@ -2069,8 +2049,8 @@ function setupTouchControls() {
 }
 
 function handleSwipe(startX, startY, endX, endY) {
-    const minSwipeDistance = 90;
-    const maxVerticalVariance = 50; // Ignore if scrolled up/down too much
+    const minSwipeDistance = 50;
+    const maxVerticalVariance = 70; // Ignore if scrolled up/down too much
     
     // EDGE GUARD: Ignore swipes that start at the very right edge 
     // to prevent conflict with Queue Drawer opening
