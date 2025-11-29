@@ -1690,6 +1690,14 @@ async function updateLoop() {
                 if (trackInfo.artist_id) {
                     await fetchArtistImages(trackInfo.artist_id);
                 }
+
+                // Check like status for new track (Moved inside trackChanged)
+                if (trackInfo.id) {
+                    checkLikedStatus(trackInfo.id);
+                }
+                
+                // Reset style buttons in modal (Moved inside trackChanged)
+                updateStyleButtonsInModal(trackInfo.background_style || 'blur');
             }
 
             // Update lastTrackInfo FIRST so updateBackground() has current data
@@ -1734,14 +1742,6 @@ async function updateLoop() {
                 // Pass a dummy object saying no lyrics
                 checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
             }
-
-            // Check like status for new track
-            if (trackInfo.id) {
-                checkLikedStatus(trackInfo.id);
-            }
-            
-            // Reset style buttons in modal
-            updateStyleButtonsInModal(trackInfo.background_style || 'blur'); // Default logic assumption
         } else {
             // No track playing - handle global slideshow
             if (visualModeConfig.slideshowEnabled) {
