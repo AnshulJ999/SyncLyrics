@@ -54,6 +54,9 @@ _background_tasks = set()
 # OPTIMIZATION: Track in-progress downloads to prevent polling loop from spawning duplicates
 _spotify_download_tracker = set()
 
+# NEW: Track in-progress artist image downloads to prevent race conditions
+_artist_download_tracker = set()
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -1839,99 +1842,109 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     """
     Background task to fetch artist images and save them to the database.
     """
-    # Use existing semaphore to prevent flooding
-    async with _art_download_semaphore:
-        try:
-            folder = get_album_db_folder(artist, None) # Artist-only folder
-            folder.mkdir(parents=True, exist_ok=True)
-            
-            metadata_path = folder / "metadata.json"
-            existing_metadata = {}
-            if metadata_path.exists():
-                try:
-                    with open(metadata_path, 'r', encoding='utf-8') as f:
-                        existing_metadata = json.load(f)
-                except: pass
-
-            # Fetch from all sources
-            all_images = []  # List of dicts: {'url': str, 'source': str, ...}
-            
-            # 1. Fetch from Spotify if ID provided
-            if spotify_artist_id:
-                client = get_shared_spotify_client()
-                if client:
-                    spotify_urls = await client.get_artist_images(spotify_artist_id)
-                    # Convert to standardized format
-                    for url in spotify_urls:
-                        all_images.append({
-                            "url": url,
-                            "source": "spotify"
-                        })
-            
-            # 2. Fetch from Other Sources (iTunes, Last.fm) via AlbumArtProvider
+    # Prevent duplicate downloads for the same artist (Race Condition Fix)
+    if artist in _artist_download_tracker:
+        return []
+    
+    _artist_download_tracker.add(artist)
+    
+    try:
+        # Use existing semaphore to prevent flooding
+        async with _art_download_semaphore:
             try:
-                art_provider = get_album_art_provider()
-                external_images = await art_provider.get_artist_images(artist)
-                # external_images is already in the correct format: [{'url': str, 'source': str, ...}]
-                all_images.extend(external_images)
+                folder = get_album_db_folder(artist, None) # Artist-only folder
+                folder.mkdir(parents=True, exist_ok=True)
+                
+                metadata_path = folder / "metadata.json"
+                existing_metadata = {}
+                if metadata_path.exists():
+                    try:
+                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                            existing_metadata = json.load(f)
+                    except: pass
+
+                # Fetch from all sources
+                all_images = []  # List of dicts: {'url': str, 'source': str, ...}
+                
+                # 1. Fetch from Spotify if ID provided
+                if spotify_artist_id:
+                    client = get_shared_spotify_client()
+                    if client:
+                        spotify_urls = await client.get_artist_images(spotify_artist_id)
+                        # FIX: Only take the first (largest) image to avoid redundancy
+                        if spotify_urls:
+                            all_images.append({
+                                "url": spotify_urls[0],
+                                "source": "spotify"
+                            })
+                
+                # 2. Fetch from Other Sources (iTunes, Last.fm) via AlbumArtProvider
+                try:
+                    art_provider = get_album_art_provider()
+                    external_images = await art_provider.get_artist_images(artist)
+                    # external_images is already in the correct format: [{'url': str, 'source': str, ...}]
+                    all_images.extend(external_images)
+                except Exception as e:
+                    logger.error(f"Failed to fetch external artist images from AlbumArtProvider: {e}")
+
+                # Download and Save
+                saved_images = existing_metadata.get("images", [])
+                
+                # Simple deduplication set (by URL)
+                existing_urls = {img.get('url') for img in saved_images if img.get('url')}
+                
+                loop = asyncio.get_running_loop()
+                
+                # Track counts per source for filename generation
+                source_counts = {}
+                
+                for img_dict in all_images:
+                    url = img_dict.get('url')
+                    source = img_dict.get('source', 'unknown')
+                    
+                    if not url or url in existing_urls:
+                        continue
+                    
+                    # Generate filename with source prefix and index
+                    if source not in source_counts:
+                        source_counts[source] = 0
+                    else:
+                        source_counts[source] += 1
+                    
+                    idx = source_counts[source]
+                    filename = f"{source.lower()}_{idx}.jpg"
+                    file_path = folder / filename
+                    
+                    if not file_path.exists():
+                        success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
+                        if success:
+                            filename = f"{source.lower()}_{idx}{ext}"
+                            saved_images.append({
+                                "source": source,
+                                "url": url,
+                                "filename": filename,
+                                "downloaded": True,
+                                "added_at": datetime.utcnow().isoformat() + "Z"
+                            })
+                            existing_urls.add(url)  # Mark as processed
+                
+                # Save Metadata
+                metadata = {
+                    "artist": artist,
+                    "type": "artist_images",
+                    "last_accessed": datetime.utcnow().isoformat() + "Z",
+                    "images": saved_images
+                }
+                
+                await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+                
+                # Return list of LOCAL paths for the frontend
+                # We return paths relative to the DB root for the API to serve
+                return [f"/api/album-art/image/{folder.name}/{img['filename']}" for img in saved_images if img.get('downloaded')]
+
             except Exception as e:
-                logger.error(f"Failed to fetch external artist images from AlbumArtProvider: {e}")
-
-            # Download and Save
-            saved_images = existing_metadata.get("images", [])
-            
-            # Simple deduplication set (by URL)
-            existing_urls = {img.get('url') for img in saved_images if img.get('url')}
-            
-            loop = asyncio.get_running_loop()
-            
-            # Track counts per source for filename generation
-            source_counts = {}
-            
-            for img_dict in all_images:
-                url = img_dict.get('url')
-                source = img_dict.get('source', 'unknown')
-                
-                if not url or url in existing_urls:
-                    continue
-                
-                # Generate filename with source prefix and index
-                if source not in source_counts:
-                    source_counts[source] = 0
-                else:
-                    source_counts[source] += 1
-                
-                idx = source_counts[source]
-                filename = f"{source.lower()}_{idx}.jpg"
-                file_path = folder / filename
-                
-                if not file_path.exists():
-                    success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
-                    if success:
-                        filename = f"{source.lower()}_{idx}{ext}"
-                        saved_images.append({
-                            "source": source,
-                            "url": url,
-                            "filename": filename,
-                            "downloaded": True,
-                            "added_at": datetime.utcnow().isoformat() + "Z"
-                        })
-                        existing_urls.add(url)  # Mark as processed
-            
-            # Save Metadata
-            metadata = {
-                "artist": artist,
-                "type": "artist_images",
-                "last_accessed": datetime.utcnow().isoformat() + "Z",
-                "images": saved_images
-            }
-            
-            await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
-            
-            # Return list of LOCAL paths for the frontend
-            # We return paths relative to the DB root for the API to serve
-            return [f"/api/album-art/image/{folder.name}/{img['filename']}" for img in saved_images if img.get('downloaded')]
-
-        except Exception as e:
-            logger.error(f"Error ensuring artist image DB: {e}")
-            return []
+                logger.error(f"Error ensuring artist image DB: {e}")
+                return []
+    finally:
+        # Always remove from tracker, even if error occurred
+        _artist_download_tracker.discard(artist)
