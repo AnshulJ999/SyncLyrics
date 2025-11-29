@@ -118,7 +118,13 @@ SPOTIFY = {
     "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
     "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
     "redirect_uri": conf("spotify.redirect_uri", "http://localhost:9012/callback"),
-    "scope": ["user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing"],
+    "scope": [
+        "user-read-playback-state", 
+        "user-modify-playback-state", 
+        "user-read-currently-playing",
+        "user-library-read",    # ADDED: Check if song is liked
+        "user-library-modify"   # ADDED: Like/Unlike songs
+    ],
     "cache": {
         "metadata_ttl": conf("spotify.cache.metadata_ttl", 2.0),
         "enabled": conf("spotify.cache.enabled", True),
