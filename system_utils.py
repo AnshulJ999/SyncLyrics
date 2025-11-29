@@ -1842,6 +1842,9 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     """
     Background task to fetch artist images and save them to the database.
     """
+    # Temporarily disable artist image fetching while we work on the bug
+    return [] 
+
     # Prevent duplicate downloads for the same artist (Race Condition Fix)
     if artist in _artist_download_tracker:
         return []
