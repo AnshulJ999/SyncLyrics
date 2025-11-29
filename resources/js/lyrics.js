@@ -1878,6 +1878,7 @@ function setupQueueInteractions() {
         backdrop.className = 'queue-backdrop';
         document.body.appendChild(backdrop);
         
+        // TO DISABLE CLICK-OUTSIDE: Comment out these 3 lines below
         backdrop.addEventListener('click', () => {
             if (queueDrawerOpen) toggleQueueDrawer();
         });
@@ -1896,11 +1897,18 @@ async function toggleQueueDrawer() {
     
     if (queueDrawerOpen) {
         drawer.classList.add('open');
-        if (backdrop) backdrop.classList.add('visible');
+        // Ensure backdrop is visible and clickable
+        if (backdrop) {
+            backdrop.classList.add('visible');
+            backdrop.style.pointerEvents = 'auto'; // Force clickable
+        }
         await fetchAndRenderQueue();
     } else {
         drawer.classList.remove('open');
-        if (backdrop) backdrop.classList.remove('visible');
+        if (backdrop) {
+            backdrop.classList.remove('visible');
+            backdrop.style.pointerEvents = 'none'; // Pass through clicks when hidden
+        }
     }
 }
 
