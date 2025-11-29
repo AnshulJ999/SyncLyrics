@@ -26,6 +26,14 @@ logger = get_logger(__name__)
 # Cache version based on app start time for cache busting
 APP_START_TIME = int(time.time())
 
+# Add this global near other globals at the top of server.py
+# Global cache for slideshow images
+_slideshow_cache = {
+    'images': [],
+    'last_update': 0
+}
+_SLIDESHOW_CACHE_TTL = 3600  # 1 hour
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -938,38 +946,54 @@ async def get_random_slideshow_images():
     """
     try:
         limit = int(request.args.get('limit', 20))
+        current_time = time.time()
         
-        # Helper to recursively find images
-        def find_all_images():
-            images = []
-            if not ALBUM_ART_DB_DIR.exists():
-                return []
-                
-            # Walk through the database
-            for root, _, files in os.walk(ALBUM_ART_DB_DIR):
-                for file in files:
-                    if file.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
-                        # Get relative path from DB root for the API URL
-                        full_path = Path(root) / file
-                        try:
-                            rel_path = full_path.relative_to(ALBUM_ART_DB_DIR)
-                            # Convert Windows path separators to forward slashes for URL
-                            url_path = str(rel_path).replace('\\', '/')
-                            images.append(f"/api/album-art/image/{url_path}")
-                        except ValueError:
-                            pass
-            return images
+        # Check cache validity
+        if not _slideshow_cache['images'] or (current_time - _slideshow_cache['last_update'] > _SLIDESHOW_CACHE_TTL):
+            logger.info("Refeshing slideshow image cache...")
+            
+            # Helper to recursively find images
+            def find_all_images():
+                images = []
+                if not ALBUM_ART_DB_DIR.exists():
+                    return []
+                    
+                # Walk through the database
+                for root, _, files in os.walk(ALBUM_ART_DB_DIR):
+                    for file in files:
+                        if file.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
+                            # Get relative path from DB root for the API URL
+                            full_path = Path(root) / file
+                            try:
+                                rel_path = full_path.relative_to(ALBUM_ART_DB_DIR)
+                                # Convert Windows path separators to forward slashes for URL
+                                url_path = str(rel_path).replace('\\', '/')
+                                images.append(f"/api/album-art/image/{url_path}")
+                            except ValueError:
+                                pass
+                return images
 
-        # Run file scan in thread to avoid blocking
-        loop = asyncio.get_running_loop()
-        all_images = await loop.run_in_executor(None, find_all_images)
+            # Run file scan in thread to avoid blocking
+            loop = asyncio.get_running_loop()
+            all_images = await loop.run_in_executor(None, find_all_images)
+            
+            # Update cache
+            if all_images:
+                _slideshow_cache['images'] = all_images
+                _slideshow_cache['last_update'] = current_time
+                logger.info(f"Slideshow cache updated with {len(all_images)} images")
+        
+        # Use cached images
+        all_images = _slideshow_cache['images']
         
         if not all_images:
             return jsonify({'images': []})
             
-        # Shuffle and pick random subset
-        random.shuffle(all_images)
-        selected_images = all_images[:limit]
+        # Shuffle and pick random subset (from cache)
+        # We copy the list to avoid modifying the cache with shuffle
+        shuffled = all_images.copy()
+        random.shuffle(shuffled)
+        selected_images = shuffled[:limit]
         
         return jsonify({
             'images': selected_images,

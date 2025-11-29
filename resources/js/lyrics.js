@@ -1698,6 +1698,12 @@ async function updateLoop() {
                 
                 // Reset style buttons in modal (Moved inside trackChanged)
                 updateStyleButtonsInModal(trackInfo.background_style || 'blur');
+
+                // FIX: Refresh queue if drawer is open
+                if (queueDrawerOpen) {
+                    console.log("Track changed, refreshing queue...");
+                    fetchAndRenderQueue();
+                }
             }
 
             // Update lastTrackInfo FIRST so updateBackground() has current data
@@ -1882,8 +1888,12 @@ async function checkLikedStatus(trackId) {
     try {
         const response = await fetch(`/api/playback/liked?track_id=${trackId}`);
         const data = await response.json();
-        isLiked = data.liked;
-        updateLikeButton();
+        
+        // FIX: Ensure we are still playing the same track
+        if (lastTrackInfo && lastTrackInfo.id === trackId) {
+            isLiked = data.liked;
+            updateLikeButton();
+        }
     } catch (e) { console.error(e); }
 }
 
