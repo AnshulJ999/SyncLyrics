@@ -585,6 +585,8 @@ function setupSettingsPanel() {
                 
                 // Update browser URL without page reload (enables refresh persistence & direct URL copy)
                 history.replaceState(null, '', generateCurrentUrl());
+                
+                manualStyleOverride = true; // User manually changed style
             });
         }
     });
@@ -1531,8 +1533,29 @@ async function updateLoop() {
 
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
-            // Detect track change
-            const currentTrackId = `${trackInfo.artist} - ${trackInfo.title}`;
+            // ROBUST TRACK ID GENERATION
+            // 1. Prefer track_id if available (Spotify provides this)
+            // 2. Fall back to "Artist - Title" for Windows Media and other sources
+            // 3. Handle edge cases where artist/title might be missing
+            let currentTrackId;
+            if (trackInfo.track_id && trackInfo.track_id.trim()) {
+                // Use the backend-provided track_id (most reliable for Spotify)
+                currentTrackId = trackInfo.track_id.trim();
+            } else {
+                // Fallback: construct from artist and title
+                const artist = (trackInfo.artist || '').trim();
+                const title = (trackInfo.title || '').trim();
+                if (artist && title) {
+                    currentTrackId = `${artist} - ${title}`;
+                } else if (title) {
+                    currentTrackId = title; // At least use title if available
+                } else if (artist) {
+                    currentTrackId = artist; // Or artist if that's all we have
+                } else {
+                    currentTrackId = 'unknown'; // Last resort
+                }
+            }
+            
             const trackChanged = lastTrackId !== currentTrackId;
             
             if (trackChanged) {
