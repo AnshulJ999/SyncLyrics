@@ -117,7 +117,7 @@ LYRICS = {
 SPOTIFY = {
     "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
     "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
-    "redirect_uri": conf("spotify.redirect_uri", "http://localhost:9012/callback"),
+    "redirect_uri": conf("spotify.redirect_uri", "http://127.0.0.1:9012/callback"),
     "scope": [
         "user-read-playback-state", 
         "user-modify-playback-state", 

@@ -101,7 +101,7 @@
     "media_source.windows_media.priority": 1,
     "media_source.gnome.enabled": false,
     "media_source.gnome.priority": 2,
-    "spotify.redirect_uri": "http://localhost:9012/callback",
+    "spotify.redirect_uri": "http://127.0.0.1:9012/callback",
     "spotify.cache.metadata_ttl": 2.0,
     "spotify.cache.enabled": true,
     "album_art.timeout": 5,

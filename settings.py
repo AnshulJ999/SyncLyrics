@@ -164,7 +164,7 @@ class SettingsManager:
             "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             
             # Spotify API
-            "spotify.redirect_uri": Setting("Redirect URI", str, "http://localhost:9012/callback", True, "Spotify API", "Callback URL"),
+            "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 3.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),
             
