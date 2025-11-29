@@ -5,6 +5,7 @@ import time
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
 from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
+import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art
 from state_manager import *
 from config import LYRICS, RESOURCES_DIR
@@ -137,6 +138,15 @@ async def current_track() -> dict:
     try:
         metadata = await get_current_song_meta_data()
         if metadata:
+            # Inject instrumental flag from lyrics module to avoid double-calls in frontend
+            is_instrumental = False
+            current_lyrics = lyrics_module.current_song_lyrics
+            if current_lyrics and len(current_lyrics) == 1:
+                text = current_lyrics[0][1].lower().strip()
+                if text in ["instrumental", "music only", "no lyrics", "non-lyrical"]:
+                    is_instrumental = True
+            
+            metadata["is_instrumental"] = is_instrumental
             return metadata
         return {"error": "No track playing"}
     except Exception as e:

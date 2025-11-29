@@ -1584,6 +1584,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Include artist_id and artist_name for visual mode and artist image fetching
         # Include background_style for Phase 2: Visual Preference Persistence
         return {
+            "id": captured_track_id,
             "artist": track["artist"],
             "title": track["title"],
             "album": track.get("album"),

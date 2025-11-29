@@ -534,11 +534,8 @@ function setupSettingsPanel() {
                         // SAVE PER-ALBUM PREFERENCE
                         saveBackgroundStyle('blur');
                     } else {
-                        // If unchecked and no other style is active, clear preference? 
-                        // Or just let it default to nothing.
-                        // Ideally we should have a 'none' option or just save null.
-                        // For now, let's assumes checking 'off' doesn't explicitly save 'none' 
-                        // unless we want to enforce standard gradient.
+                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
+                        saveBackgroundStyle('none');
                     }
                 }
                 if (id === 'opt-soft-art-bg') {
@@ -555,6 +552,9 @@ function setupSettingsPanel() {
                         }
                         // SAVE PER-ALBUM PREFERENCE
                         saveBackgroundStyle('soft');
+                    } else {
+                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
+                        saveBackgroundStyle('none');
                     }
                 }
                 if (id === 'opt-sharp-art-bg') {
@@ -571,6 +571,9 @@ function setupSettingsPanel() {
                         }
                         // SAVE PER-ALBUM PREFERENCE
                         saveBackgroundStyle('sharp');
+                    } else {
+                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
+                        saveBackgroundStyle('none');
                     }
                 }
                 if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
@@ -749,6 +752,7 @@ function attachControlHandlers() {
                 await fetch('/api/playback/previous', { method: 'POST' });
             } catch (error) {
                 console.error('Previous track error:', error);
+                showToast('Failed to skip previous', 'error');
             }
         });
     }
@@ -767,6 +771,7 @@ function attachControlHandlers() {
                 }, 200); // Small delay to allow server to process the state change
             } catch (error) {
                 console.error('Play/Pause error:', error);
+                showToast('Failed to toggle playback', 'error');
             }
         });
     }
@@ -777,6 +782,7 @@ function attachControlHandlers() {
                 await fetch('/api/playback/next', { method: 'POST' });
             } catch (error) {
                 console.error('Next track error:', error);
+                showToast('Failed to skip next', 'error');
             }
         });
     }
@@ -1239,7 +1245,9 @@ function checkForVisualMode(data, trackId) {
     
     // Start timer to enter visual mode if no lyrics or instrumental
     if (!lyricsAvailable || isInstrumental) {
-        const delayMs = visualModeConfig.delaySeconds * 1000;
+        // Fast entry for confirmed instrumental
+        const delayMs = isInstrumental ? 2000 : (visualModeConfig.delaySeconds * 1000);
+        
         visualModeTimer = setTimeout(() => {
             // HARDENED: Check if track is still the same before entering
             if (lastTrackInfo) {
@@ -1566,6 +1574,9 @@ async function updateLoop() {
             // Update lyrics
             const data = await getLyrics();
             
+            // Consolidate instrumental flag (prefer trackInfo as it comes from a fresher source or cache)
+            const isInstrumental = trackInfo.is_instrumental || (data && data.is_instrumental);
+            
             if (data) {
                 // 1. Update DOM
                 // If lyrics exist, show them. 
@@ -1575,12 +1586,13 @@ async function updateLoop() {
                 setLyricsInDom(lyricsToDisplay);
                 
                 // 2. Check for Visual Mode using the backend flags
-                // Pass the full data object and the track ID
+                // Pass consolidated flags
+                data.is_instrumental = isInstrumental;
                 checkForVisualMode(data, currentTrackId);
             } else {
                 // Fallback if no data (e.g. API error)
                 // Pass a dummy object saying no lyrics
-                checkForVisualMode({ has_lyrics: false, is_instrumental: false }, currentTrackId);
+                checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
             }
         } else {
             // No track playing - handle slideshow if enabled
