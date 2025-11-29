@@ -2,6 +2,8 @@ from os import path
 from typing import Any, Optional, List
 import asyncio
 import time
+import random  # ADD THIS IMPORT
+from functools import wraps
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
 from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
@@ -872,3 +874,55 @@ async def spotify_callback():
         </body>
         </html>
         """, 500
+
+# Add this new route near other /api routes, e.g. after /api/artist/images
+
+@app.route('/api/slideshow/random-images')
+async def get_random_slideshow_images():
+    """
+    Get a random selection of images from the global album art database.
+    Used for the idle screen dashboard.
+    """
+    try:
+        limit = int(request.args.get('limit', 20))
+        
+        # Helper to recursively find images
+        def find_all_images():
+            images = []
+            if not ALBUM_ART_DB_DIR.exists():
+                return []
+                
+            # Walk through the database
+            for root, _, files in os.walk(ALBUM_ART_DB_DIR):
+                for file in files:
+                    if file.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
+                        # Get relative path from DB root for the API URL
+                        full_path = Path(root) / file
+                        try:
+                            rel_path = full_path.relative_to(ALBUM_ART_DB_DIR)
+                            # Convert Windows path separators to forward slashes for URL
+                            url_path = str(rel_path).replace('\\', '/')
+                            images.append(f"/api/album-art/image/{url_path}")
+                        except ValueError:
+                            pass
+            return images
+
+        # Run file scan in thread to avoid blocking
+        loop = asyncio.get_running_loop()
+        all_images = await loop.run_in_executor(None, find_all_images)
+        
+        if not all_images:
+            return jsonify({'images': []})
+            
+        # Shuffle and pick random subset
+        random.shuffle(all_images)
+        selected_images = all_images[:limit]
+        
+        return jsonify({
+            'images': selected_images,
+            'total_available': len(all_images)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating random slideshow: {e}")
+        return jsonify({'error': str(e)}), 500

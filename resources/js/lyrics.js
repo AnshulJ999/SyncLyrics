@@ -1591,8 +1591,28 @@ function setupProviderUI() {
     }
 }
 
+/**
+ * Fetch random images from the global database for idle slideshow
+ */
+async function fetchRandomSlideshowImages() {
+    try {
+        const response = await fetch('/api/slideshow/random-images?limit=50');
+        if (!response.ok) throw new Error('Failed to fetch random images');
+        
+        const data = await response.json();
+        if (data.images && data.images.length > 0) {
+            console.log(`Loaded ${data.images.length} random images for global slideshow`);
+            return data.images;
+        }
+    } catch (error) {
+        console.error('Error fetching random slideshow images:', error);
+    }
+    return [];
+}
+
 async function updateLoop() {
     let lastTrackId = null;
+    let isIdleState = false; // Track idle state to prevent repeated fetches
 
     while (true) {
         const now = Date.now();
@@ -1609,6 +1629,8 @@ async function updateLoop() {
 
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
+            isIdleState = false; // Reset idle state
+            
             // ROBUST TRACK ID GENERATION
             // 1. Prefer track_id if available (Spotify provides this)
             // 2. Fall back to "Artist - Title" for Windows Media and other sources
@@ -1694,9 +1716,34 @@ async function updateLoop() {
                 checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
             }
         } else {
-            // No track playing - handle slideshow if enabled
-            if (visualModeConfig.slideshowEnabled && !slideshowInterval && artistImages.length > 0) {
-                startSlideshow();
+            // No track playing - handle global slideshow
+            if (visualModeConfig.slideshowEnabled) {
+                // If we just entered idle state, fetch fresh random images
+                if (!isIdleState) {
+                    isIdleState = true;
+                    console.log("Player is idle, initializing global dashboard slideshow...");
+                    
+                    // Fetch random images from the entire DB
+                    const randomImages = await fetchRandomSlideshowImages();
+                    
+                    if (randomImages.length > 0) {
+                        artistImages = randomImages; // Replace current artist images with global mix
+                        
+                        // Start slideshow immediately
+                        if (!slideshowInterval) {
+                            startSlideshow();
+                        } else {
+                            // Restart to pick up new images
+                            stopSlideshow();
+                            startSlideshow();
+                        }
+                    }
+                }
+                
+                // Ensure slideshow is running
+                if (!slideshowInterval && artistImages.length > 0) {
+                    startSlideshow();
+                }
             } else if (!visualModeConfig.slideshowEnabled) {
                 stopSlideshow();
             }
