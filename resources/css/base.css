@@ -1115,3 +1115,154 @@ body.soft-mode .background-overlay {
     overflow: hidden;
 }
 
+/* Like Button Active State */
+#btn-like.liked {
+    color: #1DB954; /* Spotify Green */
+    text-shadow: 0 0 10px rgba(29, 185, 84, 0.4);
+}
+
+/* Queue Drawer */
+.queue-drawer {
+    position: fixed;
+    top: 0;
+    right: -350px; /* Hidden by default */
+    width: 320px;
+    height: 100vh;
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(20px);
+    z-index: 2000;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -5px 0 30px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+
+.queue-drawer.open {
+    right: 0;
+}
+
+.queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.queue-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: white;
+}
+
+#queue-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+.queue-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: background 0.2s;
+}
+
+.queue-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.queue-art {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.queue-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.queue-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.queue-artist {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Background Style Controls in Modal */
+.style-controls-section {
+    padding: 15px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.style-controls-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.8);
+}
+
+.style-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 5px;
+}
+
+.style-btn {
+    padding: 6px 16px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.8);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.style-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.style-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.style-hint {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.4);
+    margin: 5px 0 0 0;
+}
+

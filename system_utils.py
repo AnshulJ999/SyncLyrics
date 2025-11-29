@@ -1019,6 +1019,22 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         current_session = _win_media_manager.get_current_session()
         if not current_session: return None
+        
+        # --- APP BLOCKLIST CHECK ---
+        # Get the App ID (e.g., "chrome.exe" or "Microsoft.MicrosoftEdge...")
+        try:
+            app_id = current_session.source_app_user_model_id.lower()
+            blocklist = config.settings.get("system.windows.app_blocklist", [])
+            
+            # Check if any blocklisted string is in the app_id
+            for blocked_app in blocklist:
+                if blocked_app.lower() in app_id:
+                    # logger.debug(f"Ignoring media from blocked app: {app_id}")
+                    return None
+        except Exception as e:
+            # If we can't read the ID, assume it's safe to proceed
+            pass
+        # ---------------------------
             
         playback_info = current_session.get_playback_info()
         if not playback_info or playback_info.playback_status != 4:

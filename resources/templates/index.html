@@ -92,6 +92,17 @@
             </div>
             
             <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
+                <!-- NEW: Background Style Controls -->
+                <div class="style-controls-section">
+                    <h4>Background Style</h4>
+                    <div class="style-buttons">
+                        <button class="style-btn" data-style="soft">Soft</button>
+                        <button class="style-btn" data-style="sharp">Sharp</button>
+                        <button class="style-btn" data-style="blur">Blur</button>
+                    </div>
+                    <p class="style-hint">Saves preference for this album</p>
+                </div>
+                
                 <div id="album-art-grid" class="art-grid">
                     <!-- Populated dynamically -->
                 </div>
@@ -142,13 +153,24 @@
 
     <!-- Playback Controls -->
     <div id="playback-controls" class="playback-controls">
+        <button id="btn-like" class="control-btn" title="Save to Liked Songs">♡</button> <!-- NEW Like Button -->
         <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
         <button id="btn-play-pause" class="control-btn play-pause-btn paused" title="Play/Pause"></button>
         <button id="btn-next" class="control-btn" title="Next Track">►►</button>
-        <!-- NEW: Visual Mode Toggle Button -->
+        <button id="btn-queue" class="control-btn" title="Show Queue">☰</button> <!-- NEW Queue Button -->
         <button id="btn-visual-mode" class="control-btn" title="Toggle Visual Mode">👁️</button>
     </div>
 
+    <!-- NEW: Queue Drawer -->
+    <div id="queue-drawer" class="queue-drawer">
+        <div class="queue-header">
+            <h3>Next Up</h3>
+            <button id="queue-close">×</button>
+        </div>
+        <div id="queue-list" class="queue-list">
+            <!-- Queue items will be injected here -->
+        </div>
+    </div>
 </div>
 
 {% endblock %}

@@ -704,3 +704,69 @@ class SpotifyAPI:
             logger.error(f"Failed to complete authentication: {e}")
             self.initialized = False
             return False
+
+    async def get_queue(self) -> Optional[Dict[str, Any]]:
+        """Fetch the user's current playback queue."""
+        if not self.initialized:
+            return None
+            
+        try:
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['other'] += 1
+            
+            loop = asyncio.get_event_loop()
+            queue_data = await loop.run_in_executor(None, self.sp.queue)
+            return queue_data
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to fetch queue: {e}")
+            return None
+
+    async def is_track_liked(self, track_id: str) -> bool:
+        """Check if a track is saved in the user's library."""
+        if not self.initialized or not track_id:
+            return False
+            
+        try:
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['other'] += 1
+            
+            loop = asyncio.get_event_loop()
+            # API expects a list of IDs
+            results = await loop.run_in_executor(None, self.sp.current_user_saved_tracks_contains, [track_id])
+            return results[0] if results else False
+        except Exception as e:
+            logger.error(f"Failed to check if track is liked: {e}")
+            return False
+
+    async def like_track(self, track_id: str) -> bool:
+        """Save a track to the user's library."""
+        if not self.initialized or not track_id:
+            return False
+            
+        try:
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['other'] += 1
+            
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.current_user_saved_tracks_add, [track_id])
+            return True
+        except Exception as e:
+            logger.error(f"Failed to like track: {e}")
+            return False
+
+    async def unlike_track(self, track_id: str) -> bool:
+        """Remove a track from the user's library."""
+        if not self.initialized or not track_id:
+            return False
+            
+        try:
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['other'] += 1
+            
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.current_user_saved_tracks_delete, [track_id])
+            return True
+        except Exception as e:
+            logger.error(f"Failed to unlike track: {e}")
+            return False

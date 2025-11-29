@@ -46,6 +46,10 @@ let manualStyleOverride = false;
 // Global variable
 let visualModeTimerId = null;
 
+// Global state variables
+let queueDrawerOpen = false;
+let isLiked = false;
+
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
     // Try modern API first (Works on HTTPS / Localhost)
@@ -1730,6 +1734,14 @@ async function updateLoop() {
                 // Pass a dummy object saying no lyrics
                 checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
             }
+
+            // Check like status for new track
+            if (trackInfo.id) {
+                checkLikedStatus(trackInfo.id);
+            }
+            
+            // Reset style buttons in modal
+            updateStyleButtonsInModal(trackInfo.background_style || 'blur'); // Default logic assumption
         } else {
             // No track playing - handle global slideshow
             if (visualModeConfig.slideshowEnabled) {
@@ -1790,4 +1802,353 @@ async function main() {
 }
 
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', main);
+document.addEventListener('DOMContentLoaded', () => {
+    // ... existing setup ...
+    
+    // UI Event Listeners
+    document.getElementById('btn-queue')?.addEventListener('click', toggleQueueDrawer);
+    document.getElementById('queue-close')?.addEventListener('click', toggleQueueDrawer);
+    document.getElementById('btn-like')?.addEventListener('click', toggleLike);
+    
+    // Background Style Buttons
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const style = e.target.dataset.style;
+            saveBackgroundStyle(style);
+            
+            // Update active state immediately
+            document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+        });
+    });
+
+    // Touch/Swipe Controls
+    setupTouchControls();
+});
+
+// --- QUEUE FUNCTIONS ---
+
+async function toggleQueueDrawer() {
+    const drawer = document.getElementById('queue-drawer');
+    queueDrawerOpen = !queueDrawerOpen;
+    
+    if (queueDrawerOpen) {
+        drawer.classList.add('open');
+        await fetchAndRenderQueue();
+    } else {
+        drawer.classList.remove('open');
+    }
+}
+
+async function fetchAndRenderQueue() {
+    try {
+        const response = await fetch('/api/playback/queue');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const list = document.getElementById('queue-list');
+        list.innerHTML = '';
+        
+        if (data.queue && data.queue.length > 0) {
+            data.queue.forEach(track => {
+                const item = document.createElement('div');
+                item.className = 'queue-item';
+                
+                // Use placeholder if no art
+                const artUrl = track.album.images[2]?.url || track.album.images[0]?.url || 'resources/images/icon.png';
+                
+                item.innerHTML = `
+                    <img src="${artUrl}" class="queue-art" alt="Art">
+                    <div class="queue-info">
+                        <div class="queue-title">${track.name}</div>
+                        <div class="queue-artist">${track.artists[0].name}</div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        } else {
+            list.innerHTML = '<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5)">Queue is empty</div>';
+        }
+    } catch (e) {
+        console.error("Queue fetch failed", e);
+    }
+}
+
+// --- LIKE BUTTON FUNCTIONS ---
+
+async function checkLikedStatus(trackId) {
+    if (!trackId) return;
+    try {
+        const response = await fetch(`/api/playback/liked?track_id=${trackId}`);
+        const data = await response.json();
+        isLiked = data.liked;
+        updateLikeButton();
+    } catch (e) { console.error(e); }
+}
+
+function updateLikeButton() {
+    const btn = document.getElementById('btn-like');
+    if (!btn) return;
+    
+    if (isLiked) {
+        btn.innerHTML = '❤️'; // Filled heart
+        btn.classList.add('liked');
+    } else {
+        btn.innerHTML = '♡'; // Outline heart
+        btn.classList.remove('liked');
+    }
+}
+
+async function toggleLike() {
+    if (!lastTrackInfo || !lastTrackInfo.id) return;
+    
+    // Optimistic update
+    isLiked = !isLiked;
+    updateLikeButton();
+    
+    try {
+        await fetch('/api/playback/liked', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                track_id: lastTrackInfo.id,
+                action: isLiked ? 'like' : 'unlike'
+            })
+        });
+    } catch (e) {
+        // Revert on failure
+        isLiked = !isLiked;
+        updateLikeButton();
+        showToast("Action failed", "error");
+    }
+}
+
+// --- VISUAL PREFERENCE FUNCTIONS ---
+
+async function saveBackgroundStyle(style) {
+    if (!lastTrackInfo) return;
+    
+    try {
+        // Apply immediately
+        manualStyleOverride = true; // Prevent auto-revert
+        applyBackgroundStyle(style);
+        
+        // Save to backend
+        const response = await fetch('/api/album-art/background-style', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ style: style })
+        });
+        
+        if (response.ok) {
+            showToast(`Saved ${style} style for this album`);
+            // Update locally to avoid need for refresh
+            lastTrackInfo.background_style = style;
+        }
+    } catch (e) {
+        showToast("Failed to save preference", "error");
+    }
+}
+
+// Update the Modal UI to show current selection
+function updateStyleButtonsInModal(currentStyle) {
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        if (btn.dataset.style === currentStyle) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
+
+// --- TOUCH CONTROLS ---
+
+function setupTouchControls() {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    
+    document.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, {passive: true});
+    
+    document.addEventListener('touchend', e => {
+        const touchEndX = e.changedTouches[0].screenX;
+        const touchEndY = e.changedTouches[0].screenY;
+        
+        handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+    }, {passive: true});
+}
+
+function handleSwipe(startX, startY, endX, endY) {
+    const minSwipeDistance = 50;
+    const maxVerticalVariance = 50; // Ignore if scrolled up/down too much
+    
+    const diffX = endX - startX;
+    const diffY = endY - startY;
+    
+    // Check if it's a horizontal swipe
+    if (Math.abs(diffX) > minSwipeDistance && Math.abs(diffY) < maxVerticalVariance) {
+        if (diffX > 0) {
+            // Swipe Right -> Previous
+            fetch('/api/playback/previous', { method: 'POST' });
+        } else {
+            // Swipe Left -> Next
+            fetch('/api/playback/next', { method: 'POST' });
+        }
+    }
+}
+
+// --- UPDATE LOOP INTEGRATION ---
+
+// Modify updateLoop to include checkLikedStatus
+async function updateLoop() {
+    let lastTrackId = null;
+    
+    while (true) {
+        const now = Date.now();
+        const timeSinceLastCheck = now - lastCheckTime;
+
+        // Ensure minimum time between checks
+        if (timeSinceLastCheck < updateInterval) {
+            await sleep(updateInterval - timeSinceLastCheck);
+            continue;
+        }
+
+        // Get track info first
+        const trackInfo = await getCurrentTrack();
+
+        // Only get lyrics if we have track info
+        if (trackInfo && !trackInfo.error) {
+            isIdleState = false; // Reset idle state
+            
+            // ROBUST TRACK ID GENERATION
+            // 1. Prefer track_id if available (Spotify provides this)
+            // 2. Fall back to "Artist - Title" for Windows Media and other sources
+            // 3. Handle edge cases where artist/title might be missing
+            let currentTrackId;
+            if (trackInfo.track_id && trackInfo.track_id.trim()) {
+                // Use the backend-provided track_id (most reliable for Spotify)
+                currentTrackId = trackInfo.track_id.trim();
+            } else {
+                // Fallback: construct from artist and title
+                const artist = (trackInfo.artist || '').trim();
+                const title = (trackInfo.title || '').trim();
+                if (artist && title) {
+                    currentTrackId = `${artist} - ${title}`;
+                } else if (title) {
+                    currentTrackId = title; // At least use title if available
+                } else if (artist) {
+                    currentTrackId = artist; // Or artist if that's all we have
+                } else {
+                    currentTrackId = 'unknown'; // Last resort
+                }
+            }
+
+            const trackChanged = lastTrackId !== currentTrackId;
+
+            if (trackChanged) {
+                // Track changed - fetch artist images and reset visual mode
+                lastTrackId = currentTrackId;
+                visualModeActive = false; // Reset visual mode state
+                manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
+                if (visualModeTimer) {
+                    clearTimeout(visualModeTimer);
+                    visualModeTimer = null;
+                }
+                stopSlideshow();
+
+                // Fetch artist images for potential visual mode
+                if (trackInfo.artist_id) {
+                    await fetchArtistImages(trackInfo.artist_id);
+                }
+            }
+
+            // Update lastTrackInfo FIRST so updateBackground() has current data
+            // This fixes the stale data issue without needing forced updateBackground() calls
+            lastTrackInfo = trackInfo;
+
+            // Phase 2: Apply saved background style if available (and not manually overridden)
+            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
+                const currentStyle = getCurrentBackgroundStyle();
+                if (currentStyle !== trackInfo.background_style) {
+                    console.log(`Applying saved background style: ${trackInfo.background_style}`);
+                    applyBackgroundStyle(trackInfo.background_style);
+                }
+            }
+
+            // Update all UI components
+            updateAlbumArt(trackInfo);
+            updateTrackInfo(trackInfo);
+            updateProgress(trackInfo);
+            updateControlState(trackInfo);
+
+            // Update lyrics
+            const data = await getLyrics();
+
+            // Consolidate instrumental flag (prefer trackInfo as it comes from a fresher source or cache)
+            const isInstrumental = trackInfo.is_instrumental || (data && data.is_instrumental);
+
+            if (data) {
+                // 1. Update DOM
+                // If lyrics exist, show them. 
+                // If not, pass the WHOLE data object (which contains data.msg = "Instrumental") 
+                // so setLyricsInDom can display the status message properly.
+                const lyricsToDisplay = (data.lyrics && data.lyrics.length > 0) ? data.lyrics : data;
+                setLyricsInDom(lyricsToDisplay);
+
+                // 2. Check for Visual Mode using the backend flags
+                // Pass consolidated flags
+                data.is_instrumental = isInstrumental;
+                checkForVisualMode(data, currentTrackId);
+            } else {
+                // Fallback if no data (e.g. API error)
+                // Pass a dummy object saying no lyrics
+                checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
+            }
+
+            // Check like status for new track
+            if (trackInfo.id) {
+                checkLikedStatus(trackInfo.id);
+            }
+            
+            // Reset style buttons in modal
+            updateStyleButtonsInModal(trackInfo.background_style || 'blur'); // Default logic assumption
+        } else {
+            // No track playing - handle global slideshow
+            if (visualModeConfig.slideshowEnabled) {
+                // If we just entered idle state, fetch fresh random images
+                if (!isIdleState) {
+                    isIdleState = true;
+                    console.log("Player is idle, initializing global dashboard slideshow...");
+                    
+                    // Fetch random images from the entire DB
+                    const randomImages = await fetchRandomSlideshowImages();
+                    
+                    if (randomImages.length > 0) {
+                        artistImages = randomImages; // Replace current artist images with global mix
+                        
+                        // Start slideshow immediately
+                        if (!slideshowInterval) {
+                            startSlideshow();
+                        } else {
+                            // Restart to pick up new images
+                            stopSlideshow();
+                            startSlideshow();
+                        }
+                    }
+                }
+                
+                // Ensure slideshow is running
+                if (!slideshowInterval && artistImages.length > 0) {
+                    startSlideshow();
+                }
+            } else if (!visualModeConfig.slideshowEnabled) {
+                stopSlideshow();
+            }
+        }
+
+        lastCheckTime = Date.now();
+        await sleep(updateInterval);
+    }
+}

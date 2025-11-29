@@ -1,5 +1,5 @@
 from os import path
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 import asyncio
 import time
 import random  # ADD THIS IMPORT
@@ -724,6 +724,54 @@ async def get_artist_images():
         "images": images,
         "count": len(images)
     })
+
+@app.route("/api/playback/queue", methods=['GET'])
+async def get_playback_queue():
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    queue_data = await client.get_queue()
+    if not queue_data:
+        return jsonify({"error": "Failed to fetch queue"}), 500
+        
+    # Simplify structure for frontend
+    currently_playing = queue_data.get('currently_playing')
+    queue = queue_data.get('queue', [])
+    
+    return jsonify({
+        "current": currently_playing,
+        "queue": queue[:20]  # Limit to next 20 songs
+    })
+
+@app.route("/api/playback/liked", methods=['GET'])
+async def check_liked_status():
+    track_id = request.args.get('track_id')
+    if not track_id: return jsonify({"error": "No track_id provided"}), 400
+    
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    is_liked = await client.is_track_liked(track_id)
+    return jsonify({"liked": is_liked})
+
+@app.route("/api/playback/liked", methods=['POST'])
+async def toggle_liked_status():
+    data = await request.get_json()
+    track_id = data.get('track_id')
+    action = data.get('action') # 'like' or 'unlike'
+    
+    if not track_id or not action: return jsonify({"error": "Missing parameters"}), 400
+    
+    client = get_spotify_client()
+    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    
+    success = False
+    if action == 'like':
+        success = await client.like_track(track_id)
+    elif action == 'unlike':
+        success = await client.unlike_track(track_id)
+        
+    return jsonify({"success": success})
 
 # --- System Routes ---
 
