@@ -88,3 +88,4 @@ nuke_branches.ps1
 run_synclyrics_hidden.vbs
 stable checkpoint after bug fixing full_project_code.txt
 .cache old
+notes.md

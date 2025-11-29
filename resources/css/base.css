@@ -836,8 +836,8 @@ body.sharp-mode .current {
     /* RADIAL GRADIENT FADE - Darkest in the very center behind text */
     background: radial-gradient(
         closest-side,
-        rgba(0, 0, 0, 0.22) 0%,    /* Very subtle core */
-        rgba(0, 0, 0, 0.08) 80%,   /* Extends far out before fading */
+        rgba(0, 0, 0, 0.0) 0%,    /* Very subtle core */
+        rgba(0, 0, 0, 0.0) 80%,   /* Extends far out before fading */
         transparent 100%
     ) !important;
     
@@ -856,8 +856,12 @@ body.sharp-mode .current {
 
     /* HYBRID SHADOW: Crisp Black Definition + Ethereal White Halo */
     text-shadow: 
-        0 2px 4px rgba(0, 0, 0, 0.5),   /* Definition */
-        0 0 20px rgba(255, 255, 255, 0.3) !important; /* Glow */
+        /* CHANGE 1: Increase opacity (last number) from 0.5 to 0.8 or 1.0 for darker outline */
+        /* You can also increase the blur (3rd number) from 4px to 8px for a wider shadow */
+        0 2px 4px rgba(0, 0, 0, 0.9),   
+
+        /* CHANGE 2: Increase white glow opacity from 0.3 to 0.5 for more pop against dark backgrounds */
+        0 0 20px rgba(255, 255, 255, 0.5) !important; 
     
     /* Smooth transition for the pill effect */
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
@@ -869,8 +873,8 @@ body.sharp-mode .next {
     /* SUBTLE PILL BACKGROUND for readability on light art */
     background: radial-gradient(
         closest-side,
-        rgba(0, 0, 0, 0.18) 0%,
-        rgba(0, 0, 0, 0.06) 75%,
+        rgba(0, 0, 0, 0.0) 0%,
+        rgba(0, 0, 0, 0.0) 75%,
         transparent 100%
     ) !important;
     
@@ -883,8 +887,8 @@ body.sharp-mode .next {
     
     /* HYBRID SHADOW: Definition + Soft Glow */
     text-shadow: 
-        0 1px 2px rgba(0, 0, 0, 0.5),
-        0 0 10px rgba(255, 255, 255, 0.1) !important;
+        0 1px 2px rgba(0, 0, 0, 0.8), /* Increased from 0.5 to match your strong style */
+        0 0 10px rgba(255, 255, 255, 0.2) !important; /* Slight bump for visibility */
         
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
