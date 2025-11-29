@@ -437,6 +437,33 @@ function applyDisplayConfig() {
     updateBackground();
 }
 
+// Helper to save background style to server (Per-Album Persistence)
+async function saveBackgroundStyle(style) {
+    try {
+        await fetch('/api/album-art/background-style', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ style: style })
+        });
+        console.log(`Saved background style: ${style}`);
+    } catch (e) {
+        console.error("Failed to save background style:", e);
+    }
+}
+
+// Helper to save global settings (if needed for defaults)
+async function saveGlobalSetting(key, value) {
+    try {
+        await fetch(`/api/settings/${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: value })
+        });
+    } catch (e) {
+        console.error("Failed to save global setting:", key, e);
+    }
+}
+
 function setupSettingsPanel() {
     const settingsToggle = document.getElementById('settings-toggle');
     const settingsPanel = document.getElementById('settings-panel');
@@ -504,6 +531,14 @@ function setupSettingsPanel() {
                             displayConfig.sharpAlbumArt = false;
                             document.getElementById('opt-sharp-art-bg').checked = false;
                         }
+                        // SAVE PER-ALBUM PREFERENCE
+                        saveBackgroundStyle('blur');
+                    } else {
+                        // If unchecked and no other style is active, clear preference? 
+                        // Or just let it default to nothing.
+                        // Ideally we should have a 'none' option or just save null.
+                        // For now, let's assumes checking 'off' doesn't explicitly save 'none' 
+                        // unless we want to enforce standard gradient.
                     }
                 }
                 if (id === 'opt-soft-art-bg') {
@@ -518,6 +553,8 @@ function setupSettingsPanel() {
                             displayConfig.sharpAlbumArt = false;
                             document.getElementById('opt-sharp-art-bg').checked = false;
                         }
+                        // SAVE PER-ALBUM PREFERENCE
+                        saveBackgroundStyle('soft');
                     }
                 }
                 if (id === 'opt-sharp-art-bg') {
@@ -532,6 +569,8 @@ function setupSettingsPanel() {
                             displayConfig.softAlbumArt = false;
                             document.getElementById('opt-soft-art-bg').checked = false;
                         }
+                        // SAVE PER-ALBUM PREFERENCE
+                        saveBackgroundStyle('sharp');
                     }
                 }
                 if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
