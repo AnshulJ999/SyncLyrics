@@ -610,16 +610,89 @@
     }
 }
 
+/* COMPACT Background Style Controls */
+.style-controls-section {
+    /* Remove padding and background for cleaner look */
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    margin-bottom: 16px;
+    text-align: left; /* Align with content */
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Spread title and buttons */
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 12px;
+}
+
+.style-controls-section h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 600;
+    /* Renamed "Background Style" to simpler "Style" in your head if desired, or keep as is */
+}
+
+.style-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-bottom: 0; /* Remove margin */
+}
+
+.style-btn {
+    padding: 4px 12px; /* Smaller padding */
+    font-size: 0.75rem; /* Smaller text */
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; /* Less rounded, more sleek */
+    cursor: pointer;
+    transition: all 0.2s;
+    color: rgba(255,255,255,0.7);
+}
+
+.style-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.style-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Hide the hint text */
+.style-hint {
+    display: none;
+}
+
+/* FIX: Grid Overlapping */
+.art-grid {
+    display: grid;
+    /* Use auto-fill with a fixed minimum to ensure consistent rows */
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+    /* Ensure the grid respects the container width */
+    width: 100%; 
+    /* Ensure content flows naturally */
+    grid-auto-rows: max-content; 
+}
+
 /* Header for Artist Images Section */
 .artist-images-header {
-    grid-column: 1 / -1; /* Force span across all columns */
+    grid-column: 1 / -1; /* Span full width */
     width: 100%;
     margin-top: 24px;
     margin-bottom: 12px;
     padding-top: 24px;
     border-top: 1px solid rgba(255,255,255,0.1);
     color: rgba(255,255,255,0.8);
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    display: block; /* Ensure it behaves as a block within the grid flow */
+    /* Ensure it breaks the grid flow visually */
+    display: flex;
+    align-items: center;
 }

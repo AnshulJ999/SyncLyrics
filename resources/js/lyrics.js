@@ -2075,10 +2075,19 @@ function handleSwipe(startX, startY, endX, endY) {
     // EDGE GUARD: Ignore swipes that start at the very right edge 
     // to prevent conflict with Queue Drawer opening
     const screenWidth = window.innerWidth;
-    if (startX > (screenWidth - 40)) {
-        return; 
+    // Increased edge detection zone to 60px for reliability
+    const isRightEdge = startX > (screenWidth - 60); 
+    
+    if (isRightEdge && !queueDrawerOpen) {
+        // Check for leftward swipe (opening queue)
+        if ((startX - endX) > minSwipeDistance) {
+            toggleQueueDrawer();
+            return; // Stop further processing
+        }
     }
 
+    /* 
+    // DISABLE PLAYBACK SWIPE CONTROLS
     const diffX = endX - startX;
     const diffY = endY - startY;
     
@@ -2092,4 +2101,5 @@ function handleSwipe(startX, startY, endX, endY) {
             fetch('/api/playback/next', { method: 'POST' });
         }
     }
+    */
 }
