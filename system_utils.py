@@ -1852,39 +1852,70 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         existing_metadata = json.load(f)
                 except: pass
 
-            # Fetch from Spotify if ID provided
-            images = []
+            # Fetch from all sources
+            all_images = []  # List of dicts: {'url': str, 'source': str, ...}
+            
+            # 1. Fetch from Spotify if ID provided
             if spotify_artist_id:
                 client = get_shared_spotify_client()
                 if client:
-                    # fetch remote URLs
-                    images = await client.get_artist_images(spotify_artist_id)
+                    spotify_urls = await client.get_artist_images(spotify_artist_id)
+                    # Convert to standardized format
+                    for url in spotify_urls:
+                        all_images.append({
+                            "url": url,
+                            "source": "spotify"
+                        })
+            
+            # 2. Fetch from Other Sources (iTunes, Last.fm) via AlbumArtProvider
+            try:
+                art_provider = get_album_art_provider()
+                external_images = await art_provider.get_artist_images(artist)
+                # external_images is already in the correct format: [{'url': str, 'source': str, ...}]
+                all_images.extend(external_images)
+            except Exception as e:
+                logger.error(f"Failed to fetch external artist images from AlbumArtProvider: {e}")
 
             # Download and Save
             saved_images = existing_metadata.get("images", [])
             
-            # Simple deduplication set
+            # Simple deduplication set (by URL)
             existing_urls = {img.get('url') for img in saved_images if img.get('url')}
             
             loop = asyncio.get_running_loop()
             
-            for idx, url in enumerate(images):
-                if url in existing_urls: continue
+            # Track counts per source for filename generation
+            source_counts = {}
+            
+            for img_dict in all_images:
+                url = img_dict.get('url')
+                source = img_dict.get('source', 'unknown')
                 
-                # Filename: spotify_0.jpg, spotify_1.jpg etc.
-                filename = f"spotify_{idx}.jpg" # Simplified for now
+                if not url or url in existing_urls:
+                    continue
+                
+                # Generate filename with source prefix and index
+                if source not in source_counts:
+                    source_counts[source] = 0
+                else:
+                    source_counts[source] += 1
+                
+                idx = source_counts[source]
+                filename = f"{source.lower()}_{idx}.jpg"
                 file_path = folder / filename
                 
                 if not file_path.exists():
                     success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                     if success:
-                        filename = f"spotify_{idx}{ext}"
+                        filename = f"{source.lower()}_{idx}{ext}"
                         saved_images.append({
-                            "source": "spotify",
+                            "source": source,
                             "url": url,
                             "filename": filename,
-                            "downloaded": True
+                            "downloaded": True,
+                            "added_at": datetime.utcnow().isoformat() + "Z"
                         })
+                        existing_urls.add(url)  # Mark as processed
             
             # Save Metadata
             metadata = {

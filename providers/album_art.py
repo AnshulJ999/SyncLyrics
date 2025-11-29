@@ -858,12 +858,35 @@ class AlbumArtProvider:
             # or sometimes amgArtistId. However, for now, we rely on standard ArtworkUrl100 if present.
             # NOTE: iTunes Search API often returns blank for artist artwork compared to albums.
             # We will try to extract the standard keys if they exist.
+            # iTunes Search API for artists rarely includes artwork directly,
+            # but we check for any artwork URL fields that might exist
+            artwork_url = None
             
-            # Since standard iTunes API is weak for *Artist* images specifically (vs Albums),
-            # we might get limited results here, but it's worth trying.
-            # Often 'artworkUrl100' is missing for artists.
+            # Check common artwork URL fields (though unlikely for artists)
+            for key in ["artworkUrl100", "artworkUrl512", "artworkUrl1000"]:
+                if result.get(key):
+                    artwork_url = result[key]
+                    # Try to enhance to full size using 9999x9999 method
+                    if "100x100" in artwork_url:
+                        artwork_url = artwork_url.replace("100x100bb", "9999x9999bb")
+                    elif "512x512" in artwork_url:
+                        artwork_url = artwork_url.replace("512x512bb", "9999x9999bb")
+                    elif "1000x1000" in artwork_url:
+                        artwork_url = artwork_url.replace("1000x1000bb", "9999x9999bb")
+                    break
+            
+            if artwork_url:
+                return [{
+                    "url": artwork_url,
+                    "source": "iTunes",
+                    "width": 0,  # Unknown, will be verified on download
+                    "height": 0
+                }]
+            
+            # iTunes API typically doesn't return artist artwork
             return [] 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"iTunes artist image fetch error: {e}")
             return []
 
     def _get_lastfm_artist_images(self, artist: str) -> List[Dict[str, Any]]:
@@ -872,8 +895,9 @@ class AlbumArtProvider:
             return []
             
         try:
+            # Use artist.getInfo which is the most reliable public API method
             params = {
-                "method": "artist.getImages",
+                "method": "artist.getInfo",
                 "artist": artist,
                 "api_key": self.lastfm_api_key,
                 "format": "json",
@@ -886,29 +910,39 @@ class AlbumArtProvider:
                 return []
                 
             data = response.json()
-            image_list = data.get("images", {}).get("image", [])
             
-            results = []
-            for img in image_list:
-                # Last.fm structure for getImages is slightly different or requires scraping
-                # Official API often returns just one main image or requires auth.
-                # Use artist.getInfo as fallback which is public.
-                pass
-                
-            # Fallback to artist.getInfo for the main image
-            params["method"] = "artist.getInfo"
-            url = f"http://ws.audioscrobbler.com/2.0/?{urlencode(params)}"
-            response = requests.get(url, timeout=self.timeout)
-            data = response.json()
+            # Check for API errors
+            if "error" in data:
+                logger.debug(f"Last.fm API error for artist {artist}: {data.get('message', 'Unknown error')}")
+                return []
             
             # Last.fm returns images in 'small', 'medium', 'large', 'extralarge', 'mega'
-            images = data.get("artist", {}).get("image", [])
+            artist_data = data.get("artist", {})
+            if not artist_data:
+                return []
+                
+            images = artist_data.get("image", [])
+            results = []
+            
             for img in images:
-                if img.get("size") in ["mega", "extralarge"] and img.get("#text"):
+                if not isinstance(img, dict):
+                    continue
+                    
+                size = img.get("size", "")
+                url = img.get("#text", "")
+                
+                # Only use large images (extralarge or mega)
+                if size in ["mega", "extralarge"] and url:
+                    # Remove size segments from URL to get original full-size image
+                    import re
+                    original_url = re.sub(r'/\d+x?\d*[s]/', '/', url)
+                    original_url = re.sub(r'/\d+x\d+/', '/', original_url)
+                    original_url = re.sub(r'(?<!:)/+', '/', original_url)
+                    
                     results.append({
-                        "url": img["#text"],
+                        "url": original_url if original_url != url else url,
                         "source": "Last.fm",
-                        "width": 0, # Unknown
+                        "width": 0,  # Unknown, will be verified on download
                         "height": 0
                     })
                     
@@ -916,13 +950,14 @@ class AlbumArtProvider:
             unique_results = []
             seen = set()
             for r in results:
-                if r["url"] not in seen:
+                url = r.get("url", "")
+                if url and url not in seen:
                     unique_results.append(r)
-                    seen.add(r["url"])
+                    seen.add(url)
                     
             return unique_results
         except Exception as e:
-            logger.debug(f"Last.fm error: {e}")
+            logger.debug(f"Last.fm artist image fetch error: {e}")
             return []
 
 # Singleton instance
