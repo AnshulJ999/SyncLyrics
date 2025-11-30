@@ -20,6 +20,7 @@ from providers.spotify_api import get_shared_spotify_client
 import os
 from pathlib import Path
 import json
+import uuid
 
 logger = get_logger(__name__)
 
@@ -475,7 +476,10 @@ async def set_album_art_preference():
             
             # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
             cache_path = CACHE_DIR / f"current_art{original_extension}"
-            temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
+            # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+            # This prevents race conditions when multiple preference updates happen simultaneously
+            temp_filename = f"current_art_{uuid.uuid4().hex}{original_extension}.tmp"
+            temp_path = CACHE_DIR / temp_filename
             
             shutil.copy2(db_image_path, temp_path)
             
@@ -497,6 +501,15 @@ async def set_album_art_preference():
                             await asyncio.sleep(0.1)  # Wait briefly before retry
                         else:
                             logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
+            
+            # Clean up temp file if replacement failed
+            if not replaced:
+                try:
+                    if temp_path.exists():
+                        os.remove(temp_path)
+                except:
+                    pass
+                return jsonify({"status": "error", "message": "Failed to update album art"})
             
             # OPTIMIZATION: Only delete spotify_art.jpg AFTER successful copy
             # This ensures we don't delete it if the copy failed, and prevents

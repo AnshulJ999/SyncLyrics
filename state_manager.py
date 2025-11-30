@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import os
+import uuid
 
 from benedict import benedict
 
@@ -45,8 +46,10 @@ def set_state(new_state: dict):
     
     # Use lock to prevent concurrent writes
     with _state_lock:
-        # Write to temp file first (atomic operation)
-        temp_path = "state.json.tmp"
+        # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+        # This provides extra safety even though we have a lock (defense in depth)
+        temp_filename = f"state_{uuid.uuid4().hex}.json.tmp"
+        temp_path = temp_filename
         try:
             with open(temp_path, "w") as f:
                 json.dump(new_state, f, indent=4)

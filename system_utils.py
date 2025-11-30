@@ -555,7 +555,10 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
     """
     try:
         metadata_path = folder / "metadata.json"
-        temp_path = folder / "metadata.json.tmp"
+        # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+        # This prevents race conditions when multiple tracks from the same album are processed simultaneously
+        temp_filename = f"metadata_{uuid.uuid4().hex}.json.tmp"
+        temp_path = folder / temp_filename
         
         # Ensure folder exists
         folder.mkdir(parents=True, exist_ok=True)
@@ -753,8 +756,10 @@ async def ensure_album_art_db(
                 # Download image if we don't have it or if it's missing
                 if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
                     try:
-                        # Create a temporary path without extension (will be set by download function)
-                        temp_path = folder / provider_name
+                        # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
+                        # This prevents race conditions when the same provider downloads for the same album simultaneously
+                        temp_filename = f"{provider_name}_{uuid.uuid4().hex}"
+                        temp_path = folder / temp_filename
                         
                         # Run blocking download/save in executor to avoid freezing the event loop
                         # Returns (success: bool, extension: str)
@@ -803,9 +808,29 @@ async def ensure_album_art_db(
                                 logger.warning(f"Failed to verify resolution for {image_path}: {e}") # Log error
                         else:
                             logger.warning(f"Failed to save {provider_name} art for {artist} - {album or title}")
+                            # Clean up temp file if download failed
+                            try:
+                                temp_path_with_ext = temp_path.with_suffix(file_extension) if 'file_extension' in locals() else temp_path
+                                if temp_path_with_ext.exists():
+                                    os.remove(temp_path_with_ext)
+                                elif temp_path.exists():
+                                    os.remove(temp_path)
+                            except:
+                                pass
                             continue
                     except Exception as e:
                         logger.warning(f"Failed to download {provider_name} art: {e}")
+                        # Clean up temp file if exception occurred
+                        try:
+                            if 'temp_path' in locals() and temp_path.exists():
+                                # Try to remove with any possible extension
+                                for ext in ['.jpg', '.png', '.webp', '']:
+                                    temp_with_ext = temp_path.with_suffix(ext) if ext else temp_path
+                                    if temp_with_ext.exists():
+                                        os.remove(temp_with_ext)
+                                        break
+                        except:
+                            pass
                         continue
                 else:
                     # Image exists, get resolution from file (run in executor to avoid blocking)
@@ -900,7 +925,10 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
         True if successful, False otherwise
     """
     try:
-        temp_path = path.with_suffix(path.suffix + ".tmp")
+        # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
+        # This prevents race conditions when the same image URL is downloaded multiple times simultaneously
+        temp_filename = f"{path.stem}_{uuid.uuid4().hex}{path.suffix}.tmp"
+        temp_path = path.parent / temp_filename
         # Write to temp file first
         with open(temp_path, "wb") as f:
             f.write(data)
@@ -2155,8 +2183,10 @@ def _perform_debug_art_update(result: Dict[str, Any]):
         source_url = result.get("album_art_url")
 
         # Determine what to write
-        # Use a temp file to avoid partial writes
-        temp_path = target_path.with_suffix('.tmp')
+        # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+        # This prevents race conditions when multiple debug art updates happen simultaneously
+        temp_filename = f"{target_path.stem}_{uuid.uuid4().hex}{target_path.suffix}.tmp"
+        temp_path = target_path.parent / temp_filename
         
         # 1. If we have a local path (Thumb or DB), copy it
         if source_path:
