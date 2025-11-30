@@ -646,6 +646,10 @@ async def get_cover_art():
         # we fall through to legacy path instead of returning 404
         if art_path.exists():
             try:
+                # DEBUG: Log size to verify quality
+                file_size = art_path.stat().st_size
+                logger.info(f"Serving cover art: {art_path.name} ({file_size} bytes)")
+                
                 # Determine mimetype based on extension (preserves original format)
                 ext = art_path.suffix.lower()
                 mime = 'image/jpeg'  # Default

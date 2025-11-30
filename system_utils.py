@@ -470,6 +470,11 @@ def save_image_original(image_data: bytes, output_path: Path, file_extension: st
         True if successful, False otherwise
     """
     try:
+        # Sanity Check: Don't save empty or extremely tiny files (likely errors)
+        if not image_data or len(image_data) < 100:
+            logger.warning(f"Refusing to save empty/tiny image to {output_path} ({len(image_data) if image_data else 0} bytes)")
+            return False
+
         # Ensure output_path has the correct extension
         if file_extension:
             # Replace extension if provided
