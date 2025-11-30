@@ -1038,10 +1038,10 @@ async function loadAlbumArtTab() {
         // NEW: Fetch and Append Artist Images to the SAME grid
         if (lastTrackInfo && lastTrackInfo.artist_id) {
             // Add a header/separator with correct grid positioning
-            const separator = document.createElement('div');
-            separator.className = 'artist-images-header';
-            separator.textContent = 'Artist Images';
-            grid.appendChild(separator);
+            //const separator = document.createElement('div');
+            //separator.className = 'artist-images-header';
+            //separator.textContent = 'Artist Images';
+            //grid.appendChild(separator);
 
             // Fetch images (reuse existing function logic or global variable if already fetched)
             // We'll use the global artistImages array if populated, or fetch if empty

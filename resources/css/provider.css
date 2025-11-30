@@ -681,10 +681,10 @@
     grid-auto-rows: min-content; /* Changed from max-content to min-content to fit content exactly */
     align-items: start; /* Align items to top of their cells */
 }
-
 /* Header for Artist Images Section */
+/*
 .artist-images-header {
-    grid-column: 1 / -1; /* Span full width */
+    grid-column: 1 / -1; 
     width: 100%;
     margin-top: 24px;
     margin-bottom: 12px;
@@ -693,9 +693,10 @@
     color: rgba(255,255,255,0.8);
     font-size: 0.9rem;
     font-weight: 600;
-    /* Ensure it breaks the grid flow visually */
+    
     display: flex;
     align-items: center;
-    /* Force it to start on a new row */
+    
     grid-row-start: auto;
 }
+*/
