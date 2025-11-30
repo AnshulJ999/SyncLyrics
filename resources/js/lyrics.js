@@ -679,7 +679,33 @@ function updateAlbumArt(trackInfo) {
                     // CRITICAL: Check if this is STILL the URL we want to show
                     // If the user skipped to another song while this was loading, pendingArtUrl will be different
                     if (pendingArtUrl === targetUrl) {
-                        albumArt.src = targetUrl;
+                        // Smooth fade transition: fade out old image, swap, fade in new image
+                        // This prevents jarring flicker when URL changes (e.g., during DB population)
+                        // Only fade if there's already a valid image loaded (not first load or empty)
+                        const currentSrc = albumArt.src || '';
+                        const hasExistingImage = currentSrc && 
+                                                currentSrc !== window.location.href && 
+                                                currentSrc !== '' &&
+                                                currentSrc !== targetUrl; // Only fade if URL is actually changing
+                        
+                        if (hasExistingImage) {
+                            // Fade out old image
+                            albumArt.style.opacity = '0';
+                            
+                            setTimeout(() => {
+                                // Swap to new image after fade out
+                                albumArt.src = targetUrl;
+                                
+                                // Fade in new image
+                                setTimeout(() => {
+                                    albumArt.style.opacity = '1';
+                                }, 10); // Small delay to ensure src change is processed
+                            }, 150); // Half of transition duration (0.3s / 2)
+                        } else {
+                            // First load or no existing image - set immediately (no fade needed)
+                            albumArt.src = targetUrl;
+                            albumArt.style.opacity = '1';
+                        }
 
                         // Update background only when image is ready
                         if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {

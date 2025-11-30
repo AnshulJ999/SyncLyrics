@@ -456,7 +456,8 @@ body[data-minimal="true"] .background-overlay {
     height: clamp(90px, 12vw, 110px);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    transition: all 0.5s ease;
+    /* Smooth fade transition for image changes (prevents flickering during DB population) */
+    transition: opacity 0.3s ease, all 0.5s ease;
     object-fit: cover;
     /* Hide by default until valid src is loaded */
     opacity: 0;
