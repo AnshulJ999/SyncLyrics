@@ -6,6 +6,7 @@ Handles dynamic configuration management using settings.json
 import json
 import shutil
 import os
+import uuid  # Add this import
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -239,10 +240,29 @@ class SettingsManager:
     def save_to_config(self) -> None:
         """Save current memory settings to JSON file"""
         try:
-            with open(SETTINGS_FILE, 'w') as f:
+            # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+            # This prevents race conditions when multiple settings updates happen simultaneously
+            temp_filename = f"settings_{uuid.uuid4().hex}.json.tmp"
+            temp_path = SETTINGS_FILE.parent / temp_filename
+            
+            with open(temp_path, 'w') as f:
                 json.dump(self._settings, f, indent=4, sort_keys=True)
+            
+            # Atomic replace (works on both Windows and Unix)
+            if SETTINGS_FILE.exists():
+                try:
+                    os.remove(SETTINGS_FILE)
+                except:
+                    pass
+            os.replace(temp_path, SETTINGS_FILE)
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
+            # Clean up temp file if it exists
+            if 'temp_path' in locals() and temp_path.exists():
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
 
     def get_all(self) -> Dict:
         """Return formatted settings for UI"""
