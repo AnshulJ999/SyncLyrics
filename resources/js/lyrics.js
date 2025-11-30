@@ -27,6 +27,7 @@ let pendingArtUrl = null;
 // Visual Mode State Management
 let visualModeActive = false;
 let visualModeTimer = null;
+let visualModeDebounceTimer = null; // Prevents flickering status from resetting visual mode
 let artistImages = [];
 let slideshowInterval = null;
 let currentSlideIndex = 0;
@@ -699,8 +700,14 @@ function updateAlbumArt(trackInfo) {
             albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
         }
     } else {
-        albumArt.style.display = 'none';
-        pendingArtUrl = null;
+        // FIX: Don't hide art immediately if it's missing. 
+        // This prevents flickering during the split-second between song start and art fetch.
+        // Only hide if we are NOT in the middle of a transition (not loading anything).
+        // If pendingArtUrl is null (not loading anything) and we have no URL, then hide.
+        if (!pendingArtUrl) {
+            albumArt.style.display = 'none';
+        }
+        // Note: We don't clear pendingArtUrl here because it might be loading from a previous call
     }
 
     // Show/hide header based on whether we have art or track info
@@ -1317,6 +1324,17 @@ function checkForVisualMode(data, trackId) {
     const shouldEnterVisualMode = !lyricsAvailable || isInstrumental;
 
     if (shouldEnterVisualMode) {
+        // CONDITIONS MET: We should be in Visual Mode
+        
+        // CRITICAL FIX: If we were about to exit (debounce active), CANCEL THE EXIT.
+        // This handles the "flicker" where status goes False -> True quickly.
+        // Without this, brief status changes would prevent visual mode from ever activating.
+        if (visualModeDebounceTimer) {
+            console.log('[Visual Mode] Status flickered, cancelling exit/reset');
+            clearTimeout(visualModeDebounceTimer);
+            visualModeDebounceTimer = null;
+        }
+
         // If already active, nothing to do
         if (visualModeActive) return;
 
@@ -1371,19 +1389,34 @@ function checkForVisualMode(data, trackId) {
             }
         }, delayMs);
     } else {
-        // Condition NOT met (we have lyrics and it's not instrumental)
+        // CONDITIONS NOT MET: We should NOT be in Visual Mode (Lyrics found)
+        // CRITICAL FIX: Use debouncing to prevent flickering from cancelling visual mode prematurely.
+        // If lyrics status flickers (Found -> Searching -> Found), we wait 1 second before actually exiting.
+        // This prevents visual mode from being cancelled during brief status changes.
 
-        // If active, exit
-        if (visualModeActive) {
-            exitVisualMode();
-        }
-
-        // If timer is running, cancel it
-        if (visualModeTimer) {
-            console.log('[Visual Mode] Conditions no longer met, cancelling timer');
-            clearTimeout(visualModeTimer);
-            visualModeTimer = null;
-            visualModeTimerId = null; // Clear ID
+        // Only act if we are currently Active or have a Timer running
+        if (visualModeActive || visualModeTimer) {
+            
+            // If we aren't already waiting to exit... START WAITING.
+            // We wait 1 second before actually killing Visual Mode. 
+            // If "shouldEnterVisualMode" becomes true again inside this second, we save it (see above).
+            if (!visualModeDebounceTimer) {
+                visualModeDebounceTimer = setTimeout(() => {
+                    console.log('[Visual Mode] Conditions not met for 1s, exiting/cancelling');
+                    
+                    if (visualModeActive) {
+                        exitVisualMode();
+                    }
+                    
+                    if (visualModeTimer) {
+                        clearTimeout(visualModeTimer);
+                        visualModeTimer = null;
+                        visualModeTimerId = null; // Clear ID
+                    }
+                    
+                    visualModeDebounceTimer = null;
+                }, 1000); // 1 second grace period to prevent flickering
+            }
         }
     }
 }
@@ -1726,10 +1759,17 @@ async function updateLoop() {
                 lastTrackId = currentTrackId;
                 visualModeActive = false; // Reset visual mode state
                 manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
+                
+                // Clear all timers when track changes
                 if (visualModeTimer) {
                     clearTimeout(visualModeTimer);
                     visualModeTimer = null;
                 }
+                if (visualModeDebounceTimer) {
+                    clearTimeout(visualModeDebounceTimer);
+                    visualModeDebounceTimer = null;
+                }
+                
                 stopSlideshow();
 
                 // Fetch artist images for potential visual mode

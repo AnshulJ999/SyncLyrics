@@ -417,9 +417,10 @@ async def get_album_art_options():
 @app.route("/api/album-art/preference", methods=['POST'])
 async def set_album_art_preference():
     """Set preferred album art provider for current track"""
-    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata
+    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, cleanup_old_art
     from config import ALBUM_ART_DB_DIR, CACHE_DIR
     import shutil
+    import os
     from datetime import datetime
     
     metadata = await get_current_song_meta_data()
@@ -515,7 +516,11 @@ async def set_album_art_preference():
         except Exception as e:
             logger.warning(f"Failed to copy selected art to cache: {e}")
     
-    # Add cache busting timestamp to force frontend refresh
+    # CRITICAL FIX: Invalidate the metadata cache immediately!
+    # This forces the server to reload the metadata (and thus the new art URL) on the next request.
+    get_current_song_meta_data._last_check_time = 0
+    
+    # Add cache busting timestamp
     cache_bust = int(time.time())
     
     return jsonify({
