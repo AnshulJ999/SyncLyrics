@@ -4,6 +4,7 @@ import platform
 import re
 import time
 import asyncio
+import threading
 from typing import Optional, Dict, Any, List, Tuple
 from collections import OrderedDict
 import config
@@ -51,7 +52,8 @@ _MAX_DB_CHECKED_SIZE = 100
 _art_download_semaphore = asyncio.Semaphore(2)  # For album art downloads
 _artist_download_semaphore = asyncio.Semaphore(2)  # For artist image downloads (separate to prevent deadlock)
 # Global lock to prevent concurrent album art updates (prevents flicker)
-_art_update_lock = asyncio.Lock()
+_art_update_lock = asyncio.Lock()  # For async operations
+_art_update_thread_lock = threading.Lock()  # For sync operations in thread executors
 
 # Global set to track background tasks and prevent garbage collection (Fix: Task Tracking)
 _background_tasks = set()
@@ -1085,11 +1087,13 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                         return
 
                 # Atomic replace with retry (use lock to prevent concurrent updates)
+                # Run blocking I/O in executor while holding lock to prevent race conditions
                 async with _art_update_lock:
                     replaced = False
                     for attempt in range(3):
                         try:
-                            os.replace(temp_path, art_path)
+                            # Run blocking os.replace in executor to avoid blocking event loop
+                            await loop.run_in_executor(None, os.replace, temp_path, art_path)
                             replaced = True
                             break
                         except OSError:
@@ -2089,7 +2093,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
         _artist_download_tracker.discard(artist)
 
 def _perform_debug_art_update(result: Dict[str, Any]):
-    """Helper to update current_art.jpg in a background thread"""
+    """
+    Helper to update current_art.jpg in a background thread.
+    This function runs in a thread executor, so it must be synchronous.
+    The async lock (_art_update_lock) is acquired by the caller before
+    submitting this function to the executor, ensuring no concurrent writes.
+    """
     try:
         # We need get_cached_art_path. It's available in module scope.
         target_path = get_cached_art_path()
@@ -2112,11 +2121,14 @@ def _perform_debug_art_update(result: Dict[str, Any]):
                     return
                     
                 shutil.copy2(src, temp_path)
-                try:
-                    os.replace(temp_path, target_path)
-                except OSError:
-                    # File might be locked by server or user (e.g. open in viewer)
-                    pass
+                # Use threading lock to coordinate with other threads doing file operations
+                # (The async lock is already held by caller, but we need thread-level coordination too)
+                with _art_update_thread_lock:
+                    try:
+                        os.replace(temp_path, target_path)
+                    except OSError:
+                        # File might be locked by server or user (e.g. open in viewer)
+                        pass
                 return
 
         # 2. If we have a remote URL (Spotify), download it
@@ -2127,10 +2139,14 @@ def _perform_debug_art_update(result: Dict[str, Any]):
                 if response.status_code == 200:
                     with open(temp_path, 'wb') as f:
                         f.write(response.content)
-                    try:
-                        os.replace(temp_path, target_path)
-                    except OSError:
-                        pass
+                    # Use threading lock to coordinate with other threads doing file operations
+                    # (The async lock is already held by caller, but we need thread-level coordination too)
+                    with _art_update_thread_lock:
+                        try:
+                            os.replace(temp_path, target_path)
+                        except OSError:
+                            # File might be locked by server or user (e.g. open in viewer)
+                            pass
             except Exception:
                 pass
 
@@ -2161,9 +2177,11 @@ async def _update_debug_art(result: Dict[str, Any]):
         if current_source != last_source:
             _update_debug_art.last_source = current_source
             
-            # Don't block the main thread
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, _perform_debug_art_update, result)
+            # Acquire lock before calling executor to prevent concurrent writes (prevents flickering)
+            async with _art_update_lock:
+                # Don't block the main thread
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, _perform_debug_art_update, result)
             
     except Exception as e:
         logger.debug(f"Failed to schedule debug art update: {e}")

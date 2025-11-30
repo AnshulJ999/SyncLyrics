@@ -629,7 +629,7 @@ async def _update_song():
                 # so other operations can continue, and _fetch_and_set_lyrics will update
                 # current_song_lyrics when the fetch completes (if song hasn't changed).
                 current_song_lyrics = [(0, "Searching lyrics...")] 
-                asyncio.create_task(_fetch_and_set_lyrics(target_artist, target_title))
+                create_tracked_task(_fetch_and_set_lyrics(target_artist, target_title))
         else:
             # Song hasn't changed, just update the metadata (position, etc.)
             current_song_data = new_song_data

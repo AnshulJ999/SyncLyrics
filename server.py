@@ -417,7 +417,7 @@ async def get_album_art_options():
 @app.route("/api/album-art/preference", methods=['POST'])
 async def set_album_art_preference():
     """Set preferred album art provider for current track"""
-    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, cleanup_old_art
+    from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, cleanup_old_art, _art_update_lock
     from config import ALBUM_ART_DB_DIR, CACHE_DIR
     import shutil
     import os
@@ -480,18 +480,23 @@ async def set_album_art_preference():
             shutil.copy2(db_image_path, temp_path)
             
             # Atomic replace with retry for Windows file locking (matching system_utils.py logic)
-            replaced = False
-            for attempt in range(3):
-                try:
-                    import os
-                    os.replace(temp_path, cache_path)
-                    replaced = True
-                    break
-                except OSError:
-                    if attempt < 2:
-                        await asyncio.sleep(0.1)  # Wait briefly before retry
-                    else:
-                        logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
+            # Use lock to prevent concurrent writes (prevents flickering)
+            # Run blocking I/O in executor while holding lock to prevent race conditions
+            loop = asyncio.get_running_loop()
+            async with _art_update_lock:
+                replaced = False
+                for attempt in range(3):
+                    try:
+                        import os
+                        # Run blocking os.replace in executor to avoid blocking event loop
+                        await loop.run_in_executor(None, os.replace, temp_path, cache_path)
+                        replaced = True
+                        break
+                    except OSError:
+                        if attempt < 2:
+                            await asyncio.sleep(0.1)  # Wait briefly before retry
+                        else:
+                            logger.warning(f"Could not atomically replace current_art{original_extension} after 3 attempts (file may be locked)")
             
             # OPTIMIZATION: Only delete spotify_art.jpg AFTER successful copy
             # This ensures we don't delete it if the copy failed, and prevents
