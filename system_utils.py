@@ -122,6 +122,10 @@ def extract_dominant_colors_sync(image_path: Path) -> list:
                     r, g, b = palette[i], palette[i+1], palette[i+2]
                     colors.append(f"#{r:02x}{g:02x}{b:02x}")
 
+            # FINAL FALLBACK: If palette was empty or failed completely
+            if not colors:
+                return ["#24273a", "#363b54"]
+
             # Ensure we have 2 unique colors
             final_colors = []
             seen = set()
@@ -314,7 +318,7 @@ def _get_current_song_meta_data_gnome() -> Optional[dict]:
         
         if not album: 
             title = _remove_text_inside_parentheses_and_brackets(title)
-            artist = "" 
+            # artist = ""  # [REMOVED] Don't wipe artist name just because album is missing
 
         return {
             "artist": artist.strip(), 
@@ -861,7 +865,7 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
             pass
         return False
 
-def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[str, Any]]:
+def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Load album art from database if available.
     Returns the preferred image path if found.
@@ -869,6 +873,7 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
     Args:
         artist: Artist name
         album: Album name (optional)
+        title: Track title (optional, used as fallback if album is missing)
         
     Returns:
         Dictionary with 'path' (Path to image) and 'metadata' (full metadata dict) if found, None otherwise
@@ -878,7 +883,9 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
         return None
     
     try:
-        folder = get_album_db_folder(artist, album)
+        # Match saving logic: use title as fallback if album is missing
+        folder_name = album if album else title
+        folder = get_album_db_folder(artist, folder_name)
         metadata_path = folder / "metadata.json"
         
         if not metadata_path.exists():
@@ -913,6 +920,7 @@ def load_album_art_from_db(artist: str, album: Optional[str]) -> Optional[Dict[s
         # Get image path
         providers = metadata.get("providers", {})
         if preferred_provider not in providers:
+            logger.warning(f"Preferred provider '{preferred_provider}' not found in DB for {artist} - {album}")
             return None
         
         provider_data = providers[preferred_provider]
@@ -1095,7 +1103,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         if not album:
             title = _remove_text_inside_parentheses_and_brackets(title)
-            artist = ""
+            # artist = ""  # [REMOVED] Don't wipe artist name just because album is missing
 
         timeline = current_session.get_timeline_properties()
         if not timeline: return None
@@ -1130,7 +1138,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         album_art_url = None
 
         # 1. Check Album Art Database first (Fast Path)
-        db_result = load_album_art_from_db(artist, album)
+        db_result = load_album_art_from_db(artist, album, title)
         saved_background_style = None  # Variable to hold saved style preference
         if db_result:
             found_in_db = True
@@ -1255,7 +1263,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
                      
                      # Check DB again!
-                     db_result = load_album_art_from_db(artist, album)
+                     db_result = load_album_art_from_db(artist, album, title)
                      if db_result:
                          # Found it! Update variables to use High-Res immediately
                          found_in_db = True
@@ -1375,7 +1383,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         found_in_db = False
 
         # Check Album Art Database first (fast path - zero delay if cached)
-        db_result = load_album_art_from_db(captured_artist, captured_album)
+        # FIX: Pass title as fallback for singles/no-album tracks
+        db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
         saved_background_style = None  # Variable to hold saved style preference
         if db_result:
             found_in_db = True
