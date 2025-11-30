@@ -337,14 +337,25 @@ def get_image_extension(data: bytes) -> str:
 def get_cached_art_path() -> Optional[Path]:
     """
     Finds the cached album art file by checking common image extensions.
-    Returns the first matching file found.
+    Returns the file with the most recent modification time to avoid stale art race conditions.
     Supports: JPG, PNG, BMP, GIF, WebP (preserves original format).
     """
+    candidates = []
     for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
         path = CACHE_DIR / f"current_art{ext}"
         if path.exists():
-            return path
-    return None
+            candidates.append(path)
+    
+    if not candidates:
+        return None
+        
+    # Return the file with the most recent modification time
+    # This prevents returning an old/stale file if cleanup failed (e.g. .jpg vs .png)
+    try:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        # Fallback to first candidate if stat fails
+        return candidates[0]
 
 def get_cached_art_mtime() -> int:
     """Get the modification time of the current cached art for cache busting"""
@@ -1144,6 +1155,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     shutil.copy2(db_image_path, temp_path)
                     os.replace(temp_path, cache_path)
                     
+                    # WAIT for file system: Verify the file exists and is accessible
+                    # This ensures we don't send the URL before the file is ready to serve
+                    for _ in range(5): # Wait up to 0.5s
+                        if cache_path.exists() and cache_path.stat().st_size > 0:
+                            break
+                        await asyncio.sleep(0.1)
+                    
                     # Clean up stale extensions ONLY after new file is in place
                     for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
                         if ext == original_extension: continue
@@ -1236,6 +1254,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                              
                              shutil.copy2(db_image_path, temp_path)
                              os.replace(temp_path, cache_path)
+                             
+                             # WAIT for file system: Verify the file exists and is accessible
+                             # This ensures we don't send the URL before the file is ready to serve
+                             for _ in range(5): # Wait up to 0.5s
+                                 if cache_path.exists() and cache_path.stat().st_size > 0:
+                                     break
+                                 await asyncio.sleep(0.1)
                              
                              # Clean up stale extensions ONLY after new file is in place
                              for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:

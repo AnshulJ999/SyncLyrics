@@ -661,8 +661,10 @@ function updateAlbumArt(trackInfo) {
         // This handles cases where one is relative (/cover-art) and one is absolute (http://...)
         const targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
 
-        // Check if src is actually different (using endsWith to handle relative/absolute mismatch)
-        if (albumArt.src !== targetUrl && !albumArt.src.endsWith(trackInfo.album_art_url)) {
+        // SIMPLIFIED CHECK: Just compare the full absolute URLs.
+        // If the timestamp or ID changed, the URL will be different.
+        // We removed the unreliable endsWith() check which failed with query params.
+        if (albumArt.src !== targetUrl) {
 
             // Check if we are already loading this exact URL to avoid duplicate work
             if (pendingArtUrl !== targetUrl) {
