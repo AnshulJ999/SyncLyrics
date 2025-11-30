@@ -542,14 +542,14 @@ async def set_background_style():
         return jsonify({"error": "No song playing"}), 404
     
     data = await request.get_json()
-    style = data.get('style')  # 'sharp', 'soft', 'blur', or None to clear
+    style = data.get('style')  # 'sharp', 'soft', 'blur', or 'none' to clear
     
     if not style:
         return jsonify({"error": "No style specified"}), 400
     
     # Validate style value
-    if style not in ['sharp', 'soft', 'blur']:
-        return jsonify({"error": f"Invalid style '{style}'. Must be 'sharp', 'soft', or 'blur'"}), 400
+    if style not in ['sharp', 'soft', 'blur', 'none']:
+        return jsonify({"error": f"Invalid style '{style}'. Must be 'sharp', 'soft', 'blur', or 'none'"}), 400
         
     artist = metadata.get("artist", "")
     album = metadata.get("album")
@@ -567,8 +567,13 @@ async def set_background_style():
         # For now, return error if no art DB exists
         return jsonify({"error": "No album art database entry found. Please wait for art to download."}), 404
         
-    # Update style
-    db_metadata["background_style"] = style
+    # Update style (or remove if 'none')
+    if style == 'none':
+        # Remove the background_style preference
+        if "background_style" in db_metadata:
+            del db_metadata["background_style"]
+    else:
+        db_metadata["background_style"] = style
     db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
     
     # Save

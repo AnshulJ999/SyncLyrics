@@ -543,11 +543,9 @@ function setupSettingsPanel() {
                             displayConfig.sharpAlbumArt = false;
                             document.getElementById('opt-sharp-art-bg').checked = false;
                         }
-                        // SAVE PER-ALBUM PREFERENCE
-                        saveBackgroundStyle('blur');
+                        // Settings panel only affects URL, NOT saved preference
                     } else {
-                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
-                        saveBackgroundStyle('none');
+                        // Unchecking - just update URL
                     }
                 }
                 if (id === 'opt-soft-art-bg') {
@@ -562,11 +560,9 @@ function setupSettingsPanel() {
                             displayConfig.sharpAlbumArt = false;
                             document.getElementById('opt-sharp-art-bg').checked = false;
                         }
-                        // SAVE PER-ALBUM PREFERENCE
-                        saveBackgroundStyle('soft');
+                        // Settings panel only affects URL, NOT saved preference
                     } else {
-                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
-                        saveBackgroundStyle('none');
+                        // Unchecking - just update URL
                     }
                 }
                 if (id === 'opt-sharp-art-bg') {
@@ -581,11 +577,9 @@ function setupSettingsPanel() {
                             displayConfig.softAlbumArt = false;
                             document.getElementById('opt-soft-art-bg').checked = false;
                         }
-                        // SAVE PER-ALBUM PREFERENCE
-                        saveBackgroundStyle('sharp');
+                        // Settings panel only affects URL, NOT saved preference
                     } else {
-                        // EXPLICITLY SAVE 'NONE' IF UNCHECKED BY USER
-                        saveBackgroundStyle('none');
+                        // Unchecking - just update URL
                     }
                 }
                 if (id === 'opt-show-provider') displayConfig.showProvider = e.target.checked;
@@ -965,6 +959,11 @@ async function loadAlbumArtTab() {
         // Event listeners are now handled in DOMContentLoaded to prevent duplication
         const styleBtns = document.querySelectorAll('.style-btn');
         const currentStyle = getCurrentBackgroundStyle();
+        
+        // Check if we're in 'Auto' mode (no saved preference, following URL)
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasUrlStyleParam = urlParams.has('artBackground') || urlParams.has('softAlbumArt') || urlParams.has('sharpAlbumArt');
+        const isAutoMode = !manualStyleOverride && (!lastTrackInfo || !lastTrackInfo.background_style || hasUrlStyleParam);
 
         styleBtns.forEach(btn => {
             // Reset state
@@ -972,8 +971,12 @@ async function loadAlbumArtTab() {
             btn.style.background = '';
             btn.style.borderColor = '';
 
-            // Highlight current style
-            if (btn.dataset.style === currentStyle) {
+            // Highlight 'Auto' if in auto mode, otherwise highlight current style
+            if (btn.dataset.style === 'auto' && isAutoMode) {
+                btn.classList.add('active');
+                btn.style.background = 'rgba(29, 185, 84, 0.3)';
+                btn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
+            } else if (btn.dataset.style !== 'auto' && btn.dataset.style === currentStyle) {
                 btn.classList.add('active');
                 // Keep inline styles for specific highlight if needed, or rely on CSS .active class
                 // adhering to the previous logic:
@@ -996,9 +999,62 @@ async function loadAlbumArtTab() {
             btn.addEventListener('click', async (e) => {
                 const style = e.target.dataset.style;
 
-                // Apply locally immediately
-                applyBackgroundStyle(style);
-                manualStyleOverride = true; // User manually changed it
+                // Handle 'Auto' option - clears saved preference, follows URL only
+                if (style === 'auto') {
+                    // Clear saved preference from server
+                    try {
+                        const response = await fetch('/api/album-art/background-style', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ style: 'none' })
+                        });
+                        const res = await response.json();
+                        if (res.status === 'success') {
+                            showToast('Cleared saved preference - following URL parameters');
+                        }
+                    } catch (err) {
+                        console.error('Error clearing style:', err);
+                    }
+                    
+                    // Reset manual override so URL params can take effect
+                    manualStyleOverride = false;
+                    
+                    // Apply URL parameters if they exist, otherwise reset to none
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
+                        applyBackgroundStyle('sharp');
+                    } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
+                        applyBackgroundStyle('soft');
+                    } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
+                        applyBackgroundStyle('blur');
+                    } else {
+                        // No URL param - reset to none
+                        applyBackgroundStyle('none');
+                    }
+                } else {
+                    // Regular style selection (soft/sharp/blur)
+                    // Apply locally immediately
+                    applyBackgroundStyle(style);
+                    manualStyleOverride = true; // User manually changed it
+
+                    // Save to server
+                    try {
+                        const response = await fetch('/api/album-art/background-style', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ style: style })
+                        });
+                        const res = await response.json();
+                        if (res.status === 'success') {
+                            showToast(`Saved preference: ${style}`);
+                        } else {
+                            showToast(`Error: ${res.error || 'Failed to save'}`, 'error');
+                        }
+                    } catch (err) {
+                        console.error('Error saving style:', err);
+                        showToast('Failed to save style preference', 'error');
+                    }
+                }
 
                 // Update UI - reset all buttons, highlight selected
                 styleBtns.forEach(b => {
@@ -1007,24 +1063,6 @@ async function loadAlbumArtTab() {
                 });
                 e.target.style.background = 'rgba(29, 185, 84, 0.3)';
                 e.target.style.borderColor = 'rgba(29, 185, 84, 0.6)';
-
-                // Save to server
-                try {
-                    const response = await fetch('/api/album-art/background-style', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ style: style })
-                    });
-                    const res = await response.json();
-                    if (res.status === 'success') {
-                        showToast(`Saved preference: ${style}`);
-                    } else {
-                        showToast(`Error: ${res.error || 'Failed to save'}`, 'error');
-                    }
-                } catch (err) {
-                    console.error('Error saving style:', err);
-                    showToast('Failed to save style preference', 'error');
-                }
             });
         });
 
@@ -1825,7 +1863,11 @@ async function updateLoop() {
             lastTrackInfo = trackInfo;
 
             // Phase 2: Apply saved background style if available (and not manually overridden)
-            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
+            // CRITICAL: URL parameters take highest priority - don't apply saved preference if URL has style params
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasUrlStyleParam = urlParams.has('artBackground') || urlParams.has('softAlbumArt') || urlParams.has('sharpAlbumArt');
+            
+            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive && !hasUrlStyleParam) {
                 const currentStyle = getCurrentBackgroundStyle();
                 if (currentStyle !== trackInfo.background_style) {
                     console.log(`Applying saved background style: ${trackInfo.background_style}`);
@@ -1929,17 +1971,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('queue-close')?.addEventListener('click', toggleQueueDrawer);
     document.getElementById('btn-like')?.addEventListener('click', toggleLike);
     
-    // Background Style Buttons
-    document.querySelectorAll('.style-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const style = e.target.dataset.style;
-            saveBackgroundStyle(style);
-            
-            // Update active state immediately
-            document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-        });
-    });
+    // Background Style Buttons - Event listeners are handled in loadAlbumArtTab() to avoid duplication
+    // No need to set them up here since they're set when the modal opens
 
     // Touch/Swipe Controls
     setupTouchControls();
