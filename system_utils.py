@@ -61,6 +61,9 @@ _spotify_download_tracker = set()
 # NEW: Track in-progress artist image downloads to prevent race conditions
 _artist_download_tracker = set()
 
+# Global lock to prevent race conditions during metadata updates
+_meta_data_lock = asyncio.Lock()
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -1721,235 +1724,230 @@ async def get_current_song_meta_data() -> Optional[dict]:
     """
     Main orchestrator to get song data from configured sources with hybrid enrichment.
     
-    CRITICAL FIX: Checks if song changed before using cache to prevent stale metadata
-    from being returned when a song change occurs within the cache interval.
+    CRITICAL FIX: Uses a lock to prevent concurrent execution.
+    Checks if song changed before using cache to prevent stale metadata.
     """
-    current_time = time.time()
-    last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
-    is_active = getattr(get_current_song_meta_data, '_is_active', True)
-    last_active_time = getattr(get_current_song_meta_data, '_last_active_time', 0)
-    
-    required_interval = ACTIVE_INTERVAL if is_active else IDLE_INTERVAL
-    
-    # CRITICAL FIX: Check if song changed before using cache
-    # If song changed, we MUST fetch fresh data even if within interval
-    # This prevents the race condition where:
-    # 1. Song A is playing, metadata is cached
-    # 2. User skips to Song B
-    # 3. Cache still returns Song A metadata (within interval)
-    # 4. System thinks no change occurred, displays Song A lyrics for Song B
-    last_song = getattr(get_current_song_meta_data, '_last_song', None)
-    
-    # Only use cache if within interval AND song hasn't changed
-    if (current_time - last_check) < required_interval:
-        cached_result = getattr(get_current_song_meta_data, '_last_result', None)
-        if cached_result:
-            # Verify the cached result matches the last known song
-            # This prevents returning stale metadata when song changed but cache hasn't expired
-            cached_song_name = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
-            if last_song == cached_song_name:
-                # Song hasn't changed, safe to use cache
-                # CRITICAL FIX: Update _last_song to stay in sync with cached data
-                # Without this, the next call will see a mismatch and invalidate cache unnecessarily
-                get_current_song_meta_data._last_song = cached_song_name
-                return cached_result
-            else:
-                # Song changed! Invalidate cache and fetch fresh data
-                # This ensures we detect song changes immediately, not after cache expires
-                logger.debug(f"Song changed in cache ({last_song} -> {cached_song_name}), invalidating cache to fetch fresh data")
-                get_current_song_meta_data._last_check_time = 0  # Force refresh by resetting check time
-    
-    get_current_song_meta_data._last_check_time = current_time
-    
-    sources = config.MEDIA_SOURCE.get("sources", [])
-    sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
-                     if s.get("enabled", False)]
-
-    result = None
-    windows_media_checked = False
-    windows_media_result = None
-    
-    # 1. Fetch Primary Data from sorted sources
-    for source in sorted_sources:
-        try:
-            if source["name"] == "windows_media" and DESKTOP == "Windows":
-                windows_media_checked = True
-                windows_media_result = await _get_current_song_meta_data_windows()
-                if windows_media_result:
-                    result = windows_media_result
-            elif source["name"] == "spotify":
-                result = await _get_current_song_meta_data_spotify()
-            elif source["name"] == "gnome" and DESKTOP == "Gnome":
-                result = _get_current_song_meta_data_gnome()
-                
-            if result:
-                # Source is already set in the function
-                break
-        except Exception:
-            continue
-    
-    # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
-    # Spotify-only means: result exists, source is "spotify" (not "spotify_hybrid"), and Windows Media didn't provide data
-    is_spotify_only = (result and 
-                       result.get("source") == "spotify" and  # Pure Spotify source (not hybrid)
-                       (not windows_media_checked or windows_media_result is None))  # Windows Media not available or returned None
-    
-    # Adjust Spotify API polling speed based on mode
-    # Fast mode (2.0s) for Spotify-only to reduce latency, Normal mode (6.0s) when Windows Media is active
-    spotify_client = get_shared_spotify_client()
-    if spotify_client and spotify_client.initialized:
-        if is_spotify_only:
-            spotify_client.set_fast_mode(True)  # Fast mode: 2.0s polling for lower latency
-        else:
-            spotify_client.set_fast_mode(False)  # Normal mode: 6.0s polling for rate limit protection
-    
-    # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
-    if result and result.get("source") == "windows_media":
-        try:
-            # Smart Wake-Up Logic: Only force refresh if Windows says playing BUT Spotify cache says paused
-            # This prevents unnecessary force_refresh flags and reduces API calls
-            is_windows_playing = result.get("is_playing", False)
-            spotify_cached_paused = False
-            
-            # Check Spotify cache state to determine if we need to wake it up
-            # spotify_client already obtained above via get_shared_spotify_client()
-            if spotify_client and spotify_client._metadata_cache:
-                spotify_cached_paused = not spotify_client._metadata_cache.get('is_playing', False)
-            
-            # Only force refresh when there's a mismatch (Windows playing + Spotify paused)
-            force_wake = is_windows_playing and spotify_cached_paused
-            
-            spotify_data = await _get_current_song_meta_data_spotify(
-                target_title=result.get("title"),
-                target_artist=result.get("artist"),
-                force_refresh=force_wake
-            )
-            if spotify_data:
-                # Fuzzy match check: If title and artist are roughly the same
-                win_title = result.get("title", "").lower()
-                win_artist = result.get("artist", "").lower()
-                spot_title = spotify_data.get("title", "").lower()
-                spot_artist = spotify_data.get("artist", "").lower()
-                
-                # Match if titles overlap or artist+title combo matches
-                title_match = win_title in spot_title or spot_title in win_title
-                artist_match = win_artist in spot_artist or spot_artist in win_artist
-                
-                if title_match and (artist_match or not win_artist):
-                    # Steal Album Art (Progressive Enhancement: return Spotify immediately, upgrade in background)
-                    spotify_art_url = spotify_data.get("album_art_url")
-                    if spotify_art_url:
-                        try:
-                            # CRITICAL FIX: If URL is local (starts with /), it means we loaded from DB (user preference).
-                            # Don't try to upgrade/override it with cached remote art.
-                            if spotify_art_url.startswith('/'):
-                                result["album_art_url"] = spotify_art_url
-                            else:
-                                art_provider = get_album_art_provider()
-                                
-                                # Check cache first - if cached high-res exists, use it immediately
-                                # Use album-level cache (same album = same art for all tracks)
-                                cached_result = art_provider.get_from_cache(
-                                    spotify_data.get("artist", ""),
-                                    spotify_data.get("title", ""),
-                                    spotify_data.get("album")  # Album-level cache
-                                )
-                                if cached_result:
-                                    cached_url, _ = cached_result
-                                    if cached_url != spotify_art_url:
-                                        result["album_art_url"] = cached_url
-                                    else:
-                                        result["album_art_url"] = spotify_art_url
-                                else:
-                                    # Not cached - use Spotify immediately, upgrade in background
-                                    result["album_art_url"] = spotify_art_url
-                                    
-                                    # Check if a background task is already running for this track
-                                    hybrid_track_id = _normalize_track_id(
-                                        spotify_data.get('artist', ''),
-                                        spotify_data.get('title', '')
-                                    )
-                                    if hybrid_track_id in _running_art_upgrade_tasks:
-                                        # Task already running, skip creating duplicate
-                                        logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
-                                    else:
-                                        # Start background task to fetch high-res
-                                        async def background_upgrade_hybrid():
-                                            try:
-                                                await asyncio.sleep(0.1)
-                                                high_res_result = await art_provider.get_high_res_art(
-                                                    artist=spotify_data.get("artist", ""),
-                                                    title=spotify_data.get("title", ""),
-                                                    album=spotify_data.get("album"),
-                                                    spotify_url=spotify_art_url
-                                                )
-                                                # Result is cached, will be picked up on next poll
-                                            except Exception as e:
-                                                logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
-                                            finally:
-                                                # Remove from running tasks when done
-                                                _running_art_upgrade_tasks.pop(hybrid_track_id, None)
-                                        
-                                        # Use tracked task
-                                        task = create_tracked_task(background_upgrade_hybrid())
-                                        _running_art_upgrade_tasks[hybrid_track_id] = task
-                        except Exception as e:
-                            logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
-                            result["album_art_url"] = spotify_art_url
-                    
-                    # Steal Colors from Spotify (now properly extracted!)
-                    if spotify_data.get("colors"):
-                        result["colors"] = spotify_data.get("colors")
-
-                    # Enable Controls by marking as hybrid
-                    # Frontend will allow controls for this source type
-                    result["source"] = "spotify_hybrid"
-                    
-                    # Copy Artist ID and Name for Visual Mode
-                    # This ensures artist slideshows work even when playing from Windows Media
-                    if spotify_data.get("artist_id"):
-                        result["artist_id"] = spotify_data.get("artist_id")
-                    if spotify_data.get("artist_name"):
-                        result["artist_name"] = spotify_data.get("artist_name")
-                    
-                    # Copy Background Style preference (Phase 2)
-                    if spotify_data.get("background_style"):
-                        result["background_style"] = spotify_data.get("background_style")
-                    
-#                   if DEBUG["enabled"]:
-#                       logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
-        except Exception as e:
-            logger.error(f"Hybrid enrichment failed: {e}")
-    
-    # 4. If we still don't have colors (e.g. local file), extract them
-    if result and result.get("source") == "windows_media":
-        # Check if we have a local art path in the cache
-        local_art_path = get_cached_art_path()
-        if result.get("colors") == ("#24273a", "#363b54") and local_art_path:
-             # Only extract if we have a valid local file and default colors
-             # Now async, so we await it
-             result["colors"] = await extract_dominant_colors(local_art_path)
-
-    # 3. State Management (Active vs Idle)
-    if result:
-        get_current_song_meta_data._is_active = True
-        get_current_song_meta_data._last_active_time = current_time
+    # CRITICAL FIX: Lock the entire fetching process
+    # This prevents the race condition where Task B reads cache while Task A is still updating it
+    async with _meta_data_lock:
+        current_time = time.time()
+        last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
+        is_active = getattr(get_current_song_meta_data, '_is_active', True)
+        last_active_time = getattr(get_current_song_meta_data, '_last_active_time', 0)
+        
+        required_interval = ACTIVE_INTERVAL if is_active else IDLE_INTERVAL
         
         last_song = getattr(get_current_song_meta_data, '_last_song', None)
-        current_song_name = f"{result.get('artist')} - {result.get('title')}"
         
-        if last_song != current_song_name:
-            get_current_song_meta_data._last_song = current_song_name
-            get_current_song_meta_data._last_source = result.get('source')
-            _log_app_state()
-    else:
-        if (current_time - last_active_time) > IDLE_WAIT_TIME:
-            get_current_song_meta_data._is_active = False
+        # Only use cache if within interval AND song hasn't changed
+        if (current_time - last_check) < required_interval:
+            cached_result = getattr(get_current_song_meta_data, '_last_result', None)
+            if cached_result:
+                # Verify the cached result matches the last known song
+                # This prevents returning stale metadata when song changed but cache hasn't expired
+                cached_song_name = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
+                if last_song == cached_song_name:
+                    # Song hasn't changed, safe to use cache
+                    # CRITICAL FIX: Update _last_song to stay in sync with cached data
+                    get_current_song_meta_data._last_song = cached_song_name
+                    return cached_result
+                else:
+                    # Song changed! Invalidate cache and fetch fresh data
+                    # This ensures we detect song changes immediately, not after cache expires
+                    logger.debug(f"Song changed in cache ({last_song} -> {cached_song_name}), invalidating cache to fetch fresh data")
+                    get_current_song_meta_data._last_check_time = 0  # Force refresh by resetting check time
+        
+        # Update check time only when we are committed to fetching (inside the lock)
+        get_current_song_meta_data._last_check_time = current_time
+        
+        sources = config.MEDIA_SOURCE.get("sources", [])
+        sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
+                        if s.get("enabled", False)]
 
-    get_current_song_meta_data._last_result = result
-    _log_app_state()
-    
-    return result
+        result = None
+        windows_media_checked = False
+        windows_media_result = None
+        
+        # 1. Fetch Primary Data from sorted sources
+        for source in sorted_sources:
+            try:
+                if source["name"] == "windows_media" and DESKTOP == "Windows":
+                    windows_media_checked = True
+                    windows_media_result = await _get_current_song_meta_data_windows()
+                    if windows_media_result:
+                        result = windows_media_result
+                elif source["name"] == "spotify":
+                    result = await _get_current_song_meta_data_spotify()
+                elif source["name"] == "gnome" and DESKTOP == "Gnome":
+                    result = _get_current_song_meta_data_gnome()
+                    
+                if result:
+                    # Source is already set in the function
+                    break
+            except Exception:
+                continue
+        
+        # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
+        is_spotify_only = (result and 
+                        result.get("source") == "spotify" and 
+                        (not windows_media_checked or windows_media_result is None))
+        
+        # Adjust Spotify API polling speed based on mode
+        # Fast mode (2.0s) for Spotify-only to reduce latency, Normal mode (6.0s) when Windows Media is active
+        spotify_client = get_shared_spotify_client()
+        if spotify_client and spotify_client.initialized:
+            if is_spotify_only:
+                spotify_client.set_fast_mode(True)
+            else:
+                spotify_client.set_fast_mode(False)
+        
+        # 2. HYBRID ENRICHMENT - Merge Spotify data if primary source lacks album art/controls
+        if result and result.get("source") == "windows_media":
+            try:
+                # Smart Wake-Up Logic: Only force refresh if Windows says playing BUT Spotify cache says paused
+                # This prevents unnecessary force_refresh flags and reduces API calls
+                is_windows_playing = result.get("is_playing", False)
+                spotify_cached_paused = False
+                
+                # Check Spotify cache state to determine if we need to wake it up
+                if spotify_client and spotify_client._metadata_cache:
+                    spotify_cached_paused = not spotify_client._metadata_cache.get('is_playing', False)
+                
+                # Only force refresh when there's a mismatch (Windows playing + Spotify paused)
+                force_wake = is_windows_playing and spotify_cached_paused
+                
+                spotify_data = await _get_current_song_meta_data_spotify(
+                    target_title=result.get("title"),
+                    target_artist=result.get("artist"),
+                    force_refresh=force_wake
+                )
+                if spotify_data:
+                    # Fuzzy match check: If title and artist are roughly the same
+                    win_title = result.get("title", "").lower()
+                    win_artist = result.get("artist", "").lower()
+                    spot_title = spotify_data.get("title", "").lower()
+                    spot_artist = spotify_data.get("artist", "").lower()
+                    
+                    # Match if titles overlap or artist+title combo matches
+                    title_match = win_title in spot_title or spot_title in win_title
+                    artist_match = win_artist in spot_artist or spot_artist in win_artist
+                    
+                    if title_match and (artist_match or not win_artist):
+                        # Steal Album Art (Progressive Enhancement: return Spotify immediately, upgrade in background)
+                        spotify_art_url = spotify_data.get("album_art_url")
+                        if spotify_art_url:
+                            try:
+                                # CRITICAL FIX: If URL is local (starts with /), it means we loaded from DB (user preference).
+                                # Don't try to upgrade/override it with cached remote art.
+                                if spotify_art_url.startswith('/'):
+                                    result["album_art_url"] = spotify_art_url
+                                else:
+                                    art_provider = get_album_art_provider()
+                                    
+                                    # Check cache first - if cached high-res exists, use it immediately
+                                    # Use album-level cache (same album = same art for all tracks)
+                                    cached_result = art_provider.get_from_cache(
+                                        spotify_data.get("artist", ""),
+                                        spotify_data.get("title", ""),
+                                        spotify_data.get("album")
+                                    )
+                                    if cached_result:
+                                        cached_url, _ = cached_result
+                                        if cached_url != spotify_art_url:
+                                            result["album_art_url"] = cached_url
+                                        else:
+                                            result["album_art_url"] = spotify_art_url
+                                    else:
+                                        # Not cached - use Spotify immediately, upgrade in background
+                                        result["album_art_url"] = spotify_art_url
+                                        
+                                        # Check if a background task is already running for this track
+                                        hybrid_track_id = _normalize_track_id(
+                                            spotify_data.get('artist', ''),
+                                            spotify_data.get('title', '')
+                                        )
+                                        if hybrid_track_id in _running_art_upgrade_tasks:
+                                            # Task already running, skip creating duplicate
+                                            logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                        else:
+                                            # Start background task to fetch high-res
+                                            async def background_upgrade_hybrid():
+                                                try:
+                                                    await asyncio.sleep(0.1)
+                                                    high_res_result = await art_provider.get_high_res_art(
+                                                        artist=spotify_data.get("artist", ""),
+                                                        title=spotify_data.get("title", ""),
+                                                        album=spotify_data.get("album"),
+                                                        spotify_url=spotify_art_url
+                                                    )
+                                                    # Result is cached, will be picked up on next poll
+                                                except Exception as e:
+                                                    logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
+                                                finally:
+                                                    # Remove from running tasks when done
+                                                    _running_art_upgrade_tasks.pop(hybrid_track_id, None)
+                                            
+                                            # Use tracked task
+                                            task = create_tracked_task(background_upgrade_hybrid())
+                                            _running_art_upgrade_tasks[hybrid_track_id] = task
+                            except Exception as e:
+                                logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
+                                result["album_art_url"] = spotify_art_url
+                        
+                        # Steal Colors from Spotify (now properly extracted!)
+                        if spotify_data.get("colors"):
+                            result["colors"] = spotify_data.get("colors")
+
+                        # Enable Controls by marking as hybrid
+                        # Frontend will allow controls for this source type
+                        result["source"] = "spotify_hybrid"
+                        
+                        # Copy Artist ID and Name for Visual Mode
+                        # This ensures artist slideshows work even when playing from Windows Media
+                        if spotify_data.get("artist_id"):
+                            result["artist_id"] = spotify_data.get("artist_id")
+                        if spotify_data.get("artist_name"):
+                            result["artist_name"] = spotify_data.get("artist_name")
+                        
+                        # Copy Background Style preference (Phase 2)
+                        if spotify_data.get("background_style"):
+                            result["background_style"] = spotify_data.get("background_style")
+                        
+                        # if DEBUG["enabled"]:
+                        #    logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
+            except Exception as e:
+                logger.error(f"Hybrid enrichment failed: {e}")
+        
+        # 4. If we still don't have colors (e.g. local file), extract them
+        if result and result.get("source") == "windows_media":
+            # Check if we have a local art path in the cache
+            local_art_path = get_cached_art_path()
+            if result.get("colors") == ("#24273a", "#363b54") and local_art_path:
+                 # Only extract if we have a valid local file and default colors
+                 # Now async, so we await it
+                 result["colors"] = await extract_dominant_colors(local_art_path)
+
+        # 3. State Management (Active vs Idle)
+        if result:
+            get_current_song_meta_data._is_active = True
+            get_current_song_meta_data._last_active_time = current_time
+            
+            last_song = getattr(get_current_song_meta_data, '_last_song', None)
+            current_song_name = f"{result.get('artist')} - {result.get('title')}"
+            
+            # Update last_song inside the lock
+            if last_song != current_song_name:
+                get_current_song_meta_data._last_song = current_song_name
+                get_current_song_meta_data._last_source = result.get('source')
+                _log_app_state()
+        else:
+            if (current_time - last_active_time) > IDLE_WAIT_TIME:
+                get_current_song_meta_data._is_active = False
+
+        get_current_song_meta_data._last_result = result
+        _log_app_state()
+        
+        return result
 
 async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None) -> List[str]:
     """

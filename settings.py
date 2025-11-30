@@ -139,7 +139,6 @@ class SettingsManager:
             "system.windows.media_session.enabled": Setting("Win Media", bool, True, True, "System", "Enable Windows Media", "switch"),
             "system.windows.media_session.preferred": Setting("Prefer Win", bool, True, True, "System", "Prefer Windows Media", "switch"),
             "system.windows.media_session.timeout": Setting("Timeout", int, 5, False, "System", "SMTC timeout (s)", "number"),
-            "system.windows.app_blocklist": Setting("App Blocklist", list, [], False, "System", "Apps to ignore (e.g., chrome, msedge, brave)", "text"),
             "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "System", "Enable GSettings", "switch"),
             "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "System", "Require Playerctl", "switch"),
             

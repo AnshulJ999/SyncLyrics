@@ -17,11 +17,12 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # Initialize providers
-# Priority Order:
-# 1. LRCLib (Best, Open Source)
-# 2. Spotify + Musicxmatch (Good, Synced - Race in parallel)
-# 3. NetEase (Good coverage)
-# 4. QQ Music (Fallback)
+# Priority Order (from settings.json):
+# 1. Spotify (Priority 1) - Best for Spotify users
+# 2. LRCLib (Priority 2) - Open Source, good quality
+# 3. NetEase (Priority 3) - Good coverage
+# 4. QQ Music (Priority 4) - Fallback
+# 5. Musicxmatch (Priority 5) - Disabled by default
 providers = [
     LRCLIBProvider(),      # Priority 1
     SpotifyLyrics(),       # Priority 2

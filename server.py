@@ -414,41 +414,6 @@ async def get_album_art_options():
         "options": options
     })
 
-@app.route("/api/album-art/background-style", methods=['POST'])
-async def set_background_style():
-    """Save background style preference (Sharp/Soft/Blur) for current album"""
-    from system_utils import get_album_db_folder, save_album_db_metadata, load_album_art_from_db
-    
-    metadata = await get_current_song_meta_data()
-    if not metadata:
-        return jsonify({"error": "No song playing"}), 404
-    
-    data = await request.get_json()
-    style = data.get('style')  # 'sharp', 'soft', 'blur', 'color', or None
-    
-    if style not in ['sharp', 'soft', 'blur', 'color', None]:
-        return jsonify({"error": "Invalid style"}), 400
-    
-    artist = metadata.get("artist", "")
-    album = metadata.get("album")
-    
-    if not artist:
-        return jsonify({"error": "Invalid song data"}), 400
-    
-    # Load existing metadata
-    db_result = load_album_art_from_db(artist, album)
-    if not db_result:
-        return jsonify({"error": "No album art database entry found"}), 404
-    
-    db_metadata = db_result["metadata"]
-    db_metadata["background_style"] = style
-    
-    folder = get_album_db_folder(artist, album)
-    if save_album_db_metadata(folder, db_metadata):
-        return jsonify({"status": "success", "style": style}), 200
-    else:
-        return jsonify({"error": "Failed to save preference"}), 500
-
 @app.route("/api/album-art/preference", methods=['POST'])
 async def set_album_art_preference():
     """Set preferred album art provider for current track"""
