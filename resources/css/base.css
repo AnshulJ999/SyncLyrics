@@ -348,7 +348,9 @@ body[data-minimal="true"] #footer,
 body[data-minimal="true"] .settings-toggle,
 body[data-minimal="true"] .track-header,
 body[data-minimal="true"] #player-ui-container,
-body[data-minimal="true"] .album-art {
+body[data-minimal="true"] .album-art,
+body[data-minimal="true"] .background-layer,
+body[data-minimal="true"] .background-overlay {
     display: none !important;
 }
 

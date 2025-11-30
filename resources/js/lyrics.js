@@ -28,6 +28,7 @@ let pendingArtUrl = null;
 let visualModeActive = false;
 let visualModeTimer = null;
 let visualModeDebounceTimer = null; // Prevents flickering status from resetting visual mode
+let manualVisualModeOverride = false; // Track if user manually enabled Visual Mode (prevents auto-exit)
 // SEPARATED DATA SOURCES to prevent collision between Visual Mode and Idle Mode
 let currentArtistImages = []; // For Visual Mode (Current Song's Artist)
 let dashboardImages = [];     // For Idle Mode (Global Random Shuffle)
@@ -813,8 +814,12 @@ function attachControlHandlers() {
     if (visualModeBtn) {
         visualModeBtn.addEventListener('click', () => {
             if (visualModeActive) {
+                // User manually disabling - clear override flag
+                manualVisualModeOverride = false;
                 exitVisualMode();
             } else {
+                // User manually enabling - set override flag to prevent auto-exit
+                manualVisualModeOverride = true;
                 enterVisualMode();
             }
         });
@@ -1398,7 +1403,8 @@ function checkForVisualMode(data, trackId) {
         // This prevents visual mode from being cancelled during brief status changes.
 
         // Only act if we are currently Active or have a Timer running
-        if (visualModeActive || visualModeTimer) {
+        // BUT: Don't auto-exit if user manually enabled Visual Mode
+        if ((visualModeActive || visualModeTimer) && !manualVisualModeOverride) {
             
             // If we aren't already waiting to exit... START WAITING.
             // We wait 1 second before actually killing Visual Mode. 
@@ -1407,7 +1413,7 @@ function checkForVisualMode(data, trackId) {
                 visualModeDebounceTimer = setTimeout(() => {
                     console.log('[Visual Mode] Conditions not met for 1s, exiting/cancelling');
                     
-                    if (visualModeActive) {
+                    if (visualModeActive && !manualVisualModeOverride) {
                         exitVisualMode();
                     }
                     
@@ -1440,7 +1446,8 @@ function enterVisualMode() {
     savedBackgroundState = getCurrentBackgroundStyle();
 
     // Auto-switch to sharp mode if configured AND user hasn't manually overridden
-    if (visualModeConfig.autoSharp && !manualStyleOverride) {
+    // AND we are NOT in minimal mode (which should remain transparent)
+    if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal) {
         // Only apply if not already sharp to avoid unnecessary updates
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
@@ -1448,7 +1455,8 @@ function enterVisualMode() {
     }
 
     // Start slideshow if we have artist images (Explicitly use 'artist' source)
-    if (currentArtistImages.length > 0) {
+    // Skip slideshow in minimal mode
+    if (currentArtistImages.length > 0 && !displayConfig.minimal) {
         startSlideshow('artist');
     }
 }
@@ -1773,6 +1781,7 @@ async function updateLoop() {
                 // Track changed - fetch artist images and reset visual mode
                 lastTrackId = currentTrackId;
                 visualModeActive = false; // Reset visual mode state
+                manualVisualModeOverride = false; // Reset manual override on track change
                 manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
                 
                 // Clear all timers when track changes
@@ -1855,7 +1864,8 @@ async function updateLoop() {
             }
         } else {
             // No track playing - handle global slideshow
-            if (visualModeConfig.slideshowEnabled) {
+            // Disable slideshow in minimal mode
+            if (visualModeConfig.slideshowEnabled && !displayConfig.minimal) {
                 // If we just entered idle state, fetch fresh random images
                 if (!isIdleState) {
                     isIdleState = true;
@@ -1876,7 +1886,7 @@ async function updateLoop() {
                 if (!slideshowInterval && dashboardImages.length > 0) {
                     startSlideshow('dashboard');
                 }
-            } else if (!visualModeConfig.slideshowEnabled) {
+            } else if (!visualModeConfig.slideshowEnabled || displayConfig.minimal) {
                 stopSlideshow();
             }
         }
