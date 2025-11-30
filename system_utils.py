@@ -606,7 +606,9 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         logger.warning(f"Download failed for {url}: {e}")
         return (False, '.jpg')  # Return default extension on failure
 
-async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None) -> Optional[Tuple[str, str]]:
+async def ensure_album_art_db(
+    artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
+) -> Optional[Tuple[str, str]]:
     """
     Background task to fetch all album art options and save them to the database.
     Downloads images from all providers and saves them in their original format (pristine quality).
@@ -621,6 +623,11 @@ async def ensure_album_art_db(artist: str, album: Optional[str], title: str, spo
     Returns:
         Tuple of (preferred_url, resolution_str) of the selected art, or None if failed.
     """
+    # Prevent infinite recursion for self-healing
+    if retry_count > 1:
+        logger.warning(f"Aborting ensure_album_art_db for {artist} - {title} after {retry_count} retries")
+        return None
+
     # OPTIMIZATION: Acquire semaphore to limit concurrent downloads (Fix #4)
     # This prevents network saturation if user skips many tracks quickly
     async with _art_download_semaphore:
@@ -1516,7 +1523,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             async def background_refresh_db():
                                 try:
                                     # This function now returns the best URL and resolution
-                                    return await ensure_album_art_db(captured_artist, captured_album, captured_title, raw_spotify_url)
+                                    # Pass retry_count=1 to prevent infinite recursion
+                                    return await ensure_album_art_db(
+                                        captured_artist,
+                                        captured_album,
+                                        captured_title,
+                                        raw_spotify_url,
+                                        retry_count=1
+                                    )
                                 except Exception as e:
                                     logger.debug(f"Background DB refresh failed: {e}")
                                 finally:
