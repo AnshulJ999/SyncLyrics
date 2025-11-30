@@ -5,6 +5,7 @@ import re
 import time
 import asyncio
 from typing import Optional, Dict, Any, List, Tuple
+from collections import OrderedDict
 import config
 from config import DEBUG, FEATURES, ALBUM_ART_DB_DIR
 from state_manager import get_state, set_state
@@ -42,11 +43,14 @@ _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
 # Track running background art upgrade tasks to prevent duplicates
 _running_art_upgrade_tasks = {}  # Key: track_id, Value: asyncio.Task
 # NEW: Track which songs we've already checked/populated the DB for to prevent infinite loops
-_db_checked_tracks = set()
+# Using OrderedDict for FIFO eviction (oldest entries removed first)
+_db_checked_tracks = OrderedDict()  # Key: track_id, Value: timestamp
 _MAX_DB_CHECKED_SIZE = 100
 # OPTIMIZATION: Semaphore to limit concurrent background downloads (Fix #4)
 # Prevents network saturation if user skips many tracks quickly
 _art_download_semaphore = asyncio.Semaphore(2)
+# Global lock to prevent concurrent album art updates (prevents flicker)
+_art_update_lock = asyncio.Lock()
 
 # Global set to track background tasks and prevent garbage collection (Fix: Task Tracking)
 _background_tasks = set()
@@ -965,7 +969,10 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                 spotify_client = get_shared_spotify_client()
                 if spotify_client and spotify_client._metadata_cache:
                     current_track = spotify_client._metadata_cache
-                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                    current_track_id = _normalize_track_id(
+                        current_track.get('artist', ''),
+                        current_track.get('title', '')
+                    )
                     if current_track_id != track_id:
                         logger.debug(f"Track changed during download ({track_id} -> {current_track_id}), discarding art")
                         return
@@ -984,7 +991,10 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                 # Final Validation: Check one last time before atomic replace
                 if spotify_client and spotify_client._metadata_cache:
                     current_track = spotify_client._metadata_cache
-                    current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                    current_track_id = _normalize_track_id(
+                        current_track.get('artist', ''),
+                        current_track.get('title', '')
+                    )
                     if current_track_id != track_id:
                         try:
                             os.remove(temp_path)
@@ -992,18 +1002,19 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                             pass
                         return
 
-                # Atomic replace with retry
-                replaced = False
-                for attempt in range(3):
-                    try:
-                        os.replace(temp_path, art_path)
-                        replaced = True
-                        break
-                    except OSError:
-                        if attempt < 2:
-                            await asyncio.sleep(0.1)
-                        else:
-                            logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
+                # Atomic replace with retry (use lock to prevent concurrent updates)
+                async with _art_update_lock:
+                    replaced = False
+                    for attempt in range(3):
+                        try:
+                            os.replace(temp_path, art_path)
+                            replaced = True
+                            break
+                        except OSError:
+                            if attempt < 2:
+                                await asyncio.sleep(0.1)
+                            else:
+                                logger.debug(f"Could not atomically replace spotify_art.jpg after 3 attempts (file may be locked)")
                 
                 if not replaced:
                     try:
@@ -1054,13 +1065,14 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # --- APP BLOCKLIST CHECK ---
         # Get the App ID (e.g., "chrome.exe" or "Microsoft.MicrosoftEdge...")
         try:
+            from settings import settings
             app_id = current_session.source_app_user_model_id.lower()
-            blocklist = config.settings.get("system.windows.app_blocklist", [])
+            blocklist = settings.get("system.windows.app_blocklist", [])
             
             # Check if any blocklisted string is in the app_id
             for blocked_app in blocklist:
                 if blocked_app.lower() in app_id:
-                    # logger.debug(f"Ignoring media from blocked app: {app_id}")
+                    logger.debug(f"Ignoring media from blocked app: {app_id}")
                     return None
         except Exception as e:
             # If we can't read the ID, assume it's safe to proceed
@@ -1216,9 +1228,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # Only if not found in DB and not checked this session
         if not found_in_db and current_track_id not in _db_checked_tracks:
             if current_track_id not in _running_art_upgrade_tasks:
-                 _db_checked_tracks.add(current_track_id)
+                 _db_checked_tracks[current_track_id] = time.time()
                  if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                     _db_checked_tracks.pop()
+                     _db_checked_tracks.popitem(last=False)  # Remove oldest (FIFO)
                      
                  async def background_windows_art_upgrade():
                      try:
@@ -1484,12 +1496,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         # CRITICAL FIX: Only run this once per track to prevent infinite loops
                         if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
                             # Mark as checked immediately to prevent re-entry on next poll
-                            _db_checked_tracks.add(captured_track_id)
+                            _db_checked_tracks[captured_track_id] = time.time()
                             
-                            # Limit set size to prevent memory leaks
+                            # Limit set size to prevent memory leaks (FIFO eviction)
                             if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                                # Remove random element (sets are unordered) - simple cleanup
-                                _db_checked_tracks.pop()
+                                _db_checked_tracks.popitem(last=False)  # Remove oldest
 
                             async def background_refresh_db():
                                 try:
@@ -1561,12 +1572,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
                         else:
                             # Mark as checked immediately to prevent re-entry on next poll
-                            _db_checked_tracks.add(captured_track_id)
+                            _db_checked_tracks[captured_track_id] = time.time()
                             
-                            # Limit set size to prevent memory leaks
+                            # Limit set size to prevent memory leaks (FIFO eviction)
                             if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                                # Remove random element (sets are unordered) - simple cleanup
-                                _db_checked_tracks.pop()
+                                _db_checked_tracks.popitem(last=False)  # Remove oldest
                             
                             async def background_upgrade_art():
                                 """Background task to fetch high-res art, update cache, and populate DB"""
@@ -1607,7 +1617,10 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                     current_spotify_client = get_shared_spotify_client()
                                     if current_spotify_client and current_spotify_client._metadata_cache:
                                         current_track = current_spotify_client._metadata_cache
-                                        current_track_id = current_track.get("track_id") or f"{current_track.get('artist', '')}::{current_track.get('title', '')}"
+                                        current_track_id = _normalize_track_id(
+                                            current_track.get('artist', ''),
+                                            current_track.get('title', '')
+                                        )
                                         if current_track_id != captured_track_id:
                                             logger.debug(f"Track changed during background art fetch ({captured_track_id} -> {current_track_id}), discarding result")
                                             return
@@ -1852,7 +1865,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     result["album_art_url"] = spotify_art_url
                                     
                                     # Check if a background task is already running for this track
-                                    hybrid_track_id = f"{spotify_data.get('artist', '')}::{spotify_data.get('title', '')}"
+                                    hybrid_track_id = _normalize_track_id(
+                                        spotify_data.get('artist', ''),
+                                        spotify_data.get('title', '')
+                                    )
                                     if hybrid_track_id in _running_art_upgrade_tasks:
                                         # Task already running, skip creating duplicate
                                         logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")

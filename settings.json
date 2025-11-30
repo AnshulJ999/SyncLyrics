@@ -86,6 +86,7 @@
     "system.windows.media_session.enabled": true,
     "system.windows.media_session.preferred": true,
     "system.windows.media_session.timeout": 5,
+    "system.windows.app_blocklist": [],
     "system.linux.gsettings_enabled": true,
     "system.linux.playerctl_required": true,
     "features.minimal_ui": true,

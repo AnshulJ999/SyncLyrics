@@ -1140,12 +1140,26 @@ async function selectAlbumArt(providerName) {
                 }
             }
 
-            // Refresh the page to show new album art
-            setTimeout(() => {
-                window.location.reload();
-            }, 500);
+            // Force immediate art refresh without full page reload
+            const albumArt = document.getElementById('album-art');
+            if (albumArt && result.cache_bust) {
+                // Update album art with cache buster
+                const currentSrc = albumArt.src;
+                const baseUrl = currentSrc.split('?')[0];
+                albumArt.src = `${baseUrl}?t=${result.cache_bust}`;
+                
+                // Also update background if using art background
+                if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
+                    updateBackground();
+                }
+            }
 
             showToast(`Switched to ${providerName} album art`);
+            
+            // Close modal after brief delay
+            setTimeout(() => {
+                hideProviderModal();
+            }, 1000);
         } else {
             showToast(`Error: ${result.error || result.message}`, 'error');
         }
