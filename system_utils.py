@@ -1732,23 +1732,50 @@ async def get_current_song_meta_data() -> Optional[dict]:
         required_interval = ACTIVE_INTERVAL if is_active else IDLE_INTERVAL
         
         last_song = getattr(get_current_song_meta_data, '_last_song', None)
+        last_track_id = getattr(get_current_song_meta_data, '_last_track_id', None)
         
         # Only use cache if within interval AND song hasn't changed
         if (current_time - last_check) < required_interval:
             cached_result = getattr(get_current_song_meta_data, '_last_result', None)
             if cached_result:
-                # Verify the cached result matches the last known song
-                # This prevents returning stale metadata when song changed but cache hasn't expired
+                # IMPROVED: Check both song name AND track_id for more reliable change detection
+                # This handles rapid track changes better than name-only comparison
                 cached_song_name = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
-                if last_song == cached_song_name:
+                cached_track_id = cached_result.get('track_id') or cached_result.get('id')
+                
+                # Verify both song name and track_id match (if track_id is available)
+                song_name_matches = last_song == cached_song_name
+                
+                # Track ID matching logic:
+                # - If both have track_ids, they must be equal
+                # - If both are missing (None/empty), they match (both None)
+                # - If one has track_id and other doesn't, they DON'T match (different tracks)
+                if cached_track_id and last_track_id:
+                    # Both have track_ids - must be equal
+                    track_id_matches = (cached_track_id == last_track_id)
+                elif not cached_track_id and not last_track_id:
+                    # Both missing - match (both None, can't distinguish)
+                    track_id_matches = True
+                else:
+                    # One has track_id, other doesn't - different tracks
+                    track_id_matches = False
+                
+                if song_name_matches and track_id_matches:
                     # Song hasn't changed, safe to use cache
-                    # CRITICAL FIX: Update _last_song to stay in sync with cached data
+                    # CRITICAL FIX: Update _last_song and _last_track_id to stay in sync with cached data
                     get_current_song_meta_data._last_song = cached_song_name
+                    if cached_track_id:
+                        get_current_song_meta_data._last_track_id = cached_track_id
                     return cached_result
                 else:
                     # Song changed! Invalidate cache and fetch fresh data
                     # This ensures we detect song changes immediately, not after cache expires
-                    logger.debug(f"Song changed in cache ({last_song} -> {cached_song_name}), invalidating cache to fetch fresh data")
+                    change_reason = []
+                    if not song_name_matches:
+                        change_reason.append(f"name ({last_song} -> {cached_song_name})")
+                    if not track_id_matches:
+                        change_reason.append(f"track_id ({last_track_id} -> {cached_track_id})")
+                    logger.debug(f"Song changed in cache ({', '.join(change_reason)}), invalidating cache to fetch fresh data")
                     get_current_song_meta_data._last_check_time = 0  # Force refresh by resetting check time
         
         # Update check time only when we are committed to fetching (inside the lock)
@@ -1964,6 +1991,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 get_current_song_meta_data._is_active = False
 
         get_current_song_meta_data._last_result = result
+        
+        # IMPROVED: Store track_id for rapid change detection
+        # This helps detect track changes even when song name might be similar
+        if result:
+            result_song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
+            result_track_id = result.get('track_id') or result.get('id')
+            get_current_song_meta_data._last_song = result_song_name
+            if result_track_id:
+                get_current_song_meta_data._last_track_id = result_track_id
         
         # RESTORED: Update current_art.jpg for debugging/external tools
         # This ensures the cache folder always has the current art file

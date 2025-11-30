@@ -983,10 +983,10 @@ async function loadAlbumArtTab() {
 
         grid.innerHTML = '';
 
-        // REMOVED: JS Injection of Style Controls (Now Static in HTML)
+        // FIX: Use event delegation to prevent listener duplication
+        // Event listeners are set up once in setupProviderUI() using delegation
+        // Here we only update the visual state of buttons
         
-        // UPDATE: Correctly target buttons (document scope) and ONLY update visual state
-        // Event listeners are now handled in DOMContentLoaded to prevent duplication
         const styleBtns = document.querySelectorAll('.style-btn');
         const currentStyle = getCurrentBackgroundStyle();
         
@@ -1011,92 +1011,13 @@ async function loadAlbumArtTab() {
                 // adhering to the previous logic:
                 btn.style.background = 'rgba(29, 185, 84, 0.3)';
                 btn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
+            } else {
+                // Set default inactive state
+                btn.style.background = 'rgba(255,255,255,0.1)';
+                btn.style.borderColor = 'rgba(255,255,255,0.2)';
             }
-
-            // Hover effects
-            btn.addEventListener('mouseenter', () => {
-                if (btn.dataset.style !== currentStyle) {
-                    btn.style.background = 'rgba(255,255,255,0.15)';
-                }
-            });
-            btn.addEventListener('mouseleave', () => {
-                if (btn.dataset.style !== currentStyle) {
-                    btn.style.background = 'rgba(255,255,255,0.1)';
-                }
-            });
-
-            btn.addEventListener('click', async (e) => {
-                const style = e.target.dataset.style;
-
-                // Handle 'Auto' option - clears saved preference, uses URL params (fallback)
-                if (style === 'auto') {
-                    // Clear saved preference from server
-                    try {
-                        const response = await fetch('/api/album-art/background-style', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ style: 'none' })
-                        });
-                        const res = await response.json();
-                        if (res.status === 'success') {
-                            showToast('Cleared saved preference - using URL parameters');
-                            // Update local state to reflect no saved preference
-                            if (lastTrackInfo) {
-                                delete lastTrackInfo.background_style;
-                            }
-                        }
-                    } catch (err) {
-                        console.error('Error clearing style:', err);
-                    }
-                    
-                    // Reset manual override so URL params can take effect
-                    manualStyleOverride = false;
-                    
-                    // Apply URL parameters (Priority 2: URL params)
-                    const urlParams = new URLSearchParams(window.location.search);
-                    if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
-                        applyBackgroundStyle('sharp');
-                    } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
-                        applyBackgroundStyle('soft');
-                    } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
-                        applyBackgroundStyle('blur');
-                    } else {
-                        // No URL param - reset to none (Priority 3: Default)
-                        applyBackgroundStyle('none');
-                    }
-                } else {
-                    // Regular style selection (soft/sharp/blur)
-                    // Apply locally immediately
-                    applyBackgroundStyle(style);
-                    manualStyleOverride = true; // User manually changed it
-
-                    // Save to server
-                    try {
-                        const response = await fetch('/api/album-art/background-style', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ style: style })
-                        });
-                        const res = await response.json();
-                        if (res.status === 'success') {
-                            showToast(`Saved preference: ${style}`);
-                        } else {
-                            showToast(`Error: ${res.error || 'Failed to save'}`, 'error');
-                        }
-                    } catch (err) {
-                        console.error('Error saving style:', err);
-                        showToast('Failed to save style preference', 'error');
-                    }
-                }
-
-                // Update UI - reset all buttons, highlight selected
-                styleBtns.forEach(b => {
-                    b.style.background = 'rgba(255,255,255,0.1)';
-                    b.style.borderColor = 'rgba(255,255,255,0.2)';
-                });
-                e.target.style.background = 'rgba(29, 185, 84, 0.3)';
-                e.target.style.borderColor = 'rgba(29, 185, 84, 0.6)';
-            });
+            // NOTE: Event listeners (click, hover) are handled by event delegation in setupProviderUI()
+            // This prevents duplicate listeners when loadAlbumArtTab() is called multiple times
         });
 
         // Build art grid
@@ -1767,6 +1688,7 @@ function setupProviderUI() {
 
     const modal = document.getElementById('provider-modal');
     if (modal) {
+        // Modal backdrop click handler
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 hideProviderModal();
@@ -1795,6 +1717,109 @@ function setupProviderUI() {
                 selectProvider(providerName);
             }
         });
+    }
+
+    // FIX: Style button event delegation (prevents listener duplication)
+    // Use the modal as the container since it persists across tab switches
+    // NOTE: Modal was already retrieved above, but we need to add style button handler
+    if (modal) {
+        // Add click handler for style buttons (event delegation)
+        // This prevents duplicate listeners when loadAlbumArtTab() is called multiple times
+        modal.addEventListener('click', async (e) => {
+            // Check if clicked element is a style button or inside one
+            const styleBtn = e.target.closest('.style-btn');
+            if (!styleBtn) return;
+            
+            const style = styleBtn.dataset.style;
+            const currentStyle = getCurrentBackgroundStyle();
+
+            // Handle 'Auto' option - clears saved preference, uses URL params (fallback)
+            if (style === 'auto') {
+                // Clear saved preference from server
+                try {
+                    const response = await fetch('/api/album-art/background-style', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ style: 'none' })
+                    });
+                    const res = await response.json();
+                    if (res.status === 'success') {
+                        showToast('Cleared saved preference - using URL parameters');
+                        // Update local state to reflect no saved preference
+                        if (lastTrackInfo) {
+                            delete lastTrackInfo.background_style;
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error clearing style:', err);
+                }
+                
+                // Reset manual override so URL params can take effect
+                manualStyleOverride = false;
+                
+                // Apply URL parameters (Priority 2: URL params)
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
+                    applyBackgroundStyle('sharp');
+                } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
+                    applyBackgroundStyle('soft');
+                } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
+                    applyBackgroundStyle('blur');
+                } else {
+                    // No URL param - reset to none (Priority 3: Default)
+                    applyBackgroundStyle('none');
+                }
+            } else {
+                // Regular style selection (soft/sharp/blur)
+                // Apply locally immediately
+                applyBackgroundStyle(style);
+                manualStyleOverride = true; // User manually changed it
+
+                // Save to server
+                try {
+                    const response = await fetch('/api/album-art/background-style', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ style: style })
+                    });
+                    const res = await response.json();
+                    if (res.status === 'success') {
+                        showToast(`Saved preference: ${style}`);
+                    } else {
+                        showToast(`Error: ${res.error || 'Failed to save'}`, 'error');
+                    }
+                } catch (err) {
+                    console.error('Error saving style:', err);
+                    showToast('Failed to save style preference', 'error');
+                }
+            }
+
+            // Update UI - reset all buttons, highlight selected
+            const styleBtns = document.querySelectorAll('.style-btn');
+            styleBtns.forEach(b => {
+                b.style.background = 'rgba(255,255,255,0.1)';
+                b.style.borderColor = 'rgba(255,255,255,0.2)';
+                b.classList.remove('active');
+            });
+            styleBtn.style.background = 'rgba(29, 185, 84, 0.3)';
+            styleBtn.style.borderColor = 'rgba(29, 185, 84, 0.6)';
+            styleBtn.classList.add('active');
+        });
+
+        // Hover effects using event delegation (mouseenter/mouseleave)
+        modal.addEventListener('mouseenter', (e) => {
+            const styleBtn = e.target.closest('.style-btn');
+            if (styleBtn && styleBtn.dataset.style !== getCurrentBackgroundStyle()) {
+                styleBtn.style.background = 'rgba(255,255,255,0.15)';
+            }
+        }, true); // Use capture phase to catch events on children
+
+        modal.addEventListener('mouseleave', (e) => {
+            const styleBtn = e.target.closest('.style-btn');
+            if (styleBtn && styleBtn.dataset.style !== getCurrentBackgroundStyle()) {
+                styleBtn.style.background = 'rgba(255,255,255,0.1)';
+            }
+        }, true); // Use capture phase to catch events on children
     }
 }
 

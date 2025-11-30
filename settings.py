@@ -248,7 +248,11 @@ class SettingsManager:
         """Return formatted settings for UI"""
         result = {}
         for key, val in self._settings.items():
-            defin = self._definitions[key]
+            # Skip keys not in definitions (e.g., loaded from JSON but not defined in schema)
+            defin = self._definitions.get(key)
+            if not defin:
+                continue
+                
             cat = defin.category or "Misc"
             if cat not in result: result[cat] = {}
             
