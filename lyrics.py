@@ -5,7 +5,7 @@ import os
 import tempfile
 from typing import Optional, List, Tuple, Dict, Set, Any
 
-from system_utils import get_current_song_meta_data
+from system_utils import get_current_song_meta_data, create_tracked_task
 from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
@@ -231,7 +231,7 @@ def _save_all_results_background(
         except Exception as exc:
             logger.error(f"Background collection error: {exc}")
 
-    asyncio.create_task(collect_remaining())
+    create_tracked_task(collect_remaining())
 
 def _backfill_missing_providers(
     artist: str,
@@ -310,7 +310,7 @@ def _backfill_missing_providers(
         finally:
             _backfill_tracker.discard(song_key)
 
-    asyncio.create_task(run_backfill())
+    create_tracked_task(run_backfill())
 
 # ==========================================
 # Provider Management Functions

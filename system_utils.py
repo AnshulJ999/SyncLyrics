@@ -518,8 +518,7 @@ def determine_image_extension(url: str, content_type: str = None) -> str:
                 # Find the last occurrence to get the actual extension
                 idx = url_lower.rfind(ext)
                 if idx > 0:
-                    return ext
-        
+                    return '.jpg' if ext == '.jpeg' else ext  # Fix 1: Normalize .jpeg to .jpg
         # Check for query parameters that might indicate format
         if 'format=jpg' in url_lower or 'format=jpeg' in url_lower:
             return '.jpg'
@@ -1231,7 +1230,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 elif thumbnail_ref:
                      # Reuse existing
                      # FIX: Add timestamp for cache busting
-                     album_art_url = f"/cover-art?id={current_track_id}&t={get_cached_art_mtime()}"
+                     album_art_url = f"/cover-art?id={current_track_id}&t={get_cached_art_mtime()}"  # Fix 2: Use mtime consistently
             except Exception as e:
                 pass
 
@@ -1969,6 +1968,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     if artist in _artist_download_tracker:
         return []
     
+    # Fix 5: Add size limit to tracker (Defensive coding)
+    if len(_artist_download_tracker) > 50:
+        logger.warning("Artist download tracker full, clearing to prevent leaks")
+        _artist_download_tracker.clear()
+
     _artist_download_tracker.add(artist)
     
     try:
