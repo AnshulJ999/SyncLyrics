@@ -1142,6 +1142,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # Flag to track if we found art in DB
         found_in_db = False
         album_art_url = None
+        result_extra_fields = {}  # Store album_art_path for direct serving
 
         # 1. Check Album Art Database first (Fast Path)
         db_result = load_album_art_from_db(artist, album, title)
@@ -1160,53 +1161,22 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             
             album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
             
-            # Check if we need to copy to cache
-            should_copy = True
-            # Check if current cache file exists and is high-res
-            cached_art = get_cached_art_path()
-            if cached_art:
-                try:
-                    with Image.open(cached_art) as img:
-                        # If cached art is already large, don't re-copy needlessly
-                        # But if it's small (Windows thumb), force overwrite
-                        if img.width >= 900 and img.height >= 900:
-                            should_copy = False
-                except:
-                    should_copy = True
-            
-            if should_copy:
-                try:
-                    # FIX: Atomic Copy (No cleanup_old_art first)
-                    original_extension = db_image_path.suffix or '.jpg'
-                    cache_path = CACHE_DIR / f"current_art{original_extension}"
-                    temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
-                    
-                    shutil.copy2(db_image_path, temp_path)
-                    os.replace(temp_path, cache_path)
-                    
-                    # WAIT for file system: Verify the file exists and is accessible
-                    # This ensures we don't send the URL before the file is ready to serve
-                    for _ in range(5): # Wait up to 0.5s
-                        if cache_path.exists() and cache_path.stat().st_size > 0:
-                            break
-                        await asyncio.sleep(0.1)
-                    
-                    # Clean up stale extensions ONLY after new file is in place
-                    for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
-                        if ext == original_extension: continue
-                        try:
-                            stale = CACHE_DIR / f"current_art{ext}"
-                            if stale.exists(): os.remove(stale)
-                        except: pass
-                except Exception as e:
-                    logger.debug(f"Failed to copy DB art to cache: {e}")
+            # NEW: Pass the path directly so server.py can serve it without copying
+            # This eliminates race conditions from file copying
+            result_extra_fields = {"album_art_path": str(db_image_path)}
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
         if not found_in_db:
             try:
                 thumbnail_ref = info.thumbnail
-                if thumbnail_ref and current_track_id != _last_windows_track_id:
+                # Create a unique filename for this track's thumbnail to avoid race conditions
+                # e.g., thumb_Artist_Title.jpg
+                thumb_filename = f"thumb_{current_track_id}.jpg"
+                thumb_path = CACHE_DIR / thumb_filename
+                
+                # Only extract if we haven't already for this track OR if file doesn't exist
+                if thumbnail_ref and (not thumb_path.exists() or current_track_id != _last_windows_track_id):
                     stream = await thumbnail_ref.open_read_async()
                     if stream:
                         reader = DataReader(stream)
@@ -1214,30 +1184,26 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                         byte_data = bytearray(stream.size)
                         reader.read_bytes(byte_data)
                         
-                        ext = get_image_extension(byte_data)
-                        art_path = CACHE_DIR / f"current_art{ext}"
-                        
-                        # Save thumbnail
-                        # FIX: Atomic Save
+                        # Save directly to unique file (no race condition possible)
                         loop = asyncio.get_running_loop()
-                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, art_path, byte_data)
+                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
                         
                         if save_ok:
-                            # Clean up stale extensions
-                            for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
-                                if ext == get_image_extension(byte_data): continue
-                                try:
-                                    stale = CACHE_DIR / f"current_art{ext}"
-                                    if stale.exists(): os.remove(stale)
-                                except: pass
-                            
                             _last_windows_track_id = current_track_id
-                            # FIX: Add timestamp for cache busting
-                            album_art_url = f"/cover-art?id={current_track_id}&t={int(time.time())}"
-                elif thumbnail_ref:
-                     # Reuse existing
-                     # FIX: Add timestamp for cache busting
-                     album_art_url = f"/cover-art?id={current_track_id}&t={get_cached_art_mtime()}"  # Fix 2: Use mtime consistently
+                            
+                            # Cleanup: Delete OLD thumbnails to keep cache small
+                            # We only keep the current one
+                            for f in CACHE_DIR.glob("thumb_*.jpg"):
+                                if f.name != thumb_filename:
+                                    try:
+                                        os.remove(f)
+                                    except:
+                                        pass
+                
+                # If the file exists (either just saved or already there), use it
+                if thumb_path.exists():
+                    album_art_url = f"/cover-art?id={current_track_id}&t={int(time.time())}"
+                    result_extra_fields = {"album_art_path": str(thumb_path)}
             except Exception as e:
                 pass
 
@@ -1275,44 +1241,23 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                          found_in_db = True
                          db_image_path = db_result["path"]
                          
-                         # ACTUAL Atomic Copy Logic
+                         # NEW: Use path directly instead of copying (eliminates race conditions)
                          try:
-                             original_extension = db_image_path.suffix or '.jpg'
-                             cache_path = CACHE_DIR / f"current_art{original_extension}"
-                             temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
-                             
-                             shutil.copy2(db_image_path, temp_path)
-                             os.replace(temp_path, cache_path)
-                             
-                             # WAIT for file system: Verify the file exists and is accessible
-                             # This ensures we don't send the URL before the file is ready to serve
-                             for _ in range(5): # Wait up to 0.5s
-                                 if cache_path.exists() and cache_path.stat().st_size > 0:
-                                     break
-                                 await asyncio.sleep(0.1)
-                             
-                             # Clean up stale extensions ONLY after new file is in place
-                             for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
-                                 if ext == original_extension: continue
-                                 try:
-                                     stale = CACHE_DIR / f"current_art{ext}"
-                                     if stale.exists(): os.remove(stale)
-                                 except: pass
-                                 
                              # FIX: Add timestamp for cache busting
                              mtime = int(time.time())
                              try:
-                                 if cache_path.exists():
-                                     mtime = int(cache_path.stat().st_mtime)
+                                 if db_image_path.exists():
+                                     mtime = int(db_image_path.stat().st_mtime)
                              except: pass
                              album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                             result_extra_fields = {"album_art_path": str(db_image_path)}
                          except Exception as e:
-                             logger.debug(f"Failed to copy DB art after wait: {e}")
-                             # If copy fails, we fall back to the Windows thumbnail which is already set
+                             logger.debug(f"Failed to set DB art path after wait: {e}")
+                             # If setting path fails, we fall back to the Windows thumbnail which is already set
                  except asyncio.TimeoutError:
                      pass # Fallback to Windows thumbnail
 
-        return {
+        result = {
             "artist": artist,
             "title": title,
             "album": album if album else None,
@@ -1324,6 +1269,12 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "source": "windows_media",
             "background_style": saved_background_style  # Return saved style preference
         }
+        
+        # Add album_art_path if we have a direct path (DB file or unique thumbnail)
+        if result_extra_fields.get("album_art_path"):
+            result["album_art_path"] = result_extra_fields["album_art_path"]
+        
+        return result
             
     except Exception as e:
         logger.error(f"Windows Media Error: {e}")
@@ -1387,6 +1338,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         
         # Flag to track if we found art in DB
         found_in_db = False
+        album_art_path = None  # Store direct path for serving without copying
 
         # Check Album Art Database first (fast path - zero delay if cached)
         # FIX: Pass title as fallback for singles/no-album tracks
@@ -1407,151 +1359,72 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             
             album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
 
-            # Check if we need to perform the physical file copy
-            should_copy = True
-            if hasattr(_get_current_song_meta_data_spotify, '_last_db_art_track_id') and \
-               _get_current_song_meta_data_spotify._last_db_art_track_id == captured_track_id:
-                # We already processed this track. Check if file actually exists.
-                cached_art = get_cached_art_path()
-                if cached_art:
-                    # NEW FIX: Check resolution. If it's small (Windows thumb), force copy anyway.
-                    try:
-                        with Image.open(cached_art) as img:
-                            if img.width < 600 or img.height < 600:
-                                logger.debug(f"Cached art is low-res ({img.width}x{img.height}), forcing upgrade from DB")
-                                should_copy = True
-                            else:
-                                should_copy = False
-                    except:
-                        # If we can't read it, safer to overwrite
-                        should_copy = True
-                else:
-                    should_copy = True
+            # NEW: Store path directly so server.py can serve it without copying
+            # This eliminates race conditions from file copying
+            album_art_path = str(db_image_path)
             
-            if should_copy:
-                # Atomic copy from DB to cache for immediate use (preserving original format)
-                try:
-                    # REMOVED: Premature cleanup causes 404s during transition
-                    # cleanup_old_art()
-                    
-                    # Get the original file extension from the DB image (preserves format)
-                    original_extension = db_image_path.suffix or '.jpg'
-                    
-                    # Copy DB image to cache with original extension (e.g., current_art.png, current_art.jpg)
-                    cache_path = CACHE_DIR / f"current_art{original_extension}"
-                    temp_path = CACHE_DIR / f"current_art{original_extension}.tmp"
-                    
-                    # Copy file atomically (preserves pristine quality)
-                    shutil.copy2(db_image_path, temp_path)
+            # Check if DB is already populated with ALL enabled providers
+            # This logic respects user config: if Last.fm is disabled/no key, we won't look for it.
+            existing_providers = set(db_metadata.get("providers", {}).keys())
+            
+            # Determine which providers SHOULD be there
+            # Spotify is always a source if we are here (since we have raw_spotify_url)
+            expected_providers = {"Spotify"}
+            
+            # Check if other providers are enabled in the singleton instance
+            # We need to get the provider instance to check config
+            # FIX: Removed redundant local import that was causing UnboundLocalError
+            art_provider = get_album_art_provider()
+            
+            if art_provider.enable_itunes:
+                expected_providers.add("iTunes")
+            
+            if art_provider.enable_lastfm and art_provider.lastfm_api_key:
+                expected_providers.add("LastFM")
+                
+            # If we have all expected providers, the DB is complete
+            db_is_complete = expected_providers.issubset(existing_providers)
+            
+            # SELF-HEAL: Check if any existing provider has invalid/unknown resolution
+            # This ensures we re-run the check to fix metadata for files that were downloaded but have 0x0 resolution
+            has_invalid_resolution = False
+            if db_metadata:  # Corrected variable name
+                for p_name, p_data in db_metadata.get("providers", {}).items():
+                    if p_data.get("downloaded") and (p_data.get("width", 0) == 0 or "unknown" in str(p_data.get("resolution", "")).lower()):
+                        has_invalid_resolution = True
+                        logger.debug(f"Found invalid resolution for {p_name}, triggering self-heal")
+                        break
+
+            # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
+            # Use raw_spotify_url (not album_art_url which is now a local path)
+            # CRITICAL FIX: Only run this once per track to prevent infinite loops
+            if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+                # Mark as checked immediately to prevent re-entry on next poll
+                _db_checked_tracks[captured_track_id] = time.time()
+                
+                # Limit set size to prevent memory leaks (FIFO eviction)
+                if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                    _db_checked_tracks.popitem(last=False)  # Remove oldest
+
+                async def background_refresh_db():
                     try:
-                        os.replace(temp_path, cache_path)
-                        # FIX: Add timestamp for cache busting
-                        mtime = int(time.time())
-                        try:
-                            mtime = int(cache_path.stat().st_mtime)
-                        except: pass
-                        album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
-                        
-                        # CHANGED: Downgrade to DEBUG to stop console spam on every poll
-                        # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
-                        
-                        # OPTIMIZATION: Only delete spotify_art.jpg AFTER successful copy
-                        # This ensures we don't delete it if the copy failed, and prevents
-                        # aggressive deletion on every poll loop. server.py prefers spotify_art.jpg,
-                        # so we delete it to force fallback to our high-res current_art.*
-                        spotify_art_path = CACHE_DIR / "spotify_art.jpg"
-                        if spotify_art_path.exists():
-                            try:
-                                os.remove(spotify_art_path)
-                            except Exception:
-                                pass
-                        
-                        # Clean up stale extensions ONLY after new file is in place
-                        for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
-                            if ext == original_extension: continue
-                            try:
-                                stale = CACHE_DIR / f"current_art{ext}"
-                                if stale.exists(): os.remove(stale)
-                            except: pass
-
-                        # Mark this track as processed so we don't copy again
-                        _get_current_song_meta_data_spotify._last_db_art_track_id = captured_track_id
-                        
-                        # Check if DB is already populated with ALL enabled providers
-                        # This logic respects user config: if Last.fm is disabled/no key, we won't look for it.
-                        existing_providers = set(db_metadata.get("providers", {}).keys())
-                        
-                        # Determine which providers SHOULD be there
-                        # Spotify is always a source if we are here (since we have raw_spotify_url)
-                        expected_providers = {"Spotify"}
-                        
-                        # Check if other providers are enabled in the singleton instance
-                        # We need to get the provider instance to check config
-                        # FIX: Removed redundant local import that was causing UnboundLocalError
-                        art_provider = get_album_art_provider()
-                        
-                        if art_provider.enable_itunes:
-                            expected_providers.add("iTunes")
-                        
-                        if art_provider.enable_lastfm and art_provider.lastfm_api_key:
-                            expected_providers.add("LastFM")
-                            
-                        # If we have all expected providers, the DB is complete
-                        db_is_complete = expected_providers.issubset(existing_providers)
-                        
-                        # SELF-HEAL: Check if any existing provider has invalid/unknown resolution
-                        # This ensures we re-run the check to fix metadata for files that were downloaded but have 0x0 resolution
-                        has_invalid_resolution = False
-                        if db_metadata:  # Corrected variable name
-                            for p_name, p_data in db_metadata.get("providers", {}).items():
-                                if p_data.get("downloaded") and (p_data.get("width", 0) == 0 or "unknown" in str(p_data.get("resolution", "")).lower()):
-                                    has_invalid_resolution = True
-                                    logger.debug(f"Found invalid resolution for {p_name}, triggering self-heal")
-                                    break
-
-                        # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
-                        # Use raw_spotify_url (not album_art_url which is now a local path)
-                        # CRITICAL FIX: Only run this once per track to prevent infinite loops
-                        if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
-                            # Mark as checked immediately to prevent re-entry on next poll
-                            _db_checked_tracks[captured_track_id] = time.time()
-                            
-                            # Limit set size to prevent memory leaks (FIFO eviction)
-                            if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                                _db_checked_tracks.popitem(last=False)  # Remove oldest
-
-                            async def background_refresh_db():
-                                try:
-                                    # This function now returns the best URL and resolution
-                                    # Pass retry_count=1 to prevent infinite recursion
-                                    return await ensure_album_art_db(
-                                        captured_artist,
-                                        captured_album,
-                                        captured_title,
-                                        raw_spotify_url,
-                                        retry_count=1
-                                    )
-                                except Exception as e:
-                                    logger.debug(f"Background DB refresh failed: {e}")
-                                finally:
-                                    _running_art_upgrade_tasks.pop(captured_track_id, None)
-                            
-                            # Use tracked task
-                            task = create_tracked_task(background_refresh_db())
-                            _running_art_upgrade_tasks[captured_track_id] = task
-                    except OSError as e:
-                        logger.debug(f"Could not atomically replace current_art{original_extension}: {e}")
-                        try:
-                            os.remove(temp_path)
-                        except:
-                            pass
-                except Exception as e:
-                    logger.debug(f"Failed to copy DB image to cache: {e}")
-            else:
-                # Even if we didn't copy, we need to set the URL correctly
-                # FIX: Add timestamp for cache busting
-                mtime = get_cached_art_mtime()
-                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                        # This function now returns the best URL and resolution
+                        # Pass retry_count=1 to prevent infinite recursion
+                        return await ensure_album_art_db(
+                            captured_artist,
+                            captured_album,
+                            captured_title,
+                            raw_spotify_url,
+                            retry_count=1
+                        )
+                    except Exception as e:
+                        logger.debug(f"Background DB refresh failed: {e}")
+                    finally:
+                        _running_art_upgrade_tasks.pop(captured_track_id, None)
+                
+                # Use tracked task
+                task = create_tracked_task(background_refresh_db())
+                _running_art_upgrade_tasks[captured_track_id] = task
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
@@ -1721,7 +1594,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Return standardized structure with all fields
         # Include artist_id and artist_name for visual mode and artist image fetching
         # Include background_style for Phase 2: Visual Preference Persistence
-        return {
+        result = {
             "id": captured_track_id,
             "artist": track["artist"],
             "title": track["title"],
@@ -1736,6 +1609,12 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "artist_name": track.get("artist_name"),  # For display purposes
             "background_style": saved_background_style  # Return saved style preference (Phase 2)
         }
+        
+        # Add album_art_path if we have a direct path (DB file)
+        if album_art_path:
+            result["album_art_path"] = album_art_path
+        
+        return result
     except Exception as e:
         logger.error(f"Spotify API Error: {e}")
         return None
@@ -1863,6 +1742,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 # Don't try to upgrade/override it with cached remote art.
                                 if spotify_art_url.startswith('/'):
                                     result["album_art_url"] = spotify_art_url
+                                    # CRITICAL FIX: Also copy the album_art_path if Spotify loaded from DB
+                                    # This ensures server.py serves the high-res DB image instead of the low-res thumbnail
+                                    if spotify_data.get("album_art_path"):
+                                        result["album_art_path"] = spotify_data["album_art_path"]
                                 else:
                                     art_provider = get_album_art_provider()
                                     
@@ -1882,6 +1765,13 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     else:
                                         # Not cached - use Spotify immediately, upgrade in background
                                         result["album_art_url"] = spotify_art_url
+                                    
+                                    # CRITICAL FIX: Clear Windows thumbnail path when using remote Spotify URL
+                                    # This ensures frontend uses the remote URL directly instead of serving low-res thumbnail
+                                    if result.get("album_art_path") and not spotify_data.get("album_art_path"):
+                                        # Spotify doesn't have a local path (remote URL), so clear Windows path
+                                        # Frontend will use album_art_url (remote) directly
+                                        result.pop("album_art_path", None)
                                         
                                         # Check if a background task is already running for this track
                                         hybrid_track_id = _normalize_track_id(
@@ -1915,6 +1805,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             except Exception as e:
                                 logger.debug(f"Failed to setup high-res art in hybrid mode: {e}")
                                 result["album_art_url"] = spotify_art_url
+                                # Also copy path if available (even on error, we might have a valid path)
+                                if spotify_data.get("album_art_path"):
+                                    result["album_art_path"] = spotify_data["album_art_path"]
                         
                         # Steal Colors from Spotify (now properly extracted!)
                         if spotify_data.get("colors"):
@@ -1942,9 +1835,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
         
         # 4. If we still don't have colors (e.g. local file), extract them
         if result and result.get("source") == "windows_media":
-            # Check if we have a local art path in the cache
-            local_art_path = get_cached_art_path()
-            if result.get("colors") == ("#24273a", "#363b54") and local_art_path:
+            # NEW: Use the specific path we found/created, falling back to legacy search
+            # This fixes color extraction for the new unique thumbnail system (thumb_*.jpg)
+            local_art_path = None
+            if result.get("album_art_path"):
+                local_art_path = Path(result["album_art_path"])
+            else:
+                local_art_path = get_cached_art_path()
+            
+            if result.get("colors") == ("#24273a", "#363b54") and local_art_path and local_art_path.exists():
                  # Only extract if we have a valid local file and default colors
                  # Now async, so we await it
                  result["colors"] = await extract_dominant_colors(local_art_path)
@@ -1967,6 +1866,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 get_current_song_meta_data._is_active = False
 
         get_current_song_meta_data._last_result = result
+        
+        # RESTORED: Update current_art.jpg for debugging/external tools
+        # This ensures the cache folder always has the current art file
+        await _update_debug_art(result)
+        
         _log_app_state()
         
         return result
@@ -2089,3 +1993,83 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     finally:
         # Always remove from tracker, even if error occurred
         _artist_download_tracker.discard(artist)
+
+def _perform_debug_art_update(result: Dict[str, Any]):
+    """Helper to update current_art.jpg in a background thread"""
+    try:
+        # We need get_cached_art_path. It's available in module scope.
+        target_path = get_cached_art_path()
+        if not target_path:
+            return
+
+        source_path = result.get("album_art_path")
+        source_url = result.get("album_art_url")
+
+        # Determine what to write
+        # Use a temp file to avoid partial writes
+        temp_path = target_path.with_suffix('.tmp')
+        
+        # 1. If we have a local path (Thumb or DB), copy it
+        if source_path:
+            src = Path(source_path)
+            if src.exists():
+                # Avoid self-copy
+                if src.resolve() == target_path.resolve():
+                    return
+                    
+                shutil.copy2(src, temp_path)
+                try:
+                    os.replace(temp_path, target_path)
+                except OSError:
+                    # File might be locked by server or user (e.g. open in viewer)
+                    pass
+                return
+
+        # 2. If we have a remote URL (Spotify), download it
+        if source_url and source_url.startswith('http'):
+            try:
+                # Use a short timeout for debug updates to avoid hanging
+                response = requests.get(source_url, timeout=3)
+                if response.status_code == 200:
+                    with open(temp_path, 'wb') as f:
+                        f.write(response.content)
+                    try:
+                        os.replace(temp_path, target_path)
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+
+        # Cleanup temp if it exists
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except: pass
+
+    except Exception:
+        # Fail silently in debug update
+        pass
+
+async def _update_debug_art(result: Dict[str, Any]):
+    """
+    Updates current_art.jpg in the cache folder to match the current song's art.
+    This restores the behavior of having a 'current_art.jpg' file for debugging
+    and external tools, even though the server now uses direct paths/URLs.
+    """
+    if not result:
+        return
+
+    try:
+        # Optimization: Only update if source changed
+        current_source = result.get('album_art_path') or result.get('album_art_url')
+        last_source = getattr(_update_debug_art, 'last_source', None)
+        
+        if current_source != last_source:
+            _update_debug_art.last_source = current_source
+            
+            # Don't block the main thread
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _perform_debug_art_update, result)
+            
+    except Exception as e:
+        logger.debug(f"Failed to schedule debug art update: {e}")

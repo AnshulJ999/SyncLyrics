@@ -630,38 +630,43 @@ async def serve_album_art_image(folder_name: str, filename: str):
 
 @app.route("/cover-art")
 async def get_cover_art():
-    """Serves the locally cached album art, preferring Spotify/high-res over Windows Media."""
-    from config import CACHE_DIR
-    import os
-    from system_utils import get_cached_art_path
-    from quart import Response
-    
-    # Prefer Spotify art if it exists (higher quality)
-    # spotify_art = CACHE_DIR / "spotify_art.jpg"
-    # if spotify_art.exists():
-      #  try:
-       #     # Read file into memory to avoid race conditions with concurrent writes
-        #    with open(spotify_art, 'rb') as f:
-         #       image_data = f.read()
-          #  return Response(
-           #     image_data,
-            #    mimetype='image/jpeg',
-             #   headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
-        #    )
-       # except (OSError, IOError) as e:
-        #    logger.warning(f"Failed to read Spotify art: {e}")
-            # Fall through to Windows Media art
-                # FIX: Removed blind preference for spotify_art.jpg to prevent race conditions.
+    """Serves the album art directly from the source (DB or Thumbnail) without race conditions."""
+    from system_utils import get_current_song_meta_data, get_cached_art_path
+    from quart import send_file
+    from pathlib import Path
 
+    # 1. Get the current song metadata to find the real path
+    metadata = await get_current_song_meta_data()
     
-    # Fallback to Windows Media art (or whatever is currently active in cache)
+    # 2. Check if we have a direct path to the image (DB file or Unique Thumbnail)
+    if metadata and metadata.get("album_art_path"):
+        art_path = Path(metadata["album_art_path"])
+        # CRITICAL FIX: Verify file exists before serving (handles cleanup race conditions)
+        # If thumbnail was deleted during cleanup while metadata cache still references it,
+        # we fall through to legacy path instead of returning 404
+        if art_path.exists():
+            try:
+                # Determine mimetype based on extension (preserves original format)
+                ext = art_path.suffix.lower()
+                mime = 'image/jpeg'  # Default
+                if ext == '.png': mime = 'image/png'
+                elif ext == '.bmp': mime = 'image/bmp'
+                elif ext == '.gif': mime = 'image/gif'
+                elif ext == '.webp': mime = 'image/webp'
+                
+                # Serve the file directly
+                return await send_file(art_path, mimetype=mime, cache_timeout=0)
+            except Exception as e:
+                logger.error(f"Failed to serve art from path {art_path}: {e}")
+        else:
+            # File was deleted (cleanup race condition), fall through to legacy path
+            logger.debug(f"album_art_path {art_path} no longer exists, falling back to legacy path")
+
+    # 3. Fallback to legacy current_art.jpg (only if no specific path found)
+    # This ensures backward compatibility if metadata doesn't have album_art_path
     art_path = get_cached_art_path()
     if art_path and art_path.exists():
         try:
-            # Read file into memory to avoid race conditions with concurrent writes
-            with open(art_path, 'rb') as f:
-                image_data = f.read()
-            
             # Determine mimetype based on extension (preserves original format)
             ext = art_path.suffix.lower()
             mime = 'image/jpeg'  # Default
@@ -670,11 +675,7 @@ async def get_cover_art():
             elif ext == '.gif': mime = 'image/gif'
             elif ext == '.webp': mime = 'image/webp'
             
-            return Response(
-                image_data,
-                mimetype=mime,
-                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
-            )
+            return await send_file(art_path, mimetype=mime, cache_timeout=0)
         except (OSError, IOError) as e:
             logger.warning(f"Failed to read album art: {e}")
     
