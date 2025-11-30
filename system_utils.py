@@ -467,6 +467,7 @@ def save_image_original(image_data: bytes, output_path: Path, file_extension: st
     """
     Save image data in its original format without conversion.
     Preserves the pristine quality of the source image.
+    Uses atomic write pattern (temp file + os.replace) to prevent corruption.
     
     Args:
         image_data: Raw image bytes from the provider
@@ -488,11 +489,28 @@ def save_image_original(image_data: bytes, output_path: Path, file_extension: st
             # Replace extension if provided
             output_path = output_path.with_suffix(file_extension)
         
-        # Write original bytes directly (no conversion = no quality loss)
-        with open(output_path, 'wb') as f:
-            f.write(image_data)
+        # FIX: Use unique temp filename to prevent race conditions during rapid song skipping
+        # This ensures atomic writes even if multiple downloads happen concurrently
+        temp_filename = f"{output_path.stem}_{uuid.uuid4().hex}{output_path.suffix}.tmp"
+        temp_path = output_path.parent / temp_filename
         
-        return True
+        try:
+            # Write original bytes to temp file first (no conversion = no quality loss)
+            with open(temp_path, 'wb') as f:
+                f.write(image_data)
+            
+            # Atomic replace - if this fails, original file is untouched
+            os.replace(temp_path, output_path)
+            return True
+        except Exception as write_err:
+            # Clean up temp file if it exists
+            if temp_path.exists():
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            raise write_err
+        
     except Exception as e:
         logger.error(f"Failed to save image to {output_path}: {e}")
         return False

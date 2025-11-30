@@ -388,10 +388,25 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
                 current_song_lyrics = lyrics
                 current_song_provider = provider_name
                 
-                # Update preference in DB
+                # Update preference in DB using atomic write pattern
+                # FIX: Use temp file to prevent race conditions during rapid song skipping
                 data['preferred_provider'] = provider_name
-                with open(db_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
+                dir_path = os.path.dirname(db_path)
+                try:
+                    # Create temp file in same directory (required for atomic rename)
+                    fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    # Atomic replace - if this fails, original file is untouched
+                    os.replace(temp_path, db_path)
+                except Exception as write_err:
+                    # Clean up temp file if it exists
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                    raise write_err
                 
                 logger.info(f"Switched to cached {provider_name} lyrics")
                 return {
@@ -412,15 +427,30 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
             # Save to DB with preference
             await _save_to_db(artist, title, lyrics, provider_name)
             
-            # Update preference in DB
+            # Update preference in DB using atomic write pattern
+            # FIX: Use temp file to prevent race conditions during rapid song skipping
             db_path = _get_db_path(artist, title)
             if db_path:
                 async with _db_lock:
                     with open(db_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                     data['preferred_provider'] = provider_name
-                    with open(db_path, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    dir_path = os.path.dirname(db_path)
+                    try:
+                        # Create temp file in same directory (required for atomic rename)
+                        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=4, ensure_ascii=False)
+                        # Atomic replace - if this fails, original file is untouched
+                        os.replace(temp_path, db_path)
+                    except Exception as write_err:
+                        # Clean up temp file if it exists
+                        if 'temp_path' in locals() and os.path.exists(temp_path):
+                            try:
+                                os.unlink(temp_path)
+                            except:
+                                pass
+                        raise write_err
             
             # Update current state
             current_song_lyrics = lyrics
@@ -464,8 +494,23 @@ async def clear_provider_preference(artist: str, title: str) -> bool:
             if 'preferred_provider' in data:
                 del data['preferred_provider']
                 
-                with open(db_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
+                # FIX: Use temp file to prevent race conditions during rapid song skipping
+                dir_path = os.path.dirname(db_path)
+                try:
+                    # Create temp file in same directory (required for atomic rename)
+                    fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    # Atomic replace - if this fails, original file is untouched
+                    os.replace(temp_path, db_path)
+                except Exception as write_err:
+                    # Clean up temp file if it exists
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                    raise write_err
                 
                 logger.info(f"Cleared provider preference for {artist} - {title}")
         
