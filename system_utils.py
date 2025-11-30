@@ -679,17 +679,24 @@ async def ensure_album_art_db(
             # FIX: Initialize with existing data so we don't wipe out providers if a network call fails
             providers_data = existing_metadata.get("providers", {}) if existing_metadata else {}
             
+            # FIX: Check for existing user preference FIRST before auto-selecting highest resolution
+            # This ensures that if user manually selected a provider (e.g., via UI), that choice is preserved
+            # even if a higher-resolution image is downloaded later
             preferred_provider = None
-            highest_resolution = 0
+            if existing_metadata and "preferred_provider" in existing_metadata:
+                preferred_provider = existing_metadata["preferred_provider"]
             
-            # Re-calculate highest resolution from EXISTING data first
-            for provider_name, data in providers_data.items():
-                width = data.get("width", 0)
-                height = data.get("height", 0)
-                res = max(width, height)
-                if res > highest_resolution and data.get("downloaded", False):
-                    highest_resolution = res
-                    preferred_provider = provider_name
+            # Only auto-select highest resolution if no user preference exists
+            highest_resolution = 0
+            if not preferred_provider:
+                # Re-calculate highest resolution from EXISTING data
+                for provider_name, data in providers_data.items():
+                    width = data.get("width", 0)
+                    height = data.get("height", 0)
+                    res = max(width, height)
+                    if res > highest_resolution and data.get("downloaded", False):
+                        highest_resolution = res
+                        preferred_provider = provider_name
 
             # Get event loop for running blocking I/O in executor
             loop = asyncio.get_running_loop()
@@ -814,10 +821,14 @@ async def ensure_album_art_db(
                     preferred_provider = provider_name
             
             # Use existing preference if available, otherwise use highest resolution
+            # FIX: Check existing preference FIRST before auto-selecting highest resolution
+            # This ensures user's manual selection is preserved even if a higher-res image is downloaded
             if existing_metadata and "preferred_provider" in existing_metadata:
                 preferred_provider = existing_metadata["preferred_provider"]
             
             # Create metadata structure
+            # FIX: Preserve background_style from existing metadata to prevent it from being wiped
+            # when the background task runs (e.g., for self-healing or adding new providers)
             metadata = {
                 "artist": artist,
                 "album": album or title,
@@ -827,6 +838,12 @@ async def ensure_album_art_db(
                 "last_accessed": datetime.utcnow().isoformat() + "Z",
                 "providers": providers_data
             }
+            
+            # Preserve background_style if it exists in existing metadata
+            # This prevents the user's saved preference (Sharp/Soft/Blur) from being lost
+            # when the background task updates the metadata (e.g., adding new providers or self-healing)
+            if existing_metadata and "background_style" in existing_metadata:
+                metadata["background_style"] = existing_metadata["background_style"]
             
             # Save metadata
             # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
@@ -942,8 +959,26 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
         filename = provider_data.get("filename", f"{preferred_provider}.jpg")
         image_path = folder / filename
         
+        # FIX: If preferred provider's file doesn't exist (e.g., download in progress or failed),
+        # try to fall back to another available provider instead of returning None
+        # This prevents the album art selector from appearing broken when a download is in progress
         if not image_path.exists():
-            return None
+            logger.debug(f"Preferred provider '{preferred_provider}' file not found, trying fallback providers")
+            # Try to find any provider with an existing file
+            for fallback_provider, fallback_data in providers.items():
+                fallback_filename = fallback_data.get("filename", f"{fallback_provider}.jpg")
+                fallback_path = folder / fallback_filename
+                if fallback_path.exists():
+                    logger.info(f"Using fallback provider '{fallback_provider}' (preferred '{preferred_provider}' file missing)")
+                    # Use fallback but keep preferred_provider in metadata so UI shows correct selection
+                    provider_data = fallback_data
+                    filename = fallback_filename
+                    image_path = fallback_path
+                    break
+            else:
+                # No provider has a file - return None (downloads probably in progress)
+                logger.debug(f"No provider files found for {artist} - {album}, downloads may be in progress")
+                return None
         
         # Update last_accessed
         metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"

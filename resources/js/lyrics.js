@@ -1414,6 +1414,14 @@ function checkForVisualMode(data, trackId) {
                 return;
             }
 
+            // FIX: Cancel exit debounce timer if it's running, since we're about to enter visual mode
+            // This prevents visual mode from entering then immediately exiting due to a pending exit debounce
+            if (visualModeDebounceTimer) {
+                console.log('[Visual Mode] Cancelling exit debounce since entering visual mode');
+                clearTimeout(visualModeDebounceTimer);
+                visualModeDebounceTimer = null;
+            }
+
             if (lastTrackInfo) {
                 // Re-verify track ID match
                 let currentId;
