@@ -346,6 +346,13 @@ def get_cached_art_path() -> Optional[Path]:
             return path
     return None
 
+def get_cached_art_mtime() -> int:
+    """Get the modification time of the current cached art for cache busting"""
+    path = get_cached_art_path()
+    if path and path.exists():
+        return int(path.stat().st_mtime)
+    return int(time.time())
+
 def cleanup_old_art() -> None:
     """
     Removes previous album art files to prevent conflicts.
@@ -1104,8 +1111,14 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             db_image_path = db_result["path"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
             
-            # Use stable ID for cache busting (only changes when track changes)
-            album_art_url = f"/cover-art?id={current_track_id}"
+            # FIX: Add timestamp to URL to force browser cache busting when file updates
+            mtime = int(time.time())
+            try:
+                if db_image_path.exists():
+                    mtime = int(db_image_path.stat().st_mtime)
+            except: pass
+            
+            album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
             
             # Check if we need to copy to cache
             should_copy = True
@@ -1172,10 +1185,12 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                                 except: pass
                             
                             _last_windows_track_id = current_track_id
-                            album_art_url = f"/cover-art?id={current_track_id}"
+                            # FIX: Add timestamp for cache busting
+                            album_art_url = f"/cover-art?id={current_track_id}&t={int(time.time())}"
                 elif thumbnail_ref:
                      # Reuse existing
-                     album_art_url = f"/cover-art?id={current_track_id}"
+                     # FIX: Add timestamp for cache busting
+                     album_art_url = f"/cover-art?id={current_track_id}&t={get_cached_art_mtime()}"
             except Exception as e:
                 pass
 
@@ -1230,7 +1245,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                                      if stale.exists(): os.remove(stale)
                                  except: pass
                                  
-                             album_art_url = f"/cover-art?id={current_track_id}"
+                             # FIX: Add timestamp for cache busting
+                             mtime = int(time.time())
+                             try:
+                                 if cache_path.exists():
+                                     mtime = int(cache_path.stat().st_mtime)
+                             except: pass
+                             album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
                          except Exception as e:
                              logger.debug(f"Failed to copy DB art after wait: {e}")
                              # If copy fails, we fall back to the Windows thumbnail which is already set
@@ -1322,8 +1343,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             db_metadata = db_result["metadata"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
             
-            # Always set the URL to our local cache route with stable ID
-            album_art_url = f"/cover-art?id={captured_track_id}"
+            # FIX: Add timestamp to URL to force browser cache busting
+            mtime = int(time.time())
+            try:
+                if db_image_path.exists():
+                    mtime = int(db_image_path.stat().st_mtime)
+            except: pass
+            
+            album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
 
             # Check if we need to perform the physical file copy
             should_copy = True
@@ -1363,7 +1390,13 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     shutil.copy2(db_image_path, temp_path)
                     try:
                         os.replace(temp_path, cache_path)
-                        album_art_url = f"/cover-art?id={captured_track_id}"
+                        # FIX: Add timestamp for cache busting
+                        mtime = int(time.time())
+                        try:
+                            mtime = int(cache_path.stat().st_mtime)
+                        except: pass
+                        album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                        
                         # CHANGED: Downgrade to DEBUG to stop console spam on every poll
                         # logger.debug(f"Using album art from database ({original_extension}) for {captured_artist} - {captured_album or captured_title}")
                         
@@ -1447,7 +1480,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     logger.debug(f"Failed to copy DB image to cache: {e}")
             else:
                 # Even if we didn't copy, we need to set the URL correctly
-                album_art_url = f"/cover-art?id={captured_track_id}"
+                # FIX: Add timestamp for cache busting
+                mtime = get_cached_art_mtime()
+                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:

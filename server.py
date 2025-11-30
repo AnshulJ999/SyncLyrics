@@ -628,22 +628,24 @@ async def get_cover_art():
     from quart import Response
     
     # Prefer Spotify art if it exists (higher quality)
-    spotify_art = CACHE_DIR / "spotify_art.jpg"
-    if spotify_art.exists():
-        try:
-            # Read file into memory to avoid race conditions with concurrent writes
-            with open(spotify_art, 'rb') as f:
-                image_data = f.read()
-            return Response(
-                image_data,
-                mimetype='image/jpeg',
-                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
-            )
-        except (OSError, IOError) as e:
-            logger.warning(f"Failed to read Spotify art: {e}")
+    # spotify_art = CACHE_DIR / "spotify_art.jpg"
+    # if spotify_art.exists():
+      #  try:
+       #     # Read file into memory to avoid race conditions with concurrent writes
+        #    with open(spotify_art, 'rb') as f:
+         #       image_data = f.read()
+          #  return Response(
+           #     image_data,
+            #    mimetype='image/jpeg',
+             #   headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+        #    )
+       # except (OSError, IOError) as e:
+        #    logger.warning(f"Failed to read Spotify art: {e}")
             # Fall through to Windows Media art
+                # FIX: Removed blind preference for spotify_art.jpg to prevent race conditions.
+
     
-    # Fallback to Windows Media art (only if Spotify art doesn't exist)
+    # Fallback to Windows Media art (or whatever is currently active in cache)
     art_path = get_cached_art_path()
     if art_path and art_path.exists():
         try:
