@@ -12,6 +12,7 @@ Unused/
 tests/
 full_project_code.txt
 features.md
+.kiro
 
 # share_project.py
 .cursor
