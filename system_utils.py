@@ -315,12 +315,16 @@ def _get_current_song_meta_data_gnome() -> Optional[dict]:
         
         artist, title, album, position = output[:4]
         art_url = output[4].strip() if len(output) > 4 else None
-        
+
         if not album: 
             title = _remove_text_inside_parentheses_and_brackets(title)
             # artist = ""  # [REMOVED] Don't wipe artist name just because album is missing
 
+        # Generate normalized track ID for change detection
+        current_track_id = _normalize_track_id(artist.strip(), title.strip())
+
         return {
+            "track_id": current_track_id,  # ADDED: Normalized ID for frontend change detection
             "artist": artist.strip(), 
             "title": title.strip(),
             "album": album.strip() if album else None,
@@ -1263,6 +1267,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      pass # Fallback to Windows thumbnail
 
         result = {
+            "track_id": current_track_id,  # ADDED: Normalized ID for frontend change detection
             "artist": artist,
             "title": title,
             "album": album if album else None,
@@ -1600,7 +1605,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Include artist_id and artist_name for visual mode and artist image fetching
         # Include background_style for Phase 2: Visual Preference Persistence
         result = {
-            "id": captured_track_id,
+            "id": track.get("track_id"),    # CHANGED: Use REAL Spotify ID (fixes Like button)
+            "track_id": captured_track_id,  # ADDED: Normalized ID (fixes Visual Mode detection)
             "artist": track["artist"],
             "title": track["title"],
             "album": track.get("album"),
@@ -1821,6 +1827,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         # Enable Controls by marking as hybrid
                         # Frontend will allow controls for this source type
                         result["source"] = "spotify_hybrid"
+                        
+                        # CRITICAL FIX: Copy Spotify ID for Like button functionality
+                        # This ensures the Like button works even when playing from Windows Media
+                        if spotify_data.get("id"):
+                            result["id"] = spotify_data.get("id")
                         
                         # Copy Artist ID and Name for Visual Mode
                         # This ensures artist slideshows work even when playing from Windows Media
