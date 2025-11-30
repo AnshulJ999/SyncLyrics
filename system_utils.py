@@ -1401,8 +1401,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             if should_copy:
                 # Atomic copy from DB to cache for immediate use (preserving original format)
                 try:
-                    # Clean up old art first
-                    cleanup_old_art()
+                    # REMOVED: Premature cleanup causes 404s during transition
+                    # cleanup_old_art()
                     
                     # Get the original file extension from the DB image (preserves format)
                     original_extension = db_image_path.suffix or '.jpg'
@@ -1436,6 +1436,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             except Exception:
                                 pass
                         
+                        # Clean up stale extensions ONLY after new file is in place
+                        for ext in ['.jpg', '.png', '.bmp', '.gif', '.webp']:
+                            if ext == original_extension: continue
+                            try:
+                                stale = CACHE_DIR / f"current_art{ext}"
+                                if stale.exists(): os.remove(stale)
+                            except: pass
+
                         # Mark this track as processed so we don't copy again
                         _get_current_song_meta_data_spotify._last_db_art_track_id = captured_track_id
                         
