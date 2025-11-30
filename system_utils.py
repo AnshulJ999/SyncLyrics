@@ -24,6 +24,7 @@ import json
 import shutil
 from datetime import datetime
 from io import BytesIO
+import uuid
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -1063,7 +1064,10 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
 
                 # Save to cache
                 art_path = CACHE_DIR / "spotify_art.jpg"
-                temp_path = CACHE_DIR / "spotify_art.jpg.tmp"
+                # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
+                # This prevents race conditions when skipping songs rapidly
+                temp_filename = f"spotify_art_{uuid.uuid4().hex}.jpg.tmp"
+                temp_path = CACHE_DIR / temp_filename
                 
                 # Write to temp (blocking I/O in executor)
                 def write_file():
@@ -1128,6 +1132,12 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
                 
         except Exception as e:
             logger.debug(f"Background Spotify art download failed: {e}")
+            # Clean up unique temp file if it was created before the error
+            if 'temp_path' in locals() and temp_path.exists():
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
         finally:
             # FIX: Ensure URL is removed from tracker when done, even if error occurred
             _spotify_download_tracker.discard(url)
