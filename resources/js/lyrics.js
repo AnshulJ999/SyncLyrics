@@ -104,8 +104,12 @@ async function getConfig() {
         if (config.blurStrength !== undefined) {
             document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
-        // Set soft album art mode from config only if URL didn't explicitly set it
-        // URL parameters take precedence over server config
+        // Set soft album art mode from server config only if URL didn't explicitly set it
+        // NOTE: This is a global default fallback. The actual priority system is:
+        // 1. Saved per-album preference (applied in updateLoop when track loads)
+        // 2. URL parameters (applied in initializeDisplay, then checked in updateLoop)
+        // 3. Server config (this code - only if URL params don't exist)
+        // Since URL params are always present in this app, this code path rarely executes
         const urlParams = new URLSearchParams(window.location.search);
         if (config.softAlbumArt !== undefined && !urlParams.has('softAlbumArt')) {
             displayConfig.softAlbumArt = config.softAlbumArt;
@@ -116,8 +120,8 @@ async function getConfig() {
             }
             applySoftMode();
         }
-        // Set sharp album art mode from config only if URL didn't explicitly set it
-        // URL parameters take precedence over server config
+        // Set sharp album art mode from server config only if URL didn't explicitly set it
+        // NOTE: See comment above about priority system
         if (config.sharpAlbumArt !== undefined && !urlParams.has('sharpAlbumArt')) {
             displayConfig.sharpAlbumArt = config.sharpAlbumArt;
             // Enforce mutual exclusivity when setting from server config
@@ -961,9 +965,8 @@ async function loadAlbumArtTab() {
         const currentStyle = getCurrentBackgroundStyle();
         
         // Check if we're in 'Auto' mode (no saved preference, following URL)
-        const urlParams = new URLSearchParams(window.location.search);
-        const hasUrlStyleParam = urlParams.has('artBackground') || urlParams.has('softAlbumArt') || urlParams.has('sharpAlbumArt');
-        const isAutoMode = !manualStyleOverride && (!lastTrackInfo || !lastTrackInfo.background_style || hasUrlStyleParam);
+        // Auto mode = no saved preference exists (or was cleared)
+        const isAutoMode = !lastTrackInfo || !lastTrackInfo.background_style;
 
         styleBtns.forEach(btn => {
             // Reset state
@@ -999,7 +1002,7 @@ async function loadAlbumArtTab() {
             btn.addEventListener('click', async (e) => {
                 const style = e.target.dataset.style;
 
-                // Handle 'Auto' option - clears saved preference, follows URL only
+                // Handle 'Auto' option - clears saved preference, uses URL params (fallback)
                 if (style === 'auto') {
                     // Clear saved preference from server
                     try {
@@ -1010,7 +1013,11 @@ async function loadAlbumArtTab() {
                         });
                         const res = await response.json();
                         if (res.status === 'success') {
-                            showToast('Cleared saved preference - following URL parameters');
+                            showToast('Cleared saved preference - using URL parameters');
+                            // Update local state to reflect no saved preference
+                            if (lastTrackInfo) {
+                                delete lastTrackInfo.background_style;
+                            }
                         }
                     } catch (err) {
                         console.error('Error clearing style:', err);
@@ -1019,7 +1026,7 @@ async function loadAlbumArtTab() {
                     // Reset manual override so URL params can take effect
                     manualStyleOverride = false;
                     
-                    // Apply URL parameters if they exist, otherwise reset to none
+                    // Apply URL parameters (Priority 2: URL params)
                     const urlParams = new URLSearchParams(window.location.search);
                     if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
                         applyBackgroundStyle('sharp');
@@ -1028,7 +1035,7 @@ async function loadAlbumArtTab() {
                     } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
                         applyBackgroundStyle('blur');
                     } else {
-                        // No URL param - reset to none
+                        // No URL param - reset to none (Priority 3: Default)
                         applyBackgroundStyle('none');
                     }
                 } else {
@@ -1862,16 +1869,32 @@ async function updateLoop() {
             // This fixes the stale data issue without needing forced updateBackground() calls
             lastTrackInfo = trackInfo;
 
-            // Phase 2: Apply saved background style if available (and not manually overridden)
-            // CRITICAL: URL parameters take highest priority - don't apply saved preference if URL has style params
-            const urlParams = new URLSearchParams(window.location.search);
-            const hasUrlStyleParam = urlParams.has('artBackground') || urlParams.has('softAlbumArt') || urlParams.has('sharpAlbumArt');
-            
-            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive && !hasUrlStyleParam) {
+            // Phase 2: Apply background style with priority: Saved Preference > URL Params > Default
+            // Priority 1: Saved preference (if explicitly set and not manually overridden)
+            if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
                 const currentStyle = getCurrentBackgroundStyle();
                 if (currentStyle !== trackInfo.background_style) {
                     console.log(`Applying saved background style: ${trackInfo.background_style}`);
                     applyBackgroundStyle(trackInfo.background_style);
+                }
+            } else if (!manualStyleOverride && !visualModeActive) {
+                // Priority 2: URL parameters (fallback if no saved preference)
+                const urlParams = new URLSearchParams(window.location.search);
+                const currentStyle = getCurrentBackgroundStyle();
+                let urlStyle = null;
+                
+                if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
+                    urlStyle = 'sharp';
+                } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
+                    urlStyle = 'soft';
+                } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
+                    urlStyle = 'blur';
+                }
+                
+                // Only apply URL style if it's different from current and no saved preference exists
+                if (urlStyle && currentStyle !== urlStyle) {
+                    console.log(`Applying URL background style: ${urlStyle}`);
+                    applyBackgroundStyle(urlStyle);
                 }
             }
 
