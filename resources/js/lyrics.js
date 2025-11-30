@@ -28,7 +28,9 @@ let pendingArtUrl = null;
 let visualModeActive = false;
 let visualModeTimer = null;
 let visualModeDebounceTimer = null; // Prevents flickering status from resetting visual mode
-let artistImages = [];
+// SEPARATED DATA SOURCES to prevent collision between Visual Mode and Idle Mode
+let currentArtistImages = []; // For Visual Mode (Current Song's Artist)
+let dashboardImages = [];     // For Idle Mode (Global Random Shuffle)
 let slideshowInterval = null;
 let currentSlideIndex = 0;
 let slideshowEnabled = false;  // Separate from visual mode - for when no music is playing
@@ -49,6 +51,7 @@ let visualModeTimerId = null;
 
 // Global state variables
 let queueDrawerOpen = false;
+let queuePollInterval = null; // Track the polling interval for queue updates
 let isLiked = false;
 
 // --- Helper: Robust Clipboard Copy ---
@@ -1053,8 +1056,8 @@ async function loadAlbumArtTab() {
             //grid.appendChild(separator);
 
             // Fetch images (reuse existing function logic or global variable if already fetched)
-            // We'll use the global artistImages array if populated, or fetch if empty
-            let images = artistImages;
+            // We'll use the global currentArtistImages array if populated, or fetch if empty
+            let images = currentArtistImages;
             if (!images || images.length === 0) {
                 images = await fetchArtistImages(lastTrackInfo.artist_id);
             }
@@ -1098,12 +1101,12 @@ function loadArtistImagesTab() {
     
     grid.innerHTML = '';
     
-    if (!artistImages || artistImages.length === 0) {
+    if (!currentArtistImages || currentArtistImages.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No artist images available.</div>';
         return;
     }
     
-    artistImages.forEach((url, index) => {
+    currentArtistImages.forEach((url, index) => {
         const card = document.createElement('div');
         card.className = 'art-card';
         // Non-interactive for now, just visual
@@ -1297,9 +1300,9 @@ async function fetchArtistImages(artistId) {
         }
         const data = await response.json();
         if (data.images && data.images.length > 0) {
-            artistImages = data.images;
-            console.log(`Loaded ${artistImages.length} artist images`);
-            return artistImages;
+            currentArtistImages = data.images; // Update specific array for Visual Mode
+            console.log(`Loaded ${currentArtistImages.length} artist images`);
+            return currentArtistImages;
         }
     } catch (error) {
         console.error('Error fetching artist images:', error);
@@ -1436,17 +1439,17 @@ function enterVisualMode() {
     // SAVE current state before changing
     savedBackgroundState = getCurrentBackgroundStyle();
 
-    // Auto-switch to sharp mode if configured
-    if (visualModeConfig.autoSharp) {
+    // Auto-switch to sharp mode if configured AND user hasn't manually overridden
+    if (visualModeConfig.autoSharp && !manualStyleOverride) {
         // Only apply if not already sharp to avoid unnecessary updates
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
         }
     }
 
-    // Start slideshow if we have artist images
-    if (artistImages.length > 0) {
-        startSlideshow();
+    // Start slideshow if we have artist images (Explicitly use 'artist' source)
+    if (currentArtistImages.length > 0) {
+        startSlideshow('artist');
     }
 }
 
@@ -1511,35 +1514,62 @@ function applyBackgroundStyle(style) {
 }
 
 /**
- * Start slideshow - cycle through artist images and album art
+ * Start slideshow - cycle through images
+ * @param {string} source - 'artist' (for Visual Mode) or 'dashboard' (for Idle Mode)
  */
-function startSlideshow() {
+function startSlideshow(source = 'artist') {
     if (slideshowInterval) {
         clearInterval(slideshowInterval);
     }
     
-    // FIX: Check if we have EITHER artist images OR album art
-    const hasAlbumArt = lastTrackInfo && lastTrackInfo.album_art_url;
-    const totalSlides = artistImages.length + (hasAlbumArt ? 1 : 0);
+    let images = [];
+    let includeAlbumArt = false;
+
+    if (source === 'artist') {
+        images = currentArtistImages;
+        // Include current album art in the rotation for Visual Mode
+        includeAlbumArt = (lastTrackInfo && lastTrackInfo.album_art_url);
+    } else {
+        images = dashboardImages;
+        includeAlbumArt = false; // Pure random images for dashboard
+    }
+    
+    const totalSlides = images.length + (includeAlbumArt ? 1 : 0);
     
     if (totalSlides === 0) {
-        console.log("Slideshow: No images available to show (no artist images, no album art).");
+        console.log(`Slideshow: No images available for ${source} source.`);
         return;
     }
 
     currentSlideIndex = 0;
     
+    // Helper to show current slide based on index and source
+    const renderCurrentSlide = () => {
+        let imageUrl;
+        if (includeAlbumArt && currentSlideIndex === images.length) {
+            imageUrl = lastTrackInfo.album_art_url;
+        } else {
+            // Safety check for index
+            const safeIndex = currentSlideIndex % images.length;
+            imageUrl = images[safeIndex];
+        }
+        
+        if (imageUrl) {
+            showSlide(imageUrl);
+        }
+    };
+
     // Show first image immediately
-    showSlide(currentSlideIndex);
+    renderCurrentSlide();
     
     // Then cycle through images
     const intervalMs = visualModeConfig.slideshowIntervalSeconds * 1000;
     slideshowInterval = setInterval(() => {
         // Re-calculate total slides in case art loaded/changed
-        const currentTotal = artistImages.length + (lastTrackInfo && lastTrackInfo.album_art_url ? 1 : 0);
+        const currentTotal = images.length + (includeAlbumArt ? 1 : 0);
         if (currentTotal > 0) {
             currentSlideIndex = (currentSlideIndex + 1) % currentTotal;
-            showSlide(currentSlideIndex);
+            renderCurrentSlide();
         }
     }, intervalMs);
 }
@@ -1563,31 +1593,16 @@ function stopSlideshow() {
 
 /**
  * Show a specific slide in the slideshow
- * @param {number} index - Index of the slide to show
+ * @param {string} imageUrl - URL of the image to show
  */
-function showSlide(index) {
+function showSlide(imageUrl) {
     const bgContainer = document.getElementById('background-layer');
-    if (!bgContainer) return;
-    
-    let imageUrl;
-    
-    // Last index is album art, rest are artist images
-    if (index >= artistImages.length) {
-        // Show album art
-        if (lastTrackInfo && lastTrackInfo.album_art_url) {
-            imageUrl = lastTrackInfo.album_art_url;
-        } else {
-            return; // No album art available
-        }
-    } else {
-        // Show artist image
-        imageUrl = artistImages[index];
-    }
+    if (!bgContainer || !imageUrl) return;
     
     // Create new image element for crossfade
     const newImg = document.createElement('div');
     newImg.className = 'slideshow-image';
-    newImg.style.backgroundImage = `url(${imageUrl})`;
+    newImg.style.backgroundImage = `url("${imageUrl}")`;
     
     // Add Ken Burns animation class
     newImg.classList.add('ken-burns-effect');
@@ -1771,6 +1786,9 @@ async function updateLoop() {
                 }
                 
                 stopSlideshow();
+                
+                // CLEAR current artist images so we don't show old artist's images
+                currentArtistImages = [];
 
                 // Fetch artist images for potential visual mode
                 if (trackInfo.artist_id) {
@@ -1785,7 +1803,8 @@ async function updateLoop() {
                 // Reset style buttons in modal (Moved inside trackChanged)
                 updateStyleButtonsInModal(trackInfo.background_style || 'blur');
 
-                // FIX: Refresh queue if drawer is open
+                // FIX: Immediate queue update on track change (if drawer open)
+                // This is a one-time update, not continuous polling
                 if (queueDrawerOpen) {
                     console.log("Track changed, refreshing queue...");
                     fetchAndRenderQueue();
@@ -1846,22 +1865,16 @@ async function updateLoop() {
                     const randomImages = await fetchRandomSlideshowImages();
                     
                     if (randomImages.length > 0) {
-                        artistImages = randomImages; // Replace current artist images with global mix
+                        dashboardImages = randomImages; // Store in dashboard array (separate from artist images)
                         
-                        // Start slideshow immediately
-                        if (!slideshowInterval) {
-                            startSlideshow();
-                        } else {
-                            // Restart to pick up new images
-                            stopSlideshow();
-                            startSlideshow();
-                        }
+                        // Start slideshow immediately using DASHBOARD source
+                        startSlideshow('dashboard');
                     }
                 }
                 
                 // Ensure slideshow is running
-                if (!slideshowInterval && artistImages.length > 0) {
-                    startSlideshow();
+                if (!slideshowInterval && dashboardImages.length > 0) {
+                    startSlideshow('dashboard');
                 }
             } else if (!visualModeConfig.slideshowEnabled) {
                 stopSlideshow();
@@ -1944,7 +1957,7 @@ function setupQueueInteractions() {
     // Swipe handling is now centralized in setupTouchControls() -> handleSwipe()
 }
 
-// UPDATE: Toggle Queue to handle Backdrop
+// UPDATE: Toggle Queue to handle Backdrop and Polling
 async function toggleQueueDrawer() {
     const drawer = document.getElementById('queue-drawer');
     const backdrop = document.querySelector('.queue-backdrop');
@@ -1959,11 +1972,25 @@ async function toggleQueueDrawer() {
             backdrop.style.pointerEvents = 'auto'; // Force clickable
         }
         await fetchAndRenderQueue();
+        
+        // START POLLING when drawer is open (every 5 seconds)
+        if (queuePollInterval) clearInterval(queuePollInterval);
+        queuePollInterval = setInterval(() => {
+            if (queueDrawerOpen) {
+                fetchAndRenderQueue();
+            }
+        }, 5000); // Poll every 5 seconds
+        
     } else {
         drawer.classList.remove('open');
         if (backdrop) {
             backdrop.classList.remove('visible');
             backdrop.style.pointerEvents = 'none'; // Pass through clicks when hidden
+        }
+        // STOP POLLING when closed
+        if (queuePollInterval) {
+            clearInterval(queuePollInterval);
+            queuePollInterval = null;
         }
     }
 }

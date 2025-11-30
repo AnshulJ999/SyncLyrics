@@ -520,6 +520,34 @@ async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:
 # Main Logic
 # ==========================================
 
+async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
+    """
+    Background task helper to fetch lyrics without blocking the UI.
+    
+    This function runs in the background after _update_song has already
+    updated current_song_data and released the lock. This prevents the
+    UI from freezing while waiting for internet requests to complete.
+    """
+    global current_song_lyrics, current_song_data, current_song_provider
+
+    try:
+        # Use the global _get_lyrics function to fetch from internet providers
+        fetched_lyrics = await _get_lyrics(target_artist, target_title)
+        
+        # CRITICAL: Check if song is still the same before setting lyrics
+        # This prevents stale lyrics from a previous song being displayed
+        # if the user skipped to a new song while this fetch was in progress
+        if (current_song_data and 
+            current_song_data["artist"] == target_artist and 
+            current_song_data["title"] == target_title):
+            current_song_lyrics = fetched_lyrics
+            logger.info(f"Background fetch completed for {target_artist} - {target_title}")
+        else:
+            # Song changed during fetch - discard these lyrics to prevent wrong display
+            logger.debug(f"Discarded background lyrics for {target_artist} - {target_title} (song changed)")
+    except Exception as e:
+        logger.error(f"Error in background fetch for {target_artist}: {e}")
+
 async def _update_song():
     """
     Updates current song data and fetches lyrics if changed.
@@ -594,19 +622,14 @@ async def _update_song():
                     else:
                         logger.debug(f"Skipping backfill for {target_artist} - {target_title} (already have {len(saved_providers)} providers)")
             else:
-                # 2. Try Internet (Smart Race)
-                # This can take time, so we validate after fetch completes
-                fetched_lyrics = await _get_lyrics(target_artist, target_title)
-                
-                # CRITICAL: Only set lyrics if song hasn't changed during fetch
-                # This prevents stale lyrics from being displayed after rapid song changes
-                if (current_song_data and 
-                    current_song_data["artist"] == target_artist and 
-                    current_song_data["title"] == target_title):
-                    current_song_lyrics = fetched_lyrics
-                else:
-                    # Song changed during fetch - discard these lyrics
-                    logger.debug(f"Discarded lyrics for {target_artist} - {target_title} (song changed during fetch)")
+                # 2. Try Internet (Smart Race) - BACKGROUND
+                # CRITICAL PERFORMANCE FIX: Don't await internet fetch inside lock
+                # Starting a background task allows the UI to remain responsive while
+                # lyrics are being fetched from providers. The lock is released immediately
+                # so other operations can continue, and _fetch_and_set_lyrics will update
+                # current_song_lyrics when the fetch completes (if song hasn't changed).
+                current_song_lyrics = [(0, "Searching lyrics...")] 
+                asyncio.create_task(_fetch_and_set_lyrics(target_artist, target_title))
         else:
             # Song hasn't changed, just update the metadata (position, etc.)
             current_song_data = new_song_data
