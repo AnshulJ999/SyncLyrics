@@ -1392,6 +1392,14 @@ async function fetchArtistImages(artistId) {
  * @param {boolean} isInstrumental - Whether the track is instrumental
  */
 function checkForVisualMode(data, trackId) {
+    // CRITICAL FIX: Always clear any existing timer FIRST
+    // This prevents overlapping timers when function is called rapidly
+    if (visualModeTimer) {
+        clearTimeout(visualModeTimer);
+        visualModeTimer = null;
+        visualModeTimerId = null;
+    }
+    
     // Don't check if visual mode is disabled
     if (!visualModeConfig.enabled) return;
     
@@ -1417,9 +1425,7 @@ function checkForVisualMode(data, trackId) {
         // If already active, nothing to do
         if (visualModeActive) return;
 
-        // If timer is already running, let it run (DON'T RESET IT)
-        // This fixes the issue where frequent updates kept resetting the timer
-        if (visualModeTimer) return;
+        // Timer was already cleared at the start of function, so we can proceed
 
         // Start timer to enter visual mode
         // Fast entry for confirmed instrumental (2s), otherwise configured delay
@@ -1477,33 +1483,35 @@ function checkForVisualMode(data, trackId) {
         }, delayMs);
     } else {
         // CONDITIONS NOT MET: We should NOT be in Visual Mode (Lyrics found)
-        // CRITICAL FIX: Use debouncing to prevent flickering from cancelling visual mode prematurely.
-        // If lyrics status flickers (Found -> Searching -> Found), we wait 1 second before actually exiting.
-        // This prevents visual mode from being cancelled during brief status changes.
-
-        // Only act if we are currently Active or have a Timer running
+        // CRITICAL FIX: Exit visual mode when lyrics are available
+        // If visual mode is active and lyrics are found, exit immediately (or with minimal debounce)
         // BUT: Don't auto-exit if user manually enabled Visual Mode
-        if ((visualModeActive || visualModeTimer) && !manualVisualModeOverride) {
+        
+        if (visualModeActive && !manualVisualModeOverride) {
+            // Lyrics are available - exit visual mode
+            // Use minimal debounce (0.3s) to prevent flicker from brief status changes
+            // but exit much faster than the 1s debounce to be responsive
+            if (visualModeDebounceTimer) {
+                // If debounce is already running, clear it and restart with shorter delay
+                clearTimeout(visualModeDebounceTimer);
+            }
             
-            // If we aren't already waiting to exit... START WAITING.
-            // We wait 1 second before actually killing Visual Mode. 
-            // If "shouldEnterVisualMode" becomes true again inside this second, we save it (see above).
-            if (!visualModeDebounceTimer) {
-                visualModeDebounceTimer = setTimeout(() => {
-                    console.log('[Visual Mode] Conditions not met for 1s, exiting/cancelling');
-                    
-                    if (visualModeActive && !manualVisualModeOverride) {
-                        exitVisualMode();
-                    }
-                    
-                    if (visualModeTimer) {
-                        clearTimeout(visualModeTimer);
-                        visualModeTimer = null;
-                        visualModeTimerId = null; // Clear ID
-                    }
-                    
-                    visualModeDebounceTimer = null;
-                }, 1000); // 1 second grace period to prevent flickering
+            visualModeDebounceTimer = setTimeout(() => {
+                console.log('[Visual Mode] Lyrics available, exiting visual mode');
+                
+                if (visualModeActive && !manualVisualModeOverride) {
+                    exitVisualMode();
+                }
+                
+                visualModeDebounceTimer = null;
+            }, 300); // 300ms debounce - fast enough to be responsive, long enough to prevent flicker
+        } else if (visualModeTimer && !manualVisualModeOverride) {
+            // Timer was running but lyrics are now available - cancel it immediately
+            // (Timer was already cleared at start of function, but this is defensive)
+            if (visualModeTimer) {
+                clearTimeout(visualModeTimer);
+                visualModeTimer = null;
+                visualModeTimerId = null;
             }
         }
     }

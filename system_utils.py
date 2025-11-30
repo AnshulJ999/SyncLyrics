@@ -48,7 +48,8 @@ _db_checked_tracks = OrderedDict()  # Key: track_id, Value: timestamp
 _MAX_DB_CHECKED_SIZE = 100
 # OPTIMIZATION: Semaphore to limit concurrent background downloads (Fix #4)
 # Prevents network saturation if user skips many tracks quickly
-_art_download_semaphore = asyncio.Semaphore(2)
+_art_download_semaphore = asyncio.Semaphore(2)  # For album art downloads
+_artist_download_semaphore = asyncio.Semaphore(2)  # For artist image downloads (separate to prevent deadlock)
 # Global lock to prevent concurrent album art updates (prevents flicker)
 _art_update_lock = asyncio.Lock()
 
@@ -540,6 +541,7 @@ def determine_image_extension(url: str, content_type: str = None) -> str:
 def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
     """
     Save album art database metadata JSON file atomically.
+    Preserves unknown keys from existing metadata and includes schema version.
     
     Args:
         folder: Path to the album folder
@@ -554,6 +556,25 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
         
         # Ensure folder exists
         folder.mkdir(parents=True, exist_ok=True)
+        
+        # Load existing metadata to preserve unknown keys (for backward compatibility)
+        existing_metadata = {}
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    existing_metadata = json.load(f)
+            except Exception:
+                # If read fails, start fresh
+                pass
+        
+        # Preserve unknown keys from existing metadata (except schema_version which we update)
+        for key, value in existing_metadata.items():
+            if key not in metadata and key != 'schema_version':
+                metadata[key] = value
+        
+        # Add schema version (current version is 1)
+        # This allows future code to handle format changes gracefully
+        metadata['schema_version'] = 1
         
         # Write to temp file first
         with open(temp_path, 'w', encoding='utf-8') as f:
@@ -1268,10 +1289,18 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      except Exception as e:
                          logger.debug(f"Windows background art fetch failed: {e}")
                      finally:
+                         # CRITICAL FIX: Always remove from running tasks, even if task creation failed
                          _running_art_upgrade_tasks.pop(current_track_id, None)
                          
-                 task = create_tracked_task(background_windows_art_upgrade())
-                 _running_art_upgrade_tasks[current_track_id] = task
+                 # CRITICAL FIX: Wrap task creation in try/finally to ensure cleanup
+                 try:
+                     task = create_tracked_task(background_windows_art_upgrade())
+                     _running_art_upgrade_tasks[current_track_id] = task
+                 except Exception as e:
+                     # If task creation fails, ensure cleanup happens
+                     _running_art_upgrade_tasks.pop(current_track_id, None)
+                     logger.debug(f"Failed to create Windows art upgrade task: {e}")
+                     raise
 
                  # FIX: Wait for DB to avoid flicker
                  try:
@@ -1582,8 +1611,15 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             
                             # Start background task (non-blocking) and track it
                             # Use tracked task to prevent garbage collection issues
-                            task = create_tracked_task(background_upgrade_art())
-                            _running_art_upgrade_tasks[captured_track_id] = task
+                            # CRITICAL FIX: Wrap task creation in try/finally to ensure cleanup
+                            try:
+                                task = create_tracked_task(background_upgrade_art())
+                                _running_art_upgrade_tasks[captured_track_id] = task
+                            except Exception as e:
+                                # If task creation fails, ensure cleanup happens
+                                _running_art_upgrade_tasks.pop(captured_track_id, None)
+                                logger.debug(f"Failed to create background art upgrade task: {e}")
+                                raise
                     
             except Exception as e:
                 # FIX: Log only once per track to prevent spam (but still catch errors)
@@ -1623,7 +1659,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     # This returns metadata immediately without waiting for the image
                     # Uses tracked task to prevent silent failures
                     # Passes captured_track_id for race condition validation
-                    create_tracked_task(_download_spotify_art_background(album_art_url, captured_track_id))
+                    # CRITICAL FIX: Wrap in try/finally to ensure cleanup even if task creation fails
+                    try:
+                        create_tracked_task(_download_spotify_art_background(album_art_url, captured_track_id))
+                    except Exception as e:
+                        # If task creation fails, ensure cleanup happens
+                        _spotify_download_tracker.discard(album_art_url)
+                        logger.debug(f"Failed to create download task: {e}")
+                        raise
                     
                     # Use cached colors if available temporarily, or default
                     if hasattr(_get_current_song_meta_data_spotify, '_last_spotify_colors'):
@@ -1945,8 +1988,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     _artist_download_tracker.add(artist)
     
     try:
-        # Use existing semaphore to prevent flooding
-        async with _art_download_semaphore:
+        # Use dedicated semaphore for artist images to prevent deadlock with album art downloads
+        async with _artist_download_semaphore:
             try:
                 folder = get_album_db_folder(artist, None) # Artist-only folder
                 folder.mkdir(parents=True, exist_ok=True)
