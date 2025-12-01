@@ -574,32 +574,43 @@ async def set_background_style():
     
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
-        
-    # Load existing metadata or create new if missing (though it should exist if art is there)
-    db_result = load_album_art_from_db(artist, album)
     
-    if db_result:
-        db_metadata = db_result["metadata"]
-    else:
-        # If no DB entry exists yet, we can't save preference easily without creating the structure
-        # For now, return error if no art DB exists
-        return jsonify({"error": "No album art database entry found. Please wait for art to download."}), 404
-        
-    # Update style (or remove if 'none')
-    if style == 'none':
-        # Remove the background_style preference
-        if "background_style" in db_metadata:
-            del db_metadata["background_style"]
-    else:
-        db_metadata["background_style"] = style
-    db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+    # Use lock to prevent race condition with background art download task
+    # This ensures that if a background task is updating metadata, we don't overwrite each other
+    from system_utils import _art_update_lock
     
-    # Save
-    folder = get_album_db_folder(artist, album)
-    if save_album_db_metadata(folder, db_metadata):
-        return jsonify({"status": "success", "style": style, "message": f"Saved {style} preference"})
-    else:
-        return jsonify({"error": "Failed to save preference"}), 500
+    async with _art_update_lock:
+        # Load existing metadata or create new if missing (though it should exist if art is there)
+        db_result = load_album_art_from_db(artist, album)
+        
+        if db_result:
+            db_metadata = db_result["metadata"]
+        else:
+            # If no DB entry exists yet, we can't save preference easily without creating the structure
+            # For now, return error if no art DB exists
+            return jsonify({"error": "No album art database entry found. Please wait for art to download."}), 404
+            
+        # Update style (or remove if 'none')
+        if style == 'none':
+            # Explicitly set to None to signal deletion (save_album_db_metadata will filter this out)
+            # This prevents the save function from restoring it from existing metadata
+            db_metadata["background_style"] = None
+            logger.info(f"Cleared background_style preference for {artist} - {album}")
+        else:
+            db_metadata["background_style"] = style
+            logger.info(f"Set background_style to '{style}' for {artist} - {album}")
+        db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+        
+        # Save
+        folder = get_album_db_folder(artist, album)
+        if save_album_db_metadata(folder, db_metadata):
+            # CRITICAL FIX: Invalidate metadata cache to force immediate reload of background_style
+            # This ensures the "Auto" reset takes effect immediately in the UI
+            get_current_song_meta_data._last_check_time = 0
+            
+            return jsonify({"status": "success", "style": style, "message": f"Saved {style} preference"})
+        else:
+            return jsonify({"error": "Failed to save preference"}), 500
 
 @app.route("/api/album-art/image/<folder_name>/<filename>", methods=['GET'])
 async def serve_album_art_image(folder_name: str, filename: str):

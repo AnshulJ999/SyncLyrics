@@ -592,9 +592,16 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
                 pass
         
         # Preserve unknown keys from existing metadata (except schema_version which we update)
+        # Also skip keys that are explicitly set to None (indicating intentional deletion)
         for key, value in existing_metadata.items():
             if key not in metadata and key != 'schema_version':
                 metadata[key] = value
+        
+        # Remove keys that are explicitly set to None (indicating intentional deletion)
+        # This allows callers to delete keys by setting them to None
+        keys_to_remove = [key for key, value in metadata.items() if value is None and key != 'schema_version']
+        for key in keys_to_remove:
+            del metadata[key]
         
         # Add schema version (current version is 1)
         # This allows future code to handle format changes gracefully
@@ -906,16 +913,29 @@ async def ensure_album_art_db(
                 "providers": providers_data
             }
             
-            # Preserve background_style if it exists in existing metadata
-            # This prevents the user's saved preference (Sharp/Soft/Blur) from being lost
-            # when the background task updates the metadata (e.g., adding new providers or self-healing)
-            if existing_metadata and "background_style" in existing_metadata:
-                metadata["background_style"] = existing_metadata["background_style"]
-            
             # Save metadata
-            # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
-            # This prevents UI stutters if disk is busy or antivirus is scanning
-            if await loop.run_in_executor(None, save_album_db_metadata, folder, metadata):
+            # Use lock to ensure atomic update of metadata and prevent race conditions
+            # This ensures we don't overwrite changes made by the API (e.g., background_style) while we were downloading images
+            async with _art_update_lock:
+                # CRITICAL: Re-read metadata inside lock to get latest state (e.g. background_style changes)
+                # This prevents overwriting changes made by the API while we were downloading images
+                latest_db = load_album_art_from_db(artist, album, title)
+                latest_metadata = latest_db["metadata"] if latest_db else existing_metadata
+                
+                # Preserve background_style if it exists in LATEST metadata (not stale existing_metadata)
+                # This prevents the user's saved preference (Sharp/Soft/Blur) from being lost
+                # when the background task updates the metadata (e.g., adding new providers or self-healing)
+                # BUT also respects if the user cleared it (Auto) while we were downloading
+                # Only preserve if it's not None (None indicates intentional deletion)
+                if latest_metadata and "background_style" in latest_metadata and latest_metadata["background_style"] is not None:
+                    metadata["background_style"] = latest_metadata["background_style"]
+                
+                # OPTIMIZATION: Run file I/O in executor to avoid blocking event loop (Fix #4)
+                # This prevents UI stutters if disk is busy or antivirus is scanning
+                save_success = await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+            
+            # Handle save result outside the lock
+            if save_success:
                 logger.info(f"Saved album art database for {artist} - {album or title} with {len(providers_data)} providers")
                 
                 # Return the preferred provider info for immediate cache update
