@@ -1682,6 +1682,11 @@ function applyBackgroundStyle(style) {
  * @param {string} source - 'artist' (for Visual Mode) or 'dashboard' (for Idle Mode)
  */
 function startSlideshow(source = 'artist') {
+    // DISABLE SLIDESHOW (User Request: Dec 1, 2025)
+    // Completely disabled for now as it was "utterly broken". 
+    // Comment out this return to re-enable.
+    return;
+
     if (slideshowInterval) {
         clearInterval(slideshowInterval);
     }

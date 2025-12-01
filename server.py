@@ -797,14 +797,26 @@ async def toggle_playback():
     
     # We need to know if playing or paused to toggle
     track = await client.get_current_track()
-    if not track: return jsonify({"error": "No active session"}), 404
+    # if not track: return jsonify({"error": "No active session"}), 404
     
-    if track.get('is_playing'):
+    # Logic Update (Dec 1, 2025):
+    # If track is None (inactive session), we should try to RESUME instead of erroring.
+    # Spotify clears the active session after a few minutes of pause.
+    is_playing = track.get('is_playing') if track else False
+    
+    if is_playing:
         await client.pause_playback()
         msg = "Paused"
     else:
-        await client.resume_playback()
-        msg = "Resumed"
+        # Try to resume. This works for both "Paused" state and "Inactive/No Session" state.
+        success = await client.resume_playback()
+        if success:
+            msg = "Resumed"
+        else:
+            # If resume failed and we really had no track info, then we can't do anything
+            if not track:
+                return jsonify({"error": "No active session"}), 404
+            msg = "Resume command sent (but might have failed)"
     
     return jsonify({"status": "success", "message": msg})
 
