@@ -2119,14 +2119,20 @@ async function fetchRandomSlideshowImages() {
 async function updateLoop() {
     let lastTrackId = null;
     let isIdleState = false; // Track idle state to prevent repeated fetches
+    
+    // Adaptive polling variables
+    let currentPollInterval = updateInterval; // Start with fast polling (100ms)
+    let idleStartTime = null; // Track when we entered idle state
+    const IDLE_THRESHOLD = 20000; // 20 seconds before switching to slow polling
+    const IDLE_POLL_INTERVAL = 1000; // 1 seconds when in slow polling mode
 
     while (true) {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
 
-        // Ensure minimum time between checks
-        if (timeSinceLastCheck < updateInterval) {
-            await sleep(updateInterval - timeSinceLastCheck);
+        // Ensure minimum time between checks (use currentPollInterval instead of fixed updateInterval)
+        if (timeSinceLastCheck < currentPollInterval) {
+            await sleep(currentPollInterval - timeSinceLastCheck);
             continue;
         }
 
@@ -2135,7 +2141,13 @@ async function updateLoop() {
 
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
+            // Music is playing - switch to fast polling immediately
+            if (isIdleState) {
+                console.log("Music detected, switching to fast polling (100ms)");
+            }
             isIdleState = false; // Reset idle state
+            idleStartTime = null; // Clear idle timer
+            currentPollInterval = updateInterval; // Fast polling for active playback
 
             // ROBUST TRACK ID GENERATION
             // 1. Prefer track_id if available (Spotify provides this)
@@ -2273,12 +2285,36 @@ async function updateLoop() {
                 }, currentTrackId);
             }
         } else {
-            // No track playing - handle global slideshow
+            // No track playing - handle adaptive polling and global slideshow
+            const now = Date.now();
+            
+            // Track when we first entered idle state
+            if (!isIdleState) {
+                isIdleState = true;
+                idleStartTime = now;
+                console.log("Player is idle, starting idle timer...");
+            }
+            
+            // Calculate how long we've been idle
+            const idleDuration = idleStartTime ? (now - idleStartTime) : 0;
+            
+            // Adaptive polling: Switch to slow polling after IDLE_THRESHOLD
+            if (idleDuration >= IDLE_THRESHOLD) {
+                // We've been idle for 60+ seconds - use slow polling (2 seconds)
+                if (currentPollInterval !== IDLE_POLL_INTERVAL) {
+                    console.log(`Idle for ${Math.round(idleDuration / 1000)}s, switching to slow polling (2s)`);
+                    currentPollInterval = IDLE_POLL_INTERVAL;
+                }
+            } else {
+                // Still in grace period - keep fast polling for quick resume detection
+                currentPollInterval = updateInterval;
+            }
+            
+            // Handle global slideshow
             // Disable slideshow in minimal mode
             if (visualModeConfig.slideshowEnabled && !displayConfig.minimal) {
-                // If we just entered idle state, fetch fresh random images
-                if (!isIdleState) {
-                    isIdleState = true;
+                // If we just entered idle state (within first poll cycle), fetch fresh random images
+                if (idleDuration < updateInterval * 2) {
                     console.log("Player is idle, initializing global dashboard slideshow...");
 
                     // Fetch random images from the entire DB
@@ -2302,7 +2338,7 @@ async function updateLoop() {
         }
 
         lastCheckTime = Date.now();
-        await sleep(updateInterval);
+        await sleep(currentPollInterval); // Use adaptive polling interval
     }
 }
 
