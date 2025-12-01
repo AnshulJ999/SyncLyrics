@@ -681,11 +681,28 @@ function updateAlbumArt(trackInfo) {
 
     // Update Spotify link on album art (for opening in Spotify app/web)
     if (albumArtLink) {
+        // NEW APPROACH: Use generic Spotify URI to open app without restarting playback
+        // This brings the app to foreground, preserving current playback position
+        // The generic 'spotify:' link opens the app without specifying a track,
+        // which means it won't reset playback to the beginning
+        const genericSpotifyUrl = 'spotify:';
+        
+        albumArtLink.href = genericSpotifyUrl;
+        albumArtLink.style.cursor = 'pointer';
+        albumArtLink.title = "Open Spotify App";
+        
+        // Clear previous handlers
+        albumArtLink.onclick = null;
+        
+        // COMMENTED OUT: Previous implementation that opened specific track (resets playback position)
+        // This is kept for reference in case we want to add an option to open specific track later
+        /*
         // Use Spotify deep link format (spotify:track:xxxxx) for direct app opening
         // This works on both Android and Desktop if Spotify app is installed
         // Falls back to web URL if no track ID is available
         if (trackInfo.id) {
             // Deep link format: opens Spotify app directly on Android and Desktop
+            // NOTE: This resets playback position to zero (Spotify's default behavior)
             albumArtLink.href = `spotify:track:${trackInfo.id}`;
             albumArtLink.style.cursor = 'pointer';
             albumArtLink.title = "Open in Spotify";
@@ -709,6 +726,7 @@ function updateAlbumArt(trackInfo) {
                 return false;
             };
         }
+        */
     }
 
     if (!albumArt || !trackHeader) return;
