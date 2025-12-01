@@ -74,6 +74,12 @@ _artist_download_tracker = set()
 # Global lock to prevent race conditions during metadata updates
 _meta_data_lock = asyncio.Lock()
 
+# OPTIMIZATION: Cache for album art metadata.json files
+# Key: file_path (str), Value: (mtime, metadata_dict)
+# Uses file modification time to automatically invalidate when file changes
+_album_art_metadata_cache = {}
+_MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -647,6 +653,13 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
                     if metadata_path.exists():
                         os.remove(metadata_path)
                     os.replace(temp_path, metadata_path)
+                    
+                    # OPTIMIZATION: Invalidate cache after successful save
+                    # This ensures cache is cleared when file changes
+                    metadata_path_str = str(metadata_path)
+                    if metadata_path_str in _album_art_metadata_cache:
+                        del _album_art_metadata_cache[metadata_path_str]
+                    
                     return True
                 except OSError as e:
                     if attempt < 2:
@@ -1022,6 +1035,9 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
     Load album art from database if available.
     Returns the preferred image path if found.
     
+    OPTIMIZED: Uses in-memory cache based on file modification time to prevent
+    constant disk reads during polling. Also limits 'last_accessed' writes to once per hour.
+    
     Args:
         artist: Artist name
         album: Album name (optional)
@@ -1043,9 +1059,33 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
         if not metadata_path.exists():
             return None
         
-        # Load metadata
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
+        # OPTIMIZATION: Check cache first using file modification time
+        # This is much faster than reading/parsing the JSON every time
+        metadata_path_str = str(metadata_path)
+        current_mtime = metadata_path.stat().st_mtime
+        
+        metadata = None
+        if metadata_path_str in _album_art_metadata_cache:
+            cached_mtime, cached_metadata = _album_art_metadata_cache[metadata_path_str]
+            if cached_mtime == current_mtime:
+                # Cache hit - file hasn't changed, use cached data
+                metadata = cached_metadata.copy()  # Copy to avoid modifying cache directly
+            else:
+                # File changed, remove stale cache entry
+                del _album_art_metadata_cache[metadata_path_str]
+        
+        # If not in cache or file changed, load from disk
+        if metadata is None:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            # Update cache (limit size to prevent memory leaks)
+            if len(_album_art_metadata_cache) >= _MAX_METADATA_CACHE_SIZE:
+                # Remove oldest entry (simple FIFO - remove first key)
+                oldest_key = next(iter(_album_art_metadata_cache))
+                del _album_art_metadata_cache[oldest_key]
+            
+            _album_art_metadata_cache[metadata_path_str] = (current_mtime, metadata.copy())
         
         # Get preferred provider
         preferred_provider = metadata.get("preferred_provider")
@@ -1100,9 +1140,33 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
                 logger.debug(f"No provider files found for {artist} - {album}, downloads may be in progress")
                 return None
         
-        # Update last_accessed
-        metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
-        save_album_db_metadata(folder, metadata)
+        # OPTIMIZATION: Only update last_accessed if it's been more than 1 hour
+        # This prevents constant disk writes on every poll cycle (every 100ms)
+        should_save = True
+        last_accessed_str = metadata.get("last_accessed")
+        if last_accessed_str:
+            try:
+                # Parse the timestamp (handle Z suffix for UTC)
+                if last_accessed_str.endswith('Z'):
+                    last_accessed_str = last_accessed_str[:-1] + '+00:00'
+                last_accessed = datetime.fromisoformat(last_accessed_str)
+                # Convert to naive datetime for comparison with datetime.utcnow()
+                if last_accessed.tzinfo is not None:
+                    last_accessed = last_accessed.replace(tzinfo=None)
+                # If less than 1 hour has passed, don't save
+                time_diff = (datetime.utcnow() - last_accessed).total_seconds()
+                if time_diff < 3600:  # 1 hour in seconds
+                    should_save = False
+            except (ValueError, AttributeError):
+                # Parse error or missing datetime, save to fix format
+                pass
+        
+        if should_save:
+            metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            if save_album_db_metadata(folder, metadata):
+                # Invalidate cache after save (since file mtime changed)
+                if metadata_path_str in _album_art_metadata_cache:
+                    del _album_art_metadata_cache[metadata_path_str]
         
         # Get saved background style (NEW for Phase 2)
         background_style = metadata.get("background_style")
