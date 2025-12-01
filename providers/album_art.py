@@ -683,6 +683,9 @@ class AlbumArtProvider:
         Get Spotify album art URL and resolution.
         Spotify typically provides 640x640px images.
         
+        FIX: Always return the original URL to ensure reliable downloads.
+        Spotify enhancement is known to not work (returns 404), so we skip it entirely.
+        
         Args:
             spotify_url: Spotify album art URL
             
@@ -692,13 +695,17 @@ class AlbumArtProvider:
         if not spotify_url:
             return None
         
-        # Try to enhance the URL to get higher resolution
-        enhanced_url = self._try_enhance_spotify_url(spotify_url)
-        if enhanced_url:
-            # Resolution is unknown until download, but assume 640x640 minimum
-            return (enhanced_url, 640)
+                # Try to enhance the URL to get higher resolution
+        # enhanced_url = self._try_enhance_spotify_url(spotify_url)
+        # if enhanced_url:
+        #     # Resolution is unknown until download, but assume 640x640 minimum
+        #     return (enhanced_url, 640)
         
         # Return original URL with estimated resolution
+
+        # FIX: Always return original URL - Spotify enhancement doesn't work
+        # Enhanced URLs return 404, causing downloads to fail and no art to be saved
+        # By returning the original URL, we guarantee a working 640x640 image
         return (spotify_url, 640)
     
     async def get_all_art_options(
