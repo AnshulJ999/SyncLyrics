@@ -344,6 +344,16 @@ function setLyricsInDom(lyrics) {
     updateLyricElement(document.getElementById('next-2'), lyrics[4]);
     updateLyricElement(document.getElementById('next-3'), lyrics[5]);
 
+    // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
+    // This fixes cases where the class might get stuck (e.g. race conditions on track change)
+    if (!visualModeActive) {
+        const lyricsContainer = document.getElementById('lyrics');
+        if (lyricsContainer && lyricsContainer.classList.contains('visual-mode-hidden')) {
+            console.log('[Visual Mode] Found hidden class while inactive - removing (Self-healing)');
+            lyricsContainer.classList.remove('visual-mode-hidden');
+        }
+    }
+
     setTimeout(() => {
         updateInProgress = false;
     }, 800);
@@ -2051,7 +2061,11 @@ async function updateLoop() {
             if (trackChanged || (currentTrackId && !lastTrackId)) {
                 // Track changed - fetch artist images and reset visual mode
                 lastTrackId = currentTrackId;
-                visualModeActive = false; // Reset visual mode state
+
+                // FIX: Properly exit visual mode on track change
+                // Use the reset function to ensure CSS classes and timers are cleared
+                resetVisualModeState();
+
                 manualVisualModeOverride = false; // Reset manual override on track change
                 manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
                 

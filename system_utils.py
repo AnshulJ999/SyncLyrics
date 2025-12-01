@@ -57,6 +57,11 @@ _artist_download_semaphore = asyncio.Semaphore(2)  # For artist image downloads 
 _art_update_lock = asyncio.Lock()  # For async operations
 _art_update_thread_lock = threading.Lock()  # For sync operations in thread executors
 
+# Per-folder locks for metadata.json file operations (prevents Windows file locking errors)
+# Each album folder gets its own lock, allowing parallel writes to different albums
+_metadata_file_locks = {}  # Key: folder path (str), Value: threading.Lock
+_metadata_locks_lock = threading.Lock()  # Protects the lock dictionary itself
+
 # Global set to track background tasks and prevent garbage collection (Fix: Task Tracking)
 _background_tasks = set()
 
@@ -565,6 +570,10 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
     Save album art database metadata JSON file atomically.
     Preserves unknown keys from existing metadata and includes schema version.
     
+    Uses per-folder threading locks to prevent Windows file locking errors when
+    multiple operations try to access the same metadata.json file concurrently.
+    Each album folder has its own lock, allowing parallel writes to different albums.
+    
     Args:
         folder: Path to the album folder
         metadata: Dictionary containing metadata to save
@@ -572,68 +581,88 @@ def save_album_db_metadata(folder: Path, metadata: Dict[str, Any]) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    # Get or create a lock for this specific folder
+    # This allows parallel writes to different albums while serializing writes to the same album
     try:
-        metadata_path = folder / "metadata.json"
-        # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
-        # This prevents race conditions when multiple tracks from the same album are processed simultaneously
-        temp_filename = f"metadata_{uuid.uuid4().hex}.json.tmp"
-        temp_path = folder / temp_filename
-        
-        # Ensure folder exists
-        folder.mkdir(parents=True, exist_ok=True)
-        
-        # Load existing metadata to preserve unknown keys (for backward compatibility)
-        existing_metadata = {}
-        if metadata_path.exists():
-            try:
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    existing_metadata = json.load(f)
-            except Exception:
-                # If read fails, start fresh
-                pass
-        
-        # Preserve unknown keys from existing metadata (except schema_version which we update)
-        # Also skip keys that are explicitly set to None (indicating intentional deletion)
-        for key, value in existing_metadata.items():
-            if key not in metadata and key != 'schema_version':
-                metadata[key] = value
-        
-        # Remove keys that are explicitly set to None (indicating intentional deletion)
-        # This allows callers to delete keys by setting them to None
-        keys_to_remove = [key for key, value in metadata.items() if value is None and key != 'schema_version']
-        for key in keys_to_remove:
-            del metadata[key]
-        
-        # Add schema version (current version is 1)
-        # This allows future code to handle format changes gracefully
-        metadata['schema_version'] = 1
-        
-        # Write to temp file first
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        # Atomic replace with retry for Windows file locking
-        for attempt in range(3):
-            try:
-                if metadata_path.exists():
-                    os.remove(metadata_path)
-                os.replace(temp_path, metadata_path)
-                return True
-            except OSError as e:
-                if attempt < 2:
-                    # Wait briefly before retry (0.1s, 0.2s)
-                    time.sleep(0.1 * (attempt + 1))
-                else:
-                    logger.error(f"Failed to atomically replace metadata.json after 3 attempts: {e}")
-                    # Clean up temp file
-                    try:
-                        os.remove(temp_path)
-                    except:
-                        pass
-                    return False
-    except Exception as e:
-        logger.error(f"Failed to save album DB metadata: {e}")
+        folder_key = str(folder.resolve())  # Use resolved path to handle symlinks/relative paths
+    except (OSError, ValueError) as e:
+        # Handle edge cases where path resolution fails (e.g., invalid characters, permissions)
+        logger.error(f"Failed to resolve folder path {folder}: {e}")
         return False
+    
+    with _metadata_locks_lock:
+        if folder_key not in _metadata_file_locks:
+            _metadata_file_locks[folder_key] = threading.Lock()
+        file_lock = _metadata_file_locks[folder_key]
+    
+    # Protect all file I/O operations with the folder-specific lock
+    # This prevents Windows file locking errors (WinError 32) when multiple threads
+    # try to read/write the same metadata.json file simultaneously
+    with file_lock:
+        try:
+            metadata_path = folder / "metadata.json"
+            # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+            # This prevents race conditions when multiple tracks from the same album are processed simultaneously
+            temp_filename = f"metadata_{uuid.uuid4().hex}.json.tmp"
+            temp_path = folder / temp_filename
+            
+            # Ensure folder exists
+            folder.mkdir(parents=True, exist_ok=True)
+            
+            # Load existing metadata to preserve unknown keys (for backward compatibility)
+            existing_metadata = {}
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        existing_metadata = json.load(f)
+                except Exception:
+                    # If read fails, start fresh
+                    pass
+            
+            # Preserve unknown keys from existing metadata (except schema_version which we update)
+            # Also skip keys that are explicitly set to None (indicating intentional deletion)
+            for key, value in existing_metadata.items():
+                if key not in metadata and key != 'schema_version':
+                    metadata[key] = value
+            
+            # Remove keys that are explicitly set to None (indicating intentional deletion)
+            # This allows callers to delete keys by setting them to None
+            keys_to_remove = [key for key, value in metadata.items() if value is None and key != 'schema_version']
+            for key in keys_to_remove:
+                del metadata[key]
+            
+            # Add schema version (current version is 1)
+            # This allows future code to handle format changes gracefully
+            metadata['schema_version'] = 1
+            
+            # Write to temp file first
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Atomic replace with retry for Windows file locking
+            # Note: The lock above should prevent most conflicts, but we keep retries
+            # as a safety measure for edge cases (e.g., external processes, antivirus)
+            for attempt in range(3):
+                try:
+                    if metadata_path.exists():
+                        os.remove(metadata_path)
+                    os.replace(temp_path, metadata_path)
+                    return True
+                except OSError as e:
+                    if attempt < 2:
+                        # Wait briefly before retry (0.1s, 0.2s)
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        logger.error(f"Failed to atomically replace metadata.json after 3 attempts: {e}")
+                        # Clean up temp file
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
+                        return False
+        except Exception as e:
+            logger.error(f"Failed to save album DB metadata: {e}")
+            return False
 
 def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     """
