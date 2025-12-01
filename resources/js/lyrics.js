@@ -225,6 +225,16 @@ function updateBackground() {
     const bgLayer = document.getElementById('background-layer');
     const bgOverlay = document.getElementById('background-overlay');
 
+    // In minimal mode, always keep the gradient background and don't show visual effects
+    if (displayConfig.minimal) {
+        // Hide background layers (they're already hidden by CSS, but ensure they're not visible)
+        bgLayer.classList.remove('visible');
+        bgOverlay.classList.remove('visible');
+        // Remove any inline background style to let CSS gradient take over
+        document.body.style.background = '';
+        return; // Exit early - minimal mode doesn't use visual backgrounds
+    }
+
     // Check for album art backgrounds in priority order: Sharp > Soft > Blur
     if (displayConfig.sharpAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
         // Fix: Encode URI to handle spaces/symbols in local paths

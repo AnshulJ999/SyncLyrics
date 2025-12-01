@@ -330,9 +330,10 @@ body[data-minimal="true"] #lyrics {
 
 /* ========== HOME ASSISTANT SPECIFIC STYLES ========== */
 
-/* Minimal Mode overrides: Transparent background + Hidden UI */
+/* Minimal Mode overrides: Restore colored gradient background + Hidden UI */
 body[data-minimal="true"] {
-    background: transparent;
+    /* Restore the default gradient background (same as normal mode) */
+    background: linear-gradient(135deg, #1e2030 0%, #2f354d 100%);
 }
 
 body[data-minimal="true"] #lyrics {
