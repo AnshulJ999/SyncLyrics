@@ -2152,7 +2152,12 @@ async function updateLoop() {
             } else {
                 // Fallback if no data (e.g. API error)
                 // Pass a dummy object saying no lyrics
-                checkForVisualMode({ has_lyrics: false, is_instrumental: isInstrumental }, currentTrackId);
+                // Include manual flag from trackInfo for proper visual mode timing
+                checkForVisualMode({ 
+                    has_lyrics: false, 
+                    is_instrumental: isInstrumental,
+                    is_instrumental_manual: trackInfo.is_instrumental_manual === true
+                }, currentTrackId);
             }
         } else {
             // No track playing - handle global slideshow
