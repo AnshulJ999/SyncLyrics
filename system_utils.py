@@ -42,6 +42,7 @@ STATE_LOG_INTERVAL = 300  # Log app state every 300 seconds (5 minutes)
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
 _metadata_fetch_counters = {'spotify': 0, 'windows_media': 0}
 _last_windows_track_id = None  # Track ID to avoid re-reading thumbnail
+_last_windows_app_id = None  # Track last app_id to avoid log spam
 # Track running background art upgrade tasks to prevent duplicates
 _running_art_upgrade_tasks = {}  # Key: track_id, Value: asyncio.Task
 # NEW: Track which songs we've already checked/populated the DB for to prevent infinite loops
@@ -1226,19 +1227,36 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         
         # --- APP BLOCKLIST CHECK ---
         # Get the App ID (e.g., "chrome.exe" or "Microsoft.MicrosoftEdge...")
+        global _last_windows_app_id
         try:
             from settings import settings
             app_id = current_session.source_app_user_model_id.lower()
             blocklist = settings.get("system.windows.app_blocklist", [])
             
+            # Track if this is a new app_id to avoid log spam
+            is_new_app_id = (app_id != _last_windows_app_id)
+            
+            # Only log when app_id changes to avoid log spam
+            if is_new_app_id:
+                logger.info(f"Windows Media detected from app_id: '{app_id}' (blocklist: {blocklist})")
+                _last_windows_app_id = app_id
+            
             # Check if any blocklisted string is in the app_id
-            for blocked_app in blocklist:
-                if blocked_app.lower() in app_id:
-                    logger.debug(f"Ignoring media from blocked app: {app_id}")
-                    return None
+            if blocklist:
+                for blocked_app in blocklist:
+                    blocked_lower = blocked_app.lower()
+                    if blocked_lower in app_id:
+                        # Only log blocking when app_id first changes
+                        if is_new_app_id:
+                            logger.info(f"Ignoring media from blocked app: '{app_id}' (matched blocklist entry: '{blocked_app}')")
+                        return None
+                # If we get here, no match was found (detection already logged above if new app_id)
+            else:
+                # Blocklist is empty (detection already logged above if new app_id)
+                pass
         except Exception as e:
-            # If we can't read the ID, assume it's safe to proceed
-            pass
+            # Log the error instead of silently swallowing it
+            logger.warning(f"Error checking app blocklist: {e} (app_id may be unavailable, allowing media to proceed)")
         # ---------------------------
             
         playback_info = current_session.get_playback_info()
