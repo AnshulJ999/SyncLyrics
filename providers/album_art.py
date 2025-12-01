@@ -436,32 +436,38 @@ class AlbumArtProvider:
             # Last.fm API returns URLs with size segments like /300x300/, /174s/, etc.
             # To get the original full-size image, we need to REMOVE the size segment entirely
             # Example: .../i/u/300x300/hash.jpg -> .../i/u/hash.jpg (original full-size, often 1000x1000+)
+            backup_url = None  # Store original URL as backup if modified URL fails
             if largest_url:
+                # Save original URL before modification (only if >= 1000px, since Spotify already gives 640px)
+                if largest_size >= 1000:
+                    backup_url = largest_url
+                
                 import re
                 # Remove size segments like /300x300/, /174s/, /64s/, /34s/ from the URL
                 # Pattern matches: /digitsxdigits/ or /digits+s/ followed by /
                 # More precise pattern to avoid breaking the URL structure
-                original_url = re.sub(r'/\d+x?\d*[s]/', '/', largest_url)
+                modified_url = re.sub(r'/\d+x?\d*[s]/', '/', largest_url)
                 # Handle the case where size segment is at the end (with trailing slash)
-                original_url = re.sub(r'/\d+x\d+/', '/', original_url)
+                modified_url = re.sub(r'/\d+x\d+/', '/', modified_url)
                 # Fix any double slashes that might result (but preserve ://)
-                original_url = re.sub(r'(?<!:)/+', '/', original_url)
+                modified_url = re.sub(r'(?<!:)/+', '/', modified_url)
                 
-                if original_url != largest_url:
+                if modified_url != largest_url:
                     # CHANGED: Downgrade to DEBUG
                     logger.debug(f"Last.fm: Removing size segment from URL to get original full-size image")
                     logger.debug(f"Last.fm: Original URL: {largest_url[:80]}...")
-                    logger.debug(f"Last.fm: Modified URL: {original_url[:80]}...")
-                    largest_url = original_url
+                    logger.debug(f"Last.fm: Modified URL: {modified_url[:80]}...")
+                    largest_url = modified_url
                     # We don't know the actual size until we download it, but assume it's >= 1000
                     # The actual resolution will be verified when the image is downloaded
                     largest_size = 0  # Changed from 1000 to 0 to force verification
             
             # NEW: Return URL even if size is unknown (0)
             # The actual resolution will be checked when image is downloaded and saved
+            # Also return backup URL if available (original URL >= 1000px) for fallback if modified URL fails
             if largest_url:
                 logger.info(f"Last.fm: Found album art for {artist} - {title} (resolution will be verified on download)")
-                return (largest_url, 0)  # Return with 0 resolution, will be verified later
+                return (largest_url, 0, backup_url)  # Return with 0 resolution and optional backup URL
                 
         except requests.exceptions.Timeout:
             logger.warning(f"Last.fm API timeout ({self.timeout}s) for {artist} - {title}")
@@ -660,7 +666,11 @@ class AlbumArtProvider:
                     timeout=3.0
                 )
                 if lastfm_result:
-                    url, resolution = lastfm_result
+                    # Handle 3-tuple (url, resolution, backup_url) or 2-tuple (url, resolution)
+                    if len(lastfm_result) == 3:
+                        url, resolution, _ = lastfm_result  # Ignore backup_url in this context
+                    else:
+                        url, resolution = lastfm_result
                     resolution_info = f"{resolution}x{resolution} (Last.fm)"
                     logger.info(f"Using Last.fm album art ({resolution}x{resolution}) for {artist} - {title}")
                     return (url, resolution_info)
@@ -784,7 +794,12 @@ class AlbumArtProvider:
                     continue
                 
                 if result:
-                    url, resolution = result
+                    # Handle Last.fm which may return (url, resolution, backup_url) tuple
+                    if len(result) == 3:
+                        url, resolution, backup_url = result
+                    else:
+                        url, resolution = result
+                        backup_url = None
                     
                     # Handle unknown resolution (0 means unknown, will be verified on download)
                     if resolution == 0:
@@ -805,6 +820,18 @@ class AlbumArtProvider:
                     })
                     
                     logger.debug(f"{provider_name}: Found album art ({resolution_str}) for {artist} - {title}")
+                    
+                    # Add backup URL as separate option if available (for Last.fm fallback when modified URL fails)
+                    if backup_url:
+                        options.append({
+                            "provider": f"{provider_name} Backup",
+                            "url": backup_url,
+                            "resolution": "1000x1000+ (original)",
+                            "width": 1000,
+                            "height": 1000,
+                            "filename": f"{provider_name}_backup.jpg"  # Separate filename to avoid conflicts
+                        })
+                        logger.debug(f"{provider_name} Backup: Added fallback URL for {artist} - {title}")
         
         except asyncio.TimeoutError:
             logger.debug(f"get_all_art_options timed out after {self.overall_timeout}s")
