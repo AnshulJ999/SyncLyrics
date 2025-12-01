@@ -2001,6 +2001,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         change_reason.append(f"track_id ({last_track_id} -> {cached_track_id})")
                     logger.debug(f"Song changed in cache ({', '.join(change_reason)}), invalidating cache to fetch fresh data")
                     get_current_song_meta_data._last_check_time = 0  # Force refresh by resetting check time
+            else:
+                # If last result was None (Idle/Paused) and we are within interval,
+                # return None immediately. This prevents aggressive polling when nothing is playing.
+                return None
         
         # Update check time only when we are committed to fetching (inside the lock)
         get_current_song_meta_data._last_check_time = current_time
