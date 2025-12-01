@@ -966,11 +966,117 @@ async function showProviderModal() {
         // This ensures desktop view (which shows both) is populated
         loadAlbumArtTab(); // Remove await so it runs in parallel with UI showing
 
+        // Update instrumental button state
+        updateInstrumentalButtonState();
+
         // Show modal (modal already declared on line 738)
         modal.classList.remove('hidden');
 
     } catch (error) {
         console.error('Error loading providers:', error);
+    }
+}
+
+/**
+ * Updates the instrumental button state based on current track
+ */
+async function updateInstrumentalButtonState() {
+    const btn = document.getElementById('mark-instrumental-btn');
+    if (!btn) return;
+    
+    try {
+        // Get current track info to check manual flag
+        const trackResponse = await fetch('/current-track');
+        const trackData = await trackResponse.json();
+        
+        if (trackData.error) {
+            // No track playing - disable button
+            btn.disabled = true;
+            btn.textContent = '🎵 Instrumental';
+            btn.classList.remove('active');
+            return;
+        }
+        
+        // Check if manually marked as instrumental
+        const isManual = trackData.is_instrumental_manual === true;
+        
+        if (isManual) {
+            btn.textContent = '✓ Marked as Instrumental';
+            btn.classList.add('active');
+        } else {
+            btn.textContent = '🎵 Instrumental';
+            btn.classList.remove('active');
+        }
+        
+        btn.disabled = false;
+    } catch (error) {
+        console.error('Error updating instrumental button state:', error);
+    }
+}
+
+/**
+ * Handles clicking the instrumental button - cycles between Auto and Marked as Instrumental
+ */
+async function toggleInstrumentalMark() {
+    const btn = document.getElementById('mark-instrumental-btn');
+    if (!btn || btn.disabled) return;
+    
+    try {
+        // Get current track info
+        const trackResponse = await fetch('/current-track');
+        const trackData = await trackResponse.json();
+        
+        if (trackData.error || !trackData.artist || !trackData.title) {
+            console.error('No track playing or missing info');
+            return;
+        }
+        
+        // Determine new state (toggle: if currently marked, unmark; if not marked, mark)
+        const currentlyMarked = trackData.is_instrumental_manual === true;
+        const newState = !currentlyMarked;
+        
+        // Call API to mark/unmark
+        const response = await fetch('/api/instrumental/mark', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                is_instrumental: newState
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Update button state
+            if (newState) {
+                btn.textContent = '✓ Marked as Instrumental';
+                btn.classList.add('active');
+            } else {
+                btn.textContent = '🎵 Instrumental';
+                btn.classList.remove('active');
+            }
+            
+            // Force refresh lyrics to apply the change immediately
+            // This will trigger visual mode if marked as instrumental
+            const lyricsResponse = await fetch('/lyrics');
+            const lyricsData = await lyricsResponse.json();
+            
+            // Update lyrics display and check for visual mode
+            if (lyricsData.lyrics && lyricsData.lyrics.length > 0) {
+                setLyricsInDom(lyricsData.lyrics);
+            } else {
+                setLyricsInDom(lyricsData);
+            }
+            
+            // Check for visual mode with updated flags
+            checkForVisualMode(lyricsData, trackData.track_id || `${trackData.artist} - ${trackData.title}`);
+        } else {
+            console.error('Failed to mark instrumental:', result.error);
+        }
+    } catch (error) {
+        console.error('Error toggling instrumental mark:', error);
     }
 }
 
@@ -1335,8 +1441,9 @@ function checkForVisualMode(data, trackId) {
     if (!visualModeConfig.enabled) return;
     
     // Use flags from the backend response
+    // Manual flag takes precedence over automatic detection
     const lyricsAvailable = data && data.has_lyrics;
-    const isInstrumental = data && data.is_instrumental;
+    const isInstrumental = (data && data.is_instrumental_manual === true) || (data && data.is_instrumental);
 
     // Condition to enter visual mode: No lyrics OR Instrumental
     const shouldEnterVisualMode = !lyricsAvailable || isInstrumental;
@@ -1360,7 +1467,7 @@ function checkForVisualMode(data, trackId) {
 
         // Start timer to enter visual mode
         // Fast entry for confirmed instrumental (2s), otherwise configured delay
-        const delayMs = isInstrumental ? 6000 : (visualModeConfig.delaySeconds * 1000);
+        const delayMs = isInstrumental ? 2000 : (visualModeConfig.delaySeconds * 1000);
 
         console.log(`[Visual Mode] Starting timer: ${delayMs}ms for ${trackId}`);
 
@@ -1718,6 +1825,12 @@ function setupProviderUI() {
         deleteBtn.addEventListener('click', deleteCachedLyrics);
     }
 
+    // Mark as Instrumental button
+    const instrumentalBtn = document.getElementById('mark-instrumental-btn');
+    if (instrumentalBtn) {
+        instrumentalBtn.addEventListener('click', toggleInstrumentalMark);
+    }
+
     // Provider selection (event delegation)
     const providerList = document.getElementById('provider-list');
     if (providerList) {
@@ -1906,6 +2019,9 @@ async function updateLoop() {
                 manualVisualModeOverride = false; // Reset manual override on track change
                 manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
                 
+                // Update instrumental button state when track changes
+                updateInstrumentalButtonState();
+                
                 // Clear all timers when track changes
                 if (visualModeTimer) {
                     clearTimeout(visualModeTimer);
@@ -1960,6 +2076,7 @@ async function updateLoop() {
                 const currentStyle = getCurrentBackgroundStyle();
                 let urlStyle = null;
                 
+                // Check for URL parameters first (Priority 1)
                 if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
                     urlStyle = 'sharp';
                 } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
@@ -1985,7 +2102,8 @@ async function updateLoop() {
             const data = await getLyrics();
 
             // Consolidate instrumental flag (prefer trackInfo as it comes from a fresher source or cache)
-            const isInstrumental = trackInfo.is_instrumental || (data && data.is_instrumental);
+            // Manual flag takes precedence over automatic detection
+            const isInstrumental = trackInfo.is_instrumental_manual === true || trackInfo.is_instrumental || (data && data.is_instrumental);
 
             if (data) {
                 // 1. Update DOM

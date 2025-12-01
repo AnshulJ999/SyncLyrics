@@ -126,6 +126,81 @@ def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
 
     return set()
 
+def _is_manually_instrumental(artist: str, title: str) -> bool:
+    """Checks if a song is manually marked as instrumental in the database."""
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+    
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return False
+    
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # Check for manual instrumental flag
+        return data.get("is_instrumental_manual", False) is True
+    except Exception as e:
+        logger.debug(f"Could not check manual instrumental flag ({artist} - {title}): {e}")
+        return False
+
+async def set_manual_instrumental(artist: str, title: str, is_instrumental: bool) -> bool:
+    """
+    Marks or unmarks a song as instrumental manually.
+    Returns True if successful, False otherwise.
+    """
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+    
+    db_path = _get_db_path(artist, title)
+    if not db_path:
+        return False
+    
+    async with _db_lock:
+        try:
+            # Load existing file if it exists
+            data = {
+                "artist": artist,
+                "title": title,
+                "saved_lyrics": {}
+            }
+            
+            if os.path.exists(db_path):
+                try:
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                    # Preserve existing structure
+                    if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                        data = existing
+                    elif "lyrics" in existing:
+                        # Legacy format - migrate
+                        legacy_source = existing.get("source", "Unknown")
+                        legacy_lyrics = existing.get("lyrics", [])
+                        if legacy_lyrics:
+                            data["saved_lyrics"][legacy_source] = legacy_lyrics
+                except Exception as e:
+                    logger.warning(f"Could not load existing DB for instrumental marking: {e}")
+            
+            # Set or remove the manual flag
+            if is_instrumental:
+                data["is_instrumental_manual"] = True
+            else:
+                # Remove the flag if unmarking
+                data.pop("is_instrumental_manual", None)
+            
+            # Save using atomic write pattern
+            dir_path = os.path.dirname(db_path)
+            fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            os.replace(temp_path, db_path)
+            
+            logger.info(f"Marked {artist} - {title} as {'instrumental' if is_instrumental else 'NOT instrumental'} (manual)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to mark instrumental flag: {e}")
+            return False
+
 def _normalized_song_key(artist: str, title: str) -> str:
     """Creates a consistent key for tracking per-song background tasks."""
     return f"{artist.strip().lower()}::{title.strip().lower()}"
@@ -642,6 +717,15 @@ async def _update_song():
             # This ensures we don't set lyrics if the song changed again during fetch
             target_artist = new_song_data["artist"]
             target_title = new_song_data["title"]
+            
+            # Check if song is manually marked as instrumental
+            # If so, skip all lyrics searching and mark as instrumental immediately
+            if _is_manually_instrumental(target_artist, target_title):
+                logger.info(f"Song {target_artist} - {target_title} is manually marked as instrumental, skipping lyrics search")
+                # Set instrumental marker as lyrics (single line with instrumental indicator)
+                current_song_lyrics = [(0, "Instrumental")]
+                current_song_provider = "Instrumental"
+                return  # Skip all provider searches
             
             # 1. Try Local DB First (Zero Latency)
             local_lyrics = _load_from_db(target_artist, target_title)

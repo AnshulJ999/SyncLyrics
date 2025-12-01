@@ -6,7 +6,7 @@ import random  # ADD THIS IMPORT
 from functools import wraps
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
-from lyrics import get_timed_lyrics_previous_and_next, get_current_provider
+from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, set_manual_instrumental
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art
 from state_manager import *
@@ -111,14 +111,26 @@ async def lyrics() -> dict:
     # Determine flags
     is_instrumental = False
     has_lyrics = True
+    is_instrumental_manual = False
+    
+    # Check if song is manually marked as instrumental
+    if metadata:
+        artist = metadata.get("artist", "")
+        title = metadata.get("title", "")
+        if artist and title:
+            is_instrumental_manual = _is_manually_instrumental(artist, title)
+            if is_instrumental_manual:
+                # Manually marked as instrumental - override detection
+                is_instrumental = True
+                has_lyrics = False
     
     if isinstance(lyrics_data, str):
         # Handle error messages or status strings
         msg = lyrics_data
         has_lyrics = False
         
-        # Check for specific status messages
-        if "instrumental" in msg.lower():
+        # Check for specific status messages (only if not manually marked)
+        if not is_instrumental_manual and "instrumental" in msg.lower():
             is_instrumental = True
             
         return {
@@ -127,20 +139,27 @@ async def lyrics() -> dict:
             "colors": colors, 
             "provider": provider,
             "has_lyrics": False,
-            "is_instrumental": is_instrumental
+            "is_instrumental": is_instrumental,
+            "is_instrumental_manual": is_instrumental_manual
         }
     
     # Check if lyrics are actually empty or just [...]
     # (lyrics_data is a tuple of strings)
     if not lyrics_data or all(not line for line in lyrics_data):
          has_lyrics = False
+         # Check for instrumental text if not manually marked
+         if not is_instrumental_manual and lyrics_data and len(lyrics_data) == 1:
+             text = lyrics_data[0][1].lower().strip() if len(lyrics_data[0]) > 1 else ""
+             if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+                 is_instrumental = True
 
     return {
         "lyrics": list(lyrics_data),
         "colors": colors,
         "provider": provider,
         "has_lyrics": has_lyrics,
-        "is_instrumental": is_instrumental
+        "is_instrumental": is_instrumental,
+        "is_instrumental_manual": is_instrumental_manual
     }
 
 @app.route("/current-track")
@@ -153,16 +172,28 @@ async def current_track() -> dict:
     try:
         metadata = await get_current_song_meta_data()
         if metadata:
-            # Inject instrumental flag from lyrics module to avoid double-calls in frontend
+            # Check for manual instrumental flag first (takes precedence)
+            artist = metadata.get("artist", "")
+            title = metadata.get("title", "")
+            is_instrumental_manual = False
             is_instrumental = False
-            current_lyrics = lyrics_module.current_song_lyrics
-            if current_lyrics and len(current_lyrics) == 1:
-                text = current_lyrics[0][1].lower().strip()
-                # Updated list to match lyrics.py
-                if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+            
+            if artist and title:
+                is_instrumental_manual = _is_manually_instrumental(artist, title)
+                if is_instrumental_manual:
+                    # Manually marked as instrumental - override detection
                     is_instrumental = True
+                else:
+                    # Fall back to automatic detection
+                    current_lyrics = lyrics_module.current_song_lyrics
+                    if current_lyrics and len(current_lyrics) == 1:
+                        text = current_lyrics[0][1].lower().strip()
+                        # Updated list to match lyrics.py
+                        if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+                            is_instrumental = True
             
             metadata["is_instrumental"] = is_instrumental
+            metadata["is_instrumental_manual"] = is_instrumental_manual
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
@@ -316,6 +347,46 @@ async def set_provider_preference():
         return jsonify(result), 200
     else:
         return jsonify(result), 400
+
+@app.route("/api/instrumental/mark", methods=['POST'])
+async def mark_instrumental():
+    """
+    Marks or unmarks the current song as instrumental manually.
+    Body: {"is_instrumental": true/false}
+    """
+    try:
+        data = await request.get_json()
+        is_instrumental = data.get("is_instrumental", False)
+        
+        metadata = await get_current_song_meta_data()
+        if not metadata:
+            return jsonify({"error": "No track playing"}), 400
+        
+        artist = metadata.get("artist", "")
+        title = metadata.get("title", "")
+        
+        if not artist or not title:
+            return jsonify({"error": "Missing artist or title"}), 400
+        
+        success = await set_manual_instrumental(artist, title, is_instrumental)
+        
+        if success:
+            # Force refresh lyrics to apply the change immediately
+            # Clear current lyrics so it re-fetches with the new flag
+            lyrics_module.current_song_lyrics = None
+            lyrics_module.current_song_data = None
+            
+            return jsonify({
+                "success": True,
+                "is_instrumental": is_instrumental,
+                "message": f"Song marked as {'instrumental' if is_instrumental else 'NOT instrumental'}"
+            })
+        else:
+            return jsonify({"error": "Failed to update instrumental flag"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error marking instrumental: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/providers/preference", methods=['DELETE'])
 async def clear_provider_preference_endpoint():

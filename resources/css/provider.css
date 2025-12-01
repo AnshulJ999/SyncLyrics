@@ -312,6 +312,42 @@
     transform: translateY(-1px);
 }
 
+/* Instrumental Button - Cycles between Auto and Marked as Instrumental */
+.btn-instrumental {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-instrumental:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+}
+
+/* Active state - Marked as Instrumental (Blue) */
+.btn-instrumental.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #60a5fa;
+}
+
+.btn-instrumental.active:hover {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.7);
+    color: #93c5fd;
+}
+
 /* Scrollbar for modal */
 .provider-modal-content::-webkit-scrollbar {
     width: 6px;
