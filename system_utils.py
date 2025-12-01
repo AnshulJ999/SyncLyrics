@@ -1401,20 +1401,30 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 3. Background High-Res Fetch (Progressive Upgrade)
         # Only if not found in DB and not checked this session
-        if not found_in_db and current_track_id not in _db_checked_tracks:
+        # Use 'win::' namespace to avoid blocking Spotify fetcher which might have better URLs
+        checked_key = f"win::{current_track_id}"
+        if not found_in_db and checked_key not in _db_checked_tracks:
             if current_track_id not in _running_art_upgrade_tasks:
-                 _db_checked_tracks[current_track_id] = time.time()
+                 _db_checked_tracks[checked_key] = time.time()
                  if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
                      _db_checked_tracks.popitem(last=False)  # Remove oldest (FIFO)
                      
                  async def background_windows_art_upgrade():
                      try:
                          # Fetch and save to DB (no spotify_url available)
-                         await ensure_album_art_db(artist, album, title, None)
+                         result = await ensure_album_art_db(artist, album, title, None)
+                         # Check result; if failed, uncheck to allow retry on next poll
+                         if not result:
+                             # Failed (network error, etc) - remove from checked so we retry later
+                             if checked_key in _db_checked_tracks:
+                                 del _db_checked_tracks[checked_key]
                          # We don't need to do anything else; the NEXT poll loop 
                          # will see the file in DB (step 1 above) and auto-upgrade the UI.
                      except Exception as e:
                          logger.debug(f"Windows background art fetch failed: {e}")
+                         # Remove from checked on error to allow retry
+                         if checked_key in _db_checked_tracks:
+                             del _db_checked_tracks[checked_key]
                      finally:
                          # CRITICAL FIX: Always remove from running tasks, even if task creation failed
                          _running_art_upgrade_tasks.pop(current_track_id, None)
@@ -1599,9 +1609,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
             # Use raw_spotify_url (not album_art_url which is now a local path)
             # CRITICAL FIX: Only run this once per track to prevent infinite loops
-            if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and captured_track_id not in _db_checked_tracks:
+            # Use 'spot::' namespace to distinguish from Windows fetcher checks
+            checked_key = f"spot::{captured_track_id}"
+            if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and checked_key not in _db_checked_tracks:
                 # Mark as checked immediately to prevent re-entry on next poll
-                _db_checked_tracks[captured_track_id] = time.time()
+                _db_checked_tracks[checked_key] = time.time()
                 
                 # Limit set size to prevent memory leaks (FIFO eviction)
                 if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
@@ -1611,15 +1623,23 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     try:
                         # This function now returns the best URL and resolution
                         # Pass retry_count=1 to prevent infinite recursion
-                        return await ensure_album_art_db(
+                        result = await ensure_album_art_db(
                             captured_artist,
                             captured_album,
                             captured_title,
                             raw_spotify_url,
                             retry_count=1
                         )
+                        # Check result; if failed, uncheck to allow retry on next poll
+                        if not result:
+                            if checked_key in _db_checked_tracks:
+                                del _db_checked_tracks[checked_key]
+                        return result
                     except Exception as e:
                         logger.debug(f"Background DB refresh failed: {e}")
+                        # Remove from checked on error to allow retry
+                        if checked_key in _db_checked_tracks:
+                            del _db_checked_tracks[checked_key]
                     finally:
                         _running_art_upgrade_tasks.pop(captured_track_id, None)
                 
@@ -1665,13 +1685,15 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     
                     # CRITICAL FIX: Don't run background task if we just loaded from DB
                     # OR if we have already checked/populated the DB for this track in this session
-                    if not found_in_db and captured_track_id not in _db_checked_tracks:
+                    # Use 'spot::' namespace to distinguish from Windows fetcher checks
+                    checked_key = f"spot::{captured_track_id}"
+                    if not found_in_db and checked_key not in _db_checked_tracks:
                         if captured_track_id in _running_art_upgrade_tasks:
                             # Task already running
                             logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
                         else:
                             # Mark as checked immediately to prevent re-entry on next poll
-                            _db_checked_tracks[captured_track_id] = time.time()
+                            _db_checked_tracks[checked_key] = time.time()
                             
                             # Limit set size to prevent memory leaks (FIFO eviction)
                             if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
@@ -1696,6 +1718,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         # Use the result from DB population directly (avoid redundant fetch)
                                         high_res_result = await ensure_album_art_db(captured_artist, captured_album, captured_title, original_spotify_url)
                                         
+                                        # Check result; if failed, uncheck to allow retry on next poll
+                                        if not high_res_result:
+                                            if checked_key in _db_checked_tracks:
+                                                del _db_checked_tracks[checked_key]
+                                        
                                         # Update the provider cache immediately
                                         if high_res_result:
                                             # Update cache manually since we skipped get_high_res_art
@@ -1706,6 +1733,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                             
                                     except Exception as e:
                                         logger.error(f"ensure_album_art_db failed: {e}")
+                                        # Remove from checked on error to allow retry
+                                        if checked_key in _db_checked_tracks:
+                                            del _db_checked_tracks[checked_key]
                                     
                                     # REMOVED: Redundant call to art_provider.get_high_res_art
                                     # This prevents the double-flicker (once for remote high-res, once for local DB)
@@ -1732,6 +1762,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {high_res_result[1]}")
                                 except Exception as e:
                                     logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
+                                    # Remove from checked on error to allow retry
+                                    if checked_key in _db_checked_tracks:
+                                        del _db_checked_tracks[checked_key]
                                 finally:
                                     # Remove from running tasks when done
                                     _running_art_upgrade_tasks.pop(captured_track_id, None)
@@ -2029,13 +2062,26 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                             async def background_upgrade_hybrid():
                                                 try:
                                                     await asyncio.sleep(0.1)
-                                                    high_res_result = await art_provider.get_high_res_art(
-                                                        artist=spotify_data.get("artist", ""),
-                                                        title=spotify_data.get("title", ""),
-                                                        album=spotify_data.get("album"),
-                                                        spotify_url=spotify_art_url
+                                                    # Use ensure_album_art_db instead of just get_high_res_art
+                                                    # This ensures proper saving to DB, not just memory caching
+                                                    # This fixes the issue where Spotify art wasn't being saved
+                                                    # when Windows Media fetcher ran first (race condition fix)
+                                                    high_res_result = await ensure_album_art_db(
+                                                        spotify_data.get("artist", ""),
+                                                        spotify_data.get("album"),
+                                                        spotify_data.get("title", ""),
+                                                        spotify_art_url
                                                     )
-                                                    # Result is cached, will be picked up on next poll
+                                                    
+                                                    # Update cache manually if successful (so UI updates immediately)
+                                                    if high_res_result:
+                                                        art_provider = get_album_art_provider()
+                                                        cache_key = art_provider._get_cache_key(
+                                                            spotify_data.get("artist", ""),
+                                                            spotify_data.get("title", ""),
+                                                            spotify_data.get("album")
+                                                        )
+                                                        art_provider._cache[cache_key] = high_res_result
                                                 except Exception as e:
                                                     logger.debug(f"Background art upgrade failed in hybrid mode: {e}")
                                                 finally:
