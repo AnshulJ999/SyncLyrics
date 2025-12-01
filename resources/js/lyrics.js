@@ -29,6 +29,7 @@ let visualModeActive = false;
 let visualModeTimer = null;
 let visualModeDebounceTimer = null; // Prevents flickering status from resetting visual mode
 let manualVisualModeOverride = false; // Track if user manually enabled Visual Mode (prevents auto-exit)
+let visualModeTrackId = null; // Track ID that visual mode decision is based on (prevents stale timers)
 // SEPARATED DATA SOURCES to prevent collision between Visual Mode and Idle Mode
 let currentArtistImages = []; // For Visual Mode (Current Song's Artist)
 let dashboardImages = [];     // For Idle Mode (Global Random Shuffle)
@@ -1454,16 +1455,18 @@ async function fetchArtistImages(artistId) {
  * @param {boolean} isInstrumental - Whether the track is instrumental
  */
 function checkForVisualMode(data, trackId) {
-    // CRITICAL FIX: Always clear any existing timer FIRST
-    // This prevents overlapping timers when function is called rapidly
-    if (visualModeTimer) {
+    // Don't check if visual mode is disabled
+    if (!visualModeConfig.enabled) return;
+    
+    // CRITICAL FIX: Clear timer if we're checking a DIFFERENT track
+    // This prevents stale timers from previous tracks from activating
+    if (visualModeTimer && visualModeTrackId !== trackId) {
+        console.log(`[Visual Mode] Track changed (${visualModeTrackId} -> ${trackId}), clearing stale timer`);
         clearTimeout(visualModeTimer);
         visualModeTimer = null;
         visualModeTimerId = null;
+        visualModeTrackId = null;
     }
-    
-    // Don't check if visual mode is disabled
-    if (!visualModeConfig.enabled) return;
     
     // Use flags from the backend response
     // Manual flag takes precedence over automatic detection
@@ -1488,7 +1491,10 @@ function checkForVisualMode(data, trackId) {
         // If already active, nothing to do
         if (visualModeActive) return;
 
-        // Timer was already cleared at the start of function, so we can proceed
+        // If timer is already running for THIS track, don't start another one
+        if (visualModeTimer && visualModeTrackId === trackId) {
+            return;
+        }
 
         // Start timer to enter visual mode
         // For manually marked instrumentals, enter immediately (0ms delay)
@@ -1511,11 +1517,12 @@ function checkForVisualMode(data, trackId) {
         // Generate unique ID for this specific timer instance
         const currentTimerId = Date.now();
         visualModeTimerId = currentTimerId;
+        visualModeTrackId = trackId; // Store track ID for this timer
 
         // Store trackId for verification (in case lastTrackInfo isn't set yet)
         const storedTrackId = trackId;
 
-        visualModeTimer = setTimeout(() => {
+        visualModeTimer = setTimeout(async () => {
             visualModeTimer = null; // Clear timer reference
 
             // Verify THIS specific timer is still valid matches the global ID
@@ -1553,12 +1560,22 @@ function checkForVisualMode(data, trackId) {
             }
 
             // Verify track hasn't changed
-            if (currentId === storedTrackId || (!lastTrackInfo && storedTrackId)) {
-                console.log('[Visual Mode] Activation conditions met, entering...');
-                enterVisualMode();
-            } else {
-                console.log(`[Visual Mode] Track changed (${storedTrackId} vs ${currentId}), aborting`);
+            if (currentId !== storedTrackId) {
+                console.log(`[Visual Mode] Track changed during timer (${storedTrackId} vs ${currentId}), aborting`);
+                return;
             }
+
+            // FINAL CHECK: Re-verify lyrics status just before activating
+            // This catches cases where lyrics loaded while the timer was running
+            // Check the DOM directly - if current lyric line has content, lyrics are available
+            const currentLyricElement = document.getElementById('current');
+            if (currentLyricElement && currentLyricElement.textContent.trim() !== '' && !isInstrumental) {
+                console.log('[Visual Mode] Lyrics appeared during timer, aborting activation');
+                return;
+            }
+
+            console.log('[Visual Mode] Activation conditions met, entering...');
+            enterVisualMode();
         }, delayMs);
     } else {
         // CONDITIONS NOT MET: We should NOT be in Visual Mode (Lyrics found)
@@ -1566,32 +1583,21 @@ function checkForVisualMode(data, trackId) {
         // If visual mode is active and lyrics are found, exit immediately (or with minimal debounce)
         // BUT: Don't auto-exit if user manually enabled Visual Mode
         
+        // 1. If a timer was running to enter visual mode, kill it immediately
+        if (visualModeTimer && !manualVisualModeOverride) {
+            console.log('[Visual Mode] Lyrics available, cancelling entry timer');
+            clearTimeout(visualModeTimer);
+            visualModeTimer = null;
+            visualModeTimerId = null;
+            visualModeTrackId = null;
+        }
+        
+        // 2. If Visual Mode is active, exit it
         if (visualModeActive && !manualVisualModeOverride) {
-            // Lyrics are available - exit visual mode
-            // Use minimal debounce (0.3s) to prevent flicker from brief status changes
-            // but exit much faster than the 1s debounce to be responsive
-            if (visualModeDebounceTimer) {
-                // If debounce is already running, clear it and restart with shorter delay
-                clearTimeout(visualModeDebounceTimer);
-            }
-            
-            visualModeDebounceTimer = setTimeout(() => {
-                console.log('[Visual Mode] Lyrics available, exiting visual mode');
-                
-                if (visualModeActive && !manualVisualModeOverride) {
-                    exitVisualMode();
-                }
-                
-                visualModeDebounceTimer = null;
-            }, 300); // 300ms debounce - fast enough to be responsive, long enough to prevent flicker
-        } else if (visualModeTimer && !manualVisualModeOverride) {
-            // Timer was running but lyrics are now available - cancel it immediately
-            // (Timer was already cleared at start of function, but this is defensive)
-            if (visualModeTimer) {
-                clearTimeout(visualModeTimer);
-                visualModeTimer = null;
-                visualModeTimerId = null;
-            }
+            // Exit immediately when lyrics are available - don't wait for debounce
+            // This makes the UI feel snappier and prevents the "stuck" state
+            console.log('[Visual Mode] Lyrics available, exiting visual mode immediately');
+            exitVisualMode();
         }
     }
 }
@@ -1646,6 +1652,48 @@ function exitVisualMode() {
     }
 
     // RESTORE previous background style
+    if (savedBackgroundState) {
+        applyBackgroundStyle(savedBackgroundState);
+        savedBackgroundState = null;
+    }
+}
+
+/**
+ * Completely reset visual mode state
+ * Used on track change to ensure clean slate and prevent state desynchronization
+ * This function ensures CSS classes, timers, and flags are all properly cleared
+ */
+function resetVisualModeState() {
+    console.log('[Visual Mode] Resetting state for track change');
+    
+    // Reset state flags
+    visualModeActive = false;
+    visualModeTrackId = null;
+    
+    // Clear all pending timers FIRST to prevent race conditions
+    // A pending entry timer from the previous track could fire after we reset
+    if (visualModeTimer) {
+        clearTimeout(visualModeTimer);
+        visualModeTimer = null;
+        visualModeTimerId = null;
+    }
+    // Clear exit debounce timer too
+    if (visualModeDebounceTimer) {
+        clearTimeout(visualModeDebounceTimer);
+        visualModeDebounceTimer = null;
+    }
+    
+    // Always remove the hidden class, regardless of visualModeActive state
+    // This is defensive - ensures we never leave lyrics hidden accidentally
+    const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
+    if (lyricsContainer) {
+        lyricsContainer.classList.remove('visual-mode-hidden');
+    }
+    
+    // Stop any running slideshow
+    stopSlideshow();
+    
+    // Restore background style if we had saved one
     if (savedBackgroundState) {
         applyBackgroundStyle(savedBackgroundState);
         savedBackgroundState = null;
@@ -2064,6 +2112,7 @@ async function updateLoop() {
 
                 // FIX: Properly exit visual mode on track change
                 // Use the reset function to ensure CSS classes and timers are cleared
+                // This function handles all cleanup: timers, CSS classes, slideshow, background state
                 resetVisualModeState();
 
                 manualVisualModeOverride = false; // Reset manual override on track change
@@ -2071,18 +2120,6 @@ async function updateLoop() {
                 
                 // Update instrumental button state when track changes
                 updateInstrumentalButtonState();
-                
-                // Clear all timers when track changes
-                if (visualModeTimer) {
-                    clearTimeout(visualModeTimer);
-                    visualModeTimer = null;
-                }
-                if (visualModeDebounceTimer) {
-                    clearTimeout(visualModeDebounceTimer);
-                    visualModeDebounceTimer = null;
-                }
-                
-                stopSlideshow();
                 
                 // CLEAR current artist images so we don't show old artist's images
                 currentArtistImages = [];
