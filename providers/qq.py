@@ -197,7 +197,7 @@ class QQMusicProvider(LyricsProvider):
         
         return sorted(processed_lyrics, key=lambda x: x[0])
 
-    def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
+    def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
         """
         Get synchronized lyrics for a song
         
@@ -206,8 +206,7 @@ class QQMusicProvider(LyricsProvider):
             title (str): Song title
             
         Returns:
-            Optional[List[Tuple[float, str]]]: List of (timestamp, lyric) pairs
-                                             or None if lyrics not found
+            Optional[Dict[str, Any]]: Dictionary with synced lyrics and metadata or None
         """
         try:
             search_term = self._format_search_term(artist, title)
@@ -235,7 +234,12 @@ class QQMusicProvider(LyricsProvider):
             
             # Process lyrics
             processed_lyrics = self._process_lyrics(lyrics_text)
-            return processed_lyrics if processed_lyrics else None
+            if processed_lyrics:
+                return {
+                    "lyrics": processed_lyrics,
+                    "is_instrumental": False
+                }
+            return None
             
         except Exception as e:
             logger.error(f"Error getting lyrics from QQ Music: {e}")

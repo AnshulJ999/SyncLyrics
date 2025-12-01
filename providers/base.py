@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent)) 
 
 from abc import ABC, abstractmethod
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 import requests
 import logging
 from logging_config import get_logger, setup_logging  # Import setup_logging
@@ -52,7 +52,7 @@ class LyricsProvider(ABC):
             logger.info(f"{self.name} provider is disabled")
     
     @abstractmethod
-    def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
+    def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
         """
         Get synchronized lyrics for a song.
         
@@ -61,8 +61,13 @@ class LyricsProvider(ABC):
             title (str): Song title
             
         Returns:
-            Optional[List[Tuple[float, str]]]: List of (timestamp, lyric) pairs
-                                             or None if lyrics not found
+            Optional[Dict[str, Any]]: Result dictionary containing:
+                {
+                    "lyrics": List[Tuple[float, str]],  # synced lines
+                    "is_instrumental": bool,            # optional metadata
+                    "plain_lyrics": str,                # optional fallback
+                    ...
+                }
         """
         pass
     

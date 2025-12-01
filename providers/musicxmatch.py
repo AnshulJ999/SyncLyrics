@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from .base import LyricsProvider
 from config import get_provider_config
 from logging_config import get_logger
@@ -33,7 +33,7 @@ class MusicxmatchProvider(LyricsProvider):
             self._available = False
             self.enabled = False
     
-    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[List[Tuple[float, str]]]:
+    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
         """
         Get lyrics using Musicxmatch API
         
@@ -44,7 +44,7 @@ class MusicxmatchProvider(LyricsProvider):
             duration (int): Track duration in seconds (optional, not used but kept for compatibility)
             
         Returns:
-            Optional[List[Tuple[float, str]]]: List of (timestamp, lyric) tuples or None
+            Optional[Dict[str, Any]]: Dictionary with synced lyrics and metadata or None
         """
         if not self._available:
             return None
@@ -113,6 +113,7 @@ class MusicxmatchProvider(LyricsProvider):
             # Note: The basic API might not provide synced lyrics, only plain text
             # We'll try to get subtitle/synced lyrics if available
             subtitle_response = None
+            subtitle_body = ""  # Initialize to prevent NameError if subtitle_response fails
             try:
                 # Try to get synced lyrics (this might not be available in community API)
                 subtitle_response = self.api.get_track_subtitle(track_id=track_id)
@@ -124,8 +125,13 @@ class MusicxmatchProvider(LyricsProvider):
                 subtitle_data = subtitle_response.get("message", {}).get("body", {}).get("subtitle", {})
                 subtitle_body = subtitle_data.get("subtitle_body", "")
                 
-                if subtitle_body:
-                    return self._parse_synced_lyrics(subtitle_body)
+            if subtitle_body:
+                parsed = self._parse_synced_lyrics(subtitle_body)
+                if parsed:
+                    return {
+                        "lyrics": parsed,
+                        "is_instrumental": False
+                    }
             
             # If no synced lyrics available, log and return None
             # We only want synced lyrics for this application

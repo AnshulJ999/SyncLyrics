@@ -43,8 +43,13 @@ class SpotifyLyrics(LyricsProvider):
         # an instance here. This ensures all API calls use the singleton instance and
         # statistics are consolidated across the entire app.
             
-    async def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
-        """Get lyrics for a track by searching Spotify"""
+    async def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+        """
+        Get lyrics for a track by searching Spotify
+
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing synced lyrics and metadata
+        """
         try:
             # Return None if both artist and title are empty
             if not artist.strip() and not title.strip():
@@ -167,7 +172,12 @@ class SpotifyLyrics(LyricsProvider):
                         seconds = float(time_parts[0]) * 60 + float(time_parts[1])
                         processed_lyrics.append((seconds, line['words']))
                     
-                    return processed_lyrics if processed_lyrics else None
+                    if processed_lyrics:
+                        return {
+                            "lyrics": processed_lyrics,
+                            "is_instrumental": False
+                        }
+                    return None
                     
                 except requests.exceptions.Timeout:
                     # Timeout - retry with backoff
