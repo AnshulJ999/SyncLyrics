@@ -1689,8 +1689,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     checked_key = f"spot::{captured_track_id}"
                     if not found_in_db and checked_key not in _db_checked_tracks:
                         if captured_track_id in _running_art_upgrade_tasks:
-                            # Task already running
-                            logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
+                            # Task already running - only log once per track to prevent spam
+                            if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_art_upgrade_running_track_id') or \
+                               _get_current_song_meta_data_spotify._last_logged_art_upgrade_running_track_id != captured_track_id:
+                                logger.debug(f"Background art upgrade already running for {captured_track_id}, skipping duplicate task")
+                                _get_current_song_meta_data_spotify._last_logged_art_upgrade_running_track_id = captured_track_id
                         else:
                             # Mark as checked immediately to prevent re-entry on next poll
                             _db_checked_tracks[checked_key] = time.time()
@@ -2055,8 +2058,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                             spotify_data.get('title', '')
                                         )
                                         if hybrid_track_id in _running_art_upgrade_tasks:
-                                            # Task already running, skip creating duplicate
-                                            logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                            # Task already running, skip creating duplicate - only log once per track to prevent spam
+                                            if not hasattr(get_current_song_meta_data, '_last_logged_hybrid_art_upgrade_running_track_id') or \
+                                               get_current_song_meta_data._last_logged_hybrid_art_upgrade_running_track_id != hybrid_track_id:
+                                                logger.debug(f"Background art upgrade already running for {hybrid_track_id}, skipping duplicate task")
+                                                get_current_song_meta_data._last_logged_hybrid_art_upgrade_running_track_id = hybrid_track_id
                                         else:
                                             # Start background task to fetch high-res
                                             async def background_upgrade_hybrid():
