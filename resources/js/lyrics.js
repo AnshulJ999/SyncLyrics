@@ -704,19 +704,19 @@ function updateAlbumArt(trackInfo) {
                         // This prevents jarring flicker when URL changes (e.g., during DB population)
                         // Only fade if there's already a valid image loaded (not first load or empty)
                         const currentSrc = albumArt.src || '';
-                        const hasExistingImage = currentSrc && 
-                                                currentSrc !== window.location.href && 
-                                                currentSrc !== '' &&
-                                                currentSrc !== targetUrl; // Only fade if URL is actually changing
-                        
+                        const hasExistingImage = currentSrc &&
+                            currentSrc !== window.location.href &&
+                            currentSrc !== '' &&
+                            currentSrc !== targetUrl; // Only fade if URL is actually changing
+
                         if (hasExistingImage) {
                             // Fade out old image
                             albumArt.style.opacity = '0';
-                            
+
                             setTimeout(() => {
                                 // Swap to new image after fade out
                                 albumArt.src = targetUrl;
-                                
+
                                 // Fade in new image
                                 setTimeout(() => {
                                     albumArt.style.opacity = '1';
@@ -994,12 +994,12 @@ async function showProviderModal() {
 async function updateInstrumentalButtonState() {
     const btn = document.getElementById('mark-instrumental-btn');
     if (!btn) return;
-    
+
     try {
         // Get current track info to check manual flag
         const trackResponse = await fetch('/current-track');
         const trackData = await trackResponse.json();
-        
+
         if (trackData.error) {
             // No track playing - disable button
             btn.disabled = true;
@@ -1007,10 +1007,10 @@ async function updateInstrumentalButtonState() {
             btn.classList.remove('active');
             return;
         }
-        
+
         // Check if manually marked as instrumental
         const isManual = trackData.is_instrumental_manual === true;
-        
+
         if (isManual) {
             btn.textContent = '✓ Marked as Instrumental';
             btn.classList.add('active');
@@ -1018,7 +1018,7 @@ async function updateInstrumentalButtonState() {
             btn.textContent = '🎵 Instrumental';
             btn.classList.remove('active');
         }
-        
+
         btn.disabled = false;
     } catch (error) {
         console.error('Error updating instrumental button state:', error);
@@ -1031,21 +1031,21 @@ async function updateInstrumentalButtonState() {
 async function toggleInstrumentalMark() {
     const btn = document.getElementById('mark-instrumental-btn');
     if (!btn || btn.disabled) return;
-    
+
     try {
         // Get current track info
         const trackResponse = await fetch('/current-track');
         const trackData = await trackResponse.json();
-        
+
         if (trackData.error || !trackData.artist || !trackData.title) {
             console.error('No track playing or missing info');
             return;
         }
-        
+
         // Determine new state (toggle: if currently marked, unmark; if not marked, mark)
         const currentlyMarked = trackData.is_instrumental_manual === true;
         const newState = !currentlyMarked;
-        
+
         // Call API to mark/unmark
         const response = await fetch('/api/instrumental/mark', {
             method: 'POST',
@@ -1056,9 +1056,9 @@ async function toggleInstrumentalMark() {
                 is_instrumental: newState
             })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             // Update button state
             if (newState) {
@@ -1068,33 +1068,33 @@ async function toggleInstrumentalMark() {
                 btn.textContent = '🎵 Instrumental';
                 btn.classList.remove('active');
             }
-            
+
             // Force refresh lyrics to apply the change immediately
             // This will trigger visual mode if marked as instrumental
             const lyricsResponse = await fetch('/lyrics');
             const lyricsData = await lyricsResponse.json();
-            
+
             // Also refresh track info to get updated flags
             const updatedTrackResponse = await fetch('/current-track');
             const updatedTrackData = await updatedTrackResponse.json();
-            
+
             // Update lastTrackInfo to ensure timer verification works
             if (updatedTrackData && !updatedTrackData.error) {
                 lastTrackInfo = updatedTrackData;
             }
-            
+
             // Update lyrics display and check for visual mode
             if (lyricsData.lyrics && lyricsData.lyrics.length > 0) {
                 setLyricsInDom(lyricsData.lyrics);
             } else {
                 setLyricsInDom(lyricsData);
             }
-            
+
             // Ensure flags are properly set from both sources
             // Ensure boolean conversion (handle undefined/null cases)
             lyricsData.is_instrumental_manual = updatedTrackData.is_instrumental_manual === true;
             lyricsData.is_instrumental = updatedTrackData.is_instrumental_manual === true || lyricsData.is_instrumental;
-            
+
             // Check for visual mode with updated flags
             const trackId = updatedTrackData.track_id || `${updatedTrackData.artist} - ${updatedTrackData.title}`;
             checkForVisualMode(lyricsData, trackId);
@@ -1128,10 +1128,10 @@ async function loadAlbumArtTab() {
         // FIX: Use event delegation to prevent listener duplication
         // Event listeners are set up once in setupProviderUI() using delegation
         // Here we only update the visual state of buttons
-        
+
         const styleBtns = document.querySelectorAll('.style-btn');
         const currentStyle = getCurrentBackgroundStyle();
-        
+
         // Check if we're in 'Auto' mode (no saved preference, following URL)
         // Auto mode = no saved preference exists (or was cleared)
         const isAutoMode = !lastTrackInfo || !lastTrackInfo.background_style;
@@ -1237,26 +1237,26 @@ async function loadAlbumArtTab() {
 function loadArtistImagesTab() {
     const grid = document.getElementById('artist-images-grid');
     if (!grid) return;
-    
+
     grid.innerHTML = '';
-    
+
     if (!currentArtistImages || currentArtistImages.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: rgba(255, 255, 255, 0.5); padding: 40px;">No artist images available.</div>';
         return;
     }
-    
+
     currentArtistImages.forEach((url, index) => {
         const card = document.createElement('div');
         card.className = 'art-card';
         // Non-interactive for now, just visual
-        
+
         card.innerHTML = `
             <img src="${url}" class="art-card-image" loading="lazy">
             <div class="art-card-overlay">
                 <div class="art-card-provider">Image ${index + 1}</div>
             </div>
         `;
-        
+
         grid.appendChild(card);
     });
 }
@@ -1296,7 +1296,7 @@ async function selectAlbumArt(providerName) {
                 const currentSrc = albumArt.src;
                 const baseUrl = currentSrc.split('?')[0];
                 albumArt.src = `${baseUrl}?t=${result.cache_bust}`;
-                
+
                 // Also update background if using art background
                 if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
                     updateBackground();
@@ -1304,7 +1304,7 @@ async function selectAlbumArt(providerName) {
             }
 
             showToast(`Switched to ${providerName} album art`);
-            
+
             // Close modal after brief delay
             setTimeout(() => {
                 hideProviderModal();
@@ -1457,7 +1457,7 @@ async function fetchArtistImages(artistId) {
 function checkForVisualMode(data, trackId) {
     // Don't check if visual mode is disabled
     if (!visualModeConfig.enabled) return;
-    
+
     // CRITICAL FIX: Clear timer if we're checking a DIFFERENT track
     // This prevents stale timers from previous tracks from activating
     if (visualModeTimer && visualModeTrackId !== trackId) {
@@ -1467,7 +1467,7 @@ function checkForVisualMode(data, trackId) {
         visualModeTimerId = null;
         visualModeTrackId = null;
     }
-    
+
     // Use flags from the backend response
     // Manual flag takes precedence over automatic detection
     const lyricsAvailable = data && data.has_lyrics;
@@ -1478,7 +1478,7 @@ function checkForVisualMode(data, trackId) {
 
     if (shouldEnterVisualMode) {
         // CONDITIONS MET: We should be in Visual Mode
-        
+
         // CRITICAL FIX: If we were about to exit (debounce active), CANCEL THE EXIT.
         // This handles the "flicker" where status goes False -> True quickly.
         // Without this, brief status changes would prevent visual mode from ever activating.
@@ -1569,7 +1569,13 @@ function checkForVisualMode(data, trackId) {
             // This catches cases where lyrics loaded while the timer was running
             // Check the DOM directly - if current lyric line has content, lyrics are available
             const currentLyricElement = document.getElementById('current');
-            if (currentLyricElement && currentLyricElement.textContent.trim() !== '' && !isInstrumental) {
+            const currentText = currentLyricElement ? currentLyricElement.textContent.trim() : '';
+
+            // Allow visual mode if the text is an error message (like "Lyrics not found")
+            // This fixes the bug where "Lyrics not found" was treated as real lyrics, aborting visual mode
+            const isErrorMessage = currentText === "Lyrics not found" || currentText === "No song playing";
+
+            if (currentLyricElement && currentText !== '' && !isInstrumental && !isErrorMessage) {
                 console.log('[Visual Mode] Lyrics appeared during timer, aborting activation');
                 return;
             }
@@ -1582,7 +1588,7 @@ function checkForVisualMode(data, trackId) {
         // CRITICAL FIX: Exit visual mode when lyrics are available
         // If visual mode is active and lyrics are found, exit immediately (or with minimal debounce)
         // BUT: Don't auto-exit if user manually enabled Visual Mode
-        
+
         // 1. If a timer was running to enter visual mode, kill it immediately
         if (visualModeTimer && !manualVisualModeOverride) {
             console.log('[Visual Mode] Lyrics available, cancelling entry timer');
@@ -1591,7 +1597,7 @@ function checkForVisualMode(data, trackId) {
             visualModeTimerId = null;
             visualModeTrackId = null;
         }
-        
+
         // 2. If Visual Mode is active, exit it
         if (visualModeActive && !manualVisualModeOverride) {
             // Exit immediately when lyrics are available - don't wait for debounce
@@ -1665,11 +1671,11 @@ function exitVisualMode() {
  */
 function resetVisualModeState() {
     console.log('[Visual Mode] Resetting state for track change');
-    
+
     // Reset state flags
     visualModeActive = false;
     visualModeTrackId = null;
-    
+
     // Clear all pending timers FIRST to prevent race conditions
     // A pending entry timer from the previous track could fire after we reset
     if (visualModeTimer) {
@@ -1682,17 +1688,17 @@ function resetVisualModeState() {
         clearTimeout(visualModeDebounceTimer);
         visualModeDebounceTimer = null;
     }
-    
+
     // Always remove the hidden class, regardless of visualModeActive state
     // This is defensive - ensures we never leave lyrics hidden accidentally
     const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
     if (lyricsContainer) {
         lyricsContainer.classList.remove('visual-mode-hidden');
     }
-    
+
     // Stop any running slideshow
     stopSlideshow();
-    
+
     // Restore background style if we had saved one
     if (savedBackgroundState) {
         applyBackgroundStyle(savedBackgroundState);
@@ -1748,7 +1754,7 @@ function startSlideshow(source = 'artist') {
     if (slideshowInterval) {
         clearInterval(slideshowInterval);
     }
-    
+
     let images = [];
     let includeAlbumArt = false;
 
@@ -1760,16 +1766,16 @@ function startSlideshow(source = 'artist') {
         images = dashboardImages;
         includeAlbumArt = false; // Pure random images for dashboard
     }
-    
+
     const totalSlides = images.length + (includeAlbumArt ? 1 : 0);
-    
+
     if (totalSlides === 0) {
         console.log(`Slideshow: No images available for ${source} source.`);
         return;
     }
 
     currentSlideIndex = 0;
-    
+
     // Helper to show current slide based on index and source
     const renderCurrentSlide = () => {
         let imageUrl;
@@ -1780,7 +1786,7 @@ function startSlideshow(source = 'artist') {
             const safeIndex = currentSlideIndex % images.length;
             imageUrl = images[safeIndex];
         }
-        
+
         if (imageUrl) {
             showSlide(imageUrl);
         }
@@ -1788,7 +1794,7 @@ function startSlideshow(source = 'artist') {
 
     // Show first image immediately
     renderCurrentSlide();
-    
+
     // Then cycle through images
     const intervalMs = visualModeConfig.slideshowIntervalSeconds * 1000;
     slideshowInterval = setInterval(() => {
@@ -1809,7 +1815,7 @@ function stopSlideshow() {
         clearInterval(slideshowInterval);
         slideshowInterval = null;
     }
-    
+
     // Clear slideshow images
     const bgContainer = document.getElementById('background-layer');
     if (bgContainer) {
@@ -1825,22 +1831,22 @@ function stopSlideshow() {
 function showSlide(imageUrl) {
     const bgContainer = document.getElementById('background-layer');
     if (!bgContainer || !imageUrl) return;
-    
+
     // Create new image element for crossfade
     const newImg = document.createElement('div');
     newImg.className = 'slideshow-image';
     newImg.style.backgroundImage = `url("${imageUrl}")`;
-    
+
     // Add Ken Burns animation class
     newImg.classList.add('ken-burns-effect');
-    
+
     bgContainer.appendChild(newImg);
-    
+
     // Fade in new image
     setTimeout(() => {
         newImg.classList.add('active');
     }, 50);
-    
+
     // DOM CLEANUP: Remove old images after transition
     setTimeout(() => {
         const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(.active)');
@@ -1946,7 +1952,7 @@ function setupProviderUI() {
             // Check if clicked element is a style button or inside one
             const styleBtn = e.target.closest('.style-btn');
             if (!styleBtn) return;
-            
+
             const style = styleBtn.dataset.style;
             const currentStyle = getCurrentBackgroundStyle();
 
@@ -1970,10 +1976,10 @@ function setupProviderUI() {
                 } catch (err) {
                     console.error('Error clearing style:', err);
                 }
-                
+
                 // Reset manual override so URL params can take effect
                 manualStyleOverride = false;
-                
+
                 // Apply URL parameters (Priority 2: URL params)
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
@@ -2047,7 +2053,7 @@ async function fetchRandomSlideshowImages() {
     try {
         const response = await fetch('/api/slideshow/random-images?limit=50');
         if (!response.ok) throw new Error('Failed to fetch random images');
-        
+
         const data = await response.json();
         if (data.images && data.images.length > 0) {
             console.log(`Loaded ${data.images.length} random images for global slideshow`);
@@ -2079,7 +2085,7 @@ async function updateLoop() {
         // Only get lyrics if we have track info
         if (trackInfo && !trackInfo.error) {
             isIdleState = false; // Reset idle state
-            
+
             // ROBUST TRACK ID GENERATION
             // 1. Prefer track_id if available (Spotify provides this)
             // 2. Fall back to "Artist - Title" for Windows Media and other sources
@@ -2117,10 +2123,10 @@ async function updateLoop() {
 
                 manualVisualModeOverride = false; // Reset manual override on track change
                 manualStyleOverride = false; // Reset manual override on track change (allow saved style to apply)
-                
+
                 // Update instrumental button state when track changes
                 updateInstrumentalButtonState();
-                
+
                 // CLEAR current artist images so we don't show old artist's images
                 currentArtistImages = [];
 
@@ -2133,7 +2139,7 @@ async function updateLoop() {
                 if (trackInfo.id) {
                     checkLikedStatus(trackInfo.id);
                 }
-                
+
                 // Reset style buttons in modal (Moved inside trackChanged)
                 updateStyleButtonsInModal(trackInfo.background_style || 'blur');
 
@@ -2162,7 +2168,7 @@ async function updateLoop() {
                 const urlParams = new URLSearchParams(window.location.search);
                 const currentStyle = getCurrentBackgroundStyle();
                 let urlStyle = null;
-                
+
                 // Check for URL parameters first (Priority 1)
                 if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
                     urlStyle = 'sharp';
@@ -2171,7 +2177,7 @@ async function updateLoop() {
                 } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
                     urlStyle = 'blur';
                 }
-                
+
                 // Only apply URL style if it's different from current and no saved preference exists
                 if (urlStyle && currentStyle !== urlStyle) {
                     console.log(`Applying URL background style: ${urlStyle}`);
@@ -2209,8 +2215,8 @@ async function updateLoop() {
                 // Fallback if no data (e.g. API error)
                 // Pass a dummy object saying no lyrics
                 // Include manual flag from trackInfo for proper visual mode timing
-                checkForVisualMode({ 
-                    has_lyrics: false, 
+                checkForVisualMode({
+                    has_lyrics: false,
                     is_instrumental: isInstrumental,
                     is_instrumental_manual: trackInfo.is_instrumental_manual === true
                 }, currentTrackId);
@@ -2223,18 +2229,18 @@ async function updateLoop() {
                 if (!isIdleState) {
                     isIdleState = true;
                     console.log("Player is idle, initializing global dashboard slideshow...");
-                    
+
                     // Fetch random images from the entire DB
                     const randomImages = await fetchRandomSlideshowImages();
-                    
+
                     if (randomImages.length > 0) {
                         dashboardImages = randomImages; // Store in dashboard array (separate from artist images)
-                        
+
                         // Start slideshow immediately using DASHBOARD source
                         startSlideshow('dashboard');
                     }
                 }
-                
+
                 // Ensure slideshow is running
                 if (!slideshowInterval && dashboardImages.length > 0) {
                     startSlideshow('dashboard');
@@ -2276,12 +2282,12 @@ async function main() {
 document.addEventListener('DOMContentLoaded', () => {
     // Start the main app loop
     main();
-    
+
     // UI Event Listeners
     document.getElementById('btn-queue')?.addEventListener('click', toggleQueueDrawer);
     document.getElementById('queue-close')?.addEventListener('click', toggleQueueDrawer);
     document.getElementById('btn-like')?.addEventListener('click', toggleLike);
-    
+
     // Background Style Buttons - Event listeners are handled in loadAlbumArtTab() to avoid duplication
     // No need to set them up here since they're set when the modal opens
 
@@ -2300,7 +2306,7 @@ function setupQueueInteractions() {
         backdrop = document.createElement('div');
         backdrop.className = 'queue-backdrop';
         document.body.appendChild(backdrop);
-        
+
         // TO DISABLE CLICK-OUTSIDE: Comment out these 3 lines below
         backdrop.addEventListener('click', () => {
             if (queueDrawerOpen) toggleQueueDrawer();
@@ -2315,9 +2321,9 @@ function setupQueueInteractions() {
 async function toggleQueueDrawer() {
     const drawer = document.getElementById('queue-drawer');
     const backdrop = document.querySelector('.queue-backdrop');
-    
+
     queueDrawerOpen = !queueDrawerOpen;
-    
+
     if (queueDrawerOpen) {
         drawer.classList.add('open');
         // Ensure backdrop is visible and clickable
@@ -2326,7 +2332,7 @@ async function toggleQueueDrawer() {
             backdrop.style.pointerEvents = 'auto'; // Force clickable
         }
         await fetchAndRenderQueue();
-        
+
         // START POLLING when drawer is open (every 5 seconds)
         if (queuePollInterval) clearInterval(queuePollInterval);
         queuePollInterval = setInterval(() => {
@@ -2334,7 +2340,7 @@ async function toggleQueueDrawer() {
                 fetchAndRenderQueue();
             }
         }, 5000); // Poll every 5 seconds
-        
+
     } else {
         drawer.classList.remove('open');
         if (backdrop) {
@@ -2353,19 +2359,19 @@ async function fetchAndRenderQueue() {
     try {
         const response = await fetch('/api/playback/queue');
         if (!response.ok) return;
-        
+
         const data = await response.json();
         const list = document.getElementById('queue-list');
         list.innerHTML = '';
-        
+
         if (data.queue && data.queue.length > 0) {
             data.queue.forEach(track => {
                 const item = document.createElement('div');
                 item.className = 'queue-item';
-                
+
                 // Use placeholder if no art
                 const artUrl = track.album.images[2]?.url || track.album.images[0]?.url || 'resources/images/icon.png';
-                
+
                 item.innerHTML = `
                     <img src="${artUrl}" class="queue-art" alt="Art">
                     <div class="queue-info">
@@ -2390,7 +2396,7 @@ async function checkLikedStatus(trackId) {
     try {
         const response = await fetch(`/api/playback/liked?track_id=${trackId}`);
         const data = await response.json();
-        
+
         // FIX: Ensure we are still playing the same track
         if (lastTrackInfo && lastTrackInfo.id === trackId) {
             isLiked = data.liked;
@@ -2402,7 +2408,7 @@ async function checkLikedStatus(trackId) {
 function updateLikeButton() {
     const btn = document.getElementById('btn-like');
     if (!btn) return;
-    
+
     if (isLiked) {
         btn.innerHTML = '❤️'; // Filled heart
         btn.classList.add('liked');
@@ -2414,15 +2420,15 @@ function updateLikeButton() {
 
 async function toggleLike() {
     if (!lastTrackInfo || !lastTrackInfo.id) return;
-    
+
     // Optimistic update
     isLiked = !isLiked;
     updateLikeButton();
-    
+
     try {
         await fetch('/api/playback/liked', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 track_id: lastTrackInfo.id,
                 action: isLiked ? 'like' : 'unlike'
@@ -2440,19 +2446,19 @@ async function toggleLike() {
 
 async function saveBackgroundStyle(style) {
     if (!lastTrackInfo) return;
-    
+
     try {
         // Apply immediately
         manualStyleOverride = true; // Prevent auto-revert
         applyBackgroundStyle(style);
-        
+
         // Save to backend
         const response = await fetch('/api/album-art/background-style', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ style: style })
         });
-        
+
         if (response.ok) {
             showToast(`Saved ${style} style for this album`);
             // Update locally to avoid need for refresh
@@ -2479,30 +2485,30 @@ function updateStyleButtonsInModal(currentStyle) {
 function setupTouchControls() {
     let touchStartX = 0;
     let touchStartY = 0;
-    
+
     document.addEventListener('touchstart', e => {
         touchStartX = e.changedTouches[0].screenX;
         touchStartY = e.changedTouches[0].screenY;
-    }, {passive: true});
-    
+    }, { passive: true });
+
     document.addEventListener('touchend', e => {
         const touchEndX = e.changedTouches[0].screenX;
         const touchEndY = e.changedTouches[0].screenY;
-        
+
         handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
-    }, {passive: true});
+    }, { passive: true });
 }
 
 function handleSwipe(startX, startY, endX, endY) {
     const minSwipeDistance = 50;
     const maxVerticalVariance = 70; // Ignore if scrolled up/down too much
-    
+
     // EDGE GUARD: Ignore swipes that start at the very right edge 
     // to prevent conflict with Queue Drawer opening
     const screenWidth = window.innerWidth;
     // Increased edge detection zone to 60px for reliability
-    const isRightEdge = startX > (screenWidth - 60); 
-    
+    const isRightEdge = startX > (screenWidth - 60);
+
     if (isRightEdge && !queueDrawerOpen) {
         // Check for leftward swipe (opening queue)
         if ((startX - endX) > minSwipeDistance) {

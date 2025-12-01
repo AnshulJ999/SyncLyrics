@@ -83,11 +83,17 @@ class LRCLIBProvider(LyricsProvider):
             # 2. Fallback to /api/search if:
             #    a) No duration provided (skipped /get)
             #    b) /get returned 404 or error
-            #    c) /get returned 200 but no synced lyrics
+            #    c) /get returned 200 but no synced lyrics AND not instrumental
             
             has_synced = response and response.get("syncedLyrics")
+            is_instrumental_from_get = response and response.get("instrumental", False)
             
-            if not has_synced:
+            # If /get found an instrumental track (even without synced lyrics), use it
+            # Don't fall back to search - we already have the answer
+            if not has_synced and is_instrumental_from_get:
+                logger.info(f"LRCLib - Exact match found instrumental track (no synced lyrics), using it")
+                # response is already set, will be processed below
+            elif not has_synced:
                 reason = "No duration provided" if not duration else "No synced lyrics in exact match"
                 logger.info(f"LRCLib - {reason}, trying search with specific fields")
                 
@@ -126,17 +132,18 @@ class LRCLIBProvider(LyricsProvider):
                         logger.info(f"LRCLib - No search results found for: {artist} - {title}")
                         return None
                     
-                    # Iterate through search results to find one with synced lyrics
+                    # Iterate through search results to find one with synced lyrics OR instrumental flag
+                    # Accept instrumental tracks even if they don't have synced lyrics
                     found_match = False
                     for result in search_result:
-                        if result.get("syncedLyrics"):
+                        if result.get("syncedLyrics") or result.get("instrumental"):
                             response = result
                             found_match = True
-                            logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')}")
+                            logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')} (instrumental: {result.get('instrumental', False)})")
                             break
                     
                     if not found_match:
-                        logger.info(f"LRCLib - Search results found but none had synced lyrics")
+                        logger.info(f"LRCLib - Search results found but none had synced lyrics or instrumental flag")
                         return None
                         
                 except Exception as e:
@@ -151,29 +158,33 @@ class LRCLIBProvider(LyricsProvider):
             plain_lyrics = response.get("plainLyrics", "")
 
             lyrics = response.get("syncedLyrics")
-            if not lyrics:
+            # Allow instrumental tracks to proceed even without synced lyrics
+            # They will be handled by the empty processed_lyrics check below
+            if not lyrics and not is_instrumental:
                 logger.info(f"LRCLib - No synced lyrics found for: {artist} - {title}")
                 return None
 
             # Process lyrics SAFE PARSING
+            # If instrumental and no lyrics, skip parsing (will be handled below)
             processed_lyrics = []
-            for line in lyrics.split("\n"):
-                try:
-                    if not line.strip() or "]" not in line: continue
-                    
-                    # Parse Timestamp
-                    time_part = line[1: line.find("]")]
-                    
-                    # Skip meta tags like [by:...] or [ar:...]
-                    if not time_part[0].isdigit(): continue
+            if lyrics:  # Only parse if lyrics exist
+                for line in lyrics.split("\n"):
+                    try:
+                        if not line.strip() or "]" not in line: continue
+                        
+                        # Parse Timestamp
+                        time_part = line[1: line.find("]")]
+                        
+                        # Skip meta tags like [by:...] or [ar:...]
+                        if not time_part[0].isdigit(): continue
 
-                    m, s = time_part.split(":")
-                    seconds = float(m) * 60 + float(s)
-                    text = line[line.find("]") + 1:].strip()
-                    
-                    processed_lyrics.append((seconds, text))
-                except ValueError:
-                    continue # Skip lines that fail to parse
+                        m, s = time_part.split(":")
+                        seconds = float(m) * 60 + float(s)
+                        text = line[line.find("]") + 1:].strip()
+                        
+                        processed_lyrics.append((seconds, text))
+                    except ValueError:
+                        continue # Skip lines that fail to parse
             
             if not processed_lyrics:
                 if is_instrumental:
