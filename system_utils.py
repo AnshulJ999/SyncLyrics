@@ -1859,7 +1859,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "source": "spotify",
             "artist_id": track.get("artist_id"),  # For fetching artist images
             "artist_name": track.get("artist_name"),  # For display purposes
-            "background_style": saved_background_style  # Return saved style preference (Phase 2)
+            "background_style": saved_background_style,  # Return saved style preference (Phase 2)
+            "url": track.get("url")  # Spotify Web URL for album art click functionality
         }
         
         # Add album_art_path if we have a direct path (DB file)
@@ -2116,6 +2117,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         # This ensures the Like button works even when playing from Windows Media
                         if spotify_data.get("id"):
                             result["id"] = spotify_data.get("id")
+                        
+                        # Copy Spotify URL for album art click functionality
+                        # This enables opening the song in Spotify app/web when clicking album art
+                        if spotify_data.get("url"):
+                            result["url"] = spotify_data.get("url")
                         
                         # Copy Artist ID and Name for Visual Mode
                         # This ensures artist slideshows work even when playing from Windows Media

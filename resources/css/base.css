@@ -452,6 +452,24 @@ body[data-minimal="true"] .background-overlay {
     max-width: 400px;
 }
 
+/* Album Art Link Container */
+#album-art-link {
+    display: block;
+    text-decoration: none;
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Hover effect for clickable album art */
+#album-art-link[href^="spotify:"]:hover,
+#album-art-link[href^="https://open.spotify.com"]:hover {
+    transform: scale(1.05);
+}
+
+#album-art-link[href="#"] {
+    cursor: default;
+}
+
 .album-art {
     width: clamp(90px, 12vw, 110px);
     height: clamp(90px, 12vw, 110px);
@@ -462,6 +480,7 @@ body[data-minimal="true"] .background-overlay {
     object-fit: cover;
     /* Hide by default until valid src is loaded */
     opacity: 0;
+    display: block;
 }
 
 /* Show album art only when it has a valid HTTP(S) URL or local path */

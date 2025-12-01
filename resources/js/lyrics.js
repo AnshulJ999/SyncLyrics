@@ -677,6 +677,39 @@ function generateCurrentUrl() {
 function updateAlbumArt(trackInfo) {
     const albumArt = document.getElementById('album-art');
     const trackHeader = document.getElementById('track-header');
+    const albumArtLink = document.getElementById('album-art-link');
+
+    // Update Spotify link on album art (for opening in Spotify app/web)
+    if (albumArtLink) {
+        // Use Spotify deep link format (spotify:track:xxxxx) for direct app opening
+        // This works on both Android and Desktop if Spotify app is installed
+        // Falls back to web URL if no track ID is available
+        if (trackInfo.id) {
+            // Deep link format: opens Spotify app directly on Android and Desktop
+            albumArtLink.href = `spotify:track:${trackInfo.id}`;
+            albumArtLink.style.cursor = 'pointer';
+            albumArtLink.title = "Open in Spotify";
+            // Clear any previous onclick handler to allow normal link behavior
+            albumArtLink.onclick = null;
+        } else if (trackInfo.url) {
+            // Fallback to web URL if no track ID (shouldn't happen with Spotify, but safe fallback)
+            albumArtLink.href = trackInfo.url;
+            albumArtLink.style.cursor = 'pointer';
+            albumArtLink.title = "Open in Spotify";
+            // Clear any previous onclick handler to allow normal link behavior
+            albumArtLink.onclick = null;
+        } else {
+            // No Spotify link available - disable click
+            albumArtLink.href = '#';
+            albumArtLink.style.cursor = 'default';
+            albumArtLink.removeAttribute('title');
+            // Prevent navigation if no link
+            albumArtLink.onclick = (e) => {
+                e.preventDefault();
+                return false;
+            };
+        }
+    }
 
     if (!albumArt || !trackHeader) return;
 
