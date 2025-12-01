@@ -95,8 +95,8 @@ UI = {
             "text": conf("ui.themes.light.text", "#000000")
         }
     },
-    "animation_styles": conf("ui.animation_styles", ["wave", "fade"]),
-    "background_styles": conf("ui.background_styles", ["gradient", "solid"]),
+    "animation_styles": conf("ui.animation_styles", ["wave", "fade", "slide", "none"]),
+    "background_styles": conf("ui.background_styles", ["gradient", "solid", "albumart"]),
     "minimal_mode": {
         "enabled": conf("ui.minimal_mode.enabled", False),
         "hide_elements": conf("ui.minimal_mode.hide_elements", ["bottom-nav"])
@@ -134,7 +134,7 @@ SPOTIFY = {
 PROVIDERS = {
     "lrclib": {
         "enabled": conf("providers.lrclib.enabled", True),
-        "priority": conf("providers.lrclib.priority", 1),
+        "priority": conf("providers.lrclib.priority", 2),
         "base_url": "https://lrclib.net/api",
         "timeout": conf("providers.lrclib.timeout", 10),
         "retries": conf("providers.lrclib.retries", 3),
@@ -142,7 +142,7 @@ PROVIDERS = {
     },
     "spotify": {
         "enabled": conf("providers.spotify.enabled", True),
-        "priority": conf("providers.spotify.priority", 2),
+        "priority": conf("providers.spotify.priority", 1),
         "base_url": os.getenv("SPOTIFY_BASE_URL", "https://fake-spotify-lyrics-api-azure.vercel.app"),
         "timeout": conf("providers.spotify.timeout", 10),
         "retries": conf("providers.spotify.retries", 3),
@@ -163,7 +163,7 @@ PROVIDERS = {
         "cache_duration": conf("providers.netease.cache_duration", 86400)
     },
     "musicxmatch": {
-        "enabled": conf("providers.musicxmatch.enabled", True),
+        "enabled": conf("providers.musicxmatch.enabled", False),
         "priority": conf("providers.musicxmatch.priority", 5),
         "timeout": conf("providers.musicxmatch.timeout", 10),
         "retries": conf("providers.musicxmatch.retries", 3),
@@ -244,7 +244,7 @@ ALBUM_ART = {
     # for security (should be in .env file, not settings.json)
     "enable_itunes": conf("album_art.enable_itunes", True),
     "enable_lastfm": conf("album_art.enable_lastfm", True),
-    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", True),
+    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", False),
     "min_resolution": conf("album_art.min_resolution", 3000)  # Prefer 3000x3000px for best quality
 }
 

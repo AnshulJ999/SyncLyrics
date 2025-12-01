@@ -72,8 +72,8 @@ class SettingsManager:
             "ui.themes.light.bg_start": Setting("Light Start", str, "#ffffff", False, "UI", "Light mode gradient start", "color"),
             "ui.themes.light.bg_end": Setting("Light End", str, "#f0f0f0", False, "UI", "Light mode gradient end", "color"),
             "ui.themes.light.text": Setting("Light Text", str, "#000000", False, "UI", "Light mode text color", "color"),
-            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade"], False, "UI", "Enabled animations"),
-            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid"], False, "UI", "Enabled backgrounds"),
+            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade", "slide", "none"], False, "UI", "Enabled animations"),
+            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid", "albumart"], False, "UI", "Enabled backgrounds"),
             "ui.minimal_mode.enabled": Setting("Minimal Mode", bool, False, False, "UI", "Hide extra UI elements", "switch"),
             "ui.minimal_mode.hide_elements": Setting("Hidden Elements", list, ["bottom-nav"], False, "UI", "Elements to hide in minimal mode"),
             "ui.blur_strength": Setting("Blur Strength", int, 10, False, "UI", "Background blur (px)", "slider", min_val=0, max_val=50),
@@ -91,13 +91,13 @@ class SettingsManager:
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),
-            "providers.lrclib.priority": Setting("LRCLib Priority", int, 1, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
+            "providers.lrclib.priority": Setting("LRCLib Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.lrclib.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.lrclib.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.lrclib.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
             "providers.spotify.enabled": Setting("Spotify", bool, True, True, "Providers", "Enable Spotify Lyrics", "switch"),
-            "providers.spotify.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
+            "providers.spotify.priority": Setting("Priority", int, 1, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.spotify.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.spotify.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.spotify.token_refresh_buffer": Setting("Buffer", int, 300, False, "Providers", "Token refresh buffer (s)", "number"),
@@ -115,7 +115,7 @@ class SettingsManager:
             "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
-            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, True, True, "Providers", "Enable Musicxmatch", "switch"),
+            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
             "providers.musicxmatch.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
@@ -166,7 +166,7 @@ class SettingsManager:
             
             # Spotify API
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
-            "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 3.0, False, "Spotify API", "Metadata cache (s)", "number"),
+            "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),
             
             # Album Art
@@ -174,7 +174,7 @@ class SettingsManager:
             "album_art.retries": Setting("Retries", int, 2, False, "Album Art", "Max retries", "number", min_val=0, max_val=5),
             "album_art.enable_itunes": Setting("iTunes", bool, True, False, "Album Art", "Enable iTunes source", "switch"),
             "album_art.enable_lastfm": Setting("Last.fm", bool, True, False, "Album Art", "Enable Last.fm source", "switch"),
-            "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, True, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
+            "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, False, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
             "album_art.min_resolution": Setting("Min Resolution", int, 3000, False, "Album Art", "Preferred resolution (px)", "number", min_val=640, max_val=3000),
             
             # Visual Mode
