@@ -1063,6 +1063,15 @@ async function toggleInstrumentalMark() {
             const lyricsResponse = await fetch('/lyrics');
             const lyricsData = await lyricsResponse.json();
             
+            // Also refresh track info to get updated flags
+            const updatedTrackResponse = await fetch('/current-track');
+            const updatedTrackData = await updatedTrackResponse.json();
+            
+            // Update lastTrackInfo to ensure timer verification works
+            if (updatedTrackData && !updatedTrackData.error) {
+                lastTrackInfo = updatedTrackData;
+            }
+            
             // Update lyrics display and check for visual mode
             if (lyricsData.lyrics && lyricsData.lyrics.length > 0) {
                 setLyricsInDom(lyricsData.lyrics);
@@ -1070,8 +1079,14 @@ async function toggleInstrumentalMark() {
                 setLyricsInDom(lyricsData);
             }
             
+            // Ensure flags are properly set from both sources
+            // Ensure boolean conversion (handle undefined/null cases)
+            lyricsData.is_instrumental_manual = updatedTrackData.is_instrumental_manual === true;
+            lyricsData.is_instrumental = updatedTrackData.is_instrumental_manual === true || lyricsData.is_instrumental;
+            
             // Check for visual mode with updated flags
-            checkForVisualMode(lyricsData, trackData.track_id || `${trackData.artist} - ${trackData.title}`);
+            const trackId = updatedTrackData.track_id || `${updatedTrackData.artist} - ${updatedTrackData.title}`;
+            checkForVisualMode(lyricsData, trackId);
         } else {
             console.error('Failed to mark instrumental:', result.error);
         }
@@ -1466,14 +1481,29 @@ function checkForVisualMode(data, trackId) {
         // Timer was already cleared at the start of function, so we can proceed
 
         // Start timer to enter visual mode
-        // Fast entry for confirmed instrumental (2s), otherwise configured delay
-        const delayMs = isInstrumental ? 2000 : (visualModeConfig.delaySeconds * 1000);
+        // For manually marked instrumentals, enter immediately (0ms delay)
+        // For automatically detected instrumentals, use 2s delay
+        // For songs without lyrics, use configured delay
+        let delayMs;
+        if (data && data.is_instrumental_manual === true) {
+            // Manually marked as instrumental - enter immediately
+            delayMs = 0;
+        } else if (isInstrumental) {
+            // Automatically detected instrumental - 2s delay
+            delayMs = 2000;
+        } else {
+            // No lyrics but not instrumental - use configured delay
+            delayMs = visualModeConfig.delaySeconds * 1000;
+        }
 
-        console.log(`[Visual Mode] Starting timer: ${delayMs}ms for ${trackId}`);
+        console.log(`[Visual Mode] Starting timer: ${delayMs}ms for ${trackId} (manual: ${data && data.is_instrumental_manual === true})`);
 
         // Generate unique ID for this specific timer instance
         const currentTimerId = Date.now();
         visualModeTimerId = currentTimerId;
+
+        // Store trackId for verification (in case lastTrackInfo isn't set yet)
+        const storedTrackId = trackId;
 
         visualModeTimer = setTimeout(() => {
             visualModeTimer = null; // Clear timer reference
@@ -1492,9 +1522,9 @@ function checkForVisualMode(data, trackId) {
                 visualModeDebounceTimer = null;
             }
 
+            // Verify track ID match - use lastTrackInfo if available, otherwise use stored trackId
+            let currentId = storedTrackId;
             if (lastTrackInfo) {
-                // Re-verify track ID match
-                let currentId;
                 if (lastTrackInfo.track_id && lastTrackInfo.track_id.trim()) {
                     currentId = lastTrackInfo.track_id.trim();
                 } else {
@@ -1510,13 +1540,14 @@ function checkForVisualMode(data, trackId) {
                         currentId = 'unknown';
                     }
                 }
+            }
 
-                if (currentId === trackId) {
-                    console.log('[Visual Mode] Activation conditions met, entering...');
-                    enterVisualMode();
-                } else {
-                    console.log(`[Visual Mode] Track changed (${trackId} vs ${currentId}), aborting`);
-                }
+            // Verify track hasn't changed
+            if (currentId === storedTrackId || (!lastTrackInfo && storedTrackId)) {
+                console.log('[Visual Mode] Activation conditions met, entering...');
+                enterVisualMode();
+            } else {
+                console.log(`[Visual Mode] Track changed (${storedTrackId} vs ${currentId}), aborting`);
             }
         }, delayMs);
     } else {
@@ -2114,7 +2145,8 @@ async function updateLoop() {
                 setLyricsInDom(lyricsToDisplay);
 
                 // 2. Check for Visual Mode using the backend flags
-                // Pass consolidated flags
+                // Ensure manual flag is properly set from trackInfo (most reliable source)
+                data.is_instrumental_manual = trackInfo.is_instrumental_manual === true;
                 data.is_instrumental = isInstrumental;
                 checkForVisualMode(data, currentTrackId);
             } else {
