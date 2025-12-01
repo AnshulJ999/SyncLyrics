@@ -95,11 +95,11 @@ UI = {
             "text": conf("ui.themes.light.text", "#000000")
         }
     },
-    "animation_styles": conf("ui.animation_styles", ["wave"]),
-    "background_styles": conf("ui.background_styles", ["gradient"]),
+    "animation_styles": conf("ui.animation_styles", ["wave", "fade"]),
+    "background_styles": conf("ui.background_styles", ["gradient", "solid"]),
     "minimal_mode": {
         "enabled": conf("ui.minimal_mode.enabled", False),
-        "hide_elements": conf("ui.minimal_mode.hide_elements", [])
+        "hide_elements": conf("ui.minimal_mode.hide_elements", ["bottom-nav"])
     }
 }
 

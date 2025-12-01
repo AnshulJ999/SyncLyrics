@@ -40,6 +40,8 @@
     ],
     "ui.blur_strength": 10,
     "ui.overlay_opacity": 0.4,
+    "ui.sharp_album_art": false,
+    "ui.soft_album_art": false,
     "lyrics.display.buffer_size": 6,
     "lyrics.display.update_interval": 0.1,
     "lyrics.display.idle_interval": 5.0,
@@ -86,7 +88,7 @@
     "system.windows.media_session.enabled": true,
     "system.windows.media_session.preferred": true,
     "system.windows.media_session.timeout": 5,
-    "system.windows.app_blocklist": [],
+    "system.windows.app_blocklist": ["chrome", "msedge", "firefox", "brave", "comet"],
     "system.linux.gsettings_enabled": true,
     "system.linux.playerctl_required": true,
     "features.minimal_ui": true,
@@ -110,5 +112,10 @@
     "album_art.enable_itunes": true,
     "album_art.enable_lastfm": true,
     "album_art.enable_spotify_enhanced": false,
-    "album_art.min_resolution": 3000
+    "album_art.min_resolution": 3000,
+    "visual_mode.enabled": true,
+    "visual_mode.delay_seconds": 6,
+    "visual_mode.auto_sharp": true,
+    "visual_mode.slideshow.enabled": false,
+    "visual_mode.slideshow.interval_seconds": 8
 }
