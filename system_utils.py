@@ -1441,26 +1441,33 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                     source_name = parts[0]
                     filename_from_provider = parts[1].rstrip(")")
                     
-                    # Match by source AND filename
+                    # Match by source AND filename (case-insensitive source comparison)
+                    source_name_lower = source_name.lower()  # Normalize to lowercase
                     for img in images:
-                        if (img.get("source") == source_name and 
+                        source = img.get("source", "")
+                        if (source.lower() == source_name_lower and 
                             img.get("filename") == filename_from_provider and 
                             img.get("downloaded")):
                             matching_image = img
                             break
                 else:
-                    # Fallback: just source name
+                    # Fallback: just source name (case-insensitive)
                     source_name = parts[0]
+                    source_name_lower = source_name.lower()
                     for img in images:
-                        if img.get("source") == source_name and img.get("downloaded") and img.get("filename"):
+                        source = img.get("source", "")
+                        if source.lower() == source_name_lower and img.get("downloaded") and img.get("filename"):
                             matching_image = img
                             break
             else:
                 # No filename in provider name - match by source only (gets first match)
+                # CRITICAL FIX: Case-insensitive comparison to handle "Deezer" vs "deezer" mismatches
                 source_name = provider_name_clean
+                source_name_lower = source_name.lower()  # Normalize to lowercase for comparison
                 for img in images:
-                    source = img.get("source")
-                    if source == source_name and img.get("downloaded") and img.get("filename"):
+                    source = img.get("source", "")
+                    # Case-insensitive comparison to handle API inconsistencies
+                    if source.lower() == source_name_lower and img.get("downloaded") and img.get("filename"):
                         matching_image = img
                         break
         
@@ -1951,6 +1958,11 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # Add album_art_path if we have a direct path (DB file or unique thumbnail)
         if result_extra_fields.get("album_art_path"):
             result["album_art_path"] = result_extra_fields["album_art_path"]
+        
+        # CRITICAL FIX: Add background_image_path if it exists (for server.py to serve background)
+        # This was missing in Windows Media function but present in Spotify function
+        if background_image_path:
+            result["background_image_path"] = background_image_path
         
         return result
             
