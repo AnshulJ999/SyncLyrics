@@ -111,6 +111,9 @@
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     /* Prevent pull-to-refresh and overscroll bounce inside modal */
     overscroll-behavior: contain;
+    overscroll-behavior-y: contain; /* Vertical only - more specific */
+    -webkit-overscroll-behavior: contain; /* Safari/WebView support */
+    -webkit-overscroll-behavior-y: contain; /* Safari/WebView vertical */
     touch-action: manipulation; /* Allow scrolling and zoom, but prevent pull-to-refresh and double-tap zoom */
 }
 
