@@ -355,6 +355,7 @@ def _get_current_song_meta_data_gnome() -> Optional[dict]:
             "duration_ms": None,  # Not available from playerctl
             "colors": ("#24273a", "#363b54"),
             "album_art_url": art_url,
+            "background_image_url": art_url,  # ADDED: Use same art for background default (GNOME support)
             "is_playing": True,
             "source": "gnome"
         }
@@ -1408,25 +1409,63 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                     del _album_art_metadata_cache[metadata_path_str]
         
         preferred_provider = metadata.get("preferred_provider")
+        preferred_filename = metadata.get("preferred_image_filename")  # NEW: Most robust matching method
         images = metadata.get("images", [])
         
-        # CRITICAL FIX: Only return image if user EXPLICITLY selected one (has preferred_provider)
+        # CRITICAL FIX: Only return image if user EXPLICITLY selected one (has preferred_provider or preferred_filename)
         # This allows album art to be used when no explicit preference exists
         # The fallback to first available image happens in the fallback code block, not here
-        if not preferred_provider:
+        if not preferred_provider and not preferred_filename:
             return None  # No explicit preference - let album art be used
         
         # Find preferred image (only if preference exists)
         matching_image = None
-        # Extract source name (e.g., "Deezer (Artist)" -> "Deezer")
-        source_name = preferred_provider.replace(" (Artist)", "")
-        for img in images:
-            source = img.get("source")
-            if source == source_name and img.get("downloaded") and img.get("filename"):
-                matching_image = img
-                break
+        
+        # 1. Match by specific filename (MOST ROBUST - fixes multiple images from same source issue)
+        if preferred_filename:
+            for img in images:
+                if img.get("filename") == preferred_filename and img.get("downloaded"):
+                    matching_image = img
+                    break
+        
+        # 2. Fallback: Parse provider name (backward compatibility)
+        if not matching_image and preferred_provider:
+            # Remove "(Artist)" suffix if present (backward compatibility)
+            provider_name_clean = preferred_provider.replace(" (Artist)", "")
+            
+            # Check if provider name contains filename: "Source (filename)"
+            if " (" in provider_name_clean:
+                # Has filename in provider name: "Source (filename)"
+                parts = provider_name_clean.split(" (", 1)
+                if len(parts) == 2:
+                    source_name = parts[0]
+                    filename_from_provider = parts[1].rstrip(")")
+                    
+                    # Match by source AND filename
+                    for img in images:
+                        if (img.get("source") == source_name and 
+                            img.get("filename") == filename_from_provider and 
+                            img.get("downloaded")):
+                            matching_image = img
+                            break
+                else:
+                    # Fallback: just source name
+                    source_name = parts[0]
+                    for img in images:
+                        if img.get("source") == source_name and img.get("downloaded") and img.get("filename"):
+                            matching_image = img
+                            break
+            else:
+                # No filename in provider name - match by source only (gets first match)
+                source_name = provider_name_clean
+                for img in images:
+                    source = img.get("source")
+                    if source == source_name and img.get("downloaded") and img.get("filename"):
+                        matching_image = img
+                        break
         
         if not matching_image:
+            logger.debug(f"Preferred artist image not found for {artist}: preferred_provider={preferred_provider}, preferred_filename={preferred_filename}")
             return None  # Preferred image not found
         
         filename = matching_image.get("filename")

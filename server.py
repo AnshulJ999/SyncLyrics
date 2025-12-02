@@ -513,13 +513,14 @@ async def get_album_art_options():
                     # CRITICAL FIX: Create unique provider name when multiple images from same source
                     # If there are multiple images from the same source, include filename to make it unique
                     # This allows users to select the specific image they want, not just the first one
+                    # UI Display: Clean names without "(Artist)" suffix - it's obvious from context
                     if source_counts.get(source, 0) > 1:
                         # Multiple images from this source - include filename for uniqueness
-                        # Format: "FanArt.tv (fanart_tv_0.jpg) (Artist)"
-                        provider_name = f"{source} ({filename}) (Artist)"
+                        # Format: "FanArt.tv (fanart_tv_0.jpg)" - clean display name
+                        provider_name = f"{source}"
                     else:
                         # Single image from this source - use simple format
-                        provider_name = f"{source} (Artist)"
+                        provider_name = source
                     
                     # Build image URL
                     encoded_folder = quote(folder_name, safe='')
@@ -533,9 +534,12 @@ async def get_album_art_options():
                     resolution = f"{width}x{height}" if width and height else "unknown"
                     
                     # Check if this is the preferred artist image
-                    # Match by provider_name, source, or URL (for backward compatibility)
+                    # Match by provider_name (with or without "(Artist)" suffix for backward compatibility), source, or URL
+                    # Also check if saved preference matches the internal format with "(Artist)" suffix
                     is_preferred = (artist_preferred == provider_name or 
+                                  artist_preferred == f"{provider_name} (Artist)" or
                                   artist_preferred == source or
+                                  artist_preferred == f"{source} (Artist)" or
                                   artist_preferred == img_url or
                                   (not preferred_provider and artist_preferred and source in artist_preferred))
                     
@@ -598,8 +602,32 @@ async def set_album_art_preference():
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
     
-    # Check if this is an artist image (provider name ends with " (Artist)")
-    is_artist_image = provider_name.endswith(" (Artist)")
+    # Check if this is an artist image
+    # Since we removed "(Artist)" suffix from UI, we need to check by looking up in artist images
+    is_artist_image = False
+    
+    try:
+        # Check if provider_name matches any artist image in the database
+        artist_folder = get_album_db_folder(artist, None)
+        artist_metadata_path = artist_folder / "metadata.json"
+        if artist_metadata_path.exists():
+            with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                artist_metadata_check = json.load(f)
+            if artist_metadata_check.get("type") == "artist_images":
+                artist_images_check = artist_metadata_check.get("images", [])
+                for img in artist_images_check:
+                    source_check = img.get("source", "Unknown")
+                    filename_check = img.get("filename", "")
+                    # Check if provider_name matches any artist image format (with or without "(Artist)" suffix)
+                    if (provider_name == source_check or 
+                        provider_name == f"{source_check} ({filename_check})" or
+                        provider_name == f"{source_check} (Artist)" or
+                        provider_name == f"{source_check} ({filename_check}) (Artist)"):
+                        is_artist_image = True
+                        break
+    except Exception:
+        # Fallback: check by suffix (backward compatibility)
+        is_artist_image = provider_name.endswith(" (Artist)")
     
     if is_artist_image:
         # Handle artist image preference
@@ -625,61 +653,68 @@ async def set_album_art_preference():
         # Otherwise, extract source name for backward compatibility
         matching_image = None
         
-        # First, try to match by exact provider name (includes filename for multiple images from same source)
-        # Provider name format: "FanArt.tv (fanart_tv_0.jpg) (Artist)" or "Deezer (Artist)"
-        if " (" in provider_name and provider_name.endswith(" (Artist)"):
-            # Extract filename from provider name if present
-            # Format: "Source (filename) (Artist)" -> extract "filename"
-            parts = provider_name.replace(" (Artist)", "").split(" (", 1)
-            if len(parts) == 2:
-                # Has filename: "Source (filename)"
-                source_name = parts[0]
-                filename_from_provider = parts[1].rstrip(")")
-                
-                # Match by source AND filename
-                for img in artist_images:
-                    if (img.get("source") == source_name and 
-                        img.get("filename") == filename_from_provider and 
-                        img.get("downloaded")):
-                        matching_image = img
-                        break
-            else:
-                # No filename: "Source" -> just source name
-                source_name = parts[0]
-                # Match by source (backward compatibility - will get first match)
-                for img in artist_images:
-                    if img.get("source") == source_name and img.get("downloaded"):
-                        matching_image = img
-                        break
-        else:
-            # Fallback: extract source name (backward compatibility)
-            source_name = provider_name.replace(" (Artist)", "")
-            for img in artist_images:
-                if img.get("source") == source_name and img.get("downloaded"):
-                    matching_image = img
-                    break
+        # CRITICAL FIX: Match by filename first (most robust), then parse provider name
+        # Priority: filename > URL > provider name parsing
         
-        # Also try matching by URL if provided in request (most reliable)
-        data_url = data.get('url')
-        if not matching_image and data_url:
-            for img in artist_images:
-                if img.get("url") == data_url and img.get("downloaded"):
-                    matching_image = img
-                    break
-        
-        # Also try matching by filename if provided in request
+        # 1. Match by filename if provided (MOST RELIABLE - from frontend)
         data_filename = data.get('filename')
-        if not matching_image and data_filename:
+        if data_filename:
             for img in artist_images:
                 if img.get("filename") == data_filename and img.get("downloaded"):
                     matching_image = img
                     break
         
+        # 2. Match by URL if provided (also reliable)
+        if not matching_image:
+            data_url = data.get('url')
+            if data_url:
+                for img in artist_images:
+                    if img.get("url") == data_url and img.get("downloaded"):
+                        matching_image = img
+                        break
+        
+        # 3. Parse provider name (handles both old and new formats)
+        if not matching_image:
+            # Remove "(Artist)" suffix if present (backward compatibility)
+            provider_name_clean = provider_name.replace(" (Artist)", "")
+            
+            # Check if provider name contains filename: "Source (filename)"
+            if " (" in provider_name_clean:
+                parts = provider_name_clean.split(" (", 1)
+                if len(parts) == 2:
+                    # Has filename: "Source (filename)"
+                    source_name = parts[0]
+                    filename_from_provider = parts[1].rstrip(")")
+                    
+                    # Match by source AND filename
+                    for img in artist_images:
+                        if (img.get("source") == source_name and 
+                            img.get("filename") == filename_from_provider and 
+                            img.get("downloaded")):
+                            matching_image = img
+                            break
+                else:
+                    # Fallback: just source name
+                    source_name = parts[0]
+                    for img in artist_images:
+                        if img.get("source") == source_name and img.get("downloaded"):
+                            matching_image = img
+                            break
+            else:
+                # No filename in provider name - match by source only (gets first match)
+                source_name = provider_name_clean
+                for img in artist_images:
+                    if img.get("source") == source_name and img.get("downloaded"):
+                        matching_image = img
+                        break
+        
         if not matching_image:
             return jsonify({"error": f"Artist image '{provider_name}' not found in database"}), 404
         
-        # Update preferred provider
+        # CRITICAL FIX: Save both provider_name (for display) and filename (for robust loading)
+        # The provider_name is what we show in UI, but filename is what we use to actually find the image
         artist_metadata["preferred_provider"] = provider_name
+        artist_metadata["preferred_image_filename"] = matching_image.get("filename")  # NEW: Save filename for robust matching
         artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
         
         # Save updated metadata
