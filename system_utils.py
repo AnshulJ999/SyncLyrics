@@ -1484,6 +1484,36 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         if not image_path.exists():
             return None
         
+        # OPTIMIZATION: Only update last_accessed if it's been more than 1 hour
+        # This prevents constant disk writes on every poll cycle (every 100ms)
+        # Same optimization as album art to reduce unnecessary metadata.json writes
+        should_save = True
+        last_accessed_str = metadata.get("last_accessed")
+        if last_accessed_str:
+            try:
+                # Parse the timestamp (handle Z suffix for UTC)
+                if last_accessed_str.endswith('Z'):
+                    last_accessed_str = last_accessed_str[:-1] + '+00:00'
+                last_accessed = datetime.fromisoformat(last_accessed_str)
+                # Convert to naive datetime for comparison with datetime.utcnow()
+                if last_accessed.tzinfo is not None:
+                    last_accessed = last_accessed.replace(tzinfo=None)
+                # If less than 1 hour has passed, don't save
+                time_diff = (datetime.utcnow() - last_accessed).total_seconds()
+                if time_diff < 3600:  # 1 hour in seconds
+                    should_save = False
+            except (ValueError, AttributeError):
+                # Parse error or missing datetime, save to fix format
+                pass
+        
+        if should_save:
+            metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            if save_album_db_metadata(folder, metadata):
+                # Invalidate cache after save (since file mtime changed)
+                metadata_path_str = str(metadata_path)
+                if metadata_path_str in _album_art_metadata_cache:
+                    del _album_art_metadata_cache[metadata_path_str]
+        
         return {"path": image_path, "metadata": metadata}
         
     except Exception as e:
@@ -2965,6 +2995,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
+                metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
                 # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
                 # Store original list of existing filenames to identify new downloads
@@ -3096,6 +3127,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 "added_at": datetime.utcnow().isoformat() + "Z"
                             })
                             existing_urls.add(url)  # Mark as processed
+                            metadata_changed = True  # New image added, need to save
                     else:
                         # File already exists - check if it's already in saved_images and update resolution if missing
                         # First, try to find the actual file (might have different extension than .jpg)
@@ -3134,6 +3166,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                         img['width'] = width
                                         img['height'] = height
                                         logger.debug(f"Updated resolution for existing {source} image in metadata: {width}x{height}")
+                                        metadata_changed = True  # Resolution updated, need to save
                                     found_existing = True
                                     break
                             
@@ -3150,6 +3183,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     "added_at": datetime.utcnow().isoformat() + "Z"
                                 })
                                 logger.debug(f"Added existing {source} image to metadata with resolution: {width}x{height}")
+                                metadata_changed = True  # New image added to metadata, need to save
                             
                             existing_urls.add(url)  # Mark as processed
                             
@@ -3200,15 +3234,21 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 except Exception as e:
                     logger.debug(f"Failed to verify artist before metadata save: {e}")
                 
-                # Save Metadata
-                metadata = {
-                    "artist": artist,
-                    "type": "artist_images",
-                    "last_accessed": datetime.utcnow().isoformat() + "Z",
-                    "images": saved_images
-                }
-                
-                await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+                # OPTIMIZATION: Only save metadata if it actually changed OR if file doesn't exist
+                # This prevents unnecessary disk writes when ensure_artist_image_db runs but finds no new images
+                # Same optimization pattern as album art to reduce metadata.json writes
+                if metadata_changed or not metadata_path.exists():
+                    # Save Metadata
+                    metadata = {
+                        "artist": artist,
+                        "type": "artist_images",
+                        "last_accessed": datetime.utcnow().isoformat() + "Z",
+                        "images": saved_images
+                    }
+                    
+                    await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+                else:
+                    logger.debug(f"Skipping metadata save for {artist} - no changes detected")
                 
                 # Return list of LOCAL paths for the frontend
                 # We return paths relative to the DB root for the API to serve
