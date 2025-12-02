@@ -2159,16 +2159,25 @@ async function updateLoop() {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
 
+        // Ensure we're using the latest updateInterval value (in case config loaded after loop started)
+        // Only update if we're not in idle slow-polling mode
+        if (currentPollInterval !== IDLE_POLL_INTERVAL) {
+            currentPollInterval = updateInterval;
+        }
+
         // Ensure minimum time between checks (use currentPollInterval instead of fixed updateInterval)
         if (timeSinceLastCheck < currentPollInterval) {
             await sleep(currentPollInterval - timeSinceLastCheck);
             continue;
         }
 
-        // Get track info first
-        const trackInfo = await getCurrentTrack();
+        // Fetch track info and lyrics in parallel (they're independent)
+        const [trackInfo, data] = await Promise.all([
+            getCurrentTrack(),
+            getLyrics()
+        ]);
 
-        // Only get lyrics if we have track info
+        // Only process if we have track info
         if (trackInfo && !trackInfo.error) {
             // Music is playing - switch to fast polling immediately
             if (isIdleState) {
@@ -2221,9 +2230,10 @@ async function updateLoop() {
                 // CLEAR current artist images so we don't show old artist's images
                 currentArtistImages = [];
 
-                // Fetch artist images for potential visual mode
+                // Fetch artist images for potential visual mode (don't wait - load in background)
+                // This is non-critical for initial render and can take 1-2 seconds
                 if (trackInfo.artist_id) {
-                    await fetchArtistImages(trackInfo.artist_id);
+                    fetchArtistImages(trackInfo.artist_id); // Remove await - load in background
                 }
 
                 // Check like status for new track (Moved inside trackChanged)
@@ -2282,8 +2292,7 @@ async function updateLoop() {
             updateProgress(trackInfo);
             updateControlState(trackInfo);
 
-            // Update lyrics
-            const data = await getLyrics();
+            // Lyrics data already fetched in parallel above
 
             // Consolidate instrumental flag (prefer trackInfo as it comes from a fresher source or cache)
             // Manual flag takes precedence over automatic detection
@@ -2374,8 +2383,12 @@ async function main() {
     // Initialize display configuration
     initializeDisplay();
 
-    // Get configuration from server
-    await getConfig();
+    // Get configuration from server (don't wait - apply when it arrives)
+    // This allows the update loop to start immediately instead of waiting for config
+    getConfig().then(config => {
+        // Config will be applied when it arrives
+        // updateInterval is already set in getConfig() function
+    });
 
     // Set initial background
     document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
@@ -2389,7 +2402,7 @@ async function main() {
     // Setup provider UI
     setupProviderUI();
 
-    // Start the update loop
+    // Start the update loop immediately (don't wait for config)
     updateLoop();
 }
 
