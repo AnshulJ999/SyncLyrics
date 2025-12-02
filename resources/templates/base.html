@@ -18,7 +18,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/provider.css')}}?v={{ cache_version }}">
     {% block styles %} {% endblock %}
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js')}}?v={{ cache_version }}" defer></script>
-    <script src="{{ url_for('static', filename='js/base.js')}}?v={{ cache_version }}"> </script>
+    <script src="{{ url_for('static', filename='js/base.js')}}?v={{ cache_version }}" defer></script>
     {% block scripts %}
     <script>
         function exitApplication(event) {
