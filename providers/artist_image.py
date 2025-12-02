@@ -39,11 +39,23 @@ class ArtistImageProvider:
         
         # Log initialization status
         api_key_status = "set" if self.fanart_api_key else "missing"
+        
+        # Mask API keys for security (show full key only if it's the default free key)
         if self.fanart_api_key:
-            masked_key = f"{self.fanart_api_key[:4]}...{self.fanart_api_key[-4:]}" if len(self.fanart_api_key) > 8 else "***"
-            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} [{masked_key}]), AudioDB: {self.enable_audiodb} (Key: {self.audiodb_api_key}), Deezer: {self.enable_deezer}")
+            masked_fanart_key = f"{self.fanart_api_key[:4]}...{self.fanart_api_key[-4:]}" if len(self.fanart_api_key) > 8 else "***"
         else:
-            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} - check .env file for FANART_TV_API_KEY), AudioDB: {self.enable_audiodb} (Key: {self.audiodb_api_key}), Deezer: {self.enable_deezer}")
+            masked_fanart_key = "missing"
+            
+        # Mask AudioDB key - show full "123" if default, otherwise mask it
+        if self.audiodb_api_key == "123":
+            masked_audiodb_key = "123"
+        else:
+            masked_audiodb_key = f"{self.audiodb_api_key[:4]}...{self.audiodb_api_key[-4:]}" if len(self.audiodb_api_key) > 8 else "***"
+        
+        if self.fanart_api_key:
+            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} [{masked_fanart_key}]), AudioDB: {self.enable_audiodb} (Key: {masked_audiodb_key}), Deezer: {self.enable_deezer}")
+        else:
+            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} - check .env file for FANART_TV_API_KEY), AudioDB: {self.enable_audiodb} (Key: {masked_audiodb_key}), Deezer: {self.enable_deezer}")
 
     async def get_artist_images(self, artist_name: str) -> List[Dict[str, Any]]:
         """

@@ -431,8 +431,12 @@ async def delete_cached_lyrics_endpoint():
 
 @app.route("/api/album-art/options", methods=['GET'])
 async def get_album_art_options():
-    """Get available album art options for current track from database"""
-    from system_utils import get_current_song_meta_data, load_album_art_from_db
+    """Get available album art options for current track from database, including artist images"""
+    from system_utils import get_current_song_meta_data, load_album_art_from_db, get_album_db_folder
+    from config import ALBUM_ART_DB_DIR
+    from pathlib import Path
+    import json
+    from urllib.parse import quote
     
     metadata = await get_current_song_meta_data()
     if not metadata:
@@ -444,56 +448,115 @@ async def get_album_art_options():
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
     
-    # Load from database
+    # Load album art from database
     db_result = load_album_art_from_db(artist, album)
-    if not db_result:
-        return jsonify({"error": "No album art database entry found"}), 404
-    
-    db_metadata = db_result["metadata"]
-    
-    # Format response for frontend
     options = []
-    providers = db_metadata.get("providers", {})
-    preferred_provider = db_metadata.get("preferred_provider")
+    preferred_provider = None
     
-    for provider_name, provider_data in providers.items():
-        # Build image URL for serving (use same folder name logic as get_album_db_folder)
-        from system_utils import get_album_db_folder
+    if db_result:
+        db_metadata = db_result["metadata"]
+        providers = db_metadata.get("providers", {})
+        preferred_provider = db_metadata.get("preferred_provider")
+        
+        # Build folder path for album art
         folder_path = get_album_db_folder(artist, album or db_metadata.get('album'))
-        folder_name = folder_path.name  # Get the actual sanitized folder name
+        folder_name = folder_path.name
         
-        # URL encode the folder name and filename
-        from urllib.parse import quote
-        encoded_folder = quote(folder_name, safe='')
-        encoded_filename = quote(provider_data.get('filename', f'{provider_name}.jpg'), safe='')
-        image_url = f"/api/album-art/image/{encoded_folder}/{encoded_filename}"
-        
-        options.append({
-            "provider": provider_name,
-            "url": provider_data.get("url"),  # Original URL
-            "image_url": image_url,  # Local server URL
-            "resolution": provider_data.get("resolution", "unknown"),
-            "width": provider_data.get("width", 0),
-            "height": provider_data.get("height", 0),
-            "is_preferred": provider_name == preferred_provider
-        })
+        # Add album art options
+        for provider_name, provider_data in providers.items():
+            encoded_folder = quote(folder_name, safe='')
+            encoded_filename = quote(provider_data.get('filename', f'{provider_name}.jpg'), safe='')
+            image_url = f"/api/album-art/image/{encoded_folder}/{encoded_filename}"
+            
+            options.append({
+                "provider": provider_name,
+                "url": provider_data.get("url"),
+                "image_url": image_url,
+                "resolution": provider_data.get("resolution", "unknown"),
+                "width": provider_data.get("width", 0),
+                "height": provider_data.get("height", 0),
+                "is_preferred": provider_name == preferred_provider,
+                "type": "album_art"  # Distinguish from artist images
+            })
+    
+    # Also load artist images from artist-only folder
+    artist_folder = get_album_db_folder(artist, None)  # Artist-only folder
+    artist_metadata_path = artist_folder / "metadata.json"
+    
+    if artist_metadata_path.exists():
+        try:
+            with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                artist_metadata = json.load(f)
+            
+            # Check if this is artist images metadata (type: "artist_images")
+            if artist_metadata.get("type") == "artist_images":
+                artist_images = artist_metadata.get("images", [])
+                artist_preferred = artist_metadata.get("preferred_provider")
+                folder_name = artist_folder.name
+                
+                # Convert artist images to options format
+                for img in artist_images:
+                    if not img.get("downloaded") or not img.get("filename"):
+                        continue
+                    
+                    source = img.get("source", "Unknown")
+                    filename = img.get("filename")
+                    
+                    # Create unique provider name for artist images (e.g., "Deezer (Artist)")
+                    provider_name = f"{source} (Artist)"
+                    
+                    # Build image URL
+                    encoded_folder = quote(folder_name, safe='')
+                    encoded_filename = quote(filename, safe='')
+                    image_url = f"/api/album-art/image/{encoded_folder}/{encoded_filename}"
+                    
+                    # Try to get resolution from image file if available
+                    image_path = artist_folder / filename
+                    width = img.get("width", 0)
+                    height = img.get("height", 0)
+                    resolution = f"{width}x{height}" if width and height else "unknown"
+                    
+                    # Check if this is the preferred artist image
+                    # artist_preferred could be stored as full name "Deezer (Artist)" or just source "Deezer"
+                    is_preferred = (artist_preferred == provider_name or 
+                                  artist_preferred == source or
+                                  (not preferred_provider and artist_preferred and source in artist_preferred))
+                    
+                    options.append({
+                        "provider": provider_name,
+                        "url": img.get("url"),
+                        "image_url": image_url,
+                        "resolution": resolution,
+                        "width": width,
+                        "height": height,
+                        "is_preferred": is_preferred,
+                        "type": "artist_image"  # Distinguish from album art
+                    })
+        except Exception as e:
+            logger.debug(f"Failed to load artist images metadata: {e}")
+    
+    # If no options found, return error
+    if not options:
+        return jsonify({"error": "No album art or artist image options found"}), 404
     
     return jsonify({
         "artist": artist,
-        "album": album or db_metadata.get("album", ""),
-        "is_single": db_metadata.get("is_single", False),
+        "album": album or (db_result["metadata"].get("album", "") if db_result else ""),
+        "is_single": db_result["metadata"].get("is_single", False) if db_result else False,
         "preferred_provider": preferred_provider,
         "options": options
     })
 
 @app.route("/api/album-art/preference", methods=['POST'])
 async def set_album_art_preference():
-    """Set preferred album art provider for current track"""
+    """Set preferred album art or artist image provider for current track"""
     from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, cleanup_old_art, _art_update_lock
     from config import ALBUM_ART_DB_DIR, CACHE_DIR
     import shutil
     import os
+    import json
     from datetime import datetime
+    from pathlib import Path
     
     metadata = await get_current_song_meta_data()
     if not metadata:
@@ -511,30 +574,74 @@ async def set_album_art_preference():
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
     
-    # Load existing metadata
-    db_result = load_album_art_from_db(artist, album)
-    if not db_result:
-        return jsonify({"error": "No album art database entry found"}), 404
+    # Check if this is an artist image (provider name ends with " (Artist)")
+    is_artist_image = provider_name.endswith(" (Artist)")
     
-    db_metadata = db_result["metadata"]
-    providers = db_metadata.get("providers", {})
-    
-    if provider_name not in providers:
-        return jsonify({"error": f"Provider '{provider_name}' not found in database"}), 404
-    
-    # Update preferred provider
-    db_metadata["preferred_provider"] = provider_name
-    db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
-    
-    # Save updated metadata
-    folder = get_album_db_folder(artist, album)
-    if not save_album_db_metadata(folder, db_metadata):
-        return jsonify({"error": "Failed to save preference"}), 500
-    
-    # Copy selected image to cache for immediate use (preserving original format)
-    provider_data = providers[provider_name]
-    filename = provider_data.get("filename", f"{provider_name}.jpg")
-    db_image_path = folder / filename
+    if is_artist_image:
+        # Handle artist image preference
+        artist_folder = get_album_db_folder(artist, None)  # Artist-only folder
+        artist_metadata_path = artist_folder / "metadata.json"
+        
+        if not artist_metadata_path.exists():
+            return jsonify({"error": "No artist images database entry found"}), 404
+        
+        try:
+            with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                artist_metadata = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load artist metadata: {e}")
+            return jsonify({"error": "Failed to load artist images metadata"}), 500
+        
+        # Extract source name from provider name (e.g., "Deezer (Artist)" -> "Deezer")
+        source_name = provider_name.replace(" (Artist)", "")
+        artist_images = artist_metadata.get("images", [])
+        
+        # Find the image with matching source
+        matching_image = None
+        for img in artist_images:
+            if img.get("source") == source_name and img.get("downloaded"):
+                matching_image = img
+                break
+        
+        if not matching_image:
+            return jsonify({"error": f"Artist image '{provider_name}' not found in database"}), 404
+        
+        # Update preferred provider
+        artist_metadata["preferred_provider"] = provider_name
+        artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+        
+        # Save updated metadata
+        if not save_album_db_metadata(artist_folder, artist_metadata):
+            return jsonify({"error": "Failed to save artist image preference"}), 500
+        
+        # Copy selected image to cache for immediate use
+        filename = matching_image.get("filename")
+        db_image_path = artist_folder / filename
+    else:
+        # Handle album art preference (original logic)
+        db_result = load_album_art_from_db(artist, album)
+        if not db_result:
+            return jsonify({"error": "No album art database entry found"}), 404
+        
+        db_metadata = db_result["metadata"]
+        providers = db_metadata.get("providers", {})
+        
+        if provider_name not in providers:
+            return jsonify({"error": f"Provider '{provider_name}' not found in database"}), 404
+        
+        # Update preferred provider
+        db_metadata["preferred_provider"] = provider_name
+        db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+        
+        # Save updated metadata
+        folder = get_album_db_folder(artist, album)
+        if not save_album_db_metadata(folder, db_metadata):
+            return jsonify({"error": "Failed to save preference"}), 500
+        
+        # Copy selected image to cache for immediate use (preserving original format)
+        provider_data = providers[provider_name]
+        filename = provider_data.get("filename", f"{provider_name}.jpg")
+        db_image_path = folder / filename
     
     if db_image_path.exists():
         try:

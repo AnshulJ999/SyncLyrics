@@ -1237,43 +1237,9 @@ async function loadAlbumArtTab() {
             grid.appendChild(card);
         });
 
-        // NEW: Fetch and Append Artist Images to the SAME grid
-        if (lastTrackInfo && lastTrackInfo.artist_id) {
-            // Add a header/separator with correct grid positioning
-            //const separator = document.createElement('div');
-            //separator.className = 'artist-images-header';
-            //separator.textContent = 'Artist Images';
-            //grid.appendChild(separator);
-
-            // Fetch images (reuse existing function logic or global variable if already fetched)
-            // We'll use the global currentArtistImages array if populated, or fetch if empty
-            let images = currentArtistImages;
-            if (!images || images.length === 0) {
-                images = await fetchArtistImages(lastTrackInfo.artist_id);
-            }
-
-            if (images && images.length > 0) {
-                images.forEach((url, index) => {
-                    const card = document.createElement('div');
-                    card.className = 'art-card';
-                    card.innerHTML = `
-                        <img src="${url}" class="art-card-image" loading="lazy">
-                        <div class="art-card-overlay">
-                            <div class="art-card-provider">Artist Image</div>
-                        </div>
-                    `;
-                    // Optional: Click to view/set as background logic could go here
-                    grid.appendChild(card);
-                });
-            } else {
-                const msg = document.createElement('div');
-                msg.style.gridColumn = '1 / -1';
-                msg.style.opacity = '0.5';
-                msg.style.fontSize = '0.85rem';
-                msg.textContent = 'No artist images found';
-                grid.appendChild(msg);
-            }
-        }
+        // NOTE: Artist images are now included in the options API response
+        // They appear automatically in the grid with proper provider names and selection support
+        // No need to fetch them separately here
 
     } catch (error) {
         console.error('Error loading album art options:', error);

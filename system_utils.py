@@ -2327,16 +2327,18 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     break # Just one from Spotify is enough if we have others
                 
                 # Fallback 2: Last.fm (via old provider if enabled)
-                # Note: We skip iTunes for artist images as it rarely works for artists
+                # NOTE: iTunes is NOT used for artist images because it rarely provides artist artwork.
+                # iTunes Search API is designed for app icons and album art, not artist photos.
+                # iTunes remains enabled for ALBUM art fetching in providers/album_art.py
                 try:
                     art_provider = get_album_art_provider()
                     # Only use Last.fm from the old provider (skip iTunes)
                     if art_provider.enable_lastfm and art_provider.lastfm_api_key:
-                        loop = asyncio.get_running_loop()
-                        lastfm_images = await loop.run_in_executor(None, art_provider._get_lastfm_artist_images, artist)
+                        # Use public async method instead of private sync method
+                        lastfm_images = await art_provider.get_artist_images(artist)
                         existing_urls = {i['url'] for i in all_images}
                         for img in lastfm_images:
-                            if img['url'] not in existing_urls:
+                            if img.get('url') and img['url'] not in existing_urls:
                                 all_images.append(img)
                 except Exception as e:
                     logger.debug(f"Last.fm fallback failed: {e}")
