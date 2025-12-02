@@ -12,6 +12,7 @@ from config import DEBUG, FEATURES, ALBUM_ART_DB_DIR
 from state_manager import get_state, set_state
 from providers.spotify_api import get_shared_spotify_client
 from providers.album_art import get_album_art_provider
+from providers.artist_image import ArtistImageProvider
 from logging_config import get_logger
 from config import CACHE_DIR
 import os
@@ -2261,9 +2262,19 @@ async def get_current_song_meta_data() -> Optional[dict]:
 async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None) -> List[str]:
     """
     Background task to fetch artist images and save them to the database.
+    Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spotify, and Last.fm.
+    
+    Priority order:
+    1. Deezer (free, 1000x1000px, no auth required)
+    2. TheAudioDB (free key '123', provides MBID for FanArt.tv)
+    3. FanArt.tv (requires FANART_TV_API_KEY in .env + MBID from TheAudioDB)
+    4. Spotify (fallback, if spotify_artist_id provided)
+    5. Last.fm (fallback, if LASTFM_API_KEY in .env)
+    
+    Note: iTunes is NOT used for artist images (it rarely works for artists).
     """
     # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
-    return [] 
+    # return [] 
 
     # Prevent duplicate downloads for the same artist (Race Condition Fix)
     if artist in _artist_download_tracker:
@@ -2291,29 +2302,44 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             existing_metadata = json.load(f)
                     except: pass
 
-                # Fetch from all sources
-                all_images = []  # List of dicts: {'url': str, 'source': str, ...}
+                # Initialize our new dedicated artist image provider
+                artist_provider = ArtistImageProvider()
                 
-                # 1. Fetch from Spotify if ID provided
+                # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
+                # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
+                all_images = await artist_provider.get_artist_images(artist)
+                
+                # Fallback 1: Spotify (if ID provided) - Keep as backup
                 if spotify_artist_id:
                     client = get_shared_spotify_client()
                     if client:
                         spotify_urls = await client.get_artist_images(spotify_artist_id)
-                        # FIX: Only take the first (largest) image to avoid redundancy
                         if spotify_urls:
-                            all_images.append({
-                                "url": spotify_urls[0],
-                                "source": "spotify"
-                            })
+                            # Only add if not already present (simple check)
+                            existing_urls = {i['url'] for i in all_images}
+                            for url in spotify_urls:
+                                if url not in existing_urls:
+                                    all_images.append({
+                                        "url": url,
+                                        "source": "spotify",
+                                        "type": "artist"
+                                    })
+                                    break # Just one from Spotify is enough if we have others
                 
-                # 2. Fetch from Other Sources (iTunes, Last.fm) via AlbumArtProvider
+                # Fallback 2: Last.fm (via old provider if enabled)
+                # Note: We skip iTunes for artist images as it rarely works for artists
                 try:
                     art_provider = get_album_art_provider()
-                    external_images = await art_provider.get_artist_images(artist)
-                    # external_images is already in the correct format: [{'url': str, 'source': str, ...}]
-                    all_images.extend(external_images)
+                    # Only use Last.fm from the old provider (skip iTunes)
+                    if art_provider.enable_lastfm and art_provider.lastfm_api_key:
+                        loop = asyncio.get_running_loop()
+                        lastfm_images = await loop.run_in_executor(None, art_provider._get_lastfm_artist_images, artist)
+                        existing_urls = {i['url'] for i in all_images}
+                        for img in lastfm_images:
+                            if img['url'] not in existing_urls:
+                                all_images.append(img)
                 except Exception as e:
-                    logger.error(f"Failed to fetch external artist images from AlbumArtProvider: {e}")
+                    logger.debug(f"Last.fm fallback failed: {e}")
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
@@ -2334,19 +2360,21 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         continue
                     
                     # Generate filename with source prefix and index
-                    if source not in source_counts:
-                        source_counts[source] = 0
+                    # Sanitize source name (remove dots, special chars) for filename safety
+                    safe_source = source.lower().replace('.', '').replace(' ', '_').replace('-', '_')
+                    if safe_source not in source_counts:
+                        source_counts[safe_source] = 0
                     else:
-                        source_counts[source] += 1
+                        source_counts[safe_source] += 1
                     
-                    idx = source_counts[source]
-                    filename = f"{source.lower()}_{idx}.jpg"
+                    idx = source_counts[safe_source]
+                    filename = f"{safe_source}_{idx}.jpg"
                     file_path = folder / filename
                     
                     if not file_path.exists():
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         if success:
-                            filename = f"{source.lower()}_{idx}{ext}"
+                            filename = f"{safe_source}_{idx}{ext}"
                             saved_images.append({
                                 "source": source,
                                 "url": url,

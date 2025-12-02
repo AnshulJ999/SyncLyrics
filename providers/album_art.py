@@ -842,7 +842,10 @@ class AlbumArtProvider:
 
     async def get_artist_images(self, artist: str) -> List[Dict[str, Any]]:
         """
-        Fetch artist images from all available sources.
+        Fetch artist images from available sources.
+        NOTE: iTunes is NOT used for artist images (it rarely works for artists).
+        This method is kept for backward compatibility and only provides Last.fm images.
+        For new implementations, use providers.artist_image.ArtistImageProvider instead.
         
         Returns:
             List of dicts: {'url': str, 'source': str, 'width': int, 'height': int}
@@ -850,15 +853,10 @@ class AlbumArtProvider:
         images = []
         loop = asyncio.get_running_loop()
         
-        # 1. iTunes (High Quality)
-        if self.enable_itunes:
-            try:
-                itunes_images = await loop.run_in_executor(None, self._get_itunes_artist_images, artist)
-                images.extend(itunes_images)
-            except Exception as e:
-                logger.debug(f"iTunes artist image fetch failed: {e}")
-
-        # 2. Last.fm (Good Quality)
+        # NOTE: iTunes removed from artist images - it rarely works for artists
+        # iTunes is kept for album art only (where it works well)
+        
+        # Last.fm (Good Quality) - kept as fallback for backward compatibility
         if self.enable_lastfm and self.lastfm_api_key:
             try:
                 lastfm_images = await loop.run_in_executor(None, self._get_lastfm_artist_images, artist)
