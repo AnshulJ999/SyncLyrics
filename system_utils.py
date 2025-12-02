@@ -72,6 +72,9 @@ _spotify_download_tracker = set()
 # NEW: Track in-progress artist image downloads to prevent race conditions
 _artist_download_tracker = set()
 
+# Global instance for ArtistImageProvider (singleton pattern)
+_artist_image_provider: Optional[ArtistImageProvider] = None
+
 # Global lock to prevent race conditions during metadata updates
 _meta_data_lock = asyncio.Lock()
 
@@ -2900,8 +2903,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             existing_metadata = json.load(f)
                     except: pass
 
-                # Initialize our new dedicated artist image provider
-                artist_provider = ArtistImageProvider()
+                # Initialize our new dedicated artist image provider (singleton pattern)
+                # Use global instance to prevent re-initialization on every call
+                global _artist_image_provider
+                if _artist_image_provider is None:
+                    _artist_image_provider = ArtistImageProvider()
+                artist_provider = _artist_image_provider
                 
                 # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
                 # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
@@ -2984,9 +2991,18 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             current_artist = current_metadata.get("artist", "")
                             current_artist_id = current_metadata.get("artist_id")
                             
-                            # If artist changed, abort saving images
-                            if current_artist != original_artist or current_artist_id != original_spotify_id:
-                                logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' during fetch, discarding images")
+                            # CRITICAL FIX: Only abort if artist NAME changed OR if we HAD an ID and it changed to a DIFFERENT ID
+                            # If original_spotify_id was None and now it's set (but artist name is same), that's fine
+                            # This prevents infinite loops when ID gets populated during fetch
+                            name_changed = current_artist != original_artist
+                            id_changed = current_artist_id != original_spotify_id
+                            
+                            # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                            # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
+                            id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                            
+                            if name_changed or id_mismatch_is_critical:
+                                logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) during fetch, discarding images")
                                 return []  # Abort entire operation
                     except Exception as e:
                         logger.debug(f"Failed to check current artist during download: {e}")
@@ -3047,8 +3063,19 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 if current_metadata:
                                     current_artist = current_metadata.get("artist", "")
                                     current_artist_id = current_metadata.get("artist_id")
-                                    if current_artist != original_artist or current_artist_id != original_spotify_id:
-                                        logger.info(f"Artist changed during download, discarding image for '{original_artist}'")
+                                    
+                                    # CRITICAL FIX: Only abort if artist NAME changed OR if we HAD an ID and it changed to a DIFFERENT ID
+                                    # If original_spotify_id was None and now it's set (but artist name is same), that's fine
+                                    # This prevents infinite loops when ID gets populated during fetch
+                                    name_changed = current_artist != original_artist
+                                    id_changed = current_artist_id != original_spotify_id
+                                    
+                                    # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                                    # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
+                                    id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                                    
+                                    if name_changed or id_mismatch_is_critical:
+                                        logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) during download, discarding image")
                                         # Delete the file we just downloaded (now with correct extension)
                                         try:
                                             if file_path.exists():
@@ -3140,8 +3167,19 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     if current_metadata:
                         current_artist = current_metadata.get("artist", "")
                         current_artist_id = current_metadata.get("artist_id")
-                        if current_artist != original_artist or current_artist_id != original_spotify_id:
-                            logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' before metadata save, discarding")
+                        
+                        # CRITICAL FIX: Only abort if artist NAME changed OR if we HAD an ID and it changed to a DIFFERENT ID
+                        # If original_spotify_id was None and now it's set (but artist name is same), that's fine
+                        # This prevents infinite loops when ID gets populated during fetch
+                        name_changed = current_artist != original_artist
+                        id_changed = current_artist_id != original_spotify_id
+                        
+                        # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                        # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
+                        id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                        
+                        if name_changed or id_mismatch_is_critical:
+                            logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) before metadata save, discarding")
                             
                             # CRITICAL FIX: Clean up orphaned files that were downloaded but validation failed
                             # Delete only newly downloaded files (not existing ones) to prevent data loss
