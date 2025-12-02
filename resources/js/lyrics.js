@@ -260,11 +260,16 @@ function updateBackground() {
         return; // Exit early - minimal mode doesn't use visual backgrounds
     }
 
+    // CRITICAL FIX: Use background_image_url if available (artist image when selected), 
+    // otherwise fallback to album_art_url (album art)
+    // This separates the background image from the album art display in the top left corner
+    const backgroundUrl = lastTrackInfo?.background_image_url || lastTrackInfo?.album_art_url;
+
     // Check for album art backgrounds in priority order: Sharp > Soft > Blur
-    if (displayConfig.sharpAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
+    if (displayConfig.sharpAlbumArt && lastTrackInfo && backgroundUrl) {
         // Fix: Encode URI to handle spaces/symbols in local paths
         // We use encodeURI to allow the full URL structure but escape spaces
-        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        const safeUrl = encodeURI(backgroundUrl);
         bgLayer.style.backgroundImage = `url("${safeUrl}")`;
 
         bgLayer.classList.add('visible');
@@ -272,10 +277,10 @@ function updateBackground() {
         // Remove gradient from body when art background is active
         document.body.style.background = 'transparent';
     }
-    else if (displayConfig.softAlbumArt && lastTrackInfo && lastTrackInfo.album_art_url) {
+    else if (displayConfig.softAlbumArt && lastTrackInfo && backgroundUrl) {
         // Fix: Encode URI to handle spaces/symbols in local paths
         // We use encodeURI to allow the full URL structure but escape spaces
-        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        const safeUrl = encodeURI(backgroundUrl);
         bgLayer.style.backgroundImage = `url("${safeUrl}")`;
 
         bgLayer.classList.add('visible');
@@ -283,10 +288,10 @@ function updateBackground() {
         // Remove gradient from body when art background is active
         document.body.style.background = 'transparent';
     }
-    else if (displayConfig.artBackground && lastTrackInfo && lastTrackInfo.album_art_url) {
+    else if (displayConfig.artBackground && lastTrackInfo && backgroundUrl) {
         // Fix: Encode URI to handle spaces/symbols in local paths
         // We use encodeURI to allow the full URL structure but escape spaces
-        const safeUrl = encodeURI(lastTrackInfo.album_art_url);
+        const safeUrl = encodeURI(backgroundUrl);
         bgLayer.style.backgroundImage = `url("${safeUrl}")`;
 
         bgLayer.classList.add('visible');

@@ -917,7 +917,7 @@ async def serve_album_art_image(folder_name: str, filename: str):
 
 @app.route("/cover-art")
 async def get_cover_art():
-    """Serves the album art directly from the source (DB or Thumbnail) without race conditions."""
+    """Serves the album art or background image directly from the source (DB or Thumbnail) without race conditions."""
     from system_utils import get_current_song_meta_data, get_cached_art_path
     from quart import send_file
     from pathlib import Path
@@ -925,9 +925,24 @@ async def get_cover_art():
     # 1. Get the current song metadata to find the real path
     metadata = await get_current_song_meta_data()
     
+    # CRITICAL FIX: Check if this is a background image request (separate from album art display)
+    # If type=background is in query params, serve background_image_path instead of album_art_path
+    is_background = request.args.get('type') == 'background'
+    
     # 2. Check if we have a direct path to the image (DB file or Unique Thumbnail)
-    if metadata and metadata.get("album_art_path"):
-        art_path = Path(metadata["album_art_path"])
+    # For background: use background_image_path if available, otherwise fallback to album_art_path
+    # For album art: always use album_art_path
+    if metadata:
+        if is_background and metadata.get("background_image_path"):
+            art_path = Path(metadata["background_image_path"])
+        elif metadata.get("album_art_path"):
+            art_path = Path(metadata["album_art_path"])
+        else:
+            art_path = None
+    else:
+        art_path = None
+    
+    if art_path:
         # CRITICAL FIX: Verify file exists before serving (handles cleanup race conditions)
         # If thumbnail was deleted during cleanup while metadata cache still references it,
         # we fall through to legacy path instead of returning 404

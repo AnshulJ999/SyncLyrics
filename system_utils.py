@@ -1724,53 +1724,62 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         result_extra_fields = {}  # Store album_art_path for direct serving
         saved_background_style = None  # Initialize to prevent UnboundLocalError
 
-        # CRITICAL FIX: Check for artist image preference FIRST if user explicitly selected one
-        # This allows artist images to override album art when user selects them
-        artist_image_result = load_artist_image_from_db(artist)
-        using_artist_image = False
+        # CRITICAL FIX: Separate album art (top left display) from background image
+        # Album art should ALWAYS be album art, background can be artist image if selected
+        background_image_url = None
+        background_image_path = None
         
+        # 1. Always load album art for top left display (independent of artist image preference)
+        db_result = load_album_art_from_db(artist, album, title)
+        if db_result:
+            found_in_db = True
+            db_image_path = db_result["path"]
+            saved_background_style = db_result.get("background_style")  # Capture saved style
+            
+            # FIX: Add timestamp to URL to force browser cache busting when file updates
+            mtime = int(time.time())
+            try:
+                if db_image_path.exists():
+                    mtime = int(db_image_path.stat().st_mtime)
+            except: pass
+            
+            # Album art URL is ALWAYS album art (for top left display)
+            album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+            
+            # NEW: Pass the path directly so server.py can serve it without copying
+            # This eliminates race conditions from file copying
+            result_extra_fields = {"album_art_path": str(db_image_path)}
+            
+            # Default background to album art (will be overridden if artist image is selected)
+            background_image_url = album_art_url
+            background_image_path = str(db_image_path)
+        
+        # 2. Check for artist image preference for background (separate from album art)
+        # If user selected an artist image, use it for background instead of album art
+        artist_image_result = load_artist_image_from_db(artist)
         if artist_image_result:
-            # User has selected an artist image - use it instead of album art
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
                 mtime = int(artist_image_path.stat().st_mtime)
-                album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-                result_extra_fields = {"album_art_path": str(artist_image_path)}
-                found_in_db = True
-                using_artist_image = True
-                logger.debug(f"Using preferred artist image for {artist}")
-        
-        # Check Album Art Database only if no artist image preference exists
-        if not using_artist_image:
-            db_result = load_album_art_from_db(artist, album, title)
-            # saved_background_style already initialized above
-            if db_result:
-                found_in_db = True
-                db_image_path = db_result["path"]
-                saved_background_style = db_result.get("background_style")  # Capture saved style
-                
-                # FIX: Add timestamp to URL to force browser cache busting when file updates
-                mtime = int(time.time())
-                try:
-                    if db_image_path.exists():
-                        mtime = int(db_image_path.stat().st_mtime)
-                except: pass
-                
-                album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-                
-                # NEW: Pass the path directly so server.py can serve it without copying
-                # This eliminates race conditions from file copying
-                result_extra_fields = {"album_art_path": str(db_image_path)}
+                # Use artist image for background (not for album art display)
+                # Add type=background parameter so server knows to serve background_image_path
+                background_image_url = f"/cover-art?id={current_track_id}&t={mtime}&type=background"
+                background_image_path = str(artist_image_path)
+                logger.debug(f"Using preferred artist image for background: {artist}")
         
         # Fallback: Check for artist image if no album art found (but no explicit preference)
         # This uses first available artist image as fallback when no album art exists
+        # Only use for background, not for album art display
         if not found_in_db:
             fallback_result = _get_artist_image_fallback(artist)
             if fallback_result:
                 artist_image_path = fallback_result["path"]
                 mtime = int(artist_image_path.stat().st_mtime)
+                # Use fallback artist image for both (only when no album art exists)
                 album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                background_image_url = album_art_url
                 result_extra_fields = {"album_art_path": str(artist_image_path)}
+                background_image_path = str(artist_image_path)
                 found_in_db = True
                 logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {artist}")
 
@@ -1884,6 +1893,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                  except asyncio.TimeoutError:
                      pass # Fallback to Windows thumbnail
 
+        # CRITICAL FIX: Separate album_art_url (top left display) from background_image_url (background)
         result = {
             "track_id": current_track_id,  # ADDED: Normalized ID for frontend change detection
             "artist": artist,
@@ -1892,7 +1902,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "position": position,
             "duration_ms": duration_ms,
             "colors": ("#24273a", "#363b54"),
-            "album_art_url": album_art_url,
+            "album_art_url": album_art_url,  # ALWAYS album art (for top left display)
+            "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
             "is_playing": True,
             "source": "windows_media",
             "background_style": saved_background_style  # Return saved style preference
@@ -1970,44 +1981,53 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         saved_background_style = None  # Initialize to prevent UnboundLocalError
         db_metadata = None  # Initialize to prevent UnboundLocalError
 
-        # CRITICAL FIX: Check for artist image preference FIRST if user explicitly selected one
-        # This allows artist images to override album art when user selects them
-        artist_image_result = load_artist_image_from_db(captured_artist)
-        using_artist_image = False
+        # CRITICAL FIX: Separate album art (top left display) from background image
+        # Album art should ALWAYS be album art, background can be artist image if selected
+        background_image_url = None
+        background_image_path = None
         
+        # 1. Always load album art for top left display (independent of artist image preference)
+        db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
+        if db_result:
+            found_in_db = True
+            db_image_path = db_result["path"]
+            db_metadata = db_result["metadata"]
+            saved_background_style = db_result.get("background_style")  # Capture saved style
+            
+            # FIX: Add timestamp to URL to force browser cache busting
+            mtime = int(time.time())
+            try:
+                if db_image_path.exists():
+                    mtime = int(db_image_path.stat().st_mtime)
+            except: pass
+            
+            # Album art URL is ALWAYS album art (for top left display)
+            album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+
+            # NEW: Store path directly so server.py can serve it without copying
+            # This eliminates race conditions from file copying
+            album_art_path = str(db_image_path)
+            
+            # Default background to album art (will be overridden if artist image is selected)
+            background_image_url = album_art_url
+            background_image_path = album_art_path
+        
+        # 2. Check for artist image preference for background (separate from album art)
+        # If user selected an artist image, use it for background instead of album art
+        artist_image_result = load_artist_image_from_db(captured_artist)
         if artist_image_result:
-            # User has selected an artist image - use it instead of album art
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
                 mtime = int(artist_image_path.stat().st_mtime)
-                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
-                album_art_path = str(artist_image_path)
-                found_in_db = True
-                using_artist_image = True
-                logger.debug(f"Using preferred artist image for {captured_artist}")
+                # Use artist image for background (not for album art display)
+                # Add type=background parameter so server knows to serve background_image_path
+                background_image_url = f"/cover-art?id={captured_track_id}&t={mtime}&type=background"
+                background_image_path = str(artist_image_path)
+                logger.debug(f"Using preferred artist image for background: {captured_artist}")
         
-        # Check Album Art Database only if no artist image preference exists
-        if not using_artist_image:
-            db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
-            # saved_background_style and db_metadata already initialized above
-            if db_result:
-                found_in_db = True
-                db_image_path = db_result["path"]
-                db_metadata = db_result["metadata"]
-                saved_background_style = db_result.get("background_style")  # Capture saved style
-                
-                # FIX: Add timestamp to URL to force browser cache busting
-                mtime = int(time.time())
-                try:
-                    if db_image_path.exists():
-                        mtime = int(db_image_path.stat().st_mtime)
-                except: pass
-                
-                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
-
-                # NEW: Store path directly so server.py can serve it without copying
-                # This eliminates race conditions from file copying
-                album_art_path = str(db_image_path)
+        # If no album art found but artist image is selected, still set background
+        if not found_in_db and artist_image_result:
+            found_in_db = True  # At least we have something for background
         
         # Check if DB is already populated with ALL enabled providers (only if we have album art metadata)
         if db_metadata:
@@ -2090,8 +2110,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             if fallback_result:
                 artist_image_path = fallback_result["path"]
                 mtime = int(artist_image_path.stat().st_mtime)
+                # Use fallback artist image for both (only when no album art exists)
                 album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                background_image_url = album_art_url
                 album_art_path = str(artist_image_path)
+                background_image_path = str(artist_image_path)
                 found_in_db = True
                 logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {captured_artist}")
         
@@ -2295,6 +2318,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Return standardized structure with all fields
         # Include artist_id and artist_name for visual mode and artist image fetching
         # Include background_style for Phase 2: Visual Preference Persistence
+        # CRITICAL FIX: Separate album_art_url (top left display) from background_image_url (background)
         result = {
             "id": track.get("track_id"),    # CHANGED: Use REAL Spotify ID (fixes Like button)
             "track_id": captured_track_id,  # ADDED: Normalized ID (fixes Visual Mode detection)
@@ -2304,7 +2328,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "position": track["progress_ms"] / 1000,
             "duration_ms": track.get("duration_ms"),
             "colors": colors,
-            "album_art_url": album_art_url,
+            "album_art_url": album_art_url,  # ALWAYS album art (for top left display)
+            "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
             "is_playing": True,
             "source": "spotify",
             "artist_id": track.get("artist_id"),  # For fetching artist images
@@ -2316,6 +2341,10 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Add album_art_path if we have a direct path (DB file)
         if album_art_path:
             result["album_art_path"] = album_art_path
+        
+        # Add background_image_path if it exists (for server.py to serve background)
+        if background_image_path:
+            result["background_image_path"] = background_image_path
         
         return result
     except Exception as e:
