@@ -109,6 +109,9 @@
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.95) translateY(20px);
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* Prevent pull-to-refresh and overscroll bounce inside modal */
+    overscroll-behavior: contain;
+    touch-action: pan-y; /* Allow vertical scrolling but prevent pull-to-refresh */
 }
 
 .provider-modal:not(.hidden) .provider-modal-content {
@@ -475,6 +478,9 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 16px;
     margin-top: 16px;
+    /* Prevent pull-to-refresh and overscroll bounce */
+    overscroll-behavior: contain;
+    touch-action: pan-y; /* Allow vertical scrolling but prevent pull-to-refresh */
 }
 
 .art-card {
@@ -625,6 +631,9 @@
         /* Custom Scrollbar for inner lists */
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.1);
+        /* Prevent pull-to-refresh and overscroll bounce */
+        overscroll-behavior: contain;
+        touch-action: pan-y; /* Allow vertical scrolling but prevent pull-to-refresh */
     }
     
     /* Headers for columns (simulated) */

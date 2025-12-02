@@ -2613,13 +2613,28 @@ function updateStyleButtonsInModal(currentStyle) {
 function setupTouchControls() {
     let touchStartX = 0;
     let touchStartY = 0;
+    let touchStartedInModal = false; // Track if touch started inside modal
 
     document.addEventListener('touchstart', e => {
         touchStartX = e.changedTouches[0].screenX;
         touchStartY = e.changedTouches[0].screenY;
+        
+        // Check if touch started inside the provider modal
+        const providerModal = document.getElementById('provider-modal');
+        if (providerModal && !providerModal.classList.contains('hidden')) {
+            // Check if the touch target is inside the modal
+            touchStartedInModal = providerModal.contains(e.target);
+        } else {
+            touchStartedInModal = false;
+        }
     }, { passive: true });
 
     document.addEventListener('touchend', e => {
+        // Don't process swipe if touch started inside the provider modal
+        if (touchStartedInModal) {
+            return;
+        }
+        
         const touchEndX = e.changedTouches[0].screenX;
         const touchEndY = e.changedTouches[0].screenY;
 
