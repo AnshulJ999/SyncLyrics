@@ -1062,6 +1062,9 @@ async function showProviderModal() {
 
         // Show modal (modal already declared on line 738)
         modal.classList.remove('hidden');
+        
+        // Lock body scroll to prevent pull-to-refresh (especially important for Fully Kiosk Browser)
+        document.body.style.overflow = 'hidden';
 
     } catch (error) {
         console.error('Error loading providers:', error);
@@ -1403,6 +1406,9 @@ function hideProviderModal() {
     if (modal) {
         modal.classList.add('hidden');
     }
+    
+    // Unlock body scroll when modal is closed
+    document.body.style.overflow = '';
 }
 
 async function selectProvider(providerName) {
