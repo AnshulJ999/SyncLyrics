@@ -100,13 +100,20 @@ class ArtistImageProvider:
                 logger.error(f"FanArt.tv fetch failed: {e}")
 
         # Deduplicate by URL to avoid storing the same image multiple times
+        # Defensive: Handle cases where image dict might be malformed or missing 'url' key
         unique_images = []
         seen_urls = set()
         
         for img in all_images:
-            if img['url'] not in seen_urls:
+            # Safely get URL - skip images without valid URL
+            img_url = img.get('url') if isinstance(img, dict) else None
+            if not img_url or not isinstance(img_url, str):
+                logger.debug(f"Skipping image with invalid or missing URL: {img}")
+                continue
+                
+            if img_url not in seen_urls:
                 unique_images.append(img)
-                seen_urls.add(img['url'])
+                seen_urls.add(img_url)
                 
         return unique_images
 
@@ -129,17 +136,26 @@ class ArtistImageProvider:
                 return []
             
             data = resp.json()
-            if not data.get('data'): 
+            if not data.get('data') or len(data.get('data', [])) == 0:
                 return []
             
-            # Get best match (first result)
+            # Get best match (first result) - extra safety check
             artist_obj = data['data'][0]
+            if not isinstance(artist_obj, dict):
+                logger.debug(f"Deezer: Invalid artist object type: {type(artist_obj)}")
+                return []
             
             # Verify name match loosely to ensure we got the right artist
+            # Defensive: Check if 'name' field exists
+            artist_name = artist_obj.get('name')
+            if not artist_name or not isinstance(artist_name, str):
+                logger.debug(f"Deezer: Artist object missing or invalid 'name' field")
+                return []
+                
             artist_lower = artist.lower()
-            deezer_name_lower = artist_obj['name'].lower()
+            deezer_name_lower = artist_name.lower()
             if artist_lower not in deezer_name_lower and deezer_name_lower not in artist_lower:
-                logger.debug(f"Deezer: Name mismatch - searched '{artist}', got '{artist_obj['name']}'")
+                logger.debug(f"Deezer: Name mismatch - searched '{artist}', got '{artist_name}'")
                 return []
             
             # Check if search result has picture fields (it usually does)
@@ -200,10 +216,14 @@ class ArtistImageProvider:
                 return result
                 
             data = resp.json()
-            if not data or not data.get('artists'):
+            if not data or not data.get('artists') or len(data.get('artists', [])) == 0:
                 return result
                 
+            # Get first artist result - extra safety check
             artist_data = data['artists'][0]
+            if not isinstance(artist_data, dict):
+                logger.debug(f"TheAudioDB: Invalid artist data type: {type(artist_data)}")
+                return result
             
             # Save MBID for FanArt.tv (critical for accessing FanArt.tv API)
             result['mbid'] = artist_data.get('strMusicBrainzID')
@@ -280,34 +300,38 @@ class ArtistImageProvider:
             images = []
             
             # Artist Backgrounds (High-resolution backgrounds, typically 1920x1080+)
+            # Defensive: Only add images with valid URL fields
             for bg in data.get('artistbackground', []):
-                images.append({
-                    'url': bg['url'],
-                    'source': 'FanArt.tv',
-                    'type': 'background',
-                    'width': 1920,
-                    'height': 1080
-                })
+                if isinstance(bg, dict) and bg.get('url'):
+                    images.append({
+                        'url': bg['url'],
+                        'source': 'FanArt.tv',
+                        'type': 'background',
+                        'width': 1920,
+                        'height': 1080
+                    })
                 
             # Artist Thumbnails (Main artist photos, typically 1000x1000+)
             for thumb in data.get('artistthumb', []):
-                images.append({
-                    'url': thumb['url'],
-                    'source': 'FanArt.tv',
-                    'type': 'thumbnail',
-                    'width': 1000,
-                    'height': 1000
-                })
+                if isinstance(thumb, dict) and thumb.get('url'):
+                    images.append({
+                        'url': thumb['url'],
+                        'source': 'FanArt.tv',
+                        'type': 'thumbnail',
+                        'width': 1000,
+                        'height': 1000
+                    })
                 
             # HD Music Logos (Transparent PNG logos, typically 800x310)
             for logo in data.get('hdmusiclogo', []):
-                images.append({
-                    'url': logo['url'],
-                    'source': 'FanArt.tv',
-                    'type': 'logo',
-                    'width': 800,
-                    'height': 310
-                })
+                if isinstance(logo, dict) and logo.get('url'):
+                    images.append({
+                        'url': logo['url'],
+                        'source': 'FanArt.tv',
+                        'type': 'logo',
+                        'width': 800,
+                        'height': 310
+                    })
                 
             if images:
                 logger.debug(f"FanArt.tv: Found {len(images)} image(s) for MBID {mbid}")

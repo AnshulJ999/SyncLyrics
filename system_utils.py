@@ -2396,7 +2396,14 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 
                 # Return list of LOCAL paths for the frontend
                 # We return paths relative to the DB root for the API to serve
-                return [f"/api/album-art/image/{folder.name}/{img['filename']}" for img in saved_images if img.get('downloaded')]
+                # URL encode folder name and filename to handle special characters safely
+                from urllib.parse import quote
+                encoded_folder = quote(folder.name, safe='')
+                return [
+                    f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
+                    for img in saved_images 
+                    if img.get('downloaded') and img.get('filename')
+                ]
 
             except Exception as e:
                 logger.error(f"Error ensuring artist image DB: {e}")
