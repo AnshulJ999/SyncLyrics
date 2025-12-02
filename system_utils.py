@@ -2559,6 +2559,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
                 
+                # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
+                # Store original list of existing filenames to identify new downloads
+                existing_filenames = {img.get('filename') for img in saved_images if img.get('filename')}
+                newly_downloaded_files = []  # Track (file_path, filename) tuples for cleanup
+                
                 # Simple deduplication set (by URL)
                 existing_urls = {img.get('url') for img in saved_images if img.get('url')}
                 
@@ -2642,6 +2647,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 "added_at": datetime.utcnow().isoformat() + "Z"
                             })
                             existing_urls.add(url)  # Mark as processed
+                            
+                            # CRITICAL FIX: Track this as a newly downloaded file for cleanup if validation fails
+                            # Only track if it's not in the original existing_filenames
+                            if filename not in existing_filenames:
+                                newly_downloaded_files.append((file_path, filename))
                 
                 # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
                 # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes
@@ -2654,6 +2664,22 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         current_artist_id = current_metadata.get("artist_id")
                         if current_artist != original_artist or current_artist_id != original_spotify_id:
                             logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' before metadata save, discarding")
+                            
+                            # CRITICAL FIX: Clean up orphaned files that were downloaded but validation failed
+                            # Delete only newly downloaded files (not existing ones) to prevent data loss
+                            cleanup_count = 0
+                            for file_path, filename in newly_downloaded_files:
+                                try:
+                                    if file_path.exists():
+                                        file_path.unlink()
+                                        cleanup_count += 1
+                                        logger.debug(f"Cleaned up orphaned file: {filename}")
+                                except Exception as e:
+                                    logger.debug(f"Failed to clean up orphaned file {filename}: {e}")
+                            
+                            if cleanup_count > 0:
+                                logger.info(f"Cleaned up {cleanup_count} orphaned image file(s) after validation failure")
+                            
                             return []  # Don't save metadata for wrong artist
                 except Exception as e:
                     logger.debug(f"Failed to verify artist before metadata save: {e}")

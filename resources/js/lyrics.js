@@ -1307,12 +1307,21 @@ async function selectAlbumArt(providerName) {
             }
 
             // Force immediate art refresh without full page reload
+            // CRITICAL FIX: Add fallback if cache_bust is missing (defensive programming)
             const albumArt = document.getElementById('album-art');
-            if (albumArt && result.cache_bust) {
-                // Update album art with cache buster
-                const currentSrc = albumArt.src;
-                const baseUrl = currentSrc.split('?')[0];
-                albumArt.src = `${baseUrl}?t=${result.cache_bust}`;
+            if (albumArt) {
+                if (result.cache_bust) {
+                    // Update album art with cache buster from backend
+                    const currentSrc = albumArt.src;
+                    const baseUrl = currentSrc.split('?')[0];
+                    albumArt.src = `${baseUrl}?t=${result.cache_bust}`;
+                } else {
+                    // Fallback: Force reload without cache buster (shouldn't happen, but defensive)
+                    // Use timestamp to ensure browser fetches fresh image
+                    const currentSrc = albumArt.src;
+                    const baseUrl = currentSrc.split('?')[0];
+                    albumArt.src = `${baseUrl}?t=${Date.now()}`;
+                }
 
                 // Also update background if using art background
                 if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
