@@ -102,9 +102,9 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     padding: 32px;
-    max-width: 800px; /* INCREASED from 480px */
+    max-width: 900px; /* Increased for better visibility */
     width: 95%; /* Wider on mobile */
-    max-height: 85vh;
+    max-height: 90vh; /* Increased for more content visibility */
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.95) translateY(20px);
@@ -486,6 +486,7 @@
     touch-action: manipulation; /* Allow scrolling and zoom, but prevent pull-to-refresh and double-tap zoom */
 }
 
+
 .art-card {
     position: relative;
     background: rgba(255, 255, 255, 0.03);
@@ -598,7 +599,7 @@
     .provider-modal-content {
         max-width: 900px;
         width: 90%;
-        max-height: 80vh;
+        max-height: 90vh; /* Increased to match base size */
         min-height: 500px; /* Ensure modal has minimum height for split view */
         overflow-y: hidden; /* Prevent body scroll, use inner scroll */
         display: flex;

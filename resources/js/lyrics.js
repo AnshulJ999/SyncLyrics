@@ -1063,29 +1063,9 @@ async function showProviderModal() {
         // Show modal (modal already declared on line 738)
         modal.classList.remove('hidden');
         
-        // Lock body and html scroll to prevent pull-to-refresh (especially important for Fully Kiosk Browser)
+        // Lock body and html scroll to prevent pull-to-refresh
         document.body.style.overflow = 'hidden';
         document.documentElement.style.overflow = 'hidden';
-        
-        // Layer 3: Global body-level touch handler to prevent pull-to-refresh when modal is open
-        // This is critical for Fully Kiosk Browser which processes events at native level
-        const preventBodyPullToRefresh = (e) => {
-            // Only prevent if modal is open and touch is NOT inside the modal
-            const providerModal = document.getElementById('provider-modal');
-            if (providerModal && !providerModal.classList.contains('hidden')) {
-                // Allow touches inside modal to work normally (for scrolling)
-                if (!providerModal.contains(e.target)) {
-                    // Touch is outside modal - prevent pull-to-refresh
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            }
-        };
-        
-        // CRITICAL: { passive: false } is required for preventDefault() to work
-        document.addEventListener('touchmove', preventBodyPullToRefresh, { passive: false });
-        // Store handler reference on modal so we can remove it later
-        modal._bodyPullToRefreshHandler = preventBodyPullToRefresh;
 
     } catch (error) {
         console.error('Error loading providers:', error);
@@ -1426,12 +1406,6 @@ function hideProviderModal() {
     const modal = document.getElementById('provider-modal');
     if (modal) {
         modal.classList.add('hidden');
-        
-        // Remove global body-level pull-to-refresh handler
-        if (modal._bodyPullToRefreshHandler) {
-            document.removeEventListener('touchmove', modal._bodyPullToRefreshHandler);
-            modal._bodyPullToRefreshHandler = null;
-        }
     }
     
     // Unlock body and html scroll when modal is closed
