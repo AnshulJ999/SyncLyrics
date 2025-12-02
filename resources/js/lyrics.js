@@ -1320,7 +1320,10 @@ async function selectAlbumArt(providerName) {
                 }
             }
 
-            showToast(`Switched to ${providerName} album art`);
+            // CRITICAL FIX: Show appropriate message based on whether it's an artist image or album art
+            const isArtistImage = providerName.endsWith(' (Artist)');
+            const imageType = isArtistImage ? 'artist image' : 'album art';
+            showToast(`Switched to ${providerName} ${imageType}`);
 
             // Close modal after brief delay
             setTimeout(() => {

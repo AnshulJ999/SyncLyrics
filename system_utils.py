@@ -2605,6 +2605,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     if not file_path.exists():
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         if success:
+                            # CRITICAL FIX: Update file_path to reflect actual file extension
+                            # The download function saves with the correct extension (e.g., .png, .jpg)
+                            # but file_path was initialized with .jpg. Update it so cleanup works correctly.
+                            file_path = file_path.with_suffix(ext)
+                            
                             # Double-check artist hasn't changed before saving to metadata
                             try:
                                 current_metadata = await get_current_song_meta_data()
@@ -2613,7 +2618,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     current_artist_id = current_metadata.get("artist_id")
                                     if current_artist != original_artist or current_artist_id != original_spotify_id:
                                         logger.info(f"Artist changed during download, discarding image for '{original_artist}'")
-                                        # Delete the file we just downloaded
+                                        # Delete the file we just downloaded (now with correct extension)
                                         try:
                                             if file_path.exists():
                                                 file_path.unlink()

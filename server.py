@@ -532,6 +532,12 @@ async def get_album_art_options():
                         "is_preferred": is_preferred,
                         "type": "artist_image"  # Distinguish from album art
                     })
+                
+                # CRITICAL FIX: Update preferred_provider to reflect artist image preference if set
+                # This ensures the response field accurately reflects the current selection
+                # Priority: Artist image preference > Album art preference (artist images override album art)
+                if artist_preferred:
+                    preferred_provider = artist_preferred
         except Exception as e:
             logger.debug(f"Failed to load artist images metadata: {e}")
     
