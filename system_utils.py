@@ -1813,6 +1813,67 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 background_image_path = str(artist_image_path)
                 logger.debug(f"Using preferred artist image for background: {artist}")
         
+        # CRITICAL FIX: Check if artist images DB is populated with ALL expected sources
+        # This ensures all provider options are available in the selection menu (similar to album art backfill)
+        # Only check if we have an artist name (required for folder lookup)
+        if artist:
+            try:
+                artist_folder = get_album_db_folder(artist, None)
+                artist_metadata_path = artist_folder / "metadata.json"
+                
+                # Check if metadata exists and has artist images
+                artist_metadata_exists = artist_metadata_path.exists()
+                artist_images_complete = False
+                
+                if artist_metadata_exists:
+                    try:
+                        with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                            artist_metadata_check = json.load(f)
+                        
+                        if artist_metadata_check.get("type") == "artist_images":
+                            existing_images = artist_metadata_check.get("images", [])
+                            # Get sources that have downloaded images
+                            existing_sources = {img.get("source") for img in existing_images if img.get("downloaded")}
+                            
+                            # Determine which sources SHOULD be there
+                            # Deezer and TheAudioDB are always available (free, no auth)
+                            expected_sources = {"Deezer", "TheAudioDB"}
+                            
+                            # FanArt.tv (if API key exists in environment)
+                            if os.getenv("FANART_TV_API_KEY"):
+                                expected_sources.add("FanArt.tv")
+                            
+                            # NOTE: Spotify and Last.fm are excluded for Windows Media source
+                            # Windows Media doesn't provide artist_id, so Spotify fallback isn't available
+                            # Last.fm is excluded from backfill as it's not necessary
+                            
+                            # Check if we have all expected sources
+                            artist_images_complete = expected_sources.issubset(existing_sources)
+                    except Exception as e:
+                        logger.debug(f"Failed to check artist images completeness: {e}")
+                        artist_images_complete = False
+                
+                # Trigger background task ONLY if artist images are incomplete (and not already running)
+                # Use composite key with 'no_id' since Windows Media doesn't have artist_id
+                artist_request_key = f"{artist}::no_id"
+                
+                if not artist_images_complete and artist_request_key not in _artist_download_tracker:
+                    # Start background task to fetch from ALL missing sources
+                    async def background_artist_images_backfill():
+                        """Background task to fetch artist images from all enabled sources"""
+                        try:
+                            # This will fetch from Deezer, TheAudioDB, and FanArt.tv (if key exists)
+                            # Spotify is not available for Windows Media (no artist_id)
+                            # Last.fm is excluded per user preference
+                            await ensure_artist_image_db(artist, None)  # No artist_id for Windows Media
+                        except Exception as e:
+                            logger.debug(f"Background artist image backfill failed for {artist}: {e}")
+                    
+                    # Use tracked task to prevent silent failures
+                    create_tracked_task(background_artist_images_backfill())
+            except Exception as e:
+                logger.debug(f"Failed to check/trigger artist image backfill: {e}")
+        
         # Fallback: Check for artist image if no album art found (but no explicit preference)
         # This uses first available artist image as fallback when no album art exists
         # Only use for background, not for album art display
@@ -2024,6 +2085,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         captured_artist = track["artist"]
         captured_title = track["title"]
         captured_album = track.get("album")
+        captured_artist_id = track.get("artist_id")  # For artist image backfill
         captured_track_id = _normalize_track_id(captured_artist, captured_title)
         
         # Flag to track if we found art in DB
@@ -2079,6 +2141,69 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # If no album art found but artist image is selected, still set background
         if not found_in_db and artist_image_result:
             found_in_db = True  # At least we have something for background
+        
+        # CRITICAL FIX: Check if artist images DB is populated with ALL expected sources
+        # This ensures all provider options are available in the selection menu (similar to album art backfill)
+        # Only check if we have an artist name (required for folder lookup)
+        if captured_artist:
+            try:
+                artist_folder = get_album_db_folder(captured_artist, None)
+                artist_metadata_path = artist_folder / "metadata.json"
+                
+                # Check if metadata exists and has artist images
+                artist_metadata_exists = artist_metadata_path.exists()
+                artist_images_complete = False
+                
+                if artist_metadata_exists:
+                    try:
+                        with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                            artist_metadata_check = json.load(f)
+                        
+                        if artist_metadata_check.get("type") == "artist_images":
+                            existing_images = artist_metadata_check.get("images", [])
+                            # Get sources that have downloaded images
+                            existing_sources = {img.get("source") for img in existing_images if img.get("downloaded")}
+                            
+                            # Determine which sources SHOULD be there
+                            # Deezer and TheAudioDB are always available (free, no auth)
+                            expected_sources = {"Deezer", "TheAudioDB"}
+                            
+                            # FanArt.tv (if API key exists in environment)
+                            if os.getenv("FANART_TV_API_KEY"):
+                                expected_sources.add("FanArt.tv")
+                            
+                            # Spotify (if artist_id is available)
+                            if captured_artist_id:
+                                expected_sources.add("Spotify")
+                            
+                            # NOTE: Last.fm is excluded from backfill as it's not necessary
+                            # Last.fm images are often low-quality placeholders and not needed for selection menu
+                            
+                            # Check if we have all expected sources
+                            artist_images_complete = expected_sources.issubset(existing_sources)
+                    except Exception as e:
+                        logger.debug(f"Failed to check artist images completeness: {e}")
+                        artist_images_complete = False
+                
+                # Trigger background task ONLY if artist images are incomplete (and not already running)
+                # Use composite key to prevent duplicate downloads for same artist+ID
+                artist_request_key = f"{captured_artist}::{captured_artist_id or 'no_id'}"
+                
+                if not artist_images_complete and artist_request_key not in _artist_download_tracker:
+                    # Start background task to fetch from ALL missing sources
+                    async def background_artist_images_backfill():
+                        """Background task to fetch artist images from all enabled sources"""
+                        try:
+                            # This will fetch from Deezer, TheAudioDB, FanArt.tv (if key exists), and Spotify (if ID available)
+                            # Last.fm is excluded per user preference
+                            await ensure_artist_image_db(captured_artist, captured_artist_id)
+                        except Exception as e:
+                            logger.debug(f"Background artist image backfill failed for {captured_artist}: {e}")
+                    
+                    # Use tracked task to prevent silent failures
+                    create_tracked_task(background_artist_images_backfill())
+            except Exception as e:
+                logger.debug(f"Failed to check/trigger artist image backfill: {e}")
         
         # Check if DB is already populated with ALL enabled providers (only if we have album art metadata)
         if db_metadata:
