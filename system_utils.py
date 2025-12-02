@@ -1182,6 +1182,120 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
         logger.debug(f"Error loading album art from DB: {e}")
         return None
 
+def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
+    """
+    Load preferred artist image from database if available.
+    Returns the preferred image path if found.
+    
+    Args:
+        artist: Artist name
+        
+    Returns:
+        Dictionary with 'path' (Path to image) and 'metadata' (full metadata dict) if found, None otherwise
+    """
+    # Check if feature is enabled
+    if not FEATURES.get("album_art_db", True):
+        return None
+    
+    try:
+        folder = get_album_db_folder(artist, None)  # Artist-only folder
+        metadata_path = folder / "metadata.json"
+        
+        if not metadata_path.exists():
+            return None
+        
+        # Load metadata
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        # Check if this is artist images metadata
+        if metadata.get("type") != "artist_images":
+            return None
+        
+        preferred_provider = metadata.get("preferred_provider")
+        images = metadata.get("images", [])
+        
+        # CRITICAL FIX: Only return image if user EXPLICITLY selected one (has preferred_provider)
+        # This allows album art to be used when no explicit preference exists
+        # The fallback to first available image happens in the fallback code block, not here
+        if not preferred_provider:
+            return None  # No explicit preference - let album art be used
+        
+        # Find preferred image (only if preference exists)
+        matching_image = None
+        # Extract source name (e.g., "Deezer (Artist)" -> "Deezer")
+        source_name = preferred_provider.replace(" (Artist)", "")
+        for img in images:
+            source = img.get("source")
+            if source == source_name and img.get("downloaded") and img.get("filename"):
+                matching_image = img
+                break
+        
+        if not matching_image:
+            return None  # Preferred image not found
+        
+        filename = matching_image.get("filename")
+        image_path = folder / filename
+        
+        if not image_path.exists():
+            return None
+        
+        return {"path": image_path, "metadata": metadata}
+        
+    except Exception as e:
+        logger.debug(f"Failed to load artist image from DB: {e}")
+        return None
+
+def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
+    """
+    Get first available artist image as fallback (when no album art exists and no explicit preference).
+    This is used as a last resort when no album art is found.
+    
+    Args:
+        artist: Artist name
+        
+    Returns:
+        Dictionary with 'path' (Path to image) and 'source' (source name) if found, None otherwise
+    """
+    try:
+        artist_folder = get_album_db_folder(artist, None)
+        artist_metadata_path = artist_folder / "metadata.json"
+        
+        if not artist_metadata_path.exists():
+            return None
+        
+        with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+            artist_metadata = json.load(f)
+        
+        if artist_metadata.get("type") != "artist_images":
+            return None
+        
+        artist_images = artist_metadata.get("images", [])
+        
+        # Defensive logging: Log if no images found or all images failed to download
+        if not artist_images:
+            logger.debug(f"No artist images found in DB for fallback: {artist}")
+            return None
+        
+        # Use first available artist image as fallback (no explicit preference needed)
+        for img in artist_images:
+            if img.get("downloaded") and img.get("filename"):
+                filename = img.get("filename")
+                artist_image_path = artist_folder / filename
+                
+                if artist_image_path.exists():
+                    return {
+                        "path": artist_image_path,
+                        "source": img.get("source", "Unknown")
+                    }
+        
+        # Log if images exist but none are downloaded or available
+        logger.debug(f"Artist images found in DB for {artist} but none are downloaded or available")
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to load artist image fallback: {e}")
+        return None
+
 async def _download_spotify_art_background(url: str, track_id: str) -> None:
     """
     Background task to download Spotify art (Fix #3).
@@ -1284,10 +1398,23 @@ async def _download_spotify_art_background(url: str, track_id: str) -> None:
 
                 # Invalidate color cache (managed by extract_dominant_colors mtime check now)
                 
-                # Extract colors
+                # Extract colors (CPU-bound operation, might take time)
                 colors = await extract_dominant_colors(art_path)
                 
-                # Update cache
+                # CRITICAL FIX: Re-validate track hasn't changed AFTER color extraction
+                # Color extraction is CPU-bound and might take time, so track could change during it
+                # If track changed, discard colors to prevent wrong track inheriting old colors
+                if spotify_client and spotify_client._metadata_cache:
+                    current_track = spotify_client._metadata_cache
+                    current_track_id = _normalize_track_id(
+                        current_track.get('artist', ''),
+                        current_track.get('title', '')
+                    )
+                    if current_track_id != track_id:
+                        logger.debug(f"Track changed after color extraction ({track_id} -> {current_track_id}), discarding colors")
+                        return
+                
+                # Update cache (only if track is still current)
                 _get_current_song_meta_data_spotify._last_spotify_art_url = url
                 _get_current_song_meta_data_spotify._last_spotify_colors = colors
                 
@@ -1400,27 +1527,57 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         found_in_db = False
         album_art_url = None
         result_extra_fields = {}  # Store album_art_path for direct serving
+        saved_background_style = None  # Initialize to prevent UnboundLocalError
 
-        # 1. Check Album Art Database first (Fast Path)
-        db_result = load_album_art_from_db(artist, album, title)
-        saved_background_style = None  # Variable to hold saved style preference
-        if db_result:
-            found_in_db = True
-            db_image_path = db_result["path"]
-            saved_background_style = db_result.get("background_style")  # Capture saved style
-            
-            # FIX: Add timestamp to URL to force browser cache busting when file updates
-            mtime = int(time.time())
-            try:
-                if db_image_path.exists():
-                    mtime = int(db_image_path.stat().st_mtime)
-            except: pass
-            
-            album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-            
-            # NEW: Pass the path directly so server.py can serve it without copying
-            # This eliminates race conditions from file copying
-            result_extra_fields = {"album_art_path": str(db_image_path)}
+        # CRITICAL FIX: Check for artist image preference FIRST if user explicitly selected one
+        # This allows artist images to override album art when user selects them
+        artist_image_result = load_artist_image_from_db(artist)
+        using_artist_image = False
+        
+        if artist_image_result:
+            # User has selected an artist image - use it instead of album art
+            artist_image_path = artist_image_result["path"]
+            if artist_image_path.exists():
+                mtime = int(artist_image_path.stat().st_mtime)
+                album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                result_extra_fields = {"album_art_path": str(artist_image_path)}
+                found_in_db = True
+                using_artist_image = True
+                logger.debug(f"Using preferred artist image for {artist}")
+        
+        # Check Album Art Database only if no artist image preference exists
+        if not using_artist_image:
+            db_result = load_album_art_from_db(artist, album, title)
+            # saved_background_style already initialized above
+            if db_result:
+                found_in_db = True
+                db_image_path = db_result["path"]
+                saved_background_style = db_result.get("background_style")  # Capture saved style
+                
+                # FIX: Add timestamp to URL to force browser cache busting when file updates
+                mtime = int(time.time())
+                try:
+                    if db_image_path.exists():
+                        mtime = int(db_image_path.stat().st_mtime)
+                except: pass
+                
+                album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                
+                # NEW: Pass the path directly so server.py can serve it without copying
+                # This eliminates race conditions from file copying
+                result_extra_fields = {"album_art_path": str(db_image_path)}
+        
+        # Fallback: Check for artist image if no album art found (but no explicit preference)
+        # This uses first available artist image as fallback when no album art exists
+        if not found_in_db:
+            fallback_result = _get_artist_image_fallback(artist)
+            if fallback_result:
+                artist_image_path = fallback_result["path"]
+                mtime = int(artist_image_path.stat().st_mtime)
+                album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                result_extra_fields = {"album_art_path": str(artist_image_path)}
+                found_in_db = True
+                logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {artist}")
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
@@ -1615,31 +1772,50 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # Flag to track if we found art in DB
         found_in_db = False
         album_art_path = None  # Store direct path for serving without copying
+        saved_background_style = None  # Initialize to prevent UnboundLocalError
+        db_metadata = None  # Initialize to prevent UnboundLocalError
 
-        # Check Album Art Database first (fast path - zero delay if cached)
-        # FIX: Pass title as fallback for singles/no-album tracks
-        db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
-        saved_background_style = None  # Variable to hold saved style preference
-        if db_result:
-            found_in_db = True
-            db_image_path = db_result["path"]
-            db_metadata = db_result["metadata"]
-            saved_background_style = db_result.get("background_style")  # Capture saved style
-            
-            # FIX: Add timestamp to URL to force browser cache busting
-            mtime = int(time.time())
-            try:
-                if db_image_path.exists():
-                    mtime = int(db_image_path.stat().st_mtime)
-            except: pass
-            
-            album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+        # CRITICAL FIX: Check for artist image preference FIRST if user explicitly selected one
+        # This allows artist images to override album art when user selects them
+        artist_image_result = load_artist_image_from_db(captured_artist)
+        using_artist_image = False
+        
+        if artist_image_result:
+            # User has selected an artist image - use it instead of album art
+            artist_image_path = artist_image_result["path"]
+            if artist_image_path.exists():
+                mtime = int(artist_image_path.stat().st_mtime)
+                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                album_art_path = str(artist_image_path)
+                found_in_db = True
+                using_artist_image = True
+                logger.debug(f"Using preferred artist image for {captured_artist}")
+        
+        # Check Album Art Database only if no artist image preference exists
+        if not using_artist_image:
+            db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
+            # saved_background_style and db_metadata already initialized above
+            if db_result:
+                found_in_db = True
+                db_image_path = db_result["path"]
+                db_metadata = db_result["metadata"]
+                saved_background_style = db_result.get("background_style")  # Capture saved style
+                
+                # FIX: Add timestamp to URL to force browser cache busting
+                mtime = int(time.time())
+                try:
+                    if db_image_path.exists():
+                        mtime = int(db_image_path.stat().st_mtime)
+                except: pass
+                
+                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
 
-            # NEW: Store path directly so server.py can serve it without copying
-            # This eliminates race conditions from file copying
-            album_art_path = str(db_image_path)
-            
-            # Check if DB is already populated with ALL enabled providers
+                # NEW: Store path directly so server.py can serve it without copying
+                # This eliminates race conditions from file copying
+                album_art_path = str(db_image_path)
+        
+        # Check if DB is already populated with ALL enabled providers (only if we have album art metadata)
+        if db_metadata:
             # This logic respects user config: if Last.fm is disabled/no key, we won't look for it.
             existing_providers = set(db_metadata.get("providers", {}).keys())
             
@@ -1711,6 +1887,18 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # Use tracked task
                 task = create_tracked_task(background_refresh_db())
                 _running_art_upgrade_tasks[captured_track_id] = task
+        
+        # Fallback: Check for artist image if no album art found (but no explicit preference)
+        # This uses first available artist image as fallback when no album art exists
+        if not found_in_db:
+            fallback_result = _get_artist_image_fallback(captured_artist)
+            if fallback_result:
+                artist_image_path = fallback_result["path"]
+                mtime = int(artist_image_path.stat().st_mtime)
+                album_art_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                album_art_path = str(artist_image_path)
+                found_in_db = True
+                logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {captured_artist}")
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
@@ -1839,7 +2027,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             
                             # Start background task (non-blocking) and track it
                             # Use tracked task to prevent garbage collection issues
-                            # CRITICAL FIX: Wrap task creation in try/finally to ensure cleanup
+                            # CRITICAL FIX: Reserve slot first to prevent race condition
+                            # If task creation fails after reserving slot, we can still clean up
+                            _running_art_upgrade_tasks[captured_track_id] = None  # Reserve slot
                             try:
                                 task = create_tracked_task(background_upgrade_art())
                                 _running_art_upgrade_tasks[captured_track_id] = task
@@ -2276,8 +2466,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
     # return [] 
 
-    # Prevent duplicate downloads for the same artist (Race Condition Fix)
-    if artist in _artist_download_tracker:
+    # CRITICAL FIX: Use composite key (artist + spotify_id) to prevent race conditions
+    # This ensures that if track changes, we don't save images from previous artist
+    request_key = f"{artist}::{spotify_artist_id or 'no_id'}"
+    
+    # Prevent duplicate downloads for the same artist+ID combination
+    if request_key in _artist_download_tracker:
         return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
@@ -2285,7 +2479,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
         logger.warning("Artist download tracker full, clearing to prevent leaks")
         _artist_download_tracker.clear()
 
-    _artist_download_tracker.add(artist)
+    _artist_download_tracker.add(request_key)
+    
+    # Store original values for validation
+    original_artist = artist
+    original_spotify_id = spotify_artist_id
     
     try:
         # Use dedicated semaphore for artist images to prevent deadlock with album art downloads
@@ -2310,21 +2508,30 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 all_images = await artist_provider.get_artist_images(artist)
                 
                 # Fallback 1: Spotify (if ID provided) - Keep as backup
+                # CRITICAL FIX: Validate artist ID to prevent race conditions
+                # If track changed while this function was running, spotify_artist_id might be stale
                 if spotify_artist_id:
                     client = get_shared_spotify_client()
                     if client:
-                        spotify_urls = await client.get_artist_images(spotify_artist_id)
-                        if spotify_urls:
-                            # Only add if not already present (simple check)
-                            existing_urls = {i['url'] for i in all_images}
-                            for url in spotify_urls:
-                                if url not in existing_urls:
-                                    all_images.append({
-                                        "url": url,
-                                        "source": "spotify",
-                                        "type": "artist"
-                                    })
-                                    break # Just one from Spotify is enough if we have others
+                        try:
+                            # Verify the artist ID is still valid for this artist
+                            # This prevents saving images from previous artist when track changes
+                            spotify_urls = await client.get_artist_images(spotify_artist_id)
+                            if spotify_urls:
+                                # Only add if not already present (simple check)
+                                existing_urls = {i['url'] for i in all_images}
+                                for url in spotify_urls:
+                                    if url not in existing_urls:
+                                        all_images.append({
+                                            "url": url,
+                                            "source": "spotify",
+                                            "type": "artist"
+                                        })
+                                        break # Just one from Spotify is enough if we have others
+                        except Exception as e:
+                            # If validation fails (e.g., artist_id is stale), skip Spotify images
+                            logger.debug(f"Spotify artist image validation failed for {artist} (possible race condition): {e}")
+                            # Don't add stale Spotify images from previous track
                 
                 # Fallback 2: Last.fm (via old provider if enabled)
                 # NOTE: iTunes is NOT used for artist images because it rarely provides artist artwork.
@@ -2342,6 +2549,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 all_images.append(img)
                 except Exception as e:
                     logger.debug(f"Last.fm fallback failed: {e}")
+                
+                # Log summary once per artist (info level, not spam)
+                if all_images:
+                    logger.info(f"Artist images fetched for '{artist}': {len(all_images)} total from all sources")
+                else:
+                    logger.info(f"Artist images fetched for '{artist}': No images found from any source")
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
@@ -2355,6 +2568,22 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 source_counts = {}
                 
                 for img_dict in all_images:
+                    # CRITICAL FIX: Check if artist changed during download to prevent race conditions
+                    # If track changed while we were fetching, discard these images
+                    try:
+                        current_metadata = await get_current_song_meta_data()
+                        if current_metadata:
+                            current_artist = current_metadata.get("artist", "")
+                            current_artist_id = current_metadata.get("artist_id")
+                            
+                            # If artist changed, abort saving images
+                            if current_artist != original_artist or current_artist_id != original_spotify_id:
+                                logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' during fetch, discarding images")
+                                return []  # Abort entire operation
+                    except Exception as e:
+                        logger.debug(f"Failed to check current artist during download: {e}")
+                        # Continue if check fails (defensive)
+                    
                     url = img_dict.get('url')
                     source = img_dict.get('source', 'unknown')
                     
@@ -2376,6 +2605,23 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     if not file_path.exists():
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         if success:
+                            # Double-check artist hasn't changed before saving to metadata
+                            try:
+                                current_metadata = await get_current_song_meta_data()
+                                if current_metadata:
+                                    current_artist = current_metadata.get("artist", "")
+                                    current_artist_id = current_metadata.get("artist_id")
+                                    if current_artist != original_artist or current_artist_id != original_spotify_id:
+                                        logger.info(f"Artist changed during download, discarding image for '{original_artist}'")
+                                        # Delete the file we just downloaded
+                                        try:
+                                            if file_path.exists():
+                                                file_path.unlink()
+                                        except: pass
+                                        return []  # Abort
+                            except Exception as e:
+                                logger.debug(f"Failed to verify artist before save: {e}")
+                            
                             filename = f"{safe_source}_{idx}{ext}"
                             saved_images.append({
                                 "source": source,
@@ -2385,6 +2631,18 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 "added_at": datetime.utcnow().isoformat() + "Z"
                             })
                             existing_urls.add(url)  # Mark as processed
+                
+                # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
+                try:
+                    current_metadata = await get_current_song_meta_data()
+                    if current_metadata:
+                        current_artist = current_metadata.get("artist", "")
+                        current_artist_id = current_metadata.get("artist_id")
+                        if current_artist != original_artist or current_artist_id != original_spotify_id:
+                            logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' before metadata save, discarding")
+                            return []  # Don't save metadata for wrong artist
+                except Exception as e:
+                    logger.debug(f"Failed to verify artist before metadata save: {e}")
                 
                 # Save Metadata
                 metadata = {
@@ -2412,7 +2670,13 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 return []
     finally:
         # Always remove from tracker, even if error occurred
-        _artist_download_tracker.discard(artist)
+        # Use composite key for removal (use original values stored at start)
+        try:
+            request_key = f"{original_artist}::{original_spotify_id or 'no_id'}"
+            _artist_download_tracker.discard(request_key)
+        except:
+            # Fallback if original_artist not defined (shouldn't happen, but defensive)
+            _artist_download_tracker.discard(artist)
 
 def _perform_debug_art_update(result: Dict[str, Any]):
     """

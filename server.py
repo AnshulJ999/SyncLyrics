@@ -948,6 +948,7 @@ async def get_artist_images():
     """
     Get artist images, preferring local DB, falling back to Spotify and caching.
     """
+    # Get artist_id from query params (might be stale if frontend hasn't updated)
     artist_id = request.args.get('artist_id')
     
     # We also need the artist NAME to find the folder
@@ -957,6 +958,16 @@ async def get_artist_images():
     
     if not artist_name:
          return jsonify({"error": "No artist name available"}), 400
+
+    # CRITICAL FIX: Prefer artist_id from metadata (current track) over query param (might be stale)
+    # This prevents race conditions where frontend sends old ID (from previous track)
+    # but backend has new Artist Name (from current track).
+    # If metadata doesn't have artist_id, fall back to query param (better than nothing)
+    if metadata and metadata.get('artist_id'):
+        artist_id = metadata.get('artist_id')
+    # Note: If metadata doesn't have artist_id, we use query param as fallback.
+    # This is safe because ensure_artist_image_db uses artist_name as primary identifier
+    # and artist_id is only used for Spotify fallback and race condition prevention.
 
     # Log visual mode activity/fetching
     # logger.info(f"Fetching artist images for Visual Mode: {artist_name} ({artist_id})")

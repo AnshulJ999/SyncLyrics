@@ -956,6 +956,12 @@ class AlbumArtProvider:
             images = artist_data.get("image", [])
             results = []
             
+            # Last.fm placeholder image hashes (generic star icons when no real image exists)
+            LASTFM_PLACEHOLDER_PATTERNS = [
+                "2a96cbd8b46e442fc41c2b86b821562f",  # Generic placeholder hash (Corrected from ...cbd0...)
+                "4128a6eb29f94943c9d206c08e625904",  # Another common placeholder
+            ]
+            
             for img in images:
                 if not isinstance(img, dict):
                     continue
@@ -965,6 +971,11 @@ class AlbumArtProvider:
                 
                 # Only use large images (extralarge or mega)
                 if size in ["mega", "extralarge"] and url:
+                    # Filter out placeholder images (generic star icons)
+                    is_placeholder = any(pattern in url for pattern in LASTFM_PLACEHOLDER_PATTERNS)
+                    if is_placeholder:
+                        continue  # Skip placeholder images - we don't want generic star icons
+                    
                     # Remove size segments from URL to get original full-size image
                     import re
                     original_url = re.sub(r'/\d+x?\d*[s]/', '/', url)

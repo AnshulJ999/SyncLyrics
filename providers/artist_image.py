@@ -202,6 +202,10 @@ class ArtistImageProvider:
             
             if images:
                 logger.debug(f"Deezer: Found {len(images)} image(s) for {artist}")
+                        # Log only if no images found (to avoid spam, but inform about missing data)
+            if not images:
+                logger.debug(f"Deezer: No images found for {artist}")
+
             return images
         except Exception as e:
             logger.debug(f"Deezer fetch failed for {artist}: {e}")
@@ -278,6 +282,10 @@ class ArtistImageProvider:
             result['images'] = images
             if images:
                 logger.debug(f"TheAudioDB: Found {len(images)} image(s) for {artist}, MBID: {result['mbid']}")
+                        # Log only if no images found (to avoid spam, but inform about missing data)
+            if not images:
+                logger.debug(f"TheAudioDB: No images found for {artist}")
+
             return result
             
         except Exception as e:
@@ -347,6 +355,10 @@ class ArtistImageProvider:
                 
             if images:
                 logger.debug(f"FanArt.tv: Found {len(images)} image(s) for MBID {mbid}")
+                        # Log only if no images found (to avoid spam, but inform about missing data)
+            if not images:
+                logger.debug(f"FanArt.tv: No images found for MBID {mbid}")
+
             return images
         except Exception as e:
             logger.debug(f"FanArt.tv fetch failed for MBID {mbid}: {e}")
