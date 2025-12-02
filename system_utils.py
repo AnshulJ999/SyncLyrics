@@ -2904,6 +2904,9 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
     # return [] 
 
+    # Declare global variables for throttle tracking
+    global _artist_image_log_throttle
+
     # CRITICAL FIX: Use composite key (artist + spotify_id) to prevent race conditions
     # This ensures that if track changes, we don't save images from previous artist
     request_key = f"{artist}::{spotify_artist_id or 'no_id'}"
