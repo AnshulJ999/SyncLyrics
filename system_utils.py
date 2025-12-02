@@ -2610,6 +2610,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     filename = f"{safe_source}_{idx}.jpg"
                     file_path = folder / filename
                     
+                    # Get width/height from provider as fallback (will be replaced with actual values if file exists)
+                    width = img_dict.get('width', 0)
+                    height = img_dict.get('height', 0)
+                    
                     if not file_path.exists():
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         if success:
@@ -2617,6 +2621,22 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             # The download function saves with the correct extension (e.g., .png, .jpg)
                             # but file_path was initialized with .jpg. Update it so cleanup works correctly.
                             file_path = file_path.with_suffix(ext)
+                            
+                            # CRITICAL FIX: Extract actual resolution from downloaded image file
+                            # This ensures 100% accurate resolution information (not just provider's claimed values)
+                            try:
+                                def get_image_resolution(path: Path) -> tuple:
+                                    """Extract actual width/height from image file"""
+                                    with Image.open(path) as img:
+                                        return img.size
+                                
+                                actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, file_path)
+                                width = actual_width
+                                height = actual_height
+                                logger.debug(f"Extracted actual resolution for {source} image: {width}x{height}")
+                            except Exception as e:
+                                logger.debug(f"Failed to extract resolution from {file_path}, using provider values: {e}")
+                                # Keep provider values as fallback
                             
                             # Double-check artist hasn't changed before saving to metadata
                             # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes
@@ -2643,9 +2663,67 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 "source": source,
                                 "url": url,
                                 "filename": filename,
+                                "width": width,      # Actual resolution extracted from file
+                                "height": height,    # Actual resolution extracted from file
                                 "downloaded": True,
                                 "added_at": datetime.utcnow().isoformat() + "Z"
                             })
+                            existing_urls.add(url)  # Mark as processed
+                    else:
+                        # File already exists - check if it's already in saved_images and update resolution if missing
+                        # First, try to find the actual file (might have different extension than .jpg)
+                        actual_file_path = file_path
+                        if not actual_file_path.exists():
+                            # Try common extensions
+                            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                                test_path = file_path.with_suffix(ext)
+                                if test_path.exists():
+                                    actual_file_path = test_path
+                                    break
+                        
+                        if actual_file_path.exists():
+                            # Extract actual resolution from existing file
+                            try:
+                                def get_image_resolution_existing(path: Path) -> tuple:
+                                    """Extract actual width/height from existing image file"""
+                                    with Image.open(path) as img:
+                                        return img.size
+                                
+                                actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, actual_file_path)
+                                width = actual_width
+                                height = actual_height
+                                logger.debug(f"Extracted actual resolution from existing {source} image: {width}x{height}")
+                            except Exception as e:
+                                logger.debug(f"Failed to extract resolution from existing {actual_file_path}, using provider values: {e}")
+                                # Keep provider values as fallback
+                            
+                            # Check if this image is already in saved_images (by URL)
+                            # If yes, update width/height if missing; if no, add it
+                            found_existing = False
+                            for img in saved_images:
+                                if img.get('url') == url:
+                                    # Update width/height if missing
+                                    if not img.get('width') or not img.get('height'):
+                                        img['width'] = width
+                                        img['height'] = height
+                                        logger.debug(f"Updated resolution for existing {source} image in metadata: {width}x{height}")
+                                    found_existing = True
+                                    break
+                            
+                            if not found_existing:
+                                # File exists but not in metadata - add it with actual resolution
+                                actual_filename = actual_file_path.name
+                                saved_images.append({
+                                    "source": source,
+                                    "url": url,
+                                    "filename": actual_filename,
+                                    "width": width,      # Actual resolution extracted from file
+                                    "height": height,    # Actual resolution extracted from file
+                                    "downloaded": True,
+                                    "added_at": datetime.utcnow().isoformat() + "Z"
+                                })
+                                logger.debug(f"Added existing {source} image to metadata with resolution: {width}x{height}")
+                            
                             existing_urls.add(url)  # Mark as processed
                             
                             # CRITICAL FIX: Track this as a newly downloaded file for cleanup if validation fails

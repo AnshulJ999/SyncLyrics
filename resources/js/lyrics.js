@@ -56,6 +56,30 @@ let queueDrawerOpen = false;
 let queuePollInterval = null; // Track the polling interval for queue updates
 let isLiked = false;
 
+// --- Helper: Normalize Track ID (matches backend _normalize_track_id) ---
+/**
+ * Generates a consistent, source-agnostic track ID.
+ * Matches backend _normalize_track_id() logic exactly.
+ * Used to prevent UI flickering when switching sources (e.g. Windows -> Spotify Hybrid).
+ * 
+ * @param {string} artist - Artist name
+ * @param {string} title - Track title
+ * @returns {string} Normalized track ID in format: "artist_title"
+ */
+function normalizeTrackId(artist, title) {
+    // Handle null/undefined/empty strings (matches backend: if not artist: artist = "")
+    if (!artist) artist = "";
+    if (!title) title = "";
+    
+    // Simple alphanumeric normalization (matches backend logic exactly)
+    // Remove all non-alphanumeric characters and lowercase
+    const normArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, "");
+    
+    // Join with underscore (matches backend: f"{norm_artist}_{norm_title}")
+    return `${normArtist}_${normTitle}`;
+}
+
 // --- Helper: Robust Clipboard Copy ---
 async function copyToClipboard(text) {
     // Try modern API first (Works on HTTPS / Localhost)
@@ -1147,7 +1171,12 @@ async function toggleInstrumentalMark() {
             lyricsData.is_instrumental = updatedTrackData.is_instrumental_manual === true || lyricsData.is_instrumental;
 
             // Check for visual mode with updated flags
-            const trackId = updatedTrackData.track_id || `${updatedTrackData.artist} - ${updatedTrackData.title}`;
+            // CRITICAL FIX: Use normalized track ID to match backend logic
+            // This ensures consistent track ID generation even if backend omits track_id
+            const trackId = updatedTrackData.track_id || normalizeTrackId(
+                updatedTrackData.artist || "",
+                updatedTrackData.title || ""
+            );
             checkForVisualMode(lyricsData, trackId);
         } else {
             console.error('Failed to mark instrumental:', result.error);
@@ -2128,25 +2157,24 @@ async function updateLoop() {
             currentPollInterval = updateInterval; // Fast polling for active playback
 
             // ROBUST TRACK ID GENERATION
-            // 1. Prefer track_id if available (Spotify provides this)
-            // 2. Fall back to "Artist - Title" for Windows Media and other sources
-            // 3. Handle edge cases where artist/title might be missing
+            // 1. Prefer track_id if available (Spotify provides this, already normalized by backend)
+            // 2. Fall back to normalized "artist_title" format to match backend logic
+            // 3. CRITICAL FIX: Use normalizeTrackId() to ensure consistency with backend
+            //    This prevents track ID mismatches when backend omits track_id
             let currentTrackId;
             if (trackInfo.track_id && trackInfo.track_id.trim()) {
-                // Use the backend-provided track_id (most reliable for Spotify)
+                // Use the backend-provided track_id (most reliable, already normalized)
                 currentTrackId = trackInfo.track_id.trim();
             } else {
-                // Fallback: construct from artist and title
+                // Fallback: normalize artist and title to match backend _normalize_track_id() logic
                 const artist = (trackInfo.artist || '').trim();
                 const title = (trackInfo.title || '').trim();
-                if (artist && title) {
-                    currentTrackId = `${artist} - ${title}`;
-                } else if (title) {
-                    currentTrackId = title; // At least use title if available
-                } else if (artist) {
-                    currentTrackId = artist; // Or artist if that's all we have
+                if (artist || title) {
+                    // Use normalized format to match backend: "artist_title" (alphanumeric only, lowercase)
+                    currentTrackId = normalizeTrackId(artist, title);
                 } else {
-                    currentTrackId = 'unknown'; // Last resort
+                    // Last resort: use normalized "unknown" (should never happen in practice)
+                    currentTrackId = normalizeTrackId('unknown', '');
                 }
             }
 
