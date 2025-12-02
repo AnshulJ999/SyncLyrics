@@ -81,6 +81,12 @@ _meta_data_lock = asyncio.Lock()
 _album_art_metadata_cache = {}
 _MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 
+# Cache for custom image discovery results
+# Key: folder_path (str), Value: (folder_mtime, discovered_count)
+# Uses folder modification time to avoid re-scanning on every metadata load
+_discovery_cache = {}
+_MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -1031,6 +1037,158 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
             pass
         return False
 
+def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_images: bool = False) -> Dict[str, Any]:
+    """
+    Auto-discover custom images in folder that aren't in metadata.json.
+    Scans for image files and adds them to metadata automatically.
+    
+    Uses folder mtime caching to avoid re-scanning on every metadata load.
+    Only re-discovers if folder modification time changed.
+    
+    Args:
+        folder: Path to the album/artist folder
+        metadata: Existing metadata dictionary (will be modified)
+        is_artist_images: True if this is artist images metadata, False for album art
+        
+    Returns:
+        Updated metadata dictionary (same object, modified in place)
+    """
+    if not folder.exists():
+        return metadata
+    
+    try:
+        # Check if we need to re-discover (folder mtime changed)
+        folder_key = str(folder.resolve())
+        folder_mtime = 0
+        
+        # Get max mtime of all files in folder (indicates if new files were added)
+        try:
+            if folder.exists():
+                folder_mtime = max(
+                    (f.stat().st_mtime for f in folder.iterdir() if f.is_file()),
+                    default=0
+                )
+        except OSError:
+            # Folder might not exist or be inaccessible
+            return metadata
+        
+        # Check cache
+        should_discover = True
+        if folder_key in _discovery_cache:
+            cached_mtime, _ = _discovery_cache[folder_key]
+            if cached_mtime == folder_mtime:
+                # Folder hasn't changed, skip discovery
+                should_discover = False
+        
+        if not should_discover:
+            return metadata
+        
+        # Scan for image files
+        image_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
+        discovered_count = 0
+        
+        for file in folder.iterdir():
+            if not file.is_file():
+                continue
+            
+            # Skip metadata.json and temp files
+            if (file.name == 'metadata.json' or 
+                file.name.endswith('.tmp') or 
+                'metadata_' in file.name):
+                continue
+            
+            # Check if it's an image file
+            if file.suffix.lower() not in image_extensions:
+                continue
+            
+            # Extract provider name from filename (remove extension)
+            provider_name = file.stem  # "Custom.jpg" -> "Custom"
+            
+            if is_artist_images:
+                # For artist images: check if already in images array
+                images = metadata.get("images", [])
+                already_exists = any(
+                    img.get("filename") == file.name for img in images
+                )
+                
+                if not already_exists:
+                    # Extract actual resolution from file
+                    try:
+                        def get_image_size_sync(path: Path) -> tuple:
+                            with Image.open(path) as img:
+                                return img.size
+                        
+                        # Run in sync context (will be called from async context if needed)
+                        width, height = get_image_size_sync(file)
+                        
+                        # Add to images array
+                        if "images" not in metadata:
+                            metadata["images"] = []
+                        
+                        metadata["images"].append({
+                            "source": provider_name,
+                            "url": f"file://local/{file.name}",  # Placeholder URL
+                            "filename": file.name,
+                            "width": width,
+                            "height": height,
+                            "downloaded": True,
+                            "added_at": datetime.utcnow().isoformat() + "Z"
+                        })
+                        discovered_count += 1
+                        logger.debug(f"Discovered custom artist image: {file.name} ({width}x{height})")
+                    except Exception as e:
+                        logger.debug(f"Failed to process custom image {file.name}: {e}")
+            else:
+                # For album art: check if already in providers dict
+                providers = metadata.get("providers", {})
+                already_exists = provider_name in providers
+                
+                if not already_exists:
+                    # Extract actual resolution from file
+                    try:
+                        def get_image_size_sync(path: Path) -> tuple:
+                            with Image.open(path) as img:
+                                return img.size
+                        
+                        width, height = get_image_size_sync(file)
+                        resolution_str = f"{width}x{height}"
+                        
+                        # Add to providers dict
+                        if "providers" not in metadata:
+                            metadata["providers"] = {}
+                        
+                        metadata["providers"][provider_name] = {
+                            "url": f"file://local/{file.name}",  # Placeholder URL
+                            "filename": file.name,
+                            "width": width,
+                            "height": height,
+                            "resolution": resolution_str,
+                            "downloaded": True
+                        }
+                        discovered_count += 1
+                        logger.debug(f"Discovered custom album art: {file.name} ({width}x{height})")
+                    except Exception as e:
+                        logger.debug(f"Failed to process custom image {file.name}: {e}")
+        
+        # Update cache
+        if discovered_count > 0:
+            # Update cache with new mtime
+            if len(_discovery_cache) >= _MAX_DISCOVERY_CACHE_SIZE:
+                # Remove oldest entry
+                oldest_key = next(iter(_discovery_cache))
+                del _discovery_cache[oldest_key]
+            
+            _discovery_cache[folder_key] = (folder_mtime, discovered_count)
+            logger.info(f"Auto-discovered {discovered_count} custom image(s) in {folder.name}")
+        else:
+            # No new images, but update cache to prevent re-scanning
+            _discovery_cache[folder_key] = (folder_mtime, 0)
+        
+    except Exception as e:
+        logger.debug(f"Error during custom image discovery: {e}")
+    
+    return metadata
+
 def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Load album art from database if available.
@@ -1087,6 +1245,24 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
                 del _album_art_metadata_cache[oldest_key]
             
             _album_art_metadata_cache[metadata_path_str] = (current_mtime, metadata.copy())
+        
+        # CRITICAL FIX: Auto-discover custom images that aren't in metadata
+        # This allows users to drop images into folders without manual JSON editing
+        # Uses mtime caching to avoid performance impact on every metadata load
+        metadata = discover_custom_images(folder, metadata, is_artist_images=False)
+        
+        # If new images were discovered, save updated metadata
+        # Check if discovery found new images by comparing cache
+        folder_key = str(folder.resolve())
+        if folder_key in _discovery_cache:
+            _, discovered_count = _discovery_cache[folder_key]
+            if discovered_count > 0:
+                # Save updated metadata with discovered images
+                # Use existing save function which handles locks properly
+                save_album_db_metadata(folder, metadata)
+                # Invalidate cache after save
+                if metadata_path_str in _album_art_metadata_cache:
+                    del _album_art_metadata_cache[metadata_path_str]
         
         # Get preferred provider
         preferred_provider = metadata.get("preferred_provider")
@@ -1211,6 +1387,25 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         # Check if this is artist images metadata
         if metadata.get("type") != "artist_images":
             return None
+        
+        # CRITICAL FIX: Auto-discover custom images that aren't in metadata
+        # This allows users to drop images into folders without manual JSON editing
+        # Uses mtime caching to avoid performance impact on every metadata load
+        metadata = discover_custom_images(folder, metadata, is_artist_images=True)
+        
+        # If new images were discovered, save updated metadata
+        # Check if discovery found new images by comparing cache
+        folder_key = str(folder.resolve())
+        if folder_key in _discovery_cache:
+            _, discovered_count = _discovery_cache[folder_key]
+            if discovered_count > 0:
+                # Save updated metadata with discovered images
+                # Use existing save function which handles locks properly
+                save_album_db_metadata(folder, metadata)
+                # Invalidate cache after save
+                metadata_path_str = str(metadata_path)
+                if metadata_path_str in _album_art_metadata_cache:
+                    del _album_art_metadata_cache[metadata_path_str]
         
         preferred_provider = metadata.get("preferred_provider")
         images = metadata.get("images", [])

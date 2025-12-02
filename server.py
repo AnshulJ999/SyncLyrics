@@ -495,15 +495,31 @@ async def get_album_art_options():
                 folder_name = artist_folder.name
                 
                 # Convert artist images to options format
+                # CRITICAL FIX: Count images per source to create unique provider names when needed
+                source_counts = {}
+                for img in artist_images:
+                    if img.get("downloaded") and img.get("filename"):
+                        source = img.get("source", "Unknown")
+                        source_counts[source] = source_counts.get(source, 0) + 1
+                
                 for img in artist_images:
                     if not img.get("downloaded") or not img.get("filename"):
                         continue
                     
                     source = img.get("source", "Unknown")
                     filename = img.get("filename")
+                    img_url = img.get("url", "")
                     
-                    # Create unique provider name for artist images (e.g., "Deezer (Artist)")
-                    provider_name = f"{source} (Artist)"
+                    # CRITICAL FIX: Create unique provider name when multiple images from same source
+                    # If there are multiple images from the same source, include filename to make it unique
+                    # This allows users to select the specific image they want, not just the first one
+                    if source_counts.get(source, 0) > 1:
+                        # Multiple images from this source - include filename for uniqueness
+                        # Format: "FanArt.tv (fanart_tv_0.jpg) (Artist)"
+                        provider_name = f"{source} ({filename}) (Artist)"
+                    else:
+                        # Single image from this source - use simple format
+                        provider_name = f"{source} (Artist)"
                     
                     # Build image URL
                     encoded_folder = quote(folder_name, safe='')
@@ -517,14 +533,16 @@ async def get_album_art_options():
                     resolution = f"{width}x{height}" if width and height else "unknown"
                     
                     # Check if this is the preferred artist image
-                    # artist_preferred could be stored as full name "Deezer (Artist)" or just source "Deezer"
+                    # Match by provider_name, source, or URL (for backward compatibility)
                     is_preferred = (artist_preferred == provider_name or 
                                   artist_preferred == source or
+                                  artist_preferred == img_url or
                                   (not preferred_provider and artist_preferred and source in artist_preferred))
                     
                     options.append({
                         "provider": provider_name,
-                        "url": img.get("url"),
+                        "url": img_url,  # Include URL for unique identification
+                        "filename": filename,  # Include filename for unique identification
                         "image_url": image_url,
                         "resolution": resolution,
                         "width": width,
@@ -598,16 +616,64 @@ async def set_album_art_preference():
             logger.error(f"Failed to load artist metadata: {e}")
             return jsonify({"error": "Failed to load artist images metadata"}), 500
         
-        # Extract source name from provider name (e.g., "Deezer (Artist)" -> "Deezer")
-        source_name = provider_name.replace(" (Artist)", "")
+        # CRITICAL FIX: Match by provider name, URL, or filename to uniquely identify the selected image
+        # This fixes the issue where multiple images from the same source (e.g., FanArt.tv) 
+        # couldn't be distinguished, causing only the first one to be selected
         artist_images = artist_metadata.get("images", [])
         
-        # Find the image with matching source
+        # Try to extract filename from provider name if it's in the format "Source (filename) (Artist)"
+        # Otherwise, extract source name for backward compatibility
         matching_image = None
-        for img in artist_images:
-            if img.get("source") == source_name and img.get("downloaded"):
-                matching_image = img
-                break
+        
+        # First, try to match by exact provider name (includes filename for multiple images from same source)
+        # Provider name format: "FanArt.tv (fanart_tv_0.jpg) (Artist)" or "Deezer (Artist)"
+        if " (" in provider_name and provider_name.endswith(" (Artist)"):
+            # Extract filename from provider name if present
+            # Format: "Source (filename) (Artist)" -> extract "filename"
+            parts = provider_name.replace(" (Artist)", "").split(" (", 1)
+            if len(parts) == 2:
+                # Has filename: "Source (filename)"
+                source_name = parts[0]
+                filename_from_provider = parts[1].rstrip(")")
+                
+                # Match by source AND filename
+                for img in artist_images:
+                    if (img.get("source") == source_name and 
+                        img.get("filename") == filename_from_provider and 
+                        img.get("downloaded")):
+                        matching_image = img
+                        break
+            else:
+                # No filename: "Source" -> just source name
+                source_name = parts[0]
+                # Match by source (backward compatibility - will get first match)
+                for img in artist_images:
+                    if img.get("source") == source_name and img.get("downloaded"):
+                        matching_image = img
+                        break
+        else:
+            # Fallback: extract source name (backward compatibility)
+            source_name = provider_name.replace(" (Artist)", "")
+            for img in artist_images:
+                if img.get("source") == source_name and img.get("downloaded"):
+                    matching_image = img
+                    break
+        
+        # Also try matching by URL if provided in request (most reliable)
+        data_url = data.get('url')
+        if not matching_image and data_url:
+            for img in artist_images:
+                if img.get("url") == data_url and img.get("downloaded"):
+                    matching_image = img
+                    break
+        
+        # Also try matching by filename if provided in request
+        data_filename = data.get('filename')
+        if not matching_image and data_filename:
+            for img in artist_images:
+                if img.get("filename") == data_filename and img.get("downloaded"):
+                    matching_image = img
+                    break
         
         if not matching_image:
             return jsonify({"error": f"Artist image '{provider_name}' not found in database"}), 404

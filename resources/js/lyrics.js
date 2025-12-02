@@ -1261,7 +1261,13 @@ async function loadAlbumArtTab() {
             `;
 
             // Add click handler
-            card.addEventListener('click', () => selectAlbumArt(option.provider));
+            // CRITICAL FIX: Pass URL and filename for unique image identification
+            // This allows the backend to distinguish between multiple images from the same provider
+            card.addEventListener('click', () => selectAlbumArt(
+                option.provider, 
+                option.url || null, 
+                option.filename || null
+            ));
 
             grid.appendChild(card);
         });
@@ -1307,12 +1313,23 @@ function loadArtistImagesTab() {
     });
 }
 
-async function selectAlbumArt(providerName) {
+async function selectAlbumArt(providerName, imageUrl = null, filename = null) {
     try {
+        // CRITICAL FIX: Include URL and filename for unique image identification
+        // This fixes the issue where multiple images from the same provider (e.g., FanArt.tv)
+        // couldn't be distinguished, causing only the first one to be selected
+        const requestBody = { provider: providerName };
+        if (imageUrl) {
+            requestBody.url = imageUrl;
+        }
+        if (filename) {
+            requestBody.filename = filename;
+        }
+        
         const response = await fetch('/api/album-art/preference', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: providerName })
+            body: JSON.stringify(requestBody)
         });
 
         const result = await response.json();
