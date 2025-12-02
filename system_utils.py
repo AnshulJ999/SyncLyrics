@@ -72,6 +72,11 @@ _spotify_download_tracker = set()
 # NEW: Track in-progress artist image downloads to prevent race conditions
 _artist_download_tracker = set()
 
+# Throttle for artist image fetch logs (prevents spam)
+# Key: artist name, Value: last log timestamp
+_artist_image_log_throttle = {}
+_ARTIST_IMAGE_LOG_THROTTLE_SECONDS = 60  # Log at most once per minute per artist
+
 # Global instance for ArtistImageProvider (singleton pattern)
 _artist_image_provider: Optional[ArtistImageProvider] = None
 
@@ -2987,11 +2992,29 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 except Exception as e:
                     logger.debug(f"Last.fm fallback failed: {e}")
                 
-                # Log summary once per artist (info level, not spam)
-                if all_images:
-                    logger.info(f"Artist images fetched for '{artist}': {len(all_images)} total from all sources")
-                else:
-                    logger.info(f"Artist images fetched for '{artist}': No images found from any source")
+                # Log summary with throttle (prevents spam when function runs multiple times)
+                # Only log if enough time has passed since last log for this artist
+                current_time = time.time()
+                last_log_time = _artist_image_log_throttle.get(artist, 0)
+                should_log = (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS
+                
+                if should_log:
+                    if all_images:
+                        logger.info(f"Artist images fetched for '{artist}': {len(all_images)} total from all sources")
+                    else:
+                        logger.info(f"Artist images fetched for '{artist}': No images found from any source")
+                    
+                    # Update throttle timestamp
+                    _artist_image_log_throttle[artist] = current_time
+                    
+                    # Clean up old entries to prevent memory leak (keep only last 100 artists)
+                    if len(_artist_image_log_throttle) > 100:
+                        # Remove oldest entries (artists not logged in last 5 minutes)
+                        cutoff_time = current_time - 300  # 5 minutes
+                        _artist_image_log_throttle = {
+                            k: v for k, v in _artist_image_log_throttle.items() 
+                            if v > cutoff_time
+                        }
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
