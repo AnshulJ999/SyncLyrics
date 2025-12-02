@@ -721,6 +721,9 @@ async def set_album_art_preference():
     # CRITICAL FIX: Invalidate the metadata cache immediately!
     # This forces the server to reload the metadata (and thus the new art URL) on the next request.
     get_current_song_meta_data._last_check_time = 0
+    # Also clear cached result to ensure fresh fetch
+    if hasattr(get_current_song_meta_data, '_last_result'):
+        get_current_song_meta_data._last_result = None
     
     # Add cache busting timestamp
     cache_bust = int(time.time())
@@ -876,8 +879,13 @@ async def get_cover_art():
                 elif ext == '.gif': mime = 'image/gif'
                 elif ext == '.webp': mime = 'image/webp'
                 
-                # Serve the file directly
-                return await send_file(art_path, mimetype=mime, cache_timeout=0)
+                # Serve the file directly with explicit no-cache headers
+                # CRITICAL FIX: Explicit headers prevent browser caching issues
+                response = await send_file(art_path, mimetype=mime)
+                response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
+                return response
             except Exception as e:
                 logger.error(f"Failed to serve art from path {art_path}: {e}")
         else:
@@ -897,7 +905,12 @@ async def get_cover_art():
             elif ext == '.gif': mime = 'image/gif'
             elif ext == '.webp': mime = 'image/webp'
             
-            return await send_file(art_path, mimetype=mime, cache_timeout=0)
+            # CRITICAL FIX: Explicit headers prevent browser caching issues
+            response = await send_file(art_path, mimetype=mime)
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
         except (OSError, IOError) as e:
             logger.warning(f"Failed to read album art: {e}")
     

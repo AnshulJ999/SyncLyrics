@@ -2570,7 +2570,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 for img_dict in all_images:
                     # CRITICAL FIX: Check if artist changed during download to prevent race conditions
                     # If track changed while we were fetching, discard these images
+                    # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes
                     try:
+                        # Force fresh fetch by clearing cache timestamp
+                        get_current_song_meta_data._last_check_time = 0
                         current_metadata = await get_current_song_meta_data()
                         if current_metadata:
                             current_artist = current_metadata.get("artist", "")
@@ -2611,7 +2614,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             file_path = file_path.with_suffix(ext)
                             
                             # Double-check artist hasn't changed before saving to metadata
+                            # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes
                             try:
+                                # Force fresh fetch by clearing cache timestamp
+                                get_current_song_meta_data._last_check_time = 0
                                 current_metadata = await get_current_song_meta_data()
                                 if current_metadata:
                                     current_artist = current_metadata.get("artist", "")
@@ -2638,7 +2644,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             existing_urls.add(url)  # Mark as processed
                 
                 # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
+                # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes
                 try:
+                    # Force fresh fetch by clearing cache timestamp
+                    get_current_song_meta_data._last_check_time = 0
                     current_metadata = await get_current_song_meta_data()
                     if current_metadata:
                         current_artist = current_metadata.get("artist", "")
