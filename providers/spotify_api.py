@@ -69,13 +69,16 @@ async def enhance_spotify_image_url_async(url: str) -> str:
         return url
     
     try:
-        # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
-        # URL format: ab67616d0000{quality_code}{image_hash}
-        # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
-        #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
-        # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
+        # Pattern matches: ab67616[1d] + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
+        # URL format: ab67616d0000{quality_code}{image_hash} (album art)
+        #            ab6761610000{quality_code}{image_hash} (artist images)
+        # Example album art: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
+        # Example artist:   https://i.scdn.co/image/ab6761610000e5eb4104fbd80f1f795728abbd59
+        #          ab67616d = album art prefix, ab676161 = artist image prefix
+        #          0000 = padding, b273/e5eb = quality code (640px), rest = image hash
+        # Quality codes from Gist: b273/d452/e5eb (640px), 82c1 (1400px), f848/1e02 (300px), etc.
         # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
-        pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
+        pattern = r'(ab67616[1d])([0-9a-f]{8})([0-9a-f]+)'
         match = re.search(pattern, url)
         
         if not match:
@@ -195,13 +198,16 @@ def enhance_spotify_image_url_sync(url: str) -> str:
         return url
     
     try:
-        # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
-        # URL format: ab67616d0000{quality_code}{image_hash}
-        # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
-        #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
-        # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
+        # Pattern matches: ab67616[1d] + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
+        # URL format: ab67616d0000{quality_code}{image_hash} (album art)
+        #            ab6761610000{quality_code}{image_hash} (artist images)
+        # Example album art: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
+        # Example artist:   https://i.scdn.co/image/ab6761610000e5eb4104fbd80f1f795728abbd59
+        #          ab67616d = album art prefix, ab676161 = artist image prefix
+        #          0000 = padding, b273/e5eb = quality code (640px), rest = image hash
+        # Quality codes from Gist: b273/d452/e5eb (640px), 82c1 (1400px), f848/1e02 (300px), etc.
         # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
-        pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
+        pattern = r'(ab67616[1d])([0-9a-f]{8})([0-9a-f]+)'
         match = re.search(pattern, url)
         
         if not match:
@@ -927,7 +933,13 @@ class SpotifyAPI:
             # Use asyncio.gather to verify all images in parallel (much faster than sequential)
             enhancement_tasks = [enhance_spotify_image_url_async(img['url']) for img in images_sorted]
             image_urls = await asyncio.gather(*enhancement_tasks)
-            logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)}")
+            
+            # Log enhanced URLs for artist images (similar to album art logging)
+            enhanced_count = sum(1 for orig, enhanced in zip([img['url'] for img in images_sorted], image_urls) if orig != enhanced)
+            if enhanced_count > 0:
+                logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)} ({enhanced_count} enhanced to 1400px)")
+            else:
+                logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)} (no 1400px versions available)")
             
             # Cache the results
             self._artist_image_cache[artist_id] = image_urls
