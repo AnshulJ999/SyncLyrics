@@ -131,8 +131,9 @@ async def enhance_spotify_image_url_async(url: str) -> str:
             
             if is_valid:
                 # First-time success is important - log at INFO level
+                # Log enhanced URL so we can verify the quality code changed (0000b273 -> 000082c1)
                 if should_log:
-                    logger.info(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                    logger.info(f"Spotify image enhanced to 1400px: {enhanced_url[:60]}...")
                 return enhanced_url
             else:
                 # First-time failure (404) is expected behavior - keep at DEBUG to avoid spam
@@ -245,8 +246,9 @@ def enhance_spotify_image_url_sync(url: str) -> str:
             
             if is_valid:
                 # First-time success is important - log at INFO level
+                # Log enhanced URL so we can verify the quality code changed (0000b273 -> 000082c1)
                 if should_log:
-                    logger.info(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                    logger.info(f"Spotify image enhanced to 1400px: {enhanced_url[:60]}...")
                 return enhanced_url
             else:
                 # First-time failure (404) is expected behavior - keep at DEBUG to avoid spam
