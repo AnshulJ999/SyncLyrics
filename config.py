@@ -244,7 +244,8 @@ ALBUM_ART = {
     # for security (should be in .env file, not settings.json)
     "enable_itunes": conf("album_art.enable_itunes", True),
     "enable_lastfm": conf("album_art.enable_lastfm", True),
-    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", False),
+    # Default to True since enhancement is proven to work and always falls back to 640px if unavailable
+    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", True),
     "min_resolution": conf("album_art.min_resolution", 3000)  # Prefer 3000x3000px for best quality
 }
 

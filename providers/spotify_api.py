@@ -14,6 +14,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from typing import Optional, Dict, Any
 import os
+import re
 from dotenv import load_dotenv
 import logging
 import requests
@@ -297,8 +298,6 @@ class SpotifyAPI:
             return url
         
         try:
-            import re
-            
             # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
             # URL format: ab67616d0000{quality_code}{image_hash}
             # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228

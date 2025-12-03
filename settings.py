@@ -174,7 +174,7 @@ class SettingsManager:
             "album_art.retries": Setting("Retries", int, 2, False, "Album Art", "Max retries", "number", min_val=0, max_val=5),
             "album_art.enable_itunes": Setting("iTunes", bool, True, False, "Album Art", "Enable iTunes source", "switch"),
             "album_art.enable_lastfm": Setting("Last.fm", bool, True, False, "Album Art", "Enable Last.fm source", "switch"),
-            "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, False, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
+            "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, True, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
             "album_art.min_resolution": Setting("Min Resolution", int, 3000, False, "Album Art", "Preferred resolution (px)", "number", min_val=640, max_val=3000),
             
             # Visual Mode

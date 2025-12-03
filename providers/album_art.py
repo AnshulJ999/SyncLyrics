@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 import asyncio
 import requests
+import re
 from typing import Optional, Dict, Any, Tuple, List
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import logging
@@ -45,6 +46,7 @@ class AlbumArtProvider:
         # Enable/disable specific sources
         self.enable_itunes = album_art_config.get("enable_itunes", True)
         self.enable_lastfm = album_art_config.get("enable_lastfm", True)
+        # Default to True since enhancement is proven to work and has no downsides (always falls back to 640px)
         self.enable_spotify_enhanced = album_art_config.get("enable_spotify_enhanced", True)
         
         # Debug logging for configuration
@@ -73,56 +75,6 @@ class AlbumArtProvider:
         self._logged_tracks = set()
         self._logged_tracks_size = 200  # Limit size to prevent memory leaks
         
-    def _try_enhance_spotify_url(self, spotify_url: str) -> Optional[str]:
-        """
-        Try to enhance Spotify image URL to get higher resolution.
-        Simply modifies the URL string - no network requests to avoid latency.
-        If the enhanced URL doesn't work, the frontend will fall back gracefully.
-        
-        Args:
-            spotify_url: Original Spotify image URL
-            
-        Returns:
-            Enhanced URL if possible, None otherwise
-        """
-        if not spotify_url or not self.enable_spotify_enhanced:
-            return None
-            
-        try:
-            # Spotify image URLs are typically CDN URLs
-            # Try replacing common size indicators in the URL
-            # Some Spotify URLs have format like: .../640x640.jpg or .../ab67616d0000b273...
-            # We can try requesting larger sizes by modifying the URL
-            
-            # Method 1: Try replacing 640 with larger sizes (try highest quality first)
-            # NOTE: This is experimental - Spotify may not actually serve higher res
-            # even if we modify the URL. The actual resolution is unknown until downloaded.
-            for size in [3000, 2000, 1600, 1200, 1000]:
-                enhanced = spotify_url.replace('640', str(size))
-                if enhanced != spotify_url:
-                    # URL modified, but actual resolution is unknown
-                    logger.debug(f"Modified Spotify URL (attempted {size}x{size}, actual resolution unknown)")
-                    return enhanced
-            
-            # Method 2: Try appending size parameters (some CDNs support this)
-            parsed = urlparse(spotify_url)
-            query_params = parse_qs(parsed.query)
-            
-            # Try different size parameters (try highest quality first)
-            for size_param in ['size', 'w', 'width', 'dimension']:
-                for size in [3000, 2000, 1000]:
-                    query_params[size_param] = [str(size)]
-                    new_query = urlencode(query_params, doseq=True)
-                    enhanced_url = urlunparse(parsed._replace(query=new_query))
-                    if enhanced_url != spotify_url:
-                        logger.debug(f"Enhanced Spotify URL with size parameter ({size}x{size})")
-                        return enhanced_url
-                    
-        except Exception as e:
-            logger.debug(f"Failed to enhance Spotify URL: {e}")
-            
-        return None
-    
     def _get_itunes_art(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Tuple[str, int]]:
         """
         Get album art from iTunes/Apple Music API.
@@ -691,7 +643,7 @@ class AlbumArtProvider:
     def _enhance_spotify_image_url(self, url: str) -> str:
         """
         Try to enhance Spotify image URL from 640px to 1400px using quality code replacement.
-        Falls back to original URL if enhancement fails (404 or error).
+        Falls back to original URL if enhancement fails (404 or error) or if disabled in settings.
         
         Based on community discovery: https://gist.github.com/soulsoiledit/8c258233419a299f093b083eb4f427ca
         Spotify image URLs contain quality codes that can be replaced to get higher resolution.
@@ -701,14 +653,16 @@ class AlbumArtProvider:
             url: Original Spotify image URL (typically 640px from API)
             
         Returns:
-            Enhanced URL (1400px) if available and verified, original URL if not
+            Enhanced URL (1400px) if available and verified, original URL if not or if disabled
         """
+        # Respect the enable_spotify_enhanced setting
+        if not self.enable_spotify_enhanced:
+            return url
+        
         if not url or 'i.scdn.co' not in url:
             return url
         
         try:
-            import re
-            
             # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
             # URL format: ab67616d0000{quality_code}{image_hash}
             # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
