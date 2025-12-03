@@ -865,9 +865,21 @@ async def ensure_album_art_db(
                 # NEW: Explicitly check if the file exists on disk, even if metadata says it does
                 # This fixes cases where user might have deleted images but metadata.json remains
                 file_exists_on_disk = image_path.exists()
+                
+                # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
+                should_upgrade = False
+                if provider_name == "Spotify" and file_exists_on_disk and existing_metadata:
+                    existing_provider_data = existing_metadata.get("providers", {}).get("Spotify", {})
+                    existing_width = existing_provider_data.get("width", 0)
+                    existing_height = existing_provider_data.get("height", 0)
+                    existing_resolution = max(existing_width, existing_height)
+                    # If existing image is 640px (or close to it), try to upgrade
+                    if existing_resolution <= 650:  # Allow small margin for rounding
+                        should_upgrade = True
+                        logger.info(f"Found existing 640px Spotify image, attempting upgrade to 1400px for {artist} - {title}")
 
-                # Download image if we don't have it or if it's missing
-                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})):
+                # Download image if we don't have it, if it's missing, or if we should upgrade
+                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
                     try:
                         # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
                         # This prevents race conditions when the same provider downloads for the same album simultaneously

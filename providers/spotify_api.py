@@ -104,8 +104,17 @@ async def enhance_spotify_image_url_async(url: str) -> str:
                 lambda: requests.head(enhanced_url, timeout=2, allow_redirects=True)
             )
             
-            # Update cache (thread-safe)
+            # Verify: status must be 200 AND final URL should still contain the enhanced quality code
+            # (Spotify might redirect 404s to error pages, so we check the final URL)
             is_valid = response.status_code == 200
+            if is_valid:
+                # Check if final URL after redirects still contains the enhanced quality code
+                final_url = response.url if hasattr(response, 'url') else enhanced_url
+                if '000082c1' not in final_url and '82c1' not in final_url:
+                    # Redirected to a different URL (likely 404 page or lower quality)
+                    is_valid = False
+                    # Log this at DEBUG level (expected behavior for some images)
+                    logger.debug(f"Spotify 1400px URL redirected (likely 404): {enhanced_url[:50]}... -> {final_url[:50]}...")
             with _cache_lock:
                 _spotify_url_verification_cache[enhanced_url] = is_valid
                 
@@ -219,8 +228,17 @@ def enhance_spotify_image_url_sync(url: str) -> str:
         try:
             response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
             
-            # Update cache (thread-safe)
+            # Verify: status must be 200 AND final URL should still contain the enhanced quality code
+            # (Spotify might redirect 404s to error pages, so we check the final URL)
             is_valid = response.status_code == 200
+            if is_valid:
+                # Check if final URL after redirects still contains the enhanced quality code
+                final_url = response.url if hasattr(response, 'url') else enhanced_url
+                if '000082c1' not in final_url and '82c1' not in final_url:
+                    # Redirected to a different URL (likely 404 page or lower quality)
+                    is_valid = False
+                    # Log this at DEBUG level (expected behavior for some images)
+                    logger.debug(f"Spotify 1400px URL redirected (likely 404): {enhanced_url[:50]}... -> {final_url[:50]}...")
             with _cache_lock:
                 _spotify_url_verification_cache[enhanced_url] = is_valid
                 
