@@ -1392,8 +1392,9 @@ async function selectAlbumArt(providerName, imageUrl = null, filename = null, ty
             }
 
             // CRITICAL FIX: Show appropriate message based on whether it's an artist image or album art
-            const isArtistImage = providerName.endsWith(' (Artist)');
-            const imageType = isArtistImage ? 'artist image' : 'album art';
+            // Use the type parameter (passed from frontend) instead of checking for "(Artist)" suffix
+            // This is more reliable since we removed the "(Artist)" suffix from UI display names
+            const imageType = (type === 'artist_image') ? 'artist image' : 'album art';
             showToast(`Switched to ${providerName} ${imageType}`);
 
             // Close modal after brief delay
