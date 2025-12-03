@@ -1005,6 +1005,15 @@ async def get_cover_art():
                 if current_time - last_log_time > 60:
                     logger.info(f"Serving cover art: {art_path.name} ({file_size} bytes)")
                     _cover_art_log_throttle[str(art_path)] = current_time
+                    
+                    # Clean up old entries to prevent memory leak (keep only recent entries)
+                    # Remove entries older than 5 minutes to prevent unbounded growth
+                    if len(_cover_art_log_throttle) > 100:
+                        cutoff_time = current_time - 300  # 5 minutes
+                        _cover_art_log_throttle = {
+                            k: v for k, v in _cover_art_log_throttle.items()
+                            if v > cutoff_time
+                        }
                 
                 # Determine mimetype based on extension (preserves original format)
                 ext = art_path.suffix.lower()
