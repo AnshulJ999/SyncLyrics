@@ -15,12 +15,13 @@ from spotipy.oauth2 import SpotifyOAuth
 from typing import Optional, Dict, Any
 import os
 import re
+import threading
 from dotenv import load_dotenv
 import logging
 import requests
 from requests.exceptions import ReadTimeout
 from logging_config import get_logger
-from config import SPOTIFY
+from config import SPOTIFY, ALBUM_ART
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +35,13 @@ logger = get_logger(__name__)
 # Key: enhanced_url, Value: True if valid, False if invalid, None if not checked yet
 _spotify_url_verification_cache = {}
 _MAX_CACHE_SIZE = 500  # Limit cache size to prevent memory leaks
+_cache_lock = threading.Lock()  # Thread safety lock for cache operations
+
+# Throttle logging to prevent spam - track URLs we've already logged about
+# Key: enhanced_url, Value: timestamp of last log
+_enhancement_log_throttle = {}
+_MAX_LOG_THROTTLE_SIZE = 200  # Limit throttle cache size
+_LOG_THROTTLE_SECONDS = 300  # Only log once per URL every 5 minutes
 
 async def enhance_spotify_image_url_async(url: str) -> str:
     """
@@ -53,6 +61,10 @@ async def enhance_spotify_image_url_async(url: str) -> str:
     Returns:
         Enhanced URL (1400px) if available and verified, original URL if not
     """
+    # Respect the global configuration setting
+    if not ALBUM_ART.get("enable_spotify_enhanced", True):
+        return url
+    
     if not url or 'i.scdn.co' not in url:
         return url
     
@@ -73,15 +85,16 @@ async def enhance_spotify_image_url_async(url: str) -> str:
         # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
         enhanced_url = url.replace(match.group(2), '000082c1')
         
-        # Check cache first (instant return, no network request)
-        if enhanced_url in _spotify_url_verification_cache:
-            cache_result = _spotify_url_verification_cache[enhanced_url]
-            if cache_result is True:
-                logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
-                return enhanced_url
-            elif cache_result is False:
-                logger.debug(f"Spotify 1400px not available (cached), using 640px")
-                return url
+        # Thread-safe cache check (instant return, no network request)
+        with _cache_lock:
+            if enhanced_url in _spotify_url_verification_cache:
+                cache_result = _spotify_url_verification_cache[enhanced_url]
+                if cache_result is True:
+                    logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
+                    return enhanced_url
+                elif cache_result is False:
+                    logger.debug(f"Spotify 1400px not available (cached), using 640px")
+                    return url
         
         # Not in cache - verify with HEAD request (runs in thread executor to avoid blocking)
         try:
@@ -91,25 +104,59 @@ async def enhance_spotify_image_url_async(url: str) -> str:
                 lambda: requests.head(enhanced_url, timeout=2, allow_redirects=True)
             )
             
-            # Update cache
+            # Update cache (thread-safe)
             is_valid = response.status_code == 200
-            _spotify_url_verification_cache[enhanced_url] = is_valid
+            with _cache_lock:
+                _spotify_url_verification_cache[enhanced_url] = is_valid
+                
+                # Simple cache cleanup: remove oldest entries if cache is too large
+                if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
+                    # Remove first (oldest) entry - safe inside lock
+                    oldest_key = next(iter(_spotify_url_verification_cache))
+                    _spotify_url_verification_cache.pop(oldest_key)
             
-            # Simple cache cleanup: remove oldest entries if cache is too large
-            if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
-                # Remove first (oldest) entry
-                oldest_key = next(iter(_spotify_url_verification_cache))
-                _spotify_url_verification_cache.pop(oldest_key)
+            # Throttled logging - only log important events (first-time success/failure)
+            current_time = time.time()
+            should_log = False
+            with _cache_lock:
+                last_log_time = _enhancement_log_throttle.get(enhanced_url, 0)
+                if current_time - last_log_time > _LOG_THROTTLE_SECONDS:
+                    should_log = True
+                    _enhancement_log_throttle[enhanced_url] = current_time
+                    
+                    # Cleanup throttle cache if too large
+                    if len(_enhancement_log_throttle) > _MAX_LOG_THROTTLE_SIZE:
+                        oldest_key = next(iter(_enhancement_log_throttle))
+                        _enhancement_log_throttle.pop(oldest_key)
             
             if is_valid:
-                logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                # First-time success is important - log at INFO level
+                if should_log:
+                    logger.info(f"Spotify image enhanced to 1400px: {url[:50]}...")
                 return enhanced_url
             else:
-                logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
+                # First-time failure (404) is expected behavior - keep at DEBUG to avoid spam
+                if should_log:
+                    logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
         except Exception as e:
-            # Cache the failure to avoid repeated attempts
-            _spotify_url_verification_cache[enhanced_url] = False
-            logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
+            # Cache the failure to avoid repeated attempts (thread-safe)
+            with _cache_lock:
+                _spotify_url_verification_cache[enhanced_url] = False
+            # Network errors are unexpected - log at INFO level (but throttled)
+            current_time = time.time()
+            should_log = False
+            with _cache_lock:
+                last_log_time = _enhancement_log_throttle.get(enhanced_url, 0)
+                if current_time - last_log_time > _LOG_THROTTLE_SECONDS:
+                    should_log = True
+                    _enhancement_log_throttle[enhanced_url] = current_time
+                    
+                    if len(_enhancement_log_throttle) > _MAX_LOG_THROTTLE_SIZE:
+                        oldest_key = next(iter(_enhancement_log_throttle))
+                        _enhancement_log_throttle.pop(oldest_key)
+            
+            if should_log:
+                logger.info(f"Spotify enhancement check failed: {e}, using 640px")
         
         return url  # Fallback to original URL
     except Exception as e:
@@ -130,6 +177,10 @@ def enhance_spotify_image_url_sync(url: str) -> str:
     Returns:
         Enhanced URL (1400px) if available and verified, original URL if not
     """
+    # Respect the global configuration setting
+    if not ALBUM_ART.get("enable_spotify_enhanced", True):
+        return url
+    
     if not url or 'i.scdn.co' not in url:
         return url
     
@@ -150,39 +201,76 @@ def enhance_spotify_image_url_sync(url: str) -> str:
         # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
         enhanced_url = url.replace(match.group(2), '000082c1')
         
-        # Check cache first (instant return, no network request)
-        if enhanced_url in _spotify_url_verification_cache:
-            cache_result = _spotify_url_verification_cache[enhanced_url]
-            if cache_result is True:
-                logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
-                return enhanced_url
-            elif cache_result is False:
-                logger.debug(f"Spotify 1400px not available (cached), using 640px")
-                return url
+        # Thread-safe cache check (instant return, no network request)
+        with _cache_lock:
+            if enhanced_url in _spotify_url_verification_cache:
+                cache_result = _spotify_url_verification_cache[enhanced_url]
+                if cache_result is True:
+                    # Cached hits are frequent - keep at DEBUG to avoid spam
+                    logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
+                    return enhanced_url
+                elif cache_result is False:
+                    # Cached failures are frequent - keep at DEBUG to avoid spam
+                    logger.debug(f"Spotify 1400px not available (cached), using 640px")
+                    return url
         
         # Not in cache - verify with HEAD request (synchronous, but runs in thread executor)
         try:
             response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
             
-            # Update cache
+            # Update cache (thread-safe)
             is_valid = response.status_code == 200
-            _spotify_url_verification_cache[enhanced_url] = is_valid
+            with _cache_lock:
+                _spotify_url_verification_cache[enhanced_url] = is_valid
+                
+                # Simple cache cleanup: remove oldest entries if cache is too large
+                if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
+                    # Remove first (oldest) entry - safe inside lock
+                    oldest_key = next(iter(_spotify_url_verification_cache))
+                    _spotify_url_verification_cache.pop(oldest_key)
             
-            # Simple cache cleanup: remove oldest entries if cache is too large
-            if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
-                # Remove first (oldest) entry
-                oldest_key = next(iter(_spotify_url_verification_cache))
-                _spotify_url_verification_cache.pop(oldest_key)
+            # Throttled logging - only log important events (first-time success/failure)
+            current_time = time.time()
+            should_log = False
+            with _cache_lock:
+                last_log_time = _enhancement_log_throttle.get(enhanced_url, 0)
+                if current_time - last_log_time > _LOG_THROTTLE_SECONDS:
+                    should_log = True
+                    _enhancement_log_throttle[enhanced_url] = current_time
+                    
+                    # Cleanup throttle cache if too large
+                    if len(_enhancement_log_throttle) > _MAX_LOG_THROTTLE_SIZE:
+                        oldest_key = next(iter(_enhancement_log_throttle))
+                        _enhancement_log_throttle.pop(oldest_key)
             
             if is_valid:
-                logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                # First-time success is important - log at INFO level
+                if should_log:
+                    logger.info(f"Spotify image enhanced to 1400px: {url[:50]}...")
                 return enhanced_url
             else:
-                logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
+                # First-time failure (404) is expected behavior - keep at DEBUG to avoid spam
+                if should_log:
+                    logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
         except Exception as e:
-            # Cache the failure to avoid repeated attempts
-            _spotify_url_verification_cache[enhanced_url] = False
-            logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
+            # Cache the failure to avoid repeated attempts (thread-safe)
+            with _cache_lock:
+                _spotify_url_verification_cache[enhanced_url] = False
+            # Network errors are unexpected - log at INFO level (but throttled)
+            current_time = time.time()
+            should_log = False
+            with _cache_lock:
+                last_log_time = _enhancement_log_throttle.get(enhanced_url, 0)
+                if current_time - last_log_time > _LOG_THROTTLE_SECONDS:
+                    should_log = True
+                    _enhancement_log_throttle[enhanced_url] = current_time
+                    
+                    if len(_enhancement_log_throttle) > _MAX_LOG_THROTTLE_SIZE:
+                        oldest_key = next(iter(_enhancement_log_throttle))
+                        _enhancement_log_throttle.pop(oldest_key)
+            
+            if should_log:
+                logger.info(f"Spotify enhancement check failed: {e}, using 640px")
         
         return url  # Fallback to original URL
     except Exception as e:
