@@ -969,6 +969,8 @@ async def get_cover_art():
     from quart import send_file
     from pathlib import Path
 
+    global _cover_art_log_throttle  # <--- CRITICAL FIX NEEDED HERE
+
     # 1. Get the current song metadata to find the real path
     metadata = await get_current_song_meta_data()
     
