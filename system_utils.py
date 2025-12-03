@@ -3395,9 +3395,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             
                             # Check if any download is in progress for this artist (any spotify_id variant)
                             # We check all possible keys because spotify_id might be None or different
+                            # CRITICAL FIX: Convert set to list to prevent RuntimeError if set is modified during iteration
                             any_download_in_progress = any(
                                 key.startswith(f"{artist}::") 
-                                for key in _artist_download_tracker
+                                for key in list(_artist_download_tracker)  # Convert to list first for thread safety
                             )
                             
                             if not any_download_in_progress:
@@ -3546,10 +3547,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # This prevents data loss where good photos are deleted and replaced with logos
                 if needs_fanart_upgrade and all_images:
                     # Filter new FanArt images - ONLY keep photos (backgrounds/thumbs), exclude logos
+                    # CRITICAL FIX: Explicit logo exclusion as primary filter (future-proofing)
                     # Logos are 800x310 and have type='logo', we don't want those
                     new_fanart_photos = [
                         img for img in all_images 
                         if img.get('source') == 'FanArt.tv' 
+                        and img.get('type') != 'logo'  # Explicit exclusion (primary filter)
                         and img.get('type') in ['background', 'thumbnail']  # Only photos, not logos
                         and not (img.get('width') == 800 and img.get('height') == 310)  # Double-check no logos
                     ]
@@ -3561,7 +3564,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         logger.info(f"Upgraded FanArt for '{artist}': Removed {old_fanart_count} old, added {len(new_fanart_photos)} new photos")
                     else:
                         # New images are only logos or no photos - keep old photos!
-                        logger.warning(f"FanArt upgrade for '{artist}' found only logos or no photos, keeping existing photos to prevent data loss")
+                        # This is correct behavior (not a warning) - we're preventing data loss
+                        logger.info(f"FanArt upgrade for '{artist}' found only logos or no photos, keeping existing photos to prevent data loss")
                 
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
@@ -3576,7 +3580,28 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 loop = asyncio.get_running_loop()
                 
                 # Track counts per source for filename generation
+                # CRITICAL FIX: Initialize based on existing images to prevent filename collisions
+                # This ensures new images get unique filenames (e.g., if deezer_0.jpg exists, next becomes deezer_1.jpg)
                 source_counts = {}
+                for img in saved_images:
+                    filename = img.get('filename', '')
+                    if not filename:
+                        continue
+                        
+                    # Parse filename to get source and index (e.g., "deezer_0.jpg")
+                    try:
+                        stem = Path(filename).stem  # "deezer_0"
+                        if '_' in stem:
+                            parts = stem.rsplit('_', 1)
+                            if len(parts) == 2 and parts[1].isdigit():
+                                src = parts[0]
+                                idx = int(parts[1])
+                                if src not in source_counts:
+                                    source_counts[src] = idx
+                                else:
+                                    source_counts[src] = max(source_counts[src], idx)
+                    except Exception:
+                        continue
                 
                 # CRITICAL FIX: Check if artist changed BEFORE processing images (optimization)
                 # This prevents running the check 18+ times inside the loop (one per image)

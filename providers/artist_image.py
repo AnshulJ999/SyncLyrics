@@ -84,6 +84,16 @@ def _validate_wikipedia_title(artist: str, title: str) -> bool:
     if not artist or not title:
         return False
     
+    # CRITICAL FIX: Check exclusion terms FIRST (before any matching logic)
+    # This prevents wrong matches (e.g., "Plini" matching geology/planet pages)
+    # Reject titles about non-artist topics immediately
+    title_lower = title.lower()
+    exclusion_terms = ['planet', 'geology', 'volcano', 'geological', 'astronomy', 'space', 
+                      'science', 'geography', 'nature', 'landform', 'crater']
+    if any(term in title_lower for term in exclusion_terms):
+        # Title is about something else (geology, astronomy, etc.), not the artist
+        return False
+    
     # Normalize both strings: lowercase, strip whitespace
     artist_norm = artist.lower().strip()
     title_norm = title.lower().strip()
@@ -130,16 +140,6 @@ def _validate_wikipedia_title(artist: str, title: str) -> bool:
         similarity = SequenceMatcher(None, artist_clean, title_clean).ratio()
         if similarity >= 0.90:  # 90% similarity threshold
             return True
-    
-    # FIX #5: Stricter validation - exclude titles about non-artist topics
-    # This prevents "Plini" (artist) from matching "Plini (geology)" (volcanic formations)
-    # Check if title contains exclusion terms that indicate it's NOT about the artist
-    title_lower = title.lower()
-    exclusion_terms = ['planet', 'geology', 'volcano', 'geological', 'astronomy', 'space', 
-                      'science', 'geography', 'nature', 'landform', 'crater']
-    if any(term in title_lower for term in exclusion_terms):
-        # Title is about something else (geology, astronomy, etc.), not the artist
-        return False
     
     # Partial match: check if artist name appears in title or vice versa
     # But only if title isn't way longer (prevents "Bad" matching "Bad Religion")
