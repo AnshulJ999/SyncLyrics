@@ -100,6 +100,13 @@ _MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 _discovery_cache = {}
 _MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 
+# Cache for load_artist_image_from_db() results
+# Key: artist (str), Value: (timestamp, result_dict)
+# Caches the result to avoid calling discover_custom_images on every poll cycle (10x per second)
+_artist_image_load_cache = {}
+_MAX_ARTIST_IMAGE_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
+_ARTIST_IMAGE_CACHE_TTL = 10  # Cache for 10 seconds (refresh when artist changes or after TTL)
+
 # Database versioning for artist images
 # v1: Initial implementation (Deezer, AudioDB, unsorted FanArt)
 # v2: Added Wikipedia, sorted FanArt by likes, improved Spotify resolution
@@ -1315,7 +1322,38 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
                 del _discovery_cache[oldest_key]
             
             _discovery_cache[folder_key] = (folder_mtime, discovered_count)
-            logger.info(f"Auto-discovered {discovered_count} custom image(s) in {folder.name}")
+            
+            # Only log at INFO level if discovered images are truly "Custom" (user-added)
+            # Provider images (Wikipedia, Deezer, etc.) discovered during active downloads
+            # should be logged at DEBUG to prevent spam during downloads
+            # Check filenames to see if they match provider download patterns
+            is_custom_only = True
+            if is_artist_images:
+                images = metadata.get("images", [])
+                # Check if any discovered images match provider download filename patterns
+                # Provider images are named like "wikipedia_0.jpg", "deezer_0.jpg", etc.
+                provider_filename_patterns = ['wikipedia_', 'deezer_', 'theaudiodb_', 'fanart_', 'spotify_']
+                for img in images:
+                    filename = img.get('filename', '').lower()
+                    # If filename matches provider pattern, it's from active download, not custom
+                    if any(pattern in filename for pattern in provider_filename_patterns):
+                        is_custom_only = False
+                        break
+            else:
+                # For album art, check providers dict keys
+                providers = metadata.get("providers", {})
+                provider_filename_patterns = ['wikipedia', 'deezer', 'theaudiodb', 'fanart', 'spotify', 'itunes', 'lastfm']
+                for provider_name in providers.keys():
+                    if any(pattern in provider_name.lower() for pattern in provider_filename_patterns):
+                        is_custom_only = False
+                        break
+            
+            # Only log at INFO if truly custom images (not from active downloads)
+            if is_custom_only:
+                logger.info(f"Auto-discovered {discovered_count} custom image(s) in {folder.name}")
+            else:
+                # Provider images discovered during active downloads - log at DEBUG to prevent spam
+                logger.debug(f"Auto-discovered {discovered_count} image(s) in {folder.name} (from active downloads)")
         else:
             # No new images, but update cache to prevent re-scanning
             _discovery_cache[folder_key] = (folder_mtime, 0)
@@ -1561,6 +1599,9 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     Load preferred artist image from database if available.
     Returns the preferred image path if found.
     
+    OPTIMIZATION: Results are cached to avoid calling discover_custom_images on every poll cycle (10x per second).
+    Cache refreshes when artist changes or after 10 seconds.
+    
     Args:
         artist: Artist name
         
@@ -1571,11 +1612,24 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     if not FEATURES.get("album_art_db", True):
         return None
     
+    # OPTIMIZATION: Check cache first to avoid repeated file I/O and discovery calls
+    current_time = time.time()
+    if artist in _artist_image_load_cache:
+        cached_time, cached_result = _artist_image_load_cache[artist]
+        # Use cache if less than TTL seconds old
+        if (current_time - cached_time) < _ARTIST_IMAGE_CACHE_TTL:
+            return cached_result
+    
     try:
         folder = get_album_db_folder(artist, None)  # Artist-only folder
         metadata_path = folder / "metadata.json"
         
         if not metadata_path.exists():
+            # Cache None result to avoid repeated checks
+            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(_artist_image_load_cache))
+                del _artist_image_load_cache[oldest_key]
+            _artist_image_load_cache[artist] = (current_time, None)
             return None
         
         # Load metadata
@@ -1584,32 +1638,74 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         
         # Check if this is artist images metadata
         if metadata.get("type") != "artist_images":
+            # Cache None result
+            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(_artist_image_load_cache))
+                del _artist_image_load_cache[oldest_key]
+            _artist_image_load_cache[artist] = (current_time, None)
             return None
         
-        # CRITICAL FIX: Auto-discover custom images that aren't in metadata
-        # This allows users to drop images into folders without manual JSON editing
-        # Uses mtime caching to avoid performance impact on every metadata load
-        metadata = discover_custom_images(folder, metadata, is_artist_images=True)
-        
-        # If new images were discovered, save updated metadata
-        # Check if discovery found new images by comparing cache
-        # CRITICAL FIX: Handle folder path resolution failures to prevent crashes
-        # This ensures consistent error handling with album art loading path
+        # OPTIMIZATION: Skip discovery if folder mtime changed recently (within last 3 seconds)
+        # This indicates active downloads are in progress, and discovery will run once at the end
+        # This prevents the discovery loop issue where discovery runs 10 times during downloads
         try:
             folder_key = str(folder.resolve())
         except (OSError, ValueError) as e:
             logger.debug(f"Could not resolve folder path for cache key: {e}")
             folder_key = str(folder)  # Fallback to string representation
+        
+        # Check if folder mtime changed recently (active downloads)
+        folder_mtime = 0
+        try:
+            if folder.exists():
+                folder_mtime = max(
+                    (f.stat().st_mtime for f in folder.iterdir() if f.is_file()),
+                    default=0
+                )
+        except OSError:
+            pass
+        
+        # Skip discovery if folder changed within last 3 seconds (active downloads)
+        skip_discovery = False
         if folder_key in _discovery_cache:
-            _, discovered_count = _discovery_cache[folder_key]
-            if discovered_count > 0:
-                # Save updated metadata with discovered images
-                # Use existing save function which handles locks properly
-                save_album_db_metadata(folder, metadata)
-                # Invalidate cache after save
-                metadata_path_str = str(metadata_path)
-                if metadata_path_str in _album_art_metadata_cache:
-                    del _album_art_metadata_cache[metadata_path_str]
+            cached_mtime, _ = _discovery_cache[folder_key]
+            # If folder mtime changed very recently (within 3 seconds), skip discovery
+            # This prevents discovery loop during active downloads
+            if folder_mtime > cached_mtime and (current_time - folder_mtime) < 3.0:
+                skip_discovery = True
+                logger.debug(f"Skipping discovery for {artist} - active downloads detected (mtime changed {current_time - folder_mtime:.1f}s ago)")
+        
+        # CRITICAL FIX: Auto-discover custom images that aren't in metadata
+        # This allows users to drop images into folders without manual JSON editing
+        # Uses mtime caching to avoid performance impact on every metadata load
+        # SKIP during active downloads to prevent discovery loop (will run once at end of downloads)
+        if not skip_discovery:
+            metadata = discover_custom_images(folder, metadata, is_artist_images=True)
+        
+        # If new images were discovered, save updated metadata
+        # Check if discovery found new images by comparing cache
+        # CRITICAL FIX: Handle folder path resolution failures to prevent crashes
+        # This ensures consistent error handling with album art loading path
+        if not skip_discovery:
+            try:
+                # CRITICAL: Re-resolve folder_key here in case it wasn't set earlier (defensive programming)
+                # This ensures we have a valid folder_key even if the earlier try-except didn't run
+                if 'folder_key' not in locals():
+                    folder_key = str(folder.resolve())
+            except (OSError, ValueError) as e:
+                logger.debug(f"Could not resolve folder path for cache key: {e}")
+                folder_key = str(folder)  # Fallback to string representation
+            
+            if folder_key in _discovery_cache:
+                _, discovered_count = _discovery_cache[folder_key]
+                if discovered_count > 0:
+                    # Save updated metadata with discovered images
+                    # Use existing save function which handles locks properly
+                    save_album_db_metadata(folder, metadata)
+                    # Invalidate cache after save
+                    metadata_path_str = str(metadata_path)
+                    if metadata_path_str in _album_art_metadata_cache:
+                        del _album_art_metadata_cache[metadata_path_str]
         
         preferred_provider = metadata.get("preferred_provider")
         preferred_filename = metadata.get("preferred_image_filename")  # NEW: Most robust matching method
@@ -1714,7 +1810,16 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                 if metadata_path_str in _album_art_metadata_cache:
                     del _album_art_metadata_cache[metadata_path_str]
         
-        return {"path": image_path, "metadata": metadata}
+        result = {"path": image_path, "metadata": metadata}
+        
+        # OPTIMIZATION: Cache result to avoid repeated file I/O and discovery calls
+        # Cache refreshes when artist changes or after TTL seconds
+        if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+            oldest_key = next(iter(_artist_image_load_cache))
+            del _artist_image_load_cache[oldest_key]
+        _artist_image_load_cache[artist] = (current_time, result)
+        
+        return result
         
     except Exception as e:
         logger.debug(f"Failed to load artist image from DB: {e}")
@@ -3168,7 +3273,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     request_key = f"{artist}::{spotify_artist_id or 'no_id'}"
     
     # Prevent duplicate downloads for the same artist+ID combination
-    if request_key in _artist_download_tracker:
+    # CRITICAL: Track if download is already in progress BEFORE checking cache/early return
+    # This prevents discovery loop where each downloaded file triggers a new discovery
+    download_in_progress = request_key in _artist_download_tracker
+    if download_in_progress:
         return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
@@ -3230,21 +3338,45 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         # If images exist and no fetch needed, return immediately (fast path)
                         if not should_fetch and len(existing_images) > 0:
-                            # CRITICAL: Discover custom images before returning
-                            # This allows users to drop images into folders without manual JSON editing
-                            # The discovery function scans the folder and adds any new image files to metadata
-                            existing_metadata = discover_custom_images(folder, existing_metadata, is_artist_images=True)
+                            # CRITICAL FIX: Skip discovery during active downloads to prevent discovery loop
+                            # The discovery loop happens when:
+                            # 1. Download starts for artist X
+                            # 2. First image downloads → folder mtime changes
+                            # 3. Next poll calls this function → early return path
+                            # 4. Discovery runs → finds newly downloaded image → saves metadata
+                            # 5. Second image downloads → folder mtime changes again
+                            # 6. Repeat 10 times (once per downloaded image)
+                            # 
+                            # Solution: Skip discovery if ANY download is in progress for this artist
+                            # Discovery will run once after ALL downloads complete (line ~3841)
                             
-                            # Check if discovery found new custom images
-                            updated_images = existing_metadata.get("images", [])
-                            if len(updated_images) > len(existing_images):
-                                # New custom images found - save updated metadata
-                                custom_count = len(updated_images) - len(existing_images)
-                                logger.info(f"Discovered {custom_count} custom image(s) for '{artist}'")
-                                # Save updated metadata with discovered images
-                                loop = asyncio.get_running_loop()
-                                await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
-                                existing_images = updated_images
+                            # Check if any download is in progress for this artist (any spotify_id variant)
+                            # We check all possible keys because spotify_id might be None or different
+                            any_download_in_progress = any(
+                                key.startswith(f"{artist}::") 
+                                for key in _artist_download_tracker
+                            )
+                            
+                            if not any_download_in_progress:
+                                # No downloads in progress - safe to run discovery
+                                # This allows users to drop images into folders without manual JSON editing
+                                # The discovery function scans the folder and adds any new image files to metadata
+                                existing_metadata = discover_custom_images(folder, existing_metadata, is_artist_images=True)
+                                
+                                # Check if discovery found new custom images
+                                updated_images = existing_metadata.get("images", [])
+                                if len(updated_images) > len(existing_images):
+                                    # New custom images found - save updated metadata
+                                    custom_count = len(updated_images) - len(existing_images)
+                                    logger.info(f"Discovered {custom_count} custom image(s) for '{artist}'")
+                                    # Save updated metadata with discovered images
+                                    loop = asyncio.get_running_loop()
+                                    await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
+                                    existing_images = updated_images
+                            else:
+                                # Download in progress - skip discovery to prevent loop
+                                # Discovery will run once after all downloads complete
+                                logger.debug(f"Skipping discovery for '{artist}' - download in progress")
                             
                             # --- SELF-HEALING: Remove deleted files from metadata ---
                             # Check if files still exist on disk and remove missing ones
@@ -3722,6 +3854,37 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     for img in saved_images 
                     if img.get('downloaded') and img.get('filename')
                 ]
+                
+                # CRITICAL FIX: Run discovery ONCE after all downloads complete
+                # This prevents the discovery loop issue where discovery runs 10 times during downloads
+                # Discovery will find all newly downloaded images in one pass instead of one-by-one
+                try:
+                    # Load current metadata to pass to discovery
+                    if metadata_path.exists():
+                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                            final_metadata = json.load(f)
+                        
+                        # Run discovery once to find all newly downloaded images
+                        final_metadata = discover_custom_images(folder, final_metadata, is_artist_images=True)
+                        
+                        # Check if discovery found new images
+                        try:
+                            folder_key = str(folder.resolve())
+                        except (OSError, ValueError):
+                            folder_key = str(folder)
+                        
+                        if folder_key in _discovery_cache:
+                            _, discovered_count = _discovery_cache[folder_key]
+                            if discovered_count > 0:
+                                # Save updated metadata with discovered images
+                                await loop.run_in_executor(None, save_album_db_metadata, folder, final_metadata)
+                                logger.debug(f"Discovery completed after downloads for {artist}: found {discovered_count} new image(s)")
+                except Exception as e:
+                    logger.debug(f"Error running discovery after downloads for {artist}: {e}")
+                
+                # Invalidate load cache so next call will see the new images
+                if artist in _artist_image_load_cache:
+                    del _artist_image_load_cache[artist]
                 
                 # Update cache
                 _artist_db_check_cache[artist] = (time.time(), result_paths)
