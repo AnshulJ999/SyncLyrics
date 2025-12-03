@@ -55,6 +55,12 @@ class ArtistImageProvider:
         """Initialize the artist image provider with API keys and configuration"""
         self.session = requests.Session()
         
+        # Set User-Agent header (required by Wikipedia API and best practice for other APIs)
+        # Wikipedia specifically requires a User-Agent that identifies your application
+        self.session.headers.update({
+            'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)'
+        })
+        
         # Get timeout from config (default: 5 seconds)
         try:
             self.timeout = ARTIST_IMAGE.get("timeout", 5)
