@@ -448,12 +448,18 @@ async def get_album_art_options():
     
     artist = metadata.get("artist", "")
     album = metadata.get("album")
+    title = metadata.get("title")  # Get title for fallback when album is missing (singles)
     
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
     
+    # CRITICAL FIX: Use title as fallback when album is missing (for singles)
+    # This ensures we look in the correct folder: "Artist - Title" instead of just "Artist"
+    # This matches the logic used in system_utils.py ensure_album_art_db() and load_album_art_from_db()
+    album_or_title = album if album else title
+    
     # Load album art from database
-    db_result = load_album_art_from_db(artist, album)
+    db_result = load_album_art_from_db(artist, album_or_title)
     options = []
     preferred_provider = None
     
@@ -463,7 +469,9 @@ async def get_album_art_options():
         preferred_provider = db_metadata.get("preferred_provider")
         
         # Build folder path for album art
-        folder_path = get_album_db_folder(artist, album or db_metadata.get('album'))
+        # CRITICAL FIX: Use title as fallback when album is missing (for singles)
+        # This ensures we build the correct folder path: "Artist - Title" instead of just "Artist"
+        folder_path = get_album_db_folder(artist, album_or_title or db_metadata.get('album'))
         folder_name = folder_path.name
         
         # Add album art options
@@ -602,9 +610,15 @@ async def set_album_art_preference():
     
     artist = metadata.get("artist", "")
     album = metadata.get("album")
+    title = metadata.get("title")  # Get title for fallback when album is missing (singles)
     
     if not artist:
         return jsonify({"error": "Invalid song data"}), 400
+    
+    # CRITICAL FIX: Use title as fallback when album is missing (for singles)
+    # This ensures we use the correct folder: "Artist - Title" instead of just "Artist"
+    # This matches the logic used in system_utils.py ensure_album_art_db() and load_album_art_from_db()
+    album_or_title = album if album else title
     
     # Check if this is an artist image
     # Since we removed "(Artist)" suffix from UI, we need to check by looking up in artist images
@@ -729,6 +743,29 @@ async def set_album_art_preference():
         artist_metadata["preferred_image_filename"] = matching_image.get("filename")  # NEW: Save filename for robust matching
         artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
         
+        # CRITICAL FIX: Clear album art preference when artist image is selected (mutual exclusion)
+        # This ensures that selecting an artist image overrides any previously selected album art
+        # The user's last selection (artist image) should take priority
+        # Use title as fallback if album is missing (for singles)
+        title = metadata.get("title")
+        album_or_title = album if album else title
+        if album_or_title:
+            album_art_folder_clear = get_album_db_folder(artist, album_or_title)
+            album_art_metadata_path_clear = album_art_folder_clear / "metadata.json"
+            if album_art_metadata_path_clear.exists():
+                try:
+                    with open(album_art_metadata_path_clear, 'r', encoding='utf-8') as f:
+                        album_art_metadata_clear = json.load(f)
+                    # Clear the preferred provider to allow artist image to be used
+                    album_art_metadata_clear.pop("preferred_provider", None)
+                    album_art_metadata_clear["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+                    # Save the cleared metadata
+                    save_album_db_metadata(album_art_folder_clear, album_art_metadata_clear)
+                    logger.debug(f"Cleared album art preference when artist image '{provider_name}' was selected")
+                except Exception as e:
+                    # If clearing fails, log but don't fail the entire operation
+                    logger.debug(f"Failed to clear album art preference: {e}")
+        
         # Save updated metadata
         if not save_album_db_metadata(artist_folder, artist_metadata):
             return jsonify({"error": "Failed to save artist image preference"}), 500
@@ -738,7 +775,9 @@ async def set_album_art_preference():
         db_image_path = artist_folder / filename
     else:
         # Handle album art preference (original logic)
-        db_result = load_album_art_from_db(artist, album)
+        # CRITICAL FIX: Use title as fallback when album is missing (for singles)
+        # This ensures we look in the correct folder: "Artist - Title" instead of just "Artist"
+        db_result = load_album_art_from_db(artist, album_or_title)
         if not db_result:
             return jsonify({"error": "No album art database entry found"}), 404
         
@@ -752,8 +791,32 @@ async def set_album_art_preference():
         db_metadata["preferred_provider"] = provider_name
         db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
         
+        # CRITICAL FIX: Clear artist image preference when album art is selected (mutual exclusion)
+        # This ensures that selecting album art overrides any previously selected artist image
+        # The user's last selection (album art) should take priority
+        artist_folder_clear = get_album_db_folder(artist, None)  # Artist-only folder
+        artist_metadata_path_clear = artist_folder_clear / "metadata.json"
+        if artist_metadata_path_clear.exists():
+            try:
+                with open(artist_metadata_path_clear, 'r', encoding='utf-8') as f:
+                    artist_metadata_clear = json.load(f)
+                # Only clear if this is actually an artist images metadata file
+                if artist_metadata_clear.get("type") == "artist_images":
+                    # Clear the preferred provider and filename to allow album art to be used
+                    artist_metadata_clear.pop("preferred_provider", None)
+                    artist_metadata_clear.pop("preferred_image_filename", None)
+                    artist_metadata_clear["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+                    # Save the cleared metadata
+                    save_album_db_metadata(artist_folder_clear, artist_metadata_clear)
+                    logger.debug(f"Cleared artist image preference when album art '{provider_name}' was selected")
+            except Exception as e:
+                # If clearing fails, log but don't fail the entire operation
+                logger.debug(f"Failed to clear artist image preference: {e}")
+        
         # Save updated metadata
-        folder = get_album_db_folder(artist, album)
+        # CRITICAL FIX: Use title as fallback when album is missing (for singles)
+        # This ensures we save to the correct folder: "Artist - Title" instead of just "Artist"
+        folder = get_album_db_folder(artist, album_or_title)
         if not save_album_db_metadata(folder, db_metadata):
             return jsonify({"error": "Failed to save preference"}), 500
         
