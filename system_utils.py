@@ -933,20 +933,62 @@ async def ensure_album_art_db(
                 # This fixes cases where user might have deleted images but metadata.json remains
                 file_exists_on_disk = image_path.exists()
                 
-                # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
+                # UPGRADE/DOWNGRADE PROTECTION LOGIC: For Spotify, check actual file resolution first
+                # This prevents downgrading from 1400px to 640px (critical bug fix)
                 should_upgrade = False
-                if provider_name == "Spotify" and file_exists_on_disk and existing_metadata:
-                    existing_provider_data = existing_metadata.get("providers", {}).get("Spotify", {})
-                    existing_width = existing_provider_data.get("width", 0)
-                    existing_height = existing_provider_data.get("height", 0)
-                    existing_resolution = max(existing_width, existing_height)
-                    # If existing image is 640px (or close to it), try to upgrade
-                    if existing_resolution <= 650:  # Allow small margin for rounding
-                        should_upgrade = True
-                        logger.info(f"Found existing 640px Spotify image, attempting upgrade to 1400px for {artist} - {title}")
+                should_downgrade_protection = False  # NEW: Prevent downgrading high-res to low-res
+                actual_file_resolution = 0  # Will be set if we can read the file
+                
+                if provider_name == "Spotify" and file_exists_on_disk:
+                    # CRITICAL FIX: Check ACTUAL file resolution first (more reliable than metadata)
+                    # This prevents the bug where a 1400px file gets overwritten by a 640px download
+                    try:
+                        def get_actual_resolution(path: Path) -> int:
+                            """Extract actual resolution from existing image file"""
+                            with Image.open(path) as img:
+                                return max(img.size)
+                        
+                        actual_file_resolution = await loop.run_in_executor(None, get_actual_resolution, image_path)
+                        
+                        # If file is already 1400px+, don't download a lower resolution version
+                        if actual_file_resolution >= 1400:
+                            # Check if new URL is lower resolution
+                            if resolution < actual_file_resolution:
+                                should_downgrade_protection = True
+                                logger.info(f"Skipping download: Existing Spotify image is {actual_file_resolution}px, new URL is {resolution}px (preventing downgrade) for {artist} - {title}")
+                            # If new URL is same or higher resolution, allow upgrade
+                            elif resolution >= actual_file_resolution:
+                                should_upgrade = True
+                                logger.info(f"Found existing {actual_file_resolution}px Spotify image, upgrading to {resolution}px for {artist} - {title}")
+                        # If file is 640px (or close), try to upgrade to 1400px
+                        elif actual_file_resolution <= 650:  # Allow small margin for rounding
+                            if resolution > actual_file_resolution:
+                                should_upgrade = True
+                                logger.info(f"Found existing {actual_file_resolution}px Spotify image, attempting upgrade to {resolution}px for {artist} - {title}")
+                    except Exception as e:
+                        logger.debug(f"Could not check actual file resolution for {image_path}: {e}, using metadata fallback")
+                        # Fallback to metadata check if file read fails
+                        actual_file_resolution = 0
+                    
+                    # Only check metadata if we couldn't read actual file
+                    if actual_file_resolution == 0 and existing_metadata:
+                        existing_provider_data = existing_metadata.get("providers", {}).get("Spotify", {})
+                        existing_width = existing_provider_data.get("width", 0)
+                        existing_height = existing_provider_data.get("height", 0)
+                        existing_resolution = max(existing_width, existing_height)
+                        # If existing image is 640px (or close to it), try to upgrade
+                        if existing_resolution <= 650:  # Allow small margin for rounding
+                            if resolution > existing_resolution:
+                                should_upgrade = True
+                                logger.info(f"Found existing 640px Spotify image (from metadata), attempting upgrade to {resolution}px for {artist} - {title}")
+                        # If existing is 1400px+ and new is lower, prevent downgrade
+                        elif existing_resolution >= 1400 and resolution < existing_resolution:
+                            should_downgrade_protection = True
+                            logger.info(f"Skipping download: Existing Spotify image is {existing_resolution}px (from metadata), new URL is {resolution}px (preventing downgrade) for {artist} - {title}")
 
                 # Download image if we don't have it, if it's missing, or if we should upgrade
-                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
+                # BUT NOT if we're preventing a downgrade (critical: never downgrade from high-res to low-res)
+                if (not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade) and not should_downgrade_protection:
                     try:
                         # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
                         # This prevents race conditions when the same provider downloads for the same album simultaneously
@@ -3589,24 +3631,77 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     width = img_dict.get('width', 0)
                     height = img_dict.get('height', 0)
                     
-                    # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
+                    # UPGRADE/DOWNGRADE PROTECTION LOGIC: For Spotify, check actual file resolution first
+                    # This prevents downgrading from 1400px to 640px (critical bug fix)
                     should_upgrade = False
+                    should_downgrade_protection = False  # NEW: Prevent downgrading high-res to low-res
                     existing_image_index = None
+                    actual_file_resolution = 0  # Will be set if we can read the file
+                    
                     if source.lower() == "spotify" and file_path.exists():
-                        # Check if we have metadata for this image (match by filename or URL)
-                        for idx, img in enumerate(saved_images):
-                            if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
-                                existing_width = img.get('width', 0)
-                                existing_height = img.get('height', 0)
-                                existing_resolution = max(existing_width, existing_height)
-                                # If existing image is 640px (or close to it), try to upgrade
-                                if existing_resolution <= 650:  # Allow small margin for rounding
+                        # CRITICAL FIX: Check ACTUAL file resolution first (more reliable than metadata)
+                        # This prevents the bug where a 1400px file gets overwritten by a 640px download
+                        try:
+                            def get_actual_resolution_artist(path: Path) -> int:
+                                """Extract actual resolution from existing image file"""
+                                with Image.open(path) as img:
+                                    return max(img.size)
+                            
+                            actual_file_resolution = await loop.run_in_executor(None, get_actual_resolution_artist, file_path)
+                            
+                            # If file is already 1400px+, don't download a lower resolution version
+                            if actual_file_resolution >= 1400:
+                                # Check if new URL is lower resolution
+                                if max(width, height) < actual_file_resolution:
+                                    should_downgrade_protection = True
+                                    logger.info(f"Skipping download: Existing Spotify artist image is {actual_file_resolution}px, new URL is {max(width, height)}px (preventing downgrade) for {artist}")
+                                # If new URL is same or higher resolution, allow upgrade
+                                elif max(width, height) >= actual_file_resolution:
                                     should_upgrade = True
-                                    existing_image_index = idx
-                                    logger.info(f"Found existing 640px Spotify artist image, attempting upgrade to 1400px for {artist}")
+                                    # Find existing image index for update
+                                    for idx, img in enumerate(saved_images):
+                                        if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
+                                            existing_image_index = idx
+                                            break
+                                    logger.info(f"Found existing {actual_file_resolution}px Spotify artist image, upgrading to {max(width, height)}px for {artist}")
+                            # If file is 640px (or close), try to upgrade to 1400px
+                            elif actual_file_resolution <= 650:  # Allow small margin for rounding
+                                if max(width, height) > actual_file_resolution:
+                                    should_upgrade = True
+                                    # Find existing image index for update
+                                    for idx, img in enumerate(saved_images):
+                                        if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
+                                            existing_image_index = idx
+                                            break
+                                    logger.info(f"Found existing {actual_file_resolution}px Spotify artist image, attempting upgrade to {max(width, height)}px for {artist}")
+                        except Exception as e:
+                            logger.debug(f"Could not check actual file resolution for {file_path}: {e}, using metadata fallback")
+                            # Fallback to metadata check if file read fails
+                            actual_file_resolution = 0
+                        
+                        # Only check metadata if we couldn't read actual file
+                        if actual_file_resolution == 0:
+                            # Check if we have metadata for this image (match by filename or URL)
+                            for idx, img in enumerate(saved_images):
+                                if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
+                                    existing_width = img.get('width', 0)
+                                    existing_height = img.get('height', 0)
+                                    existing_resolution = max(existing_width, existing_height)
+                                    # If existing image is 640px (or close to it), try to upgrade
+                                    if existing_resolution <= 650:  # Allow small margin for rounding
+                                        if max(width, height) > existing_resolution:
+                                            should_upgrade = True
+                                            existing_image_index = idx
+                                            logger.info(f"Found existing {existing_resolution}px Spotify artist image (from metadata), attempting upgrade to {max(width, height)}px for {artist}")
+                                    # If existing is 1400px+ and new is lower, prevent downgrade
+                                    elif existing_resolution >= 1400 and max(width, height) < existing_resolution:
+                                        should_downgrade_protection = True
+                                        logger.info(f"Skipping download: Existing Spotify artist image is {existing_resolution}px (from metadata), new URL is {max(width, height)}px (preventing downgrade) for {artist}")
                                     break
                     
-                    if not file_path.exists() or should_upgrade:
+                    # Download image if we don't have it, or if we should upgrade
+                    # BUT NOT if we're preventing a downgrade (critical: never downgrade from high-res to low-res)
+                    if (not file_path.exists() or should_upgrade) and not should_downgrade_protection:
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         
                         # Add small delay between downloads to prevent rate limiting

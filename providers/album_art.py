@@ -660,6 +660,15 @@ class AlbumArtProvider:
         if not spotify_url:
             return None
         
+        # CRITICAL FIX: Check if URL is already enhanced (contains 1400px quality code)
+        # This prevents double enhancement when URL is already 1400px from spotify_api.py
+        # Prevents the bug where 1400px URL gets re-processed and potentially downgraded to 640px
+        # Quality code '000082c1' or '82c1' indicates 1400x1400 JPEG resolution
+        if '000082c1' in spotify_url or '82c1' in spotify_url:
+            # Already enhanced, return as-is with correct resolution
+            # No need to re-process - avoids wasted network calls and potential downgrades
+            return (spotify_url, 1400)
+        
         # Respect the enable_spotify_enhanced setting
         if not self.enable_spotify_enhanced:
             # If enhancement is disabled, return original URL with 640px resolution
