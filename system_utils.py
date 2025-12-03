@@ -1707,7 +1707,8 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         except OSError:
             pass
         
-        # Skip discovery if folder changed within last 3 seconds (active downloads)
+        # FIX #4: Skip discovery if folder changed within last 3 seconds (active downloads)
+        # Removed debug log to prevent spam - this is expected behavior during downloads
         skip_discovery = False
         if folder_key in _discovery_cache:
             cached_mtime, _ = _discovery_cache[folder_key]
@@ -1715,7 +1716,7 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
             # This prevents discovery loop during active downloads
             if folder_mtime > cached_mtime and (current_time - folder_mtime) < 3.0:
                 skip_discovery = True
-                logger.debug(f"Skipping discovery for {artist} - active downloads detected (mtime changed {current_time - folder_mtime:.1f}s ago)")
+                # Silent skip - no log spam (this is expected behavior during downloads)
         
         # CRITICAL FIX: Auto-discover custom images that aren't in metadata
         # This allows users to drop images into folders without manual JSON editing
@@ -3541,15 +3542,26 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
                 
-                # NON-DESTRUCTIVE MERGE: Remove old FanArt only if we successfully fetched new images
-                # This replaces old unsorted FanArt images with new sorted ones (sorted by likes)
-                # We do this AFTER fetching to ensure we have new images before removing old ones
+                # FIX #1: NON-DESTRUCTIVE UPGRADE - Only remove old FanArt if new photos are actually better
+                # This prevents data loss where good photos are deleted and replaced with logos
                 if needs_fanart_upgrade and all_images:
-                    # Safe to remove old FanArt now that we have new sorted ones
-                    old_fanart_count = sum(1 for img in saved_images if img.get('source') == 'FanArt.tv')
-                    saved_images = [img for img in saved_images if img.get('source') != 'FanArt.tv']
-                    if old_fanart_count > 0:
-                        logger.debug(f"Removed {old_fanart_count} old FanArt image(s) for '{artist}' to fetch sorted versions")
+                    # Filter new FanArt images - ONLY keep photos (backgrounds/thumbs), exclude logos
+                    # Logos are 800x310 and have type='logo', we don't want those
+                    new_fanart_photos = [
+                        img for img in all_images 
+                        if img.get('source') == 'FanArt.tv' 
+                        and img.get('type') in ['background', 'thumbnail']  # Only photos, not logos
+                        and not (img.get('width') == 800 and img.get('height') == 310)  # Double-check no logos
+                    ]
+                    
+                    # Only remove old FanArt if we have better new photos
+                    if len(new_fanart_photos) > 0:
+                        old_fanart_count = sum(1 for img in saved_images if img.get('source') == 'FanArt.tv')
+                        saved_images = [img for img in saved_images if img.get('source') != 'FanArt.tv']
+                        logger.info(f"Upgraded FanArt for '{artist}': Removed {old_fanart_count} old, added {len(new_fanart_photos)} new photos")
+                    else:
+                        # New images are only logos or no photos - keep old photos!
+                        logger.warning(f"FanArt upgrade for '{artist}' found only logos or no photos, keeping existing photos to prevent data loss")
                 
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 

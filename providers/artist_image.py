@@ -131,6 +131,16 @@ def _validate_wikipedia_title(artist: str, title: str) -> bool:
         if similarity >= 0.90:  # 90% similarity threshold
             return True
     
+    # FIX #5: Stricter validation - exclude titles about non-artist topics
+    # This prevents "Plini" (artist) from matching "Plini (geology)" (volcanic formations)
+    # Check if title contains exclusion terms that indicate it's NOT about the artist
+    title_lower = title.lower()
+    exclusion_terms = ['planet', 'geology', 'volcano', 'geological', 'astronomy', 'space', 
+                      'science', 'geography', 'nature', 'landform', 'crater']
+    if any(term in title_lower for term in exclusion_terms):
+        # Title is about something else (geology, astronomy, etc.), not the artist
+        return False
+    
     # Partial match: check if artist name appears in title or vice versa
     # But only if title isn't way longer (prevents "Bad" matching "Bad Religion")
     if artist_clean in title_clean:
@@ -502,9 +512,17 @@ class ArtistImageProvider:
             
             # Artist Backgrounds (High-resolution backgrounds, typically 1920x1080+)
             # Sort by likes (community-curated quality) - highest liked images first
+            # FALLBACK: If no likes data available, use API order (old behavior)
             backgrounds = data.get('artistbackground', [])
-            # Sort by likes (descending) using safe helper function to prevent crashes on malformed data
-            backgrounds.sort(key=safe_likes, reverse=True)
+            # Check if sorting will work (at least one item has likes > 0)
+            has_likes = any(safe_likes(bg) > 0 for bg in backgrounds)
+            if has_likes:
+                # Sort by likes (descending) - highest liked images first
+                backgrounds.sort(key=safe_likes, reverse=True)
+                logger.debug(f"FanArt.tv: Sorted {len(backgrounds)} backgrounds by likes")
+            else:
+                # Fallback: Use API order (old behavior) - no data loss if sorting fails
+                logger.debug(f"FanArt.tv: No likes data available, using API order for {len(backgrounds)} backgrounds")
             
             for bg in backgrounds:
                 if isinstance(bg, dict) and bg.get('url'):
@@ -517,9 +535,14 @@ class ArtistImageProvider:
                     })
                 
             # Artist Thumbnails (Main artist photos, typically 1000x1000+)
-            # Sort by likes for quality ranking using safe helper function
+            # Sort by likes for quality ranking, with fallback to API order
             thumbs = data.get('artistthumb', [])
-            thumbs.sort(key=safe_likes, reverse=True)
+            has_likes_thumbs = any(safe_likes(thumb) > 0 for thumb in thumbs)
+            if has_likes_thumbs:
+                thumbs.sort(key=safe_likes, reverse=True)
+                logger.debug(f"FanArt.tv: Sorted {len(thumbs)} thumbnails by likes")
+            else:
+                logger.debug(f"FanArt.tv: No likes data available, using API order for {len(thumbs)} thumbnails")
             
             for thumb in thumbs:
                 if isinstance(thumb, dict) and thumb.get('url'):
@@ -531,23 +554,22 @@ class ArtistImageProvider:
                         'height': 1000
                     })
                 
-            # HD Music Logos (Transparent PNG logos, typically 800x310)
-            for logo in data.get('hdmusiclogo', []):
-                if isinstance(logo, dict) and logo.get('url'):
-                    images.append({
-                        'url': logo['url'],
-                        'source': 'FanArt.tv',
-                        'type': 'logo',
-                        'width': 800,
-                        'height': 310
-                    })
+            # FIX #2: REMOVED HD Music Logos - We only want photos, not logos
+            # Logos (800x310) were replacing good photos and don't belong in artist images
+            # Old code that fetched logos has been removed to prevent data loss
             
             # Album Covers (High-quality album artwork, typically 1000x1000+)
             # Only fetch if enabled (can be disabled if too many duplicates with album art DB)
             if self.enable_fanart_albumcover:
                 # Sort by likes for quality ranking (get best album covers first) using safe helper function
+                # FALLBACK: If no likes data, use API order
                 album_covers = data.get('albumcover', [])
-                album_covers.sort(key=safe_likes, reverse=True)
+                has_likes_covers = any(safe_likes(cover) > 0 for cover in album_covers)
+                if has_likes_covers:
+                    album_covers.sort(key=safe_likes, reverse=True)
+                    logger.debug(f"FanArt.tv: Sorted {len(album_covers)} album covers by likes")
+                else:
+                    logger.debug(f"FanArt.tv: No likes data available, using API order for {len(album_covers)} album covers")
                 
                 # Limit to top 5 highest-quality album covers to avoid flooding
                 # (Artist images should focus on artist photos, not entire discography)
@@ -948,8 +970,14 @@ class ArtistImageProvider:
                             title = page_data.get('title', '')
                             filename_lower = title.lower()
                             
-                            # Skip obvious non-photos (logos, banners, album covers)
-                            skip_keywords = ['logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 'album cover', 'cover art']
+                            # Skip obvious non-photos (logos, banners, album covers) and non-artist content
+                            # FIX #5: Added exclusion terms to prevent wrong images (e.g., planets for "Plini")
+                            skip_keywords = [
+                                'logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 
+                                'album cover', 'cover art',
+                                'planet', 'geology', 'volcano', 'astronomy', 'space', 
+                                'science', 'geography', 'nature', 'landform', 'crater'
+                            ]
                             if any(kw in filename_lower for kw in skip_keywords):
                                 continue
                             
@@ -1037,7 +1065,12 @@ class ArtistImageProvider:
                         filename_lower = title.lower()
                         
                         # Skip obvious non-photos
-                        skip_keywords = ['logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 'album cover']
+                        # FIX #5: Added exclusion terms to prevent wrong images (e.g., planets for "Plini")
+                        skip_keywords = [
+                            'logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 'album cover',
+                            'planet', 'geology', 'volcano', 'astronomy', 'space',
+                            'science', 'geography', 'nature', 'landform', 'crater'
+                        ]
                         if any(kw in filename_lower for kw in skip_keywords):
                             continue
                         
