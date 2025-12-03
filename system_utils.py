@@ -3291,7 +3291,24 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     width = img_dict.get('width', 0)
                     height = img_dict.get('height', 0)
                     
-                    if not file_path.exists():
+                    # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
+                    should_upgrade = False
+                    existing_image_index = None
+                    if source.lower() == "spotify" and file_path.exists():
+                        # Check if we have metadata for this image (match by filename or URL)
+                        for idx, img in enumerate(saved_images):
+                            if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
+                                existing_width = img.get('width', 0)
+                                existing_height = img.get('height', 0)
+                                existing_resolution = max(existing_width, existing_height)
+                                # If existing image is 640px (or close to it), try to upgrade
+                                if existing_resolution <= 650:  # Allow small margin for rounding
+                                    should_upgrade = True
+                                    existing_image_index = idx
+                                    logger.info(f"Found existing 640px Spotify artist image, attempting upgrade to 1400px for {artist}")
+                                    break
+                    
+                    if not file_path.exists() or should_upgrade:
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
                         if success:
                             # CRITICAL FIX: Update file_path to reflect actual file extension
@@ -3321,17 +3338,31 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             # metadata save (line ~3270) will catch any changes that occurred during download.
                             
                             filename = f"{safe_source}_{idx}{ext}"
-                            saved_images.append({
-                                "source": source,
-                                "url": url,
-                                "filename": filename,
-                                "width": width,      # Actual resolution extracted from file
-                                "height": height,    # Actual resolution extracted from file
-                                "downloaded": True,
-                                "added_at": datetime.utcnow().isoformat() + "Z"
-                            })
+                            
+                            # If upgrading, update existing entry instead of appending new one
+                            if should_upgrade and existing_image_index is not None:
+                                # Update existing entry with new resolution and URL
+                                saved_images[existing_image_index].update({
+                                    "url": url,  # Update to enhanced URL (1400px)
+                                    "width": width,
+                                    "height": height,
+                                    "downloaded": True
+                                })
+                                logger.info(f"Upgraded Spotify artist image from 640px to {width}x{height} for {artist}")
+                            else:
+                                # New image - append to list
+                                saved_images.append({
+                                    "source": source,
+                                    "url": url,
+                                    "filename": filename,
+                                    "width": width,      # Actual resolution extracted from file
+                                    "height": height,    # Actual resolution extracted from file
+                                    "downloaded": True,
+                                    "added_at": datetime.utcnow().isoformat() + "Z"
+                                })
+                            
                             existing_urls.add(url)  # Mark as processed
-                            metadata_changed = True  # New image added, need to save
+                            metadata_changed = True  # New image added or upgraded, need to save
                     else:
                         # File already exists - check if it's already in saved_images and update resolution if missing
                         # First, try to find the actual file (might have different extension than .jpg)

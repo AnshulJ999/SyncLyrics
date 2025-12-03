@@ -41,6 +41,13 @@ SKIP_FILES = {
     'package-lock.json',  
     'Run SyncLyrics Hidden.vbs',    # Too much noise
     'pnpm-lock.yaml',
+    'bootstrap.min.css',
+    'bootstrap.min.js',
+    'bootstrap.bundle.min.js',
+    'bootstrap.bundle.min.js.map',
+    'bootstrap.min.js.map',
+    'bootstrap.min.css.map',
+    'bootstrap.min.css.map',
     'poetry.lock',
     'poetry.lock'
 }
