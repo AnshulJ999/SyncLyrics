@@ -457,6 +457,12 @@ class ArtistImageProvider:
         Often provides 1500-5000px images for popular artists.
         Free, no API key required, but slower than other sources (2-3 API calls).
         
+        Uses a multi-strategy approach:
+        1. Direct lookup (fastest, most accurate - Wikipedia normalizes/redirects automatically)
+        2. Search with artist name only (if direct lookup fails)
+        3. Search with "band" modifier (for bands/groups)
+        4. Search with "musician" modifier (last resort, for solo artists)
+        
         Args:
             artist: Artist name to search for
             
@@ -464,35 +470,119 @@ class ArtistImageProvider:
             List of image dicts with Wikipedia/Wikimedia images
         """
         try:
-            # Step 1: Search Wikipedia for artist page
-            search_url = "https://en.wikipedia.org/w/api.php"
-            search_params = {
+            page_title = None
+            
+            # Strategy 1: Direct lookup (fastest, most accurate)
+            # Wikipedia automatically normalizes page titles and handles redirects
+            lookup_url = "https://en.wikipedia.org/w/api.php"
+            lookup_params = {
                 'action': 'query',
                 'format': 'json',
-                'list': 'search',
-                'srsearch': f"{artist} musician",  # Add "musician" to refine search and avoid false matches
-                'srlimit': 1,
-                'srnamespace': 0  # Only search in main namespace (articles, not talk pages)
+                'titles': artist,
+                'prop': 'info',
+                'inprop': 'url'
             }
             
-            resp = self.session.get(search_url, params=search_params, timeout=self.timeout)
-            if resp.status_code != 200:
-                return []
+            resp = self.session.get(lookup_url, params=lookup_params, timeout=self.timeout)
+            if resp.status_code == 200:
+                data = resp.json()
+                pages = data.get('query', {}).get('pages', {})
+                
+                # Check if page exists (not -1) and title matches
+                for page_id, page_data in pages.items():
+                    if page_id != '-1':  # Page exists
+                        title = page_data.get('title', '')
+                        # Validate title matches artist (prevents wrong matches)
+                        artist_lower = artist.lower().strip()
+                        title_lower = title.lower().strip()
+                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
+                            page_title = title
+                            break
             
-            data = resp.json()
-            if not data.get('query', {}).get('search'):
-                return []
+            # Strategy 2: Search with artist name only (if direct lookup failed)
+            if not page_title:
+                search_url = "https://en.wikipedia.org/w/api.php"
+                search_params = {
+                    'action': 'query',
+                    'format': 'json',
+                    'list': 'search',
+                    'srsearch': artist,  # Just artist name, no modifier
+                    'srlimit': 3,  # Check top 3 results
+                    'srnamespace': 0
+                }
+                
+                resp = self.session.get(search_url, params=search_params, timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    search_results = data.get('query', {}).get('search', [])
+                    
+                    # Find first result that matches artist name
+                    artist_lower = artist.lower().strip()
+                    for result in search_results:
+                        title = result.get('title', '')
+                        title_lower = title.lower().strip()
+                        # Check if title matches artist (handles "The Beatles" vs "Beatles")
+                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
+                            page_title = title
+                            break
             
-            # Get page title from search results
-            page_title = data['query']['search'][0]['title']
+            # Strategy 3: Search with "band" modifier (for bands/groups)
+            if not page_title:
+                search_url = "https://en.wikipedia.org/w/api.php"
+                search_params = {
+                    'action': 'query',
+                    'format': 'json',
+                    'list': 'search',
+                    'srsearch': f"{artist} band",  # Add "band" to refine search for bands/groups
+                    'srlimit': 3,
+                    'srnamespace': 0
+                }
+                
+                resp = self.session.get(search_url, params=search_params, timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    search_results = data.get('query', {}).get('search', [])
+                    
+                    # Find first result that matches artist name
+                    artist_lower = artist.lower().strip()
+                    for result in search_results:
+                        title = result.get('title', '')
+                        title_lower = title.lower().strip()
+                        # Check if title matches artist (handles "The Beatles" vs "Beatles")
+                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
+                            page_title = title
+                            break
             
-            # VALIDATION: Check if page title matches artist name to prevent wrong artist matches
-            # This prevents cases like "Drake Bell" returning "Drake" or "Paul" returning "Paul the Apostle"
-            artist_lower = artist.lower()
-            title_lower = page_title.lower()
-            # Check if artist name appears in title or vice versa (handles "The Beatles" vs "Beatles")
-            if artist_lower not in title_lower and title_lower not in artist_lower:
-                logger.debug(f"Wikipedia: Page title '{page_title}' doesn't match artist '{artist}', skipping to avoid wrong artist")
+            # Strategy 4: Search with "musician" modifier (last resort, for solo artists)
+            if not page_title:
+                search_url = "https://en.wikipedia.org/w/api.php"
+                search_params = {
+                    'action': 'query',
+                    'format': 'json',
+                    'list': 'search',
+                    'srsearch': f"{artist} musician",  # Add "musician" to refine search for solo artists
+                    'srlimit': 3,
+                    'srnamespace': 0
+                }
+                
+                resp = self.session.get(search_url, params=search_params, timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    search_results = data.get('query', {}).get('search', [])
+                    
+                    # Find first result that matches artist name
+                    artist_lower = artist.lower().strip()
+                    for result in search_results:
+                        title = result.get('title', '')
+                        title_lower = title.lower().strip()
+                        # Check if title matches artist
+                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
+                            page_title = title
+                            break
+            
+            # If we still don't have a page title, give up
+            if not page_title:
+                logger.debug(f"Wikipedia: Could not find page for '{artist}'")
                 return []
             
             # Step 2: Get page images (requesting high resolution)
@@ -530,7 +620,9 @@ class ArtistImageProvider:
                         if height > 0:
                             aspect_ratio = width / height
                             # Accept reasonable aspect ratios for photos (portrait to landscape)
-                            if 0.4 < aspect_ratio < 2.0:
+                            # Expanded range: 0.3:1 (very tall) to 2.5:1 (wide landscape) to catch more valid photos
+                            # This still filters out extreme logos (5:1+) and banners (0.2:1-)
+                            if 0.3 < aspect_ratio < 2.5:
                                 images.append({
                                     'url': thumb['source'],
                                     'source': 'Wikipedia',
