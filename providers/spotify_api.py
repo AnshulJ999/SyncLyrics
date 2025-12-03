@@ -278,6 +278,58 @@ class SpotifyAPI:
             
         self._backoff_until = time.time() + backoff_time
 
+    def _enhance_spotify_image_url(self, url: str) -> str:
+        """
+        Try to enhance Spotify image URL from 640px to 1400px using quality code replacement.
+        Falls back to original URL if enhancement fails (404 or error).
+        
+        Based on community discovery: https://gist.github.com/soulsoiledit/8c258233419a299f093b083eb4f427ca
+        Spotify image URLs contain quality codes that can be replaced to get higher resolution.
+        Quality code '82c1' = 1400x1400 JPEG, 'b273' = 640x640 JPEG (default).
+        
+        Args:
+            url: Original Spotify image URL (typically 640px from API)
+            
+        Returns:
+            Enhanced URL (1400px) if available and verified, original URL if not
+        """
+        if not url or 'i.scdn.co' not in url:
+            return url
+        
+        try:
+            import re
+            
+            # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
+            # URL format: ab67616d0000{quality_code}{image_hash}
+            # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
+            #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
+            # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
+            # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
+            pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
+            match = re.search(pattern, url)
+            
+            if match:
+                # Replace 8-char quality code (0000 + 4-char code) with 1400px version (000082c1)
+                # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
+                enhanced_url = url.replace(match.group(2), '000082c1')
+                
+                # Quick verification with HEAD request (doesn't download image, fast)
+                # This ensures we don't break downloads if 1400px version doesn't exist
+                try:
+                    response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
+                    if response.status_code == 200:
+                        logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                        return enhanced_url
+                    else:
+                        logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
+                except Exception as e:
+                    logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
+            
+            return url  # Fallback to original URL
+        except Exception as e:
+            logger.debug(f"Spotify URL enhancement error: {e}, using original")
+            return url
+
     async def get_current_track(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """Get current track with playback state, smart caching, and interpolation"""
         if not self.initialized:
@@ -379,6 +431,8 @@ class SpotifyAPI:
                                   default=album_images[0] if album_images else None)
                 if largest_image:
                     album_art_url = largest_image['url']
+                    # Try to enhance to 1400px if available (falls back to 640px if not)
+                    album_art_url = self._enhance_spotify_image_url(album_art_url)
             
             # Update cache with new track data
             self._metadata_cache = {
@@ -447,6 +501,8 @@ class SpotifyAPI:
                                   default=album_images[0] if album_images else None)
                 if largest_image:
                     album_art_url = largest_image['url']
+                    # Try to enhance to 1400px if available (falls back to 640px if not)
+                    album_art_url = self._enhance_spotify_image_url(album_art_url)
             
             return {
                 'title': track['name'],
@@ -623,7 +679,8 @@ class SpotifyAPI:
                 reverse=True
             )
             
-            image_urls = [img['url'] for img in images_sorted]
+            # Try to enhance each image URL to 1400px if available (falls back to 640px if not)
+            image_urls = [self._enhance_spotify_image_url(img['url']) for img in images_sorted]
             logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)}")
             
             # Cache the results
