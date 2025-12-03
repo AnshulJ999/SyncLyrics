@@ -3098,8 +3098,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
     # return [] 
 
-    # Declare global variables for throttle tracking
-    global _artist_image_log_throttle, _artist_db_check_cache
+    # Declare global variables for throttle tracking and provider singleton
+    global _artist_image_log_throttle, _artist_db_check_cache, _artist_image_provider
 
     # Check cache first (debouncing)
     # If we checked this artist recently (within 60 seconds), return cached result
@@ -3171,7 +3171,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         # Check 2: Missing Wikipedia? (Smart Backfill)
                         # Initialize provider to check if Wikipedia is enabled
-                        global _artist_image_provider
                         if _artist_image_provider is None:
                             _artist_image_provider = ArtistImageProvider()
                         
@@ -3224,7 +3223,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
 
                 # Initialize our new dedicated artist image provider (singleton pattern)
                 # Use global instance to prevent re-initialization on every call
-                global _artist_image_provider
                 if _artist_image_provider is None:
                     _artist_image_provider = ArtistImageProvider()
                 artist_provider = _artist_image_provider
