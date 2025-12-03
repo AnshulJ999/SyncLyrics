@@ -3244,7 +3244,41 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                 await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
                                 existing_images = updated_images
                             
-                            # Return all images (including newly discovered custom ones)
+                            # --- SELF-HEALING: Remove deleted files from metadata ---
+                            # Check if files still exist on disk and remove missing ones
+                            # This ensures the API never returns broken links and keeps metadata in sync with disk
+                            original_count = len(existing_images)
+                            validated_images = []
+                            
+                            for img in existing_images:
+                                filename = img.get('filename', '')
+                                if filename and (folder / filename).exists():
+                                    validated_images.append(img)
+                            
+                            # If files were deleted, save cleaned metadata
+                            if len(validated_images) < original_count:
+                                removed_count = original_count - len(validated_images)
+                                logger.info(f"Removed {removed_count} missing file(s) from metadata for '{artist}'")
+                                
+                                # Update metadata with cleaned list (preserve all fields)
+                                existing_metadata["images"] = validated_images
+                                existing_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+                                # Preserve db_version if it exists, otherwise use current version
+                                if "db_version" not in existing_metadata:
+                                    existing_metadata["db_version"] = ARTIST_DB_VERSION
+                                
+                                # Save asynchronously using executor (non-blocking)
+                                loop = asyncio.get_running_loop()
+                                try:
+                                    await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
+                                except Exception as e:
+                                    logger.error(f"Failed to save cleaned metadata for {artist}: {e}")
+                                    # Continue with validated list even if save failed
+                                
+                                existing_images = validated_images
+                            # ------------------------------------------
+                            
+                            # Return all images (including newly discovered custom ones, excluding deleted files)
                             from urllib.parse import quote
                             encoded_folder = quote(folder.name, safe='')
                             result_paths = [
@@ -3640,6 +3674,41 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     # Commented out to reduce log spam - this is internal optimization feedback, not actionable debugging info
                     # logger.debug(f"Skipping metadata save for {artist} - no changes detected")
                     pass
+                
+                # --- SELF-HEALING: Remove deleted files from metadata before returning ---
+                # Check if files still exist on disk and remove missing ones
+                # This ensures the API never returns broken links and keeps metadata in sync with disk
+                original_count = len(saved_images)
+                validated_images = []
+                
+                for img in saved_images:
+                    filename = img.get('filename', '')
+                    if filename and (folder / filename).exists():
+                        validated_images.append(img)
+                
+                # If files were deleted, save cleaned metadata
+                if len(validated_images) < original_count:
+                    removed_count = original_count - len(validated_images)
+                    logger.info(f"Removed {removed_count} missing file(s) from metadata for '{artist}'")
+                    
+                    # Update metadata with cleaned list (use complete structure)
+                    metadata = {
+                        "artist": artist,
+                        "type": "artist_images",
+                        "last_accessed": datetime.utcnow().isoformat() + "Z",
+                        "db_version": ARTIST_DB_VERSION,  # Use current version for cleaned metadata
+                        "images": validated_images
+                    }
+                    
+                    # Save asynchronously using executor (non-blocking)
+                    try:
+                        await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
+                    except Exception as e:
+                        logger.error(f"Failed to save cleaned metadata for {artist}: {e}")
+                        # Continue with validated list even if save failed
+                    
+                    saved_images = validated_images
+                # ----------------------------------------------------------
                 
                 # Return list of LOCAL paths for the frontend
                 # We return paths relative to the DB root for the API to serve
