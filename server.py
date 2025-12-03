@@ -779,33 +779,15 @@ async def set_album_art_preference():
             artist_metadata["preferred_image_filename"] = matching_image.get("filename")  # NEW: Save filename for robust matching
             artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
             
-            # CRITICAL FIX: Clear album art preference when artist image is selected (mutual exclusion)
-            # This ensures that selecting an artist image overrides any previously selected album art
-            # The user's last selection (artist image) should take priority
-            # Use title as fallback if album is missing (for singles)
-            title = metadata.get("title")
-            album_or_title = album if album else title
-            if album_or_title:
-                album_art_folder_clear = get_album_db_folder(artist, album_or_title)
-                album_art_metadata_path_clear = album_art_folder_clear / "metadata.json"
-                if album_art_metadata_path_clear.exists():
-                    try:
-                        with open(album_art_metadata_path_clear, 'r', encoding='utf-8') as f:
-                            album_art_metadata_clear = json.load(f)
-                        # Clear the preferred provider to allow artist image to be used
-                        # CRITICAL FIX: Use = None instead of .pop() so save_album_db_metadata knows to delete it
-                        # (pop() removes the key, which causes save_album_db_metadata to restore it from existing metadata)
-                        album_art_metadata_clear["preferred_provider"] = None
-                        album_art_metadata_clear["last_accessed"] = datetime.utcnow().isoformat() + "Z"
-                        # Save the cleared metadata
-                        save_album_db_metadata(album_art_folder_clear, album_art_metadata_clear)
-                        logger.info(f"Cleared album art preference when artist image '{provider_name}' was selected")
-                    except (IOError, OSError, json.JSONDecodeError) as e:
-                        # Expected errors - file issues or JSON parsing
-                        logger.warning(f"Failed to clear album art preference: {e}")
-                    except Exception as e:
-                        # Unexpected error - log with traceback
-                        logger.error(f"Unexpected error clearing album art preference: {e}", exc_info=True)
+            # CRITICAL FIX: DO NOT clear album art preference when artist image is selected
+            # Album art preference (top-left thumbnail) and artist image preference (background) are INDEPENDENT
+            # When user selects an artist image:
+            #   - Background should show the artist image (handled by load_artist_image_from_db in system_utils.py)
+            #   - Top-left should keep the user's preferred album art (e.g., iTunes, not auto-selected LastFM)
+            # The system_utils.py logic already handles this correctly:
+            #   - load_album_art_from_db() respects preferred_provider for top-left display
+            #   - load_artist_image_from_db() only returns image if preference is explicitly set
+            #   - get_current_song_meta_data() uses artist image for background if available, but keeps album art for top-left
             
             # Save updated metadata
             if not save_album_db_metadata(artist_folder, artist_metadata):

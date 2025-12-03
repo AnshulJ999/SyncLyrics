@@ -1119,7 +1119,13 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
     
     try:
         # Check if we need to re-discover (folder mtime changed)
-        folder_key = str(folder.resolve())
+        # CRITICAL FIX: Handle folder path resolution failures to ensure cache key consistency
+        # This prevents cache key mismatch if folder.resolve() fails in one function but succeeds in another
+        try:
+            folder_key = str(folder.resolve())
+        except (OSError, ValueError) as e:
+            logger.debug(f"Could not resolve folder path for cache key: {e}")
+            folder_key = str(folder)  # Fallback to string representation
         folder_mtime = 0
         
         # Get max mtime of all files in folder (indicates if new files were added)
@@ -1538,7 +1544,13 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         
         # If new images were discovered, save updated metadata
         # Check if discovery found new images by comparing cache
-        folder_key = str(folder.resolve())
+        # CRITICAL FIX: Handle folder path resolution failures to prevent crashes
+        # This ensures consistent error handling with album art loading path
+        try:
+            folder_key = str(folder.resolve())
+        except (OSError, ValueError) as e:
+            logger.debug(f"Could not resolve folder path for cache key: {e}")
+            folder_key = str(folder)  # Fallback to string representation
         if folder_key in _discovery_cache:
             _, discovered_count = _discovery_cache[folder_key]
             if discovered_count > 0:
