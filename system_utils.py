@@ -445,6 +445,10 @@ def sanitize_folder_name(name: str) -> str:
     Sanitize a string to be safe for use as a folder name.
     Replaces illegal characters with underscores for cross-platform compatibility.
     
+    Handles special characters like brackets [], parentheses (), and other edge cases.
+    Note: Brackets [] are technically allowed in Windows folder names, but can cause
+    issues in URL encoding and some file operations, so we replace them for safety.
+    
     Args:
         name: String to sanitize
         
@@ -456,15 +460,22 @@ def sanitize_folder_name(name: str) -> str:
     
     # Replace illegal characters for Windows/Linux/Docker compatibility
     # Illegal chars: / \ : * ? " < > |
-    illegal_chars = r'[<>:"/\\|?*]'
+    # Also replace brackets [] and parentheses () for safety (though technically allowed)
+    # This prevents issues with URL encoding, regex patterns, and some file operations
+    illegal_chars = r'[<>:"/\\|?*\[\]()]'
     sanitized = re.sub(illegal_chars, '_', name)
     
     # Remove leading/trailing spaces and dots (Windows doesn't allow these)
     sanitized = sanitized.strip(' .')
     
+    # Remove consecutive underscores (clean up the result)
+    sanitized = re.sub(r'_+', '_', sanitized)
+    
     # Truncate if too long (Windows has 260 char path limit, but we'll be conservative)
     if len(sanitized) > 100:
         sanitized = sanitized[:100]
+        # If truncation happened in the middle of a word, remove trailing underscore
+        sanitized = sanitized.rstrip('_')
     
     # If empty after sanitization, use fallback
     if not sanitized:
@@ -1192,8 +1203,25 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
                 # For album art: check if already in providers dict
                 providers = metadata.get("providers", {})
                 already_exists = provider_name in providers
+                existing_provider_data = providers.get(provider_name) if already_exists else None
                 
-                if not already_exists:
+                # CRITICAL FIX: Update existing provider if file exists but metadata is broken
+                # This repairs metadata when files exist but downloaded flag is false or filename is wrong
+                should_update = False
+                if already_exists and existing_provider_data:
+                    # Check if file exists but metadata says it's not downloaded
+                    if not existing_provider_data.get("downloaded", False):
+                        should_update = True
+                    # Check if filename in metadata doesn't match actual file
+                    elif existing_provider_data.get("filename") != file.name:
+                        should_update = True
+                
+                if not already_exists or should_update:
+                    # CRITICAL FIX: Safety check - ensure file actually exists before processing
+                    # This prevents edge cases where the file was deleted between discovery and processing
+                    if not file.exists():
+                        continue
+                    
                     # Extract actual resolution from file
                     try:
                         def get_image_size_sync(path: Path) -> tuple:
@@ -1203,7 +1231,7 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
                         width, height = get_image_size_sync(file)
                         resolution_str = f"{width}x{height}"
                         
-                        # Add to providers dict
+                        # Add or update providers dict
                         if "providers" not in metadata:
                             metadata["providers"] = {}
                         
@@ -1213,10 +1241,13 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
                             "width": width,
                             "height": height,
                             "resolution": resolution_str,
-                            "downloaded": True
+                            "downloaded": True  # CRITICAL: Mark as downloaded since file exists
                         }
                         discovered_count += 1
-                        logger.debug(f"Discovered custom album art: {file.name} ({width}x{height})")
+                        if should_update:
+                            logger.debug(f"Repaired metadata for existing album art: {file.name} ({width}x{height})")
+                        else:
+                            logger.debug(f"Discovered custom album art: {file.name} ({width}x{height})")
                     except Exception as e:
                         logger.debug(f"Failed to process custom image {file.name}: {e}")
         
@@ -1262,7 +1293,20 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
     try:
         # Match saving logic: use title as fallback if album is missing
         folder_name = album if album else title
-        folder = get_album_db_folder(artist, folder_name)
+        if not folder_name:
+            # CRITICAL FIX: If both album and title are missing, we can't determine folder
+            # This handles edge cases where metadata is incomplete
+            logger.debug(f"Cannot load album art: both album and title are missing for artist '{artist}'")
+            return None
+        
+        try:
+            folder = get_album_db_folder(artist, folder_name)
+        except (OSError, ValueError) as e:
+            # CRITICAL FIX: Handle folder path resolution failures
+            # This can happen with invalid characters, permissions issues, or path length limits
+            logger.warning(f"Failed to resolve folder path for {artist} - {folder_name}: {e}")
+            return None
+        
         metadata_path = folder / "metadata.json"
         
         if not metadata_path.exists():
@@ -1301,18 +1345,60 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
         # Uses mtime caching to avoid performance impact on every metadata load
         metadata = discover_custom_images(folder, metadata, is_artist_images=False)
         
-        # If new images were discovered, save updated metadata
+        # CRITICAL FIX: Self-healing - remove providers from metadata if files are deleted
+        # This ensures metadata stays in sync with actual files on disk
+        providers = metadata.get("providers", {})
+        removed_count = 0
+        providers_to_remove = []
+        for provider_name, provider_data in providers.items():
+            filename = provider_data.get("filename", f"{provider_name}.jpg")
+            file_path = folder / filename
+            # If file doesn't exist but metadata says it's downloaded, remove it
+            if provider_data.get("downloaded", False) and not file_path.exists():
+                providers_to_remove.append(provider_name)
+                removed_count += 1
+                logger.debug(f"Self-healing: Removing missing file '{filename}' from metadata for provider '{provider_name}'")
+        
+        # Remove deleted providers from metadata
+        for provider_name in providers_to_remove:
+            providers.pop(provider_name, None)
+            # If this was the preferred provider, clear the preference
+            if metadata.get("preferred_provider") == provider_name:
+                metadata["preferred_provider"] = None
+                logger.debug(f"Cleared preferred_provider '{provider_name}' (file deleted)")
+        
+        # Update metadata with cleaned providers
+        if removed_count > 0:
+            metadata["providers"] = providers
+        
+        # If new images were discovered or files were removed, save updated metadata
         # Check if discovery found new images by comparing cache
-        folder_key = str(folder.resolve())
+        try:
+            folder_key = str(folder.resolve())
+        except (OSError, ValueError) as e:
+            # CRITICAL FIX: Handle folder path resolution failures
+            # If we can't resolve the path, we can't update the cache, but we can still proceed
+            logger.debug(f"Could not resolve folder path for cache key: {e}")
+            folder_key = str(folder)  # Fallback to string representation
+        
+        should_save = False
         if folder_key in _discovery_cache:
             _, discovered_count = _discovery_cache[folder_key]
             if discovered_count > 0:
-                # Save updated metadata with discovered images
-                # Use existing save function which handles locks properly
-                save_album_db_metadata(folder, metadata)
-                # Invalidate cache after save
-                if metadata_path_str in _album_art_metadata_cache:
-                    del _album_art_metadata_cache[metadata_path_str]
+                should_save = True
+        
+        if removed_count > 0:
+            should_save = True
+        
+        if should_save:
+            # Save updated metadata with discovered images and cleaned providers
+            # Use existing save function which handles locks properly
+            save_album_db_metadata(folder, metadata)
+            # Invalidate cache after save
+            if metadata_path_str in _album_art_metadata_cache:
+                del _album_art_metadata_cache[metadata_path_str]
+            if removed_count > 0:
+                logger.info(f"Self-healing: Removed {removed_count} missing file(s) from metadata for {artist} - {folder_name}")
         
         # Get preferred provider
         preferred_provider = metadata.get("preferred_provider")
@@ -1325,6 +1411,10 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
             highest_res = 0
             preferred_provider = None
             for provider_name, provider_data in providers.items():
+                # CRITICAL FIX: Only consider providers that are actually downloaded
+                # This prevents selecting providers whose files don't exist
+                if not provider_data.get("downloaded", False):
+                    continue
                 width = provider_data.get("width", 0)
                 height = provider_data.get("height", 0)
                 res = max(width, height)
@@ -1333,8 +1423,11 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
                     preferred_provider = provider_name
             
             if not preferred_provider:
-                # Fallback to first available
-                preferred_provider = list(providers.keys())[0]
+                # Fallback to first available downloaded provider
+                for provider_name, provider_data in providers.items():
+                    if provider_data.get("downloaded", False):
+                        preferred_provider = provider_name
+                        break
         
         # Get image path
         providers = metadata.get("providers", {})
@@ -1890,7 +1983,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 # Add type=background parameter so server knows to serve background_image_path
                 background_image_url = f"/cover-art?id={current_track_id}&t={mtime}&type=background"
                 background_image_path = str(artist_image_path)
-                logger.debug(f"Using preferred artist image for background: {artist}")
+                # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
+                current_time = time.time()
+                log_key = f"preferred_bg_{artist}"
+                last_log_time = _artist_image_log_throttle.get(log_key, 0)
+                if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+                    logger.debug(f"Using preferred artist image for background: {artist}")
+                    _artist_image_log_throttle[log_key] = current_time
         
         # CRITICAL FIX: Check if artist images DB is populated with ALL expected sources
         # This ensures all provider options are available in the selection menu (similar to album art backfill)
@@ -1967,7 +2066,14 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 result_extra_fields = {"album_art_path": str(artist_image_path)}
                 background_image_path = str(artist_image_path)
                 found_in_db = True
-                logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {artist}")
+                # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
+                # Use same throttle mechanism as artist image fetching
+                current_time = time.time()
+                log_key = f"fallback_{artist}"
+                last_log_time = _artist_image_log_throttle.get(log_key, 0)
+                if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+                    logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {artist}")
+                    _artist_image_log_throttle[log_key] = current_time
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
@@ -2215,7 +2321,13 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 # Add type=background parameter so server knows to serve background_image_path
                 background_image_url = f"/cover-art?id={captured_track_id}&t={mtime}&type=background"
                 background_image_path = str(artist_image_path)
-                logger.debug(f"Using preferred artist image for background: {captured_artist}")
+                # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
+                current_time = time.time()
+                log_key = f"preferred_bg_{captured_artist}"
+                last_log_time = _artist_image_log_throttle.get(log_key, 0)
+                if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+                    logger.debug(f"Using preferred artist image for background: {captured_artist}")
+                    _artist_image_log_throttle[log_key] = current_time
         
         # If no album art found but artist image is selected, still set background
         if not found_in_db and artist_image_result:
@@ -2371,7 +2483,14 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 album_art_path = str(artist_image_path)
                 background_image_path = str(artist_image_path)
                 found_in_db = True
-                logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {captured_artist}")
+                # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
+                # Use same throttle mechanism as artist image fetching
+                current_time = time.time()
+                log_key = f"fallback_{captured_artist}"
+                last_log_time = _artist_image_log_throttle.get(log_key, 0)
+                if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+                    logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {captured_artist}")
+                    _artist_image_log_throttle[log_key] = current_time
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
