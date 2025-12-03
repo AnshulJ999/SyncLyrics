@@ -3188,6 +3188,23 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         # If images exist and no fetch needed, return immediately (fast path)
                         if not should_fetch and len(existing_images) > 0:
+                            # CRITICAL: Discover custom images before returning
+                            # This allows users to drop images into folders without manual JSON editing
+                            # The discovery function scans the folder and adds any new image files to metadata
+                            existing_metadata = discover_custom_images(folder, existing_metadata, is_artist_images=True)
+                            
+                            # Check if discovery found new custom images
+                            updated_images = existing_metadata.get("images", [])
+                            if len(updated_images) > len(existing_images):
+                                # New custom images found - save updated metadata
+                                custom_count = len(updated_images) - len(existing_images)
+                                logger.info(f"Discovered {custom_count} custom image(s) for '{artist}'")
+                                # Save updated metadata with discovered images
+                                loop = asyncio.get_running_loop()
+                                await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
+                                existing_images = updated_images
+                            
+                            # Return all images (including newly discovered custom ones)
                             from urllib.parse import quote
                             encoded_folder = quote(folder.name, safe='')
                             result_paths = [
