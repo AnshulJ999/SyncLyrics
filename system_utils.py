@@ -3024,22 +3024,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             logger.debug(f"Spotify artist image validation failed for {artist} (possible race condition): {e}")
                             # Don't add stale Spotify images from previous track
                 
-                # Fallback 2: Last.fm (via old provider if enabled)
-                # NOTE: iTunes is NOT used for artist images because it rarely provides artist artwork.
+                # NOTE: iTunes and Last.fm are NOT used for artist images (they only work for album art)
                 # iTunes Search API is designed for app icons and album art, not artist photos.
-                # iTunes remains enabled for ALBUM art fetching in providers/album_art.py
-                try:
-                    art_provider = get_album_art_provider()
-                    # Only use Last.fm from the old provider (skip iTunes)
-                    if art_provider.enable_lastfm and art_provider.lastfm_api_key:
-                        # Use public async method instead of private sync method
-                        lastfm_images = await art_provider.get_artist_images(artist)
-                        existing_urls = {i['url'] for i in all_images}
-                        for img in lastfm_images:
-                            if img.get('url') and img['url'] not in existing_urls:
-                                all_images.append(img)
-                except Exception as e:
-                    logger.debug(f"Last.fm fallback failed: {e}")
+                # Last.fm artist images are often low-quality placeholders and not reliable.
+                # Both iTunes and Last.fm remain enabled for ALBUM art fetching in providers/album_art.py
+                # but are explicitly excluded from artist image fetching to prevent poor quality results.
                 
                 # Log summary with throttle (prevents spam when function runs multiple times)
                 # Only log if enough time has passed since last log for this artist
@@ -3120,6 +3109,13 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 for img_dict in all_images:
                     url = img_dict.get('url')
                     source = img_dict.get('source', 'unknown')
+                    
+                    # CRITICAL FIX: Filter out iTunes and LastFM from artist images
+                    # These providers don't work for artist images (they only work for album art)
+                    # iTunes Search API is designed for app icons and album art, not artist photos
+                    # LastFM artist images are often low-quality placeholders
+                    if source in ["iTunes", "LastFM", "Last.fm"]:
+                        continue  # Skip these providers for artist images
                     
                     if not url or url in existing_urls:
                         continue

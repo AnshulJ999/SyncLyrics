@@ -1270,12 +1270,14 @@ async function loadAlbumArtTab() {
             `;
 
             // Add click handler
-            // CRITICAL FIX: Pass URL and filename for unique image identification
+            // CRITICAL FIX: Pass URL, filename, and type for unique image identification
             // This allows the backend to distinguish between multiple images from the same provider
+            // and correctly identify whether it's album art or artist image (prevents false positives)
             card.addEventListener('click', () => selectAlbumArt(
                 option.provider, 
                 option.url || null, 
-                option.filename || null
+                option.filename || null,
+                option.type || null  // ADDED: Explicit type tells backend if it's "album_art" or "artist_image"
             ));
 
             grid.appendChild(card);
@@ -1322,17 +1324,22 @@ function loadArtistImagesTab() {
     });
 }
 
-async function selectAlbumArt(providerName, imageUrl = null, filename = null) {
+async function selectAlbumArt(providerName, imageUrl = null, filename = null, type = null) {
     try {
-        // CRITICAL FIX: Include URL and filename for unique image identification
+        // CRITICAL FIX: Include URL, filename, and type for unique image identification
         // This fixes the issue where multiple images from the same provider (e.g., FanArt.tv)
         // couldn't be distinguished, causing only the first one to be selected
+        // Also fixes the bug where provider names like "iTunes" or "Spotify" exist in both
+        // album art and artist images, causing backend to incorrectly detect the type
         const requestBody = { provider: providerName };
         if (imageUrl) {
             requestBody.url = imageUrl;
         }
         if (filename) {
             requestBody.filename = filename;
+        }
+        if (type) {
+            requestBody.type = type;  // ADDED: Explicit type tells backend if it's "album_art" or "artist_image"
         }
         
         const response = await fetch('/api/album-art/preference', {

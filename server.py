@@ -519,6 +519,14 @@ async def get_album_art_options():
                         continue
                     
                     source = img.get("source", "Unknown")
+                    
+                    # CRITICAL FIX: Filter out iTunes and LastFM from artist images
+                    # These providers don't work for artist images (they only work for album art)
+                    # iTunes Search API is designed for app icons and album art, not artist photos
+                    # LastFM artist images are often low-quality placeholders
+                    if source in ["iTunes", "LastFM", "Last.fm"]:
+                        continue  # Skip these providers for artist images
+                    
                     filename = img.get("filename")
                     img_url = img.get("url", "")
                     
@@ -604,6 +612,7 @@ async def set_album_art_preference():
     
     data = await request.get_json()
     provider_name = data.get('provider')
+    explicit_type = data.get('type')  # ADDED: Get explicit type from frontend (most reliable)
     
     if not provider_name:
         return jsonify({"error": "No provider specified"}), 400
@@ -620,32 +629,39 @@ async def set_album_art_preference():
     # This matches the logic used in system_utils.py ensure_album_art_db() and load_album_art_from_db()
     album_or_title = album if album else title
     
-    # Check if this is an artist image
-    # Since we removed "(Artist)" suffix from UI, we need to check by looking up in artist images
+    # CRITICAL FIX: Use explicit type from frontend if provided (most reliable)
+    # This prevents ambiguity when provider names overlap between album art and artist images
+    # (e.g., "iTunes", "Spotify" can exist in both, causing false positives)
     is_artist_image = False
     
-    try:
-        # Check if provider_name matches any artist image in the database
-        artist_folder = get_album_db_folder(artist, None)
-        artist_metadata_path = artist_folder / "metadata.json"
-        if artist_metadata_path.exists():
-            with open(artist_metadata_path, 'r', encoding='utf-8') as f:
-                artist_metadata_check = json.load(f)
-            if artist_metadata_check.get("type") == "artist_images":
-                artist_images_check = artist_metadata_check.get("images", [])
-                for img in artist_images_check:
-                    source_check = img.get("source", "Unknown")
-                    filename_check = img.get("filename", "")
-                    # Check if provider_name matches any artist image format (with or without "(Artist)" suffix)
-                    if (provider_name == source_check or 
-                        provider_name == f"{source_check} ({filename_check})" or
-                        provider_name == f"{source_check} (Artist)" or
-                        provider_name == f"{source_check} ({filename_check}) (Artist)"):
-                        is_artist_image = True
-                        break
-    except Exception:
-        # Fallback: check by suffix (backward compatibility)
-        is_artist_image = provider_name.endswith(" (Artist)")
+    if explicit_type:
+        # Frontend explicitly told us the type - trust it (most reliable method)
+        is_artist_image = (explicit_type == "artist_image")
+    else:
+        # Fallback to detection logic (for backward compatibility with old frontend)
+        # Since we removed "(Artist)" suffix from UI, we need to check by looking up in artist images
+        try:
+            # Check if provider_name matches any artist image in the database
+            artist_folder = get_album_db_folder(artist, None)
+            artist_metadata_path = artist_folder / "metadata.json"
+            if artist_metadata_path.exists():
+                with open(artist_metadata_path, 'r', encoding='utf-8') as f:
+                    artist_metadata_check = json.load(f)
+                if artist_metadata_check.get("type") == "artist_images":
+                    artist_images_check = artist_metadata_check.get("images", [])
+                    for img in artist_images_check:
+                        source_check = img.get("source", "Unknown")
+                        filename_check = img.get("filename", "")
+                        # Check if provider_name matches any artist image format (with or without "(Artist)" suffix)
+                        if (provider_name == source_check or 
+                            provider_name == f"{source_check} ({filename_check})" or
+                            provider_name == f"{source_check} (Artist)" or
+                            provider_name == f"{source_check} ({filename_check}) (Artist)"):
+                            is_artist_image = True
+                            break
+        except Exception:
+            # Fallback: check by suffix (backward compatibility)
+            is_artist_image = provider_name.endswith(" (Artist)")
     
     if is_artist_image:
         # Handle artist image preference
