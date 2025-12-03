@@ -745,6 +745,8 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     This performs blocking I/O operations (network request and file save).
     Preserves the original image format without conversion.
     
+    Includes retry logic with exponential backoff for transient failures (403, network errors).
+    
     Args:
         url: URL to download image from
         path: Path where to save the image file (extension will be determined automatically)
@@ -754,23 +756,62 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         - success: True if download and save succeeded, False otherwise
         - extension: File extension used (e.g., '.jpg', '.png')
     """
-    try:
-        response = requests.get(url, timeout=10, stream=True)
-        response.raise_for_status()
-        
-        # Get Content-Type from response headers
-        content_type = response.headers.get('Content-Type', '')
-        
-        # Determine file extension from URL or Content-Type
-        file_extension = determine_image_extension(url, content_type)
-        
-        # Save original image bytes (no conversion = pristine quality)
-        success = save_image_original(response.content, path, file_extension)
-        
-        return (success, file_extension)
-    except Exception as e:
-        logger.warning(f"Download failed for {url}: {e}")
-        return (False, '.jpg')  # Return default extension on failure
+    # Add User-Agent header (required by Wikimedia Commons and best practice)
+    # Use same User-Agent as ArtistImageProvider for consistency
+    headers = {
+        'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)'
+    }
+    
+    # Retry logic with very small exponential backoff (0.1s, 0.2s, 0.4s)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=10, stream=True, headers=headers)
+            response.raise_for_status()
+            
+            # Get Content-Type from response headers
+            content_type = response.headers.get('Content-Type', '')
+            
+            # Determine file extension from URL or Content-Type
+            file_extension = determine_image_extension(url, content_type)
+            
+            # Save original image bytes (no conversion = pristine quality)
+            success = save_image_original(response.content, path, file_extension)
+            
+            if success:
+                return (True, file_extension)
+            else:
+                # Save failed, but request succeeded - don't retry
+                if attempt == max_retries - 1:
+                    logger.warning(f"Download succeeded but save failed for {url}")
+                return (False, '.jpg')
+                
+        except requests.exceptions.HTTPError as e:
+            # Retry on 403/429 (rate limiting) or 5xx (server errors)
+            if e.response.status_code in (403, 429, 500, 502, 503, 504):
+                if attempt < max_retries - 1:
+                    # Very small exponential backoff: 0.1s, 0.2s, 0.4s
+                    delay = 0.1 * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+            # Don't retry on 404 or other client errors
+            if attempt == max_retries - 1:
+                logger.warning(f"Download failed for {url}: {e}")
+            return (False, '.jpg')
+            
+        except (requests.exceptions.RequestException, Exception) as e:
+            # Retry on network errors (timeout, connection errors, etc.)
+            if attempt < max_retries - 1:
+                # Very small exponential backoff: 0.1s, 0.2s, 0.4s
+                delay = 0.1 * (2 ** attempt)
+                time.sleep(delay)
+                continue
+            # Final attempt failed
+            logger.warning(f"Download failed for {url}: {e}")
+            return (False, '.jpg')
+    
+    # Should never reach here, but return failure just in case
+    return (False, '.jpg')
 
 async def ensure_album_art_db(
     artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
@@ -3399,6 +3440,15 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     
                     if not file_path.exists() or should_upgrade:
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
+                        
+                        # Add small delay between downloads to prevent rate limiting
+                        # Longer delay for Wikipedia/Wikimedia (more strict rate limits)
+                        # Shorter delay for other providers (faster, less strict)
+                        if 'wikimedia' in url.lower() or 'wikipedia' in url.lower():
+                            await asyncio.sleep(0.5)  # 1 second for Wikipedia (respectful)
+                        else:
+                            await asyncio.sleep(0.4)  # 0.5 seconds for other providers
+                        
                         if success:
                             # CRITICAL FIX: Update file_path to reflect actual file extension
                             # The download function saves with the correct extension (e.g., .png, .jpg)
