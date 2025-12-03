@@ -100,6 +100,12 @@ _MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 _discovery_cache = {}
 _MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 
+# Database versioning for artist images
+# v1: Initial implementation (Deezer, AudioDB, unsorted FanArt)
+# v2: Added Wikipedia, sorted FanArt by likes, improved Spotify resolution
+# Increment this whenever we add new providers or improve logic
+ARTIST_DB_VERSION = 2
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -2037,8 +2043,16 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                             # Windows Media doesn't provide artist_id, so Spotify fallback isn't available
                             # Last.fm is excluded from backfill as it's not necessary
                             
-                            # Check if we have all expected sources
-                            artist_images_complete = expected_sources.issubset(existing_sources)
+                            # SMART BACKFILL: Check version first (triggers upgrade for old DB)
+                            db_version = artist_metadata_check.get("db_version", 1)
+                            if db_version < ARTIST_DB_VERSION:
+                                # Old version detected - force upgrade to get Wikipedia and sorted FanArt
+                                artist_images_complete = False
+                            else:
+                                # Current version - check if we have all expected sources
+                                # FIX: Add Wikipedia to expected sources so we retry if it failed previously
+                                expected_sources.add("Wikipedia") 
+                                artist_images_complete = expected_sources.issubset(existing_sources)
                     except Exception as e:
                         logger.debug(f"Failed to check artist images completeness: {e}")
                         artist_images_complete = False
@@ -2382,8 +2396,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             # NOTE: Last.fm is excluded from backfill as it's not necessary
                             # Last.fm images are often low-quality placeholders and not needed for selection menu
                             
-                            # Check if we have all expected sources
-                            artist_images_complete = expected_sources.issubset(existing_sources)
+                            # SMART BACKFILL: Check version first (triggers upgrade for old DB)
+                            db_version = artist_metadata_check.get("db_version", 1)
+                            if db_version < ARTIST_DB_VERSION:
+                                # Old version detected - force upgrade to get Wikipedia and sorted FanArt
+                                artist_images_complete = False
+                            else:
+                                # Current version - check if we have all expected sources
+                                # FIX: Add Wikipedia to expected sources so we retry if it failed previously
+                                expected_sources.add("Wikipedia") 
+                                artist_images_complete = expected_sources.issubset(existing_sources)
                     except Exception as e:
                         logger.debug(f"Failed to check artist images completeness: {e}")
                         artist_images_complete = False
@@ -3128,16 +3150,44 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 existing_metadata = {}
                 
                 # Check if artist images already exist in DB (optimization)
-                # If images exist, return immediately (no need to re-fetch)
+                # SMART BACKFILL: Check version and missing sources before early return
+                should_fetch = False
+                needs_fanart_upgrade = False
+                
                 if metadata_path.exists():
                     try:
                         with open(metadata_path, 'r', encoding='utf-8') as f:
                             existing_metadata = json.load(f)
                         
                         existing_images = existing_metadata.get("images", [])
+                        db_version = existing_metadata.get("db_version", 1)
+                        existing_sources = {img.get('source') for img in existing_images if img.get('downloaded')}
                         
-                        # If images exist, return immediately (no need to re-fetch)
-                        if len(existing_images) > 0:
+                        # Check 1: Is DB version outdated?
+                        if db_version < ARTIST_DB_VERSION:
+                            logger.info(f"Artist DB for '{artist}' is v{db_version} (current: v{ARTIST_DB_VERSION}). Triggering upgrade.")
+                            should_fetch = True
+                            needs_fanart_upgrade = True  # Will replace old unsorted FanArt with sorted ones
+                        
+                        # Check 2: Missing Wikipedia? (Smart Backfill)
+                        # Initialize provider to check if Wikipedia is enabled
+                        global _artist_image_provider
+                        if _artist_image_provider is None:
+                            _artist_image_provider = ArtistImageProvider()
+                        
+                        if _artist_image_provider.enable_wikipedia and 'Wikipedia' not in existing_sources:
+                            logger.info(f"Artist DB for '{artist}' missing Wikipedia. Triggering backfill.")
+                            should_fetch = True
+                            # Don't force FanArt upgrade if just backfilling Wikipedia (unless version is old)
+                            if db_version >= ARTIST_DB_VERSION:
+                                needs_fanart_upgrade = False
+                        
+                        # Check 3: Do we have ANY images?
+                        if not existing_images:
+                            should_fetch = True
+                        
+                        # If images exist and no fetch needed, return immediately (fast path)
+                        if not should_fetch and len(existing_images) > 0:
                             from urllib.parse import quote
                             encoded_folder = quote(folder.name, safe='')
                             result_paths = [
@@ -3153,6 +3203,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     except Exception as e:
                         logger.debug(f"Failed to load cached artist images: {e}")
                         # Continue to fetch if cache read fails
+                        should_fetch = True
 
                 # Initialize our new dedicated artist image provider (singleton pattern)
                 # Use global instance to prevent re-initialization on every call
@@ -3223,6 +3274,17 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
+                
+                # NON-DESTRUCTIVE MERGE: Remove old FanArt only if we successfully fetched new images
+                # This replaces old unsorted FanArt images with new sorted ones (sorted by likes)
+                # We do this AFTER fetching to ensure we have new images before removing old ones
+                if needs_fanart_upgrade and all_images:
+                    # Safe to remove old FanArt now that we have new sorted ones
+                    old_fanart_count = sum(1 for img in saved_images if img.get('source') == 'FanArt.tv')
+                    saved_images = [img for img in saved_images if img.get('source') != 'FanArt.tv']
+                    if old_fanart_count > 0:
+                        logger.debug(f"Removed {old_fanart_count} old FanArt image(s) for '{artist}' to fetch sorted versions")
+                
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
                 # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
@@ -3492,10 +3554,19 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Same optimization pattern as album art to reduce metadata.json writes
                 if metadata_changed or not metadata_path.exists():
                     # Save Metadata
+                    # Only upgrade version if we successfully fetched new images (error recovery)
+                    # If fetch failed but we're upgrading, keep old version to retry later
+                    if all_images or metadata_changed:
+                        final_db_version = ARTIST_DB_VERSION
+                    else:
+                        # Fetch failed - keep existing version (or default to 1 if no metadata existed)
+                        final_db_version = existing_metadata.get("db_version", 1) if existing_metadata else 1
+                    
                     metadata = {
                         "artist": artist,
                         "type": "artist_images",
                         "last_accessed": datetime.utcnow().isoformat() + "Z",
+                        "db_version": final_db_version,  # Track database version for smart backfill
                         "images": saved_images
                     }
                     
