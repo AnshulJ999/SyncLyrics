@@ -604,7 +604,7 @@ class ArtistImageProvider:
         - Fuzzy matching for minor variations
         
         Quality filtering:
-        - Minimum resolution: >1000px (ensures high-quality images)
+        - Minimum resolution: >=1000px (ensures high-quality images)
         - Aspect ratio: 0.3-2.5 (filters out logos/banners)
         - Filename filtering: Skips obvious non-photos (logos, album covers, etc.)
         
@@ -806,8 +806,8 @@ class ArtistImageProvider:
             if commons_images:
                 images.extend(commons_images)
                 image_source = "Wikimedia Commons search"
-                # If we got good results (5+ images), we're done
-                if len(images) >= 5:
+                # If we got good results (10+ images), we're done
+                if len(images) >= 10:
                     if _should_log_wikipedia(artist, 'image'):
                         resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images[:5]]
                         logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {image_source} (resolutions: {', '.join(resolutions)})")
@@ -850,7 +850,7 @@ class ArtistImageProvider:
                     logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {image_source or 'multiple strategies'} (resolutions: {', '.join(resolutions)})")
             elif _should_log_wikipedia(artist, 'validation'):
                 if page_title:
-                    logger.debug(f"Wikipedia: Page '{page_title}' found but no high-res images (>1000px) available from any source")
+                    logger.debug(f"Wikipedia: Page '{page_title}' found but no high-res images (>=1000px) available from any source")
                 else:
                     logger.debug(f"Wikipedia: Could not find page or images for '{artist}'")
             
@@ -941,8 +941,8 @@ class ArtistImageProvider:
                     if url in seen_urls:
                         continue
                     
-                    # Filter: >1000px, valid aspect ratio
-                    if w > 1000 and h > 0:
+                    # Filter: >=1000px, valid aspect ratio
+                    if w >= 1000 and h > 0:
                         aspect = w / h
                         if 0.3 < aspect < 2.5:
                             title = page_data.get('title', '')
@@ -967,7 +967,7 @@ class ArtistImageProvider:
                                 break
                 
                 # If we found good results, stop searching
-                if len(images) >= 5:
+                if len(images) >= 10:
                     break
             
             return images
@@ -1028,8 +1028,8 @@ class ArtistImageProvider:
                 if url in seen_urls:
                     continue
                 
-                # Filter: >1000px, valid aspect ratio
-                if w > 1000 and h > 0:
+                # Filter: >=1000px, valid aspect ratio
+                if w >= 1000 and h > 0:
                     aspect = w / h
                     if 0.3 < aspect < 2.5:
                         # Check if filename suggests it's an artist photo (not a logo/banner)
@@ -1103,8 +1103,8 @@ class ArtistImageProvider:
                     if url in seen_urls:
                         continue
                     
-                    # Filter: >1000px, valid aspect ratio
-                    if w > 1000 and h > 0:
+                    # Filter: >=1000px, valid aspect ratio
+                    if w >= 1000 and h > 0:
                         aspect = w / h
                         if 0.3 < aspect < 2.5:
                             images.append({
