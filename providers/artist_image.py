@@ -11,6 +11,10 @@ Fetches high-quality artist images, logos, and backgrounds from:
 import asyncio
 import logging
 import os
+import re
+import time
+import unicodedata
+from difflib import SequenceMatcher
 import requests
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
@@ -23,6 +27,123 @@ except (ImportError, AttributeError):
     ARTIST_IMAGE = {}
 
 logger = logging.getLogger(__name__)
+
+# Throttle for Wikipedia logs to prevent spam
+# Key: (artist, log_type), Value: last log timestamp
+# Initialize at module level to avoid UnboundLocalError
+_wikipedia_log_throttle: Dict[tuple, float] = {}
+_WIKIPEDIA_LOG_THROTTLE_SECONDS = 300  # Log at most once per 5 minutes per artist per log type
+_MAX_LOG_THROTTLE_SIZE = 200  # Limit throttle cache size
+
+def _should_log_wikipedia(artist: str, log_type: str) -> bool:
+    """
+    Check if we should log a Wikipedia message (throttling to prevent spam).
+    
+    Args:
+        artist: Artist name
+        log_type: Type of log (e.g., 'strategy', 'validation', 'image')
+        
+    Returns:
+        True if we should log, False if throttled
+    """
+    global _wikipedia_log_throttle
+    current_time = time.time()
+    key = (artist.lower(), log_type)
+    
+    last_log_time = _wikipedia_log_throttle.get(key, 0)
+    should_log = (current_time - last_log_time) >= _WIKIPEDIA_LOG_THROTTLE_SECONDS
+    
+    if should_log:
+        _wikipedia_log_throttle[key] = current_time
+        
+        # Clean up old entries to prevent memory leak
+        if len(_wikipedia_log_throttle) > _MAX_LOG_THROTTLE_SIZE:
+            cutoff_time = current_time - 600  # 10 minutes
+            _wikipedia_log_throttle = {
+                k: v for k, v in _wikipedia_log_throttle.items()
+                if v > cutoff_time
+            }
+    
+    return should_log
+
+def _validate_wikipedia_title(artist: str, title: str) -> bool:
+    """
+    Smart validation that checks if Wikipedia page title matches artist name.
+    Handles disambiguation suffixes, special characters, articles, and fuzzy matching.
+    
+    This fixes issues where major artists like "Nirvana", "Architects", "Bring Me The Horizon"
+    fail to match because Wikipedia uses "(band)" suffixes or slight title variations.
+    
+    Args:
+        artist: Original artist name (e.g., "Nirvana", "Architects")
+        title: Wikipedia page title (e.g., "Nirvana (band)", "Architects (British band)")
+        
+    Returns:
+        True if title matches artist, False otherwise
+    """
+    if not artist or not title:
+        return False
+    
+    # Normalize both strings: lowercase, strip whitespace
+    artist_norm = artist.lower().strip()
+    title_norm = title.lower().strip()
+    
+    # Remove common articles ("the") from both for comparison
+    # This handles "The Beatles" vs "Beatles" and "The Weeknd" vs "The Weeknd"
+    for article in ["the ", " the "]:
+        if artist_norm.startswith(article.strip()):
+            artist_norm = artist_norm[len(article.strip()):].strip()
+        if title_norm.startswith(article.strip()):
+            title_norm = title_norm[len(article.strip()):].strip()
+    
+    # Normalize special characters (e.g., "Motörhead" -> "motorhead")
+    # This handles artists with accents, umlauts, etc.
+    artist_clean = unicodedata.normalize('NFKD', artist_norm).encode('ASCII', 'ignore').decode('ASCII')
+    title_clean = unicodedata.normalize('NFKD', title_norm).encode('ASCII', 'ignore').decode('ASCII')
+    
+    # Remove disambiguation suffixes from title (e.g., "(band)", "(musician)")
+    # This is critical - Wikipedia often uses "Nirvana (band)" but we search for "Nirvana"
+    disambiguation_suffixes = [
+        " (band)", " (musician)", " (singer)", " (musical group)", 
+        " (rapper)", " (group)", " (artist)", " (vocalist)"
+    ]
+    for suffix in disambiguation_suffixes:
+        if title_clean.endswith(suffix):
+            title_clean = title_clean[:-len(suffix)].strip()
+    
+    # Remove any remaining parentheses and their contents (handles edge cases)
+    title_clean = re.sub(r'\s*\([^)]*\)\s*$', '', title_clean).strip()
+    
+    # Remove special characters and punctuation for comparison
+    # This handles "Panic! at the Disco" vs "Panic at the Disco"
+    artist_clean = re.sub(r'[^a-z0-9\s]', '', artist_clean).strip()
+    title_clean = re.sub(r'[^a-z0-9\s]', '', title_clean).strip()
+    
+    # Exact match after normalization (most common case)
+    if artist_clean == title_clean:
+        return True
+    
+    # Fuzzy match using SequenceMatcher (standard library, no external deps)
+    # This handles minor spelling differences or variations
+    # Only use fuzzy matching if both strings are reasonably long (prevents false positives)
+    if len(artist_clean) >= 3 and len(title_clean) >= 3:
+        similarity = SequenceMatcher(None, artist_clean, title_clean).ratio()
+        if similarity >= 0.90:  # 90% similarity threshold
+            return True
+    
+    # Partial match: check if artist name appears in title or vice versa
+    # But only if title isn't way longer (prevents "Bad" matching "Bad Religion")
+    if artist_clean in title_clean:
+        # Title can be up to 1.5x longer (allows "The Beatles" to match "Beatles")
+        if len(title_clean) <= len(artist_clean) * 1.5:
+            return True
+    
+    if title_clean in artist_clean:
+        # Artist can be up to 1.5x longer (allows "Bring Me The Horizon" to match "Bring Me the Horizon")
+        if len(artist_clean) <= len(title_clean) * 1.5:
+            return True
+    
+    return False
 
 def safe_likes(item: Dict[str, Any]) -> int:
     """
@@ -457,23 +578,35 @@ class ArtistImageProvider:
         Often provides 1500-5000px images for popular artists.
         Free, no API key required, but slower than other sources (2-3 API calls).
         
-        Uses a multi-strategy approach:
+        Uses a multi-strategy approach with smart title validation:
         1. Direct lookup (fastest, most accurate - Wikipedia normalizes/redirects automatically)
         2. Search with artist name only (if direct lookup fails)
         3. Search with "band" modifier (for bands/groups)
         4. Search with "musician" modifier (last resort, for solo artists)
         
+        Smart validation handles:
+        - Disambiguation suffixes: "Nirvana (band)" matches "Nirvana"
+        - Special characters: "Motörhead" matches "Motorhead"
+        - Articles: "The Beatles" matches "Beatles"
+        - Fuzzy matching for minor variations
+        
+        Fetches up to 5 high-resolution images (>1000px) from Wikipedia pageimages.
+        
         Args:
             artist: Artist name to search for
             
         Returns:
-            List of image dicts with Wikipedia/Wikimedia images
+            List of image dicts with Wikipedia/Wikimedia images (up to 5, filtered by quality)
         """
         try:
             page_title = None
+            strategy_used = None
             
             # Strategy 1: Direct lookup (fastest, most accurate)
             # Wikipedia automatically normalizes page titles and handles redirects
+            if _should_log_wikipedia(artist, 'strategy'):
+                logger.debug(f"Wikipedia: Strategy 1 (direct lookup) - Checking '{artist}'")
+            
             lookup_url = "https://en.wikipedia.org/w/api.php"
             lookup_params = {
                 'action': 'query',
@@ -488,26 +621,30 @@ class ArtistImageProvider:
                 data = resp.json()
                 pages = data.get('query', {}).get('pages', {})
                 
-                # Check if page exists (not -1) and title matches
+                # Check if page exists (not -1) and title matches using smart validation
                 for page_id, page_data in pages.items():
                     if page_id != '-1':  # Page exists
                         title = page_data.get('title', '')
-                        # Validate title matches artist (prevents wrong matches)
-                        artist_lower = artist.lower().strip()
-                        title_lower = title.lower().strip()
-                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
+                        # Use smart validation that handles disambiguation, special chars, etc.
+                        if _validate_wikipedia_title(artist, title):
                             page_title = title
+                            strategy_used = "Direct lookup"
+                            if _should_log_wikipedia(artist, 'strategy'):
+                                logger.debug(f"Wikipedia: Direct lookup found page '{page_title}' (ID: {page_id})")
                             break
             
             # Strategy 2: Search with artist name only (if direct lookup failed)
             if not page_title:
+                if _should_log_wikipedia(artist, 'strategy'):
+                    logger.debug(f"Wikipedia: Strategy 2 (search) - Trying '{artist}'")
+                
                 search_url = "https://en.wikipedia.org/w/api.php"
                 search_params = {
                     'action': 'query',
                     'format': 'json',
                     'list': 'search',
                     'srsearch': artist,  # Just artist name, no modifier
-                    'srlimit': 3,  # Check top 3 results
+                    'srlimit': 5,  # Get top 5 results to find best match
                     'srnamespace': 0
                 }
                 
@@ -516,25 +653,46 @@ class ArtistImageProvider:
                     data = resp.json()
                     search_results = data.get('query', {}).get('search', [])
                     
-                    # Find first result that matches artist name
-                    artist_lower = artist.lower().strip()
+                    if _should_log_wikipedia(artist, 'strategy'):
+                        result_titles = [r.get('title', '') for r in search_results[:3]]
+                        logger.debug(f"Wikipedia: Search returned {len(search_results)} results: {result_titles}")
+                    
+                    # Prioritize disambiguation pages (e.g., "Nirvana (band)" over "Nirvana")
+                    # First pass: Look for pages with disambiguation suffixes
                     for result in search_results:
                         title = result.get('title', '')
-                        title_lower = title.lower().strip()
-                        # Check if title matches artist (handles "The Beatles" vs "Beatles")
-                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
-                            page_title = title
-                            break
+                        # Check if this is a disambiguation page (band, musician, etc.)
+                        if any(suffix in title.lower() for suffix in ['(band)', '(musician)', '(musical group)', '(singer)', '(rapper)']):
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (disambiguation prioritized)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected disambiguation page '{page_title}'")
+                                break
+                    
+                    # Second pass: If no disambiguation page found, check all results
+                    if not page_title:
+                        for result in search_results:
+                            title = result.get('title', '')
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (artist name)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected page '{page_title}'")
+                                break
             
             # Strategy 3: Search with "band" modifier (for bands/groups)
             if not page_title:
+                if _should_log_wikipedia(artist, 'strategy'):
+                    logger.debug(f"Wikipedia: Strategy 3 (search) - Trying '{artist} band'")
+                
                 search_url = "https://en.wikipedia.org/w/api.php"
                 search_params = {
                     'action': 'query',
                     'format': 'json',
                     'list': 'search',
                     'srsearch': f"{artist} band",  # Add "band" to refine search for bands/groups
-                    'srlimit': 3,
+                    'srlimit': 5,
                     'srnamespace': 0
                 }
                 
@@ -543,25 +701,44 @@ class ArtistImageProvider:
                     data = resp.json()
                     search_results = data.get('query', {}).get('search', [])
                     
-                    # Find first result that matches artist name
-                    artist_lower = artist.lower().strip()
+                    if _should_log_wikipedia(artist, 'strategy'):
+                        result_titles = [r.get('title', '') for r in search_results[:3]]
+                        logger.debug(f"Wikipedia: Search returned {len(search_results)} results: {result_titles}")
+                    
+                    # Prioritize disambiguation pages first
                     for result in search_results:
                         title = result.get('title', '')
-                        title_lower = title.lower().strip()
-                        # Check if title matches artist (handles "The Beatles" vs "Beatles")
-                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
-                            page_title = title
-                            break
+                        if any(suffix in title.lower() for suffix in ['(band)', '(musical group)']):
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (band modifier, disambiguation)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected page '{page_title}'")
+                                break
+                    
+                    # Fallback to all results if no disambiguation found
+                    if not page_title:
+                        for result in search_results:
+                            title = result.get('title', '')
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (band modifier)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected page '{page_title}'")
+                                break
             
             # Strategy 4: Search with "musician" modifier (last resort, for solo artists)
             if not page_title:
+                if _should_log_wikipedia(artist, 'strategy'):
+                    logger.debug(f"Wikipedia: Strategy 4 (search) - Trying '{artist} musician'")
+                
                 search_url = "https://en.wikipedia.org/w/api.php"
                 search_params = {
                     'action': 'query',
                     'format': 'json',
                     'list': 'search',
                     'srsearch': f"{artist} musician",  # Add "musician" to refine search for solo artists
-                    'srlimit': 3,
+                    'srlimit': 5,
                     'srnamespace': 0
                 }
                 
@@ -570,22 +747,40 @@ class ArtistImageProvider:
                     data = resp.json()
                     search_results = data.get('query', {}).get('search', [])
                     
-                    # Find first result that matches artist name
-                    artist_lower = artist.lower().strip()
+                    if _should_log_wikipedia(artist, 'strategy'):
+                        result_titles = [r.get('title', '') for r in search_results[:3]]
+                        logger.debug(f"Wikipedia: Search returned {len(search_results)} results: {result_titles}")
+                    
+                    # Prioritize disambiguation pages first
                     for result in search_results:
                         title = result.get('title', '')
-                        title_lower = title.lower().strip()
-                        # Check if title matches artist
-                        if artist_lower == title_lower or artist_lower in title_lower or title_lower in artist_lower:
-                            page_title = title
-                            break
+                        if any(suffix in title.lower() for suffix in ['(musician)', '(singer)', '(rapper)', '(vocalist)']):
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (musician modifier, disambiguation)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected page '{page_title}'")
+                                break
+                    
+                    # Fallback to all results if no disambiguation found
+                    if not page_title:
+                        for result in search_results:
+                            title = result.get('title', '')
+                            if _validate_wikipedia_title(artist, title):
+                                page_title = title
+                                strategy_used = "Search (musician modifier)"
+                                if _should_log_wikipedia(artist, 'strategy'):
+                                    logger.debug(f"Wikipedia: Selected page '{page_title}'")
+                                break
             
             # If we still don't have a page title, give up
             if not page_title:
-                logger.debug(f"Wikipedia: Could not find page for '{artist}'")
+                if _should_log_wikipedia(artist, 'validation'):
+                    logger.debug(f"Wikipedia: Could not find page for '{artist}' after trying all 4 strategies")
                 return []
             
-            # Step 2: Get page images (requesting high resolution)
+            # Step 2: Get page images (requesting high resolution, multiple images)
+            # Fetch up to 5 images from pageimages (main infobox images, usually best quality)
             images_url = "https://en.wikipedia.org/w/api.php"
             images_params = {
                 'action': 'query',
@@ -593,55 +788,82 @@ class ArtistImageProvider:
                 'titles': page_title,
                 'prop': 'pageimages',
                 'pithumbsize': 4000,  # Request up to 4000px (Wikipedia's max for thumbnails)
-                'pilimit': 1  # Only get the main infobox image (usually the best artist photo)
+                'pilimit': 5  # Get up to 5 images (main infobox + additional page images)
             }
             
             resp = self.session.get(images_url, params=images_params, timeout=self.timeout)
             if resp.status_code != 200:
+                if _should_log_wikipedia(artist, 'image'):
+                    logger.debug(f"Wikipedia: Failed to fetch images for '{page_title}' (status {resp.status_code})")
                 return []
             
             data = resp.json()
             pages = data.get('query', {}).get('pages', {})
             
             images = []
+            seen_urls = set()  # Deduplicate by URL
+            
             for page_id, page_data in pages.items():
-                # Main infobox image (usually highest quality portrait photo)
+                # Wikipedia pageimages can return multiple images (main + additional)
+                # Check for main thumbnail first
                 if page_data.get('thumbnail'):
                     thumb = page_data['thumbnail']
                     width = thumb.get('width', 0)
                     height = thumb.get('height', 0)
+                    url = thumb.get('source', '')
                     
-                    # Filter 1: Minimum size - filter out tiny images/icons
-                    # Only include images that are at least 300px wide (likely to be actual photos)
-                    if width > 300:
-                        # Filter 2: Aspect ratio - filter out logos, banners, and non-portrait images
-                        # We want artist photos, typically between 0.4:1 (tall) and 2.0:1 (wide)
-                        # This prevents logos (very wide, e.g., 5:1) and banners (very tall, e.g., 0.2:1)
-                        if height > 0:
-                            aspect_ratio = width / height
-                            # Accept reasonable aspect ratios for photos (portrait to landscape)
-                            # Expanded range: 0.3:1 (very tall) to 2.5:1 (wide landscape) to catch more valid photos
-                            # This still filters out extreme logos (5:1+) and banners (0.2:1-)
-                            if 0.3 < aspect_ratio < 2.5:
-                                images.append({
-                                    'url': thumb['source'],
-                                    'source': 'Wikipedia',
-                                    'type': 'photo',
-                                    'width': width,
-                                    'height': height
-                                })
-                            else:
-                                logger.debug(f"Wikipedia: Skipped image with suspicious aspect ratio {aspect_ratio:.2f} ({width}x{height}) - likely logo/banner, not photo")
-                        else:
-                            # Height is 0 or missing - skip to avoid division by zero
-                            logger.debug(f"Wikipedia: Skipped image with invalid height ({width}x{height})")
+                    # Only process if URL is unique and meets quality criteria
+                    if url and url not in seen_urls:
+                        # Filter 1: Minimum size - only high-res images (>1000px as requested)
+                        # This ensures we only get high-quality images, not thumbnails
+                        if width > 1000:
+                            # Filter 2: Aspect ratio - filter out logos, banners, and non-portrait images
+                            # We want artist photos, typically between 0.3:1 (tall) and 2.5:1 (wide)
+                            # This prevents logos (very wide, e.g., 5:1) and banners (very tall, e.g., 0.2:1)
+                            if height > 0:
+                                aspect_ratio = width / height
+                                # Accept reasonable aspect ratios for photos (portrait to landscape)
+                                if 0.3 < aspect_ratio < 2.5:
+                                    images.append({
+                                        'url': url,
+                                        'source': 'Wikipedia',
+                                        'type': 'photo',
+                                        'width': width,
+                                        'height': height
+                                    })
+                                    seen_urls.add(url)
+                                    # Limit to 5 images maximum (as requested: 3-5 images)
+                                    if len(images) >= 5:
+                                        break
+                                elif _should_log_wikipedia(artist, 'image'):
+                                    logger.debug(f"Wikipedia: Skipped image with aspect ratio {aspect_ratio:.2f} ({width}x{height}) - likely logo/banner")
+                            elif _should_log_wikipedia(artist, 'image'):
+                                logger.debug(f"Wikipedia: Skipped image with invalid height ({width}x{height})")
+                        elif _should_log_wikipedia(artist, 'image'):
+                            logger.debug(f"Wikipedia: Skipped image below 1000px threshold ({width}x{height})")
+                
+                # Check for additional page images (if available)
+                # Wikipedia's pageimages can return multiple images beyond just the thumbnail
+                # Note: The API structure may vary, but we check for any additional image fields
+                # Most commonly, only 'thumbnail' is available, but we're prepared for more
+            
+            # Sort images by resolution (highest first) to prioritize best quality
+            images.sort(key=lambda x: max(x.get('width', 0), x.get('height', 0)), reverse=True)
+            
+            # Limit to top 5 images (as requested: 3-5 images, we'll return up to 5)
+            images = images[:5]
             
             if images:
-                logger.debug(f"Wikipedia: Found {len(images)} image(s) for {artist} (resolution: {images[0].get('width', 0)}x{images[0].get('height', 0)})")
+                if _should_log_wikipedia(artist, 'image'):
+                    resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images]
+                    logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {strategy_used} (resolutions: {', '.join(resolutions)})")
+            elif _should_log_wikipedia(artist, 'validation'):
+                logger.debug(f"Wikipedia: Page '{page_title}' found but no high-res images (>1000px) available")
             
             return images
             
         except Exception as e:
-            logger.debug(f"Wikipedia fetch failed for {artist}: {e}")
+            if _should_log_wikipedia(artist, 'error'):
+                logger.debug(f"Wikipedia fetch failed for {artist}: {e}")
             return []
 
