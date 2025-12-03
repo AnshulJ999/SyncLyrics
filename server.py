@@ -773,7 +773,7 @@ async def set_album_art_preference():
                     with open(album_art_metadata_path_clear, 'r', encoding='utf-8') as f:
                         album_art_metadata_clear = json.load(f)
                     # Clear the preferred provider to allow artist image to be used
-                    album_art_metadata_clear.pop("preferred_provider", None)
+                    album_art_metadata_clear["preferred_provider"] = None
                     album_art_metadata_clear["last_accessed"] = datetime.utcnow().isoformat() + "Z"
                     # Save the cleared metadata
                     save_album_db_metadata(album_art_folder_clear, album_art_metadata_clear)
@@ -819,8 +819,8 @@ async def set_album_art_preference():
                 # Only clear if this is actually an artist images metadata file
                 if artist_metadata_clear.get("type") == "artist_images":
                     # Clear the preferred provider and filename to allow album art to be used
-                    artist_metadata_clear.pop("preferred_provider", None)
-                    artist_metadata_clear.pop("preferred_image_filename", None)
+                    artist_metadata_clear["preferred_provider"] = None
+                    artist_metadata_clear["preferred_image_filename"] = None
                     artist_metadata_clear["last_accessed"] = datetime.utcnow().isoformat() + "Z"
                     # Save the cleared metadata
                     save_album_db_metadata(artist_folder_clear, artist_metadata_clear)
