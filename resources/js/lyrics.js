@@ -1470,6 +1470,35 @@ async function clearProviderPreference() {
     }
 }
 
+async function clearAlbumArtPreference() {
+    try {
+        const response = await fetch('/api/album-art/preference', {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            hideProviderModal();
+            showToast('Reset album art preference');
+            
+            // Force refresh of the image
+            const albumArt = document.getElementById('album-art');
+            if (albumArt) {
+                 const currentSrc = albumArt.src;
+                 const baseUrl = currentSrc.split('?')[0];
+                 albumArt.src = `${baseUrl}?t=${Date.now()}`;
+            }
+            updateBackground(); // Update background too
+        } else {
+            showToast('Failed to reset preference', 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing art preference:', error);
+        showToast('Failed to reset preference', 'error');
+    }
+}
+
 async function deleteCachedLyrics() {
     // Confirm before deleting
     if (!confirm('Delete all cached lyrics for this song?\n\nThis will remove lyrics from all providers and re-fetch them fresh.')) {
@@ -2012,6 +2041,12 @@ function setupProviderUI() {
     const clearBtn = document.getElementById('provider-clear-preference');
     if (clearBtn) {
         clearBtn.addEventListener('click', clearProviderPreference);
+    }
+
+    // Clear album art preference button
+    const clearArtBtn = document.getElementById('album-art-clear-preference');
+    if (clearArtBtn) {
+        clearArtBtn.addEventListener('click', clearAlbumArtPreference);
     }
 
     // Delete cached lyrics button

@@ -927,6 +927,70 @@ async def set_album_art_preference():
         "cache_bust": cache_bust
     })
 
+@app.route("/api/album-art/preference", methods=['DELETE'])
+async def clear_album_art_preference():
+    """Clear BOTH album art and artist image preferences for current track"""
+    from system_utils import get_current_song_meta_data, get_album_db_folder, save_album_db_metadata, _art_update_lock
+    import json
+    from datetime import datetime
+
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"error": "No song playing"}), 404
+
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    title = metadata.get("title")
+    album_or_title = album if album else title
+
+    if not artist:
+        return jsonify({"error": "Invalid song data"}), 400
+
+    async with _art_update_lock:
+        # 1. Clear Artist Image Preference
+        try:
+            artist_folder = get_album_db_folder(artist, None)
+            artist_meta_path = artist_folder / "metadata.json"
+            if artist_meta_path.exists():
+                with open(artist_meta_path, 'r', encoding='utf-8') as f:
+                    artist_data = json.load(f)
+                
+                if artist_data.get("type") == "artist_images":
+                    # CRITICAL FIX: Explicitly set to None so save_album_db_metadata knows to delete it
+                    # (pop() would be restored by safety logic in save function)
+                    artist_data["preferred_provider"] = None
+                    artist_data["preferred_image_filename"] = None
+                    artist_data["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+                    save_album_db_metadata(artist_folder, artist_data)
+                    logger.info(f"Cleared artist image preference for {artist}")
+        except Exception as e:
+            logger.error(f"Error clearing artist preference: {e}")
+
+        # 2. Clear Album Art Preference
+        if album_or_title:
+            try:
+                album_folder = get_album_db_folder(artist, album_or_title)
+                album_meta_path = album_folder / "metadata.json"
+                if album_meta_path.exists():
+                    with open(album_meta_path, 'r', encoding='utf-8') as f:
+                        album_data = json.load(f)
+                    
+                    # CRITICAL FIX: Explicitly set to None so save_album_db_metadata knows to delete it
+                    # (pop() would be restored by safety logic in save function)
+                    album_data["preferred_provider"] = None
+                    album_data["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+                    save_album_db_metadata(album_folder, album_data)
+                    logger.info(f"Cleared album art preference for {artist} - {album_or_title}")
+            except Exception as e:
+                logger.error(f"Error clearing album art preference: {e}")
+
+    # Invalidate cache
+    get_current_song_meta_data._last_check_time = 0
+    if hasattr(get_current_song_meta_data, '_last_result'):
+        get_current_song_meta_data._last_result = None
+
+    return jsonify({"status": "success", "message": "Art preferences cleared"})
+
 @app.route("/api/album-art/background-style", methods=['POST'])
 async def set_background_style():
     """Set preferred background style for current album (Sharp, Soft, Blur) - Phase 2"""
