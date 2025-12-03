@@ -14,9 +14,37 @@ import os
 import requests
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
-from config import ARTIST_IMAGE
+
+# Safe import of ARTIST_IMAGE config - prevents crash if config.py is outdated
+try:
+    from config import ARTIST_IMAGE
+except (ImportError, AttributeError):
+    # Fallback if config doesn't have ARTIST_IMAGE (e.g., outdated config.py)
+    ARTIST_IMAGE = {}
 
 logger = logging.getLogger(__name__)
+
+def safe_likes(item: Dict[str, Any]) -> int:
+    """
+    Safely extract likes count from FanArt.tv item dict.
+    Handles missing keys, empty strings, and non-numeric values gracefully.
+    
+    Args:
+        item: Dictionary from FanArt.tv API response
+        
+    Returns:
+        Integer likes count, or 0 if invalid/missing
+    """
+    try:
+        val = item.get('likes')
+        # Handle None, empty string, or falsy values
+        if not val or val == "":
+            return 0
+        # Convert to int (handles string numbers like "100")
+        return int(val)
+    except (ValueError, TypeError):
+        # Handle non-numeric strings, wrong types, etc.
+        return 0
 
 class ArtistImageProvider:
     """
@@ -348,8 +376,8 @@ class ArtistImageProvider:
             # Artist Backgrounds (High-resolution backgrounds, typically 1920x1080+)
             # Sort by likes (community-curated quality) - highest liked images first
             backgrounds = data.get('artistbackground', [])
-            # Sort by likes (descending), handle missing 'likes' key safely
-            backgrounds.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+            # Sort by likes (descending) using safe helper function to prevent crashes on malformed data
+            backgrounds.sort(key=safe_likes, reverse=True)
             
             for bg in backgrounds:
                 if isinstance(bg, dict) and bg.get('url'):
@@ -362,9 +390,9 @@ class ArtistImageProvider:
                     })
                 
             # Artist Thumbnails (Main artist photos, typically 1000x1000+)
-            # Sort by likes for quality ranking
+            # Sort by likes for quality ranking using safe helper function
             thumbs = data.get('artistthumb', [])
-            thumbs.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+            thumbs.sort(key=safe_likes, reverse=True)
             
             for thumb in thumbs:
                 if isinstance(thumb, dict) and thumb.get('url'):
@@ -390,9 +418,9 @@ class ArtistImageProvider:
             # Album Covers (High-quality album artwork, typically 1000x1000+)
             # Only fetch if enabled (can be disabled if too many duplicates with album art DB)
             if self.enable_fanart_albumcover:
-                # Sort by likes for quality ranking (get best album covers first)
+                # Sort by likes for quality ranking (get best album covers first) using safe helper function
                 album_covers = data.get('albumcover', [])
-                album_covers.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+                album_covers.sort(key=safe_likes, reverse=True)
                 
                 # Limit to top 5 highest-quality album covers to avoid flooding
                 # (Artist images should focus on artist photos, not entire discography)
@@ -452,6 +480,15 @@ class ArtistImageProvider:
             # Get page title from search results
             page_title = data['query']['search'][0]['title']
             
+            # VALIDATION: Check if page title matches artist name to prevent wrong artist matches
+            # This prevents cases like "Drake Bell" returning "Drake" or "Paul" returning "Paul the Apostle"
+            artist_lower = artist.lower()
+            title_lower = page_title.lower()
+            # Check if artist name appears in title or vice versa (handles "The Beatles" vs "Beatles")
+            if artist_lower not in title_lower and title_lower not in artist_lower:
+                logger.debug(f"Wikipedia: Page title '{page_title}' doesn't match artist '{artist}', skipping to avoid wrong artist")
+                return []
+            
             # Step 2: Get page images (requesting high resolution)
             images_url = "https://en.wikipedia.org/w/api.php"
             images_params = {
@@ -475,16 +512,31 @@ class ArtistImageProvider:
                 # Main infobox image (usually highest quality portrait photo)
                 if page_data.get('thumbnail'):
                     thumb = page_data['thumbnail']
-                    # Filter out tiny images/icons (Wikipedia sometimes returns small icons)
+                    width = thumb.get('width', 0)
+                    height = thumb.get('height', 0)
+                    
+                    # Filter 1: Minimum size - filter out tiny images/icons
                     # Only include images that are at least 300px wide (likely to be actual photos)
-                    if thumb.get('width', 0) > 300:
-                        images.append({
-                            'url': thumb['source'],
-                            'source': 'Wikipedia',
-                            'type': 'photo',
-                            'width': thumb.get('width', 0),
-                            'height': thumb.get('height', 0)
-                        })
+                    if width > 300:
+                        # Filter 2: Aspect ratio - filter out logos, banners, and non-portrait images
+                        # We want artist photos, typically between 0.4:1 (tall) and 2.0:1 (wide)
+                        # This prevents logos (very wide, e.g., 5:1) and banners (very tall, e.g., 0.2:1)
+                        if height > 0:
+                            aspect_ratio = width / height
+                            # Accept reasonable aspect ratios for photos (portrait to landscape)
+                            if 0.4 < aspect_ratio < 2.0:
+                                images.append({
+                                    'url': thumb['source'],
+                                    'source': 'Wikipedia',
+                                    'type': 'photo',
+                                    'width': width,
+                                    'height': height
+                                })
+                            else:
+                                logger.debug(f"Wikipedia: Skipped image with suspicious aspect ratio {aspect_ratio:.2f} ({width}x{height}) - likely logo/banner, not photo")
+                        else:
+                            # Height is 0 or missing - skip to avoid division by zero
+                            logger.debug(f"Wikipedia: Skipped image with invalid height ({width}x{height})")
             
             if images:
                 logger.debug(f"Wikipedia: Found {len(images)} image(s) for {artist} (resolution: {images[0].get('width', 0)}x{images[0].get('height', 0)})")
