@@ -28,6 +28,168 @@ load_dotenv()
 logger = get_logger(__name__)
 
 # ===========================================
+# Spotify Image URL Enhancement (Shared Utility)
+# ===========================================
+# Module-level cache for URL verification results
+# Key: enhanced_url, Value: True if valid, False if invalid, None if not checked yet
+_spotify_url_verification_cache = {}
+_MAX_CACHE_SIZE = 500  # Limit cache size to prevent memory leaks
+
+async def enhance_spotify_image_url_async(url: str) -> str:
+    """
+    Async function to enhance Spotify image URL from 640px to 1400px using quality code replacement.
+    Falls back to original URL if enhancement fails (404 or error).
+    
+    Uses caching to avoid repeated HEAD requests for the same URLs.
+    Network verification runs in thread executor to avoid blocking the event loop.
+    
+    Based on community discovery: https://gist.github.com/soulsoiledit/8c258233419a299f093b083eb4f427ca
+    Spotify image URLs contain quality codes that can be replaced to get higher resolution.
+    Quality code '82c1' = 1400x1400 JPEG, 'b273' = 640x640 JPEG (default).
+    
+    Args:
+        url: Original Spotify image URL (typically 640px from API)
+        
+    Returns:
+        Enhanced URL (1400px) if available and verified, original URL if not
+    """
+    if not url or 'i.scdn.co' not in url:
+        return url
+    
+    try:
+        # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
+        # URL format: ab67616d0000{quality_code}{image_hash}
+        # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
+        #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
+        # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
+        # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
+        pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
+        match = re.search(pattern, url)
+        
+        if not match:
+            return url  # Pattern doesn't match, return original
+        
+        # Replace 8-char quality code (0000 + 4-char code) with 1400px version (000082c1)
+        # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
+        enhanced_url = url.replace(match.group(2), '000082c1')
+        
+        # Check cache first (instant return, no network request)
+        if enhanced_url in _spotify_url_verification_cache:
+            cache_result = _spotify_url_verification_cache[enhanced_url]
+            if cache_result is True:
+                logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
+                return enhanced_url
+            elif cache_result is False:
+                logger.debug(f"Spotify 1400px not available (cached), using 640px")
+                return url
+        
+        # Not in cache - verify with HEAD request (runs in thread executor to avoid blocking)
+        try:
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: requests.head(enhanced_url, timeout=2, allow_redirects=True)
+            )
+            
+            # Update cache
+            is_valid = response.status_code == 200
+            _spotify_url_verification_cache[enhanced_url] = is_valid
+            
+            # Simple cache cleanup: remove oldest entries if cache is too large
+            if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
+                # Remove first (oldest) entry
+                oldest_key = next(iter(_spotify_url_verification_cache))
+                _spotify_url_verification_cache.pop(oldest_key)
+            
+            if is_valid:
+                logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                return enhanced_url
+            else:
+                logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
+        except Exception as e:
+            # Cache the failure to avoid repeated attempts
+            _spotify_url_verification_cache[enhanced_url] = False
+            logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
+        
+        return url  # Fallback to original URL
+    except Exception as e:
+        logger.debug(f"Spotify URL enhancement error: {e}, using original")
+        return url
+
+def enhance_spotify_image_url_sync(url: str) -> str:
+    """
+    Synchronous wrapper for enhance_spotify_image_url_async.
+    Used when called from thread executors (e.g., album_art.py).
+    
+    This function uses the same cache as the async version, so results are shared.
+    Network verification is synchronous (acceptable since it runs in a thread).
+    
+    Args:
+        url: Original Spotify image URL (typically 640px from API)
+        
+    Returns:
+        Enhanced URL (1400px) if available and verified, original URL if not
+    """
+    if not url or 'i.scdn.co' not in url:
+        return url
+    
+    try:
+        # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
+        # URL format: ab67616d0000{quality_code}{image_hash}
+        # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
+        #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
+        # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
+        # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
+        pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
+        match = re.search(pattern, url)
+        
+        if not match:
+            return url  # Pattern doesn't match, return original
+        
+        # Replace 8-char quality code (0000 + 4-char code) with 1400px version (000082c1)
+        # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
+        enhanced_url = url.replace(match.group(2), '000082c1')
+        
+        # Check cache first (instant return, no network request)
+        if enhanced_url in _spotify_url_verification_cache:
+            cache_result = _spotify_url_verification_cache[enhanced_url]
+            if cache_result is True:
+                logger.debug(f"Spotify image enhanced to 1400px (cached): {url[:50]}...")
+                return enhanced_url
+            elif cache_result is False:
+                logger.debug(f"Spotify 1400px not available (cached), using 640px")
+                return url
+        
+        # Not in cache - verify with HEAD request (synchronous, but runs in thread executor)
+        try:
+            response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
+            
+            # Update cache
+            is_valid = response.status_code == 200
+            _spotify_url_verification_cache[enhanced_url] = is_valid
+            
+            # Simple cache cleanup: remove oldest entries if cache is too large
+            if len(_spotify_url_verification_cache) > _MAX_CACHE_SIZE:
+                # Remove first (oldest) entry
+                oldest_key = next(iter(_spotify_url_verification_cache))
+                _spotify_url_verification_cache.pop(oldest_key)
+            
+            if is_valid:
+                logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
+                return enhanced_url
+            else:
+                logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
+        except Exception as e:
+            # Cache the failure to avoid repeated attempts
+            _spotify_url_verification_cache[enhanced_url] = False
+            logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
+        
+        return url  # Fallback to original URL
+    except Exception as e:
+        logger.debug(f"Spotify URL enhancement error: {e}, using original")
+        return url
+
+# ===========================================
 # Singleton Pattern for Shared SpotifyAPI
 # ===========================================
 # This ensures only ONE SpotifyAPI instance exists across the entire app.
@@ -283,7 +445,12 @@ class SpotifyAPI:
         """
         Try to enhance Spotify image URL from 640px to 1400px using quality code replacement.
         Falls back to original URL if enhancement fails (404 or error).
-        
+                
+        Note: This is a synchronous wrapper. For async contexts, use enhance_spotify_image_url_async directly.
+        For thread executor contexts, use enhance_spotify_image_url_sync.
+        Instance method wrapper for enhance_spotify_image_url_async.
+        Maintains backward compatibility for any code that calls this as an instance method.
+
         Based on community discovery: https://gist.github.com/soulsoiledit/8c258233419a299f093b083eb4f427ca
         Spotify image URLs contain quality codes that can be replaced to get higher resolution.
         Quality code '82c1' = 1400x1400 JPEG, 'b273' = 640x640 JPEG (default).
@@ -294,40 +461,8 @@ class SpotifyAPI:
         Returns:
             Enhanced URL (1400px) if available and verified, original URL if not
         """
-        if not url or 'i.scdn.co' not in url:
-            return url
-        
-        try:
-            # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
-            # URL format: ab67616d0000{quality_code}{image_hash}
-            # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
-            #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
-            # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
-            # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
-            pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
-            match = re.search(pattern, url)
-            
-            if match:
-                # Replace 8-char quality code (0000 + 4-char code) with 1400px version (000082c1)
-                # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
-                enhanced_url = url.replace(match.group(2), '000082c1')
-                
-                # Quick verification with HEAD request (doesn't download image, fast)
-                # This ensures we don't break downloads if 1400px version doesn't exist
-                try:
-                    response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
-                    if response.status_code == 200:
-                        logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
-                        return enhanced_url
-                    else:
-                        logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
-                except Exception as e:
-                    logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
-            
-            return url  # Fallback to original URL
-        except Exception as e:
-            logger.debug(f"Spotify URL enhancement error: {e}, using original")
-            return url
+        # Use the sync version since this is a sync method
+        return enhance_spotify_image_url_sync(url)
 
     async def get_current_track(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """Get current track with playback state, smart caching, and interpolation"""
@@ -431,7 +566,8 @@ class SpotifyAPI:
                 if largest_image:
                     album_art_url = largest_image['url']
                     # Try to enhance to 1400px if available (falls back to 640px if not)
-                    album_art_url = self._enhance_spotify_image_url(album_art_url)
+                    # Use async version since we're in an async method (get_current_track)
+                    album_art_url = await enhance_spotify_image_url_async(album_art_url)
             
             # Update cache with new track data
             self._metadata_cache = {
@@ -501,7 +637,8 @@ class SpotifyAPI:
                 if largest_image:
                     album_art_url = largest_image['url']
                     # Try to enhance to 1400px if available (falls back to 640px if not)
-                    album_art_url = self._enhance_spotify_image_url(album_art_url)
+                    # Use sync version since search_track is a synchronous method
+                    album_art_url = enhance_spotify_image_url_sync(album_art_url)
             
             return {
                 'title': track['name'],
@@ -679,7 +816,9 @@ class SpotifyAPI:
             )
             
             # Try to enhance each image URL to 1400px if available (falls back to 640px if not)
-            image_urls = [self._enhance_spotify_image_url(img['url']) for img in images_sorted]
+            # Use asyncio.gather to verify all images in parallel (much faster than sequential)
+            enhancement_tasks = [enhance_spotify_image_url_async(img['url']) for img in images_sorted]
+            image_urls = await asyncio.gather(*enhancement_tasks)
             logger.info(f"Retrieved {len(image_urls)} artist images for {artist.get('name', artist_id)}")
             
             # Cache the results

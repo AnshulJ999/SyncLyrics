@@ -19,6 +19,8 @@ import logging
 import os
 from logging_config import get_logger
 from config import conf, ALBUM_ART
+# Import consolidated Spotify URL enhancement function
+from providers.spotify_api import enhance_spotify_image_url_sync
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -640,64 +642,13 @@ class AlbumArtProvider:
         
         return None
     
-    def _enhance_spotify_image_url(self, url: str) -> str:
-        """
-        Try to enhance Spotify image URL from 640px to 1400px using quality code replacement.
-        Falls back to original URL if enhancement fails (404 or error) or if disabled in settings.
-        
-        Based on community discovery: https://gist.github.com/soulsoiledit/8c258233419a299f093b083eb4f427ca
-        Spotify image URLs contain quality codes that can be replaced to get higher resolution.
-        Quality code '82c1' = 1400x1400 JPEG, 'b273' = 640x640 JPEG (default).
-        
-        Args:
-            url: Original Spotify image URL (typically 640px from API)
-            
-        Returns:
-            Enhanced URL (1400px) if available and verified, original URL if not or if disabled
-        """
-        # Respect the enable_spotify_enhanced setting
-        if not self.enable_spotify_enhanced:
-            return url
-        
-        if not url or 'i.scdn.co' not in url:
-            return url
-        
-        try:
-            # Pattern matches: ab67616d + exactly 8 hex chars (0000 + 4-char quality code) + rest of hash
-            # URL format: ab67616d0000{quality_code}{image_hash}
-            # Example: https://i.scdn.co/image/ab67616d0000b273ff9ca10b55ce82ae553c8228
-            #          ab67616d = prefix, 0000 = padding, b273 = quality code (640px), ff9ca10b55ce82ae553c8228 = image hash
-            # Quality codes from Gist: b273/d452 (640px), 82c1 (1400px), f848/1e02 (300px), etc.
-            # Note: Wide covers use ab6742d30000 prefix (53b7 = 1280x720) but we only handle standard square covers
-            pattern = r'(ab67616d)([0-9a-f]{8})([0-9a-f]+)'
-            match = re.search(pattern, url)
-            
-            if match:
-                # Replace 8-char quality code (0000 + 4-char code) with 1400px version (000082c1)
-                # 000082c1 = 0000 (padding) + 82c1 (1400x1400 JPEG quality code)
-                enhanced_url = url.replace(match.group(2), '000082c1')
-                
-                # Quick verification with HEAD request (doesn't download image, fast)
-                # This ensures we don't break downloads if 1400px version doesn't exist
-                try:
-                    response = requests.head(enhanced_url, timeout=2, allow_redirects=True)
-                    if response.status_code == 200:
-                        logger.debug(f"Spotify image enhanced to 1400px: {url[:50]}...")
-                        return enhanced_url
-                    else:
-                        logger.debug(f"Spotify 1400px not available (status {response.status_code}), using 640px")
-                except Exception as e:
-                    logger.debug(f"Spotify enhancement check failed: {e}, using 640px")
-            
-            return url  # Fallback to original URL
-        except Exception as e:
-            logger.debug(f"Spotify URL enhancement error: {e}, using original")
-            return url
-
     def _get_spotify_art(self, spotify_url: Optional[str]) -> Optional[Tuple[str, int]]:
         """
         Get Spotify album art URL and resolution.
         Attempts to enhance from 640px to 1400px if available, falls back to 640px.
+        
+        Uses the consolidated enhance_spotify_image_url_sync function from spotify_api.py.
+        Respects the enable_spotify_enhanced setting - if disabled, returns original URL.
         
         Args:
             spotify_url: Spotify album art URL
@@ -709,8 +660,14 @@ class AlbumArtProvider:
         if not spotify_url:
             return None
         
+        # Respect the enable_spotify_enhanced setting
+        if not self.enable_spotify_enhanced:
+            # If enhancement is disabled, return original URL with 640px resolution
+            return (spotify_url, 640)
+        
         # Try to enhance to 1400px if available (falls back to 640px if not)
-        enhanced_url = self._enhance_spotify_image_url(spotify_url)
+        # Use sync version since this method is called from run_in_executor (thread context)
+        enhanced_url = enhance_spotify_image_url_sync(spotify_url)
         
         # Estimate resolution based on whether enhancement succeeded
         # If URL changed, assume 1400px; if unchanged, assume 640px
