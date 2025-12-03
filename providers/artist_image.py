@@ -1,11 +1,12 @@
 """
 Artist Image Provider
 Fetches high-quality artist images, logos, and backgrounds from:
-1. Deezer (Free, 1000x1000px, fast)
-2. TheAudioDB (Free key '123', rich metadata + MusicBrainz IDs)
-3. FanArt.tv (High quality, requires MBID from AudioDB + Personal API Key)
-4. Spotify (Fallback)
-5. Last.fm (Fallback)
+1. Wikipedia/Wikimedia (Free, 1500-5000px, ultra high-res, no auth required)
+2. Deezer (Free, 1000x1000px, fast)
+3. TheAudioDB (Free key '123', rich metadata + MusicBrainz IDs)
+4. FanArt.tv (High quality, requires MBID from AudioDB + Personal API Key)
+5. Spotify (Fallback)
+6. Last.fm (Fallback)
 """
 import asyncio
 import logging
@@ -13,6 +14,7 @@ import os
 import requests
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
+from config import ARTIST_IMAGE
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,12 @@ class ArtistImageProvider:
     def __init__(self):
         """Initialize the artist image provider with API keys and configuration"""
         self.session = requests.Session()
-        self.timeout = 5
+        
+        # Get timeout from config (default: 5 seconds)
+        try:
+            self.timeout = ARTIST_IMAGE.get("timeout", 5)
+        except (NameError, AttributeError):
+            self.timeout = 5
         
         # API Keys
         # FanArt.tv requires a personal API key (user will provide via env var)
@@ -36,6 +43,15 @@ class ArtistImageProvider:
         self.enable_deezer = True
         self.enable_audiodb = True
         self.enable_fanart = bool(self.fanart_api_key)
+        
+        # Get config options for new features
+        try:
+            self.enable_wikipedia = ARTIST_IMAGE.get("enable_wikipedia", True)
+            self.enable_fanart_albumcover = ARTIST_IMAGE.get("enable_fanart_albumcover", True)
+        except (NameError, AttributeError):
+            # Fallback if config not available
+            self.enable_wikipedia = True
+            self.enable_fanart_albumcover = True
         
         # Log initialization status
         api_key_status = "set" if self.fanart_api_key else "missing"
@@ -52,10 +68,16 @@ class ArtistImageProvider:
         else:
             masked_audiodb_key = f"{self.audiodb_api_key[:4]}...{self.audiodb_api_key[-4:]}" if len(self.audiodb_api_key) > 8 else "***"
         
-        if self.fanart_api_key:
-            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} [{masked_fanart_key}]), AudioDB: {self.enable_audiodb} (Key: {masked_audiodb_key}), Deezer: {self.enable_deezer}")
-        else:
-            logger.info(f"ArtistImageProvider initialized - FanArt: {self.enable_fanart} (Key: {api_key_status} - check .env file for FANART_TV_API_KEY), AudioDB: {self.enable_audiodb} (Key: {masked_audiodb_key}), Deezer: {self.enable_deezer}")
+        # Build log message with all features
+        features = []
+        features.append(f"FanArt: {self.enable_fanart} (Key: {api_key_status} [{masked_fanart_key if self.fanart_api_key else 'missing'}])")
+        features.append(f"AudioDB: {self.enable_audiodb} (Key: {masked_audiodb_key})")
+        features.append(f"Deezer: {self.enable_deezer}")
+        features.append(f"Wikipedia: {self.enable_wikipedia}")
+        if self.enable_fanart:
+            features.append(f"FanArt AlbumCover: {self.enable_fanart_albumcover}")
+        
+        logger.info(f"ArtistImageProvider initialized - {', '.join(features)}")
 
     async def get_artist_images(self, artist_name: str) -> List[Dict[str, Any]]:
         """
@@ -73,15 +95,19 @@ class ArtistImageProvider:
         loop = asyncio.get_running_loop()
         tasks = []
         
-        # 1. Deezer (Fast, high quality, free, no auth required)
+        # 1. Wikipedia/Wikimedia (Ultra high-res, 1500-5000px, free, no auth required)
+        if self.enable_wikipedia:
+            tasks.append(loop.run_in_executor(None, self._fetch_wikipedia, artist_name))
+        
+        # 2. Deezer (Fast, high quality, free, no auth required)
         if self.enable_deezer:
             tasks.append(loop.run_in_executor(None, self._fetch_deezer, artist_name))
             
-        # 2. TheAudioDB (Rich metadata + MBID for FanArt.tv)
+        # 3. TheAudioDB (Rich metadata + MBID for FanArt.tv)
         if self.enable_audiodb:
             tasks.append(loop.run_in_executor(None, self._fetch_theaudiodb, artist_name))
             
-        # Run both in parallel
+        # Run all in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         all_images = []
@@ -99,7 +125,7 @@ class ArtistImageProvider:
                 if 'mbid' in res and res['mbid']:
                     mbid = res['mbid']
             elif isinstance(res, list): 
-                # Deezer returns list
+                # Deezer and Wikipedia return lists
                 all_images.extend(res)
 
         # 3. FanArt.tv (Requires MBID from AudioDB)
@@ -320,8 +346,12 @@ class ArtistImageProvider:
             images = []
             
             # Artist Backgrounds (High-resolution backgrounds, typically 1920x1080+)
-            # Defensive: Only add images with valid URL fields
-            for bg in data.get('artistbackground', []):
+            # Sort by likes (community-curated quality) - highest liked images first
+            backgrounds = data.get('artistbackground', [])
+            # Sort by likes (descending), handle missing 'likes' key safely
+            backgrounds.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+            
+            for bg in backgrounds:
                 if isinstance(bg, dict) and bg.get('url'):
                     images.append({
                         'url': bg['url'],
@@ -332,7 +362,11 @@ class ArtistImageProvider:
                     })
                 
             # Artist Thumbnails (Main artist photos, typically 1000x1000+)
-            for thumb in data.get('artistthumb', []):
+            # Sort by likes for quality ranking
+            thumbs = data.get('artistthumb', [])
+            thumbs.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+            
+            for thumb in thumbs:
                 if isinstance(thumb, dict) and thumb.get('url'):
                     images.append({
                         'url': thumb['url'],
@@ -352,6 +386,25 @@ class ArtistImageProvider:
                         'width': 800,
                         'height': 310
                     })
+            
+            # Album Covers (High-quality album artwork, typically 1000x1000+)
+            # Only fetch if enabled (can be disabled if too many duplicates with album art DB)
+            if self.enable_fanart_albumcover:
+                # Sort by likes for quality ranking (get best album covers first)
+                album_covers = data.get('albumcover', [])
+                album_covers.sort(key=lambda x: int(x.get('likes', 0)) if x.get('likes') else 0, reverse=True)
+                
+                # Limit to top 5 highest-quality album covers to avoid flooding
+                # (Artist images should focus on artist photos, not entire discography)
+                for cover in album_covers[:5]:
+                    if isinstance(cover, dict) and cover.get('url'):
+                        images.append({
+                            'url': cover['url'],
+                            'source': 'FanArt.tv',
+                            'type': 'albumcover',
+                            'width': 1000,
+                            'height': 1000
+                        })
                 
             if images:
                 logger.debug(f"FanArt.tv: Found {len(images)} image(s) for MBID {mbid}")
@@ -362,5 +415,83 @@ class ArtistImageProvider:
             return images
         except Exception as e:
             logger.debug(f"FanArt.tv fetch failed for MBID {mbid}: {e}")
+            return []
+    
+    def _fetch_wikipedia(self, artist: str) -> List[Dict[str, Any]]:
+        """
+        Fetch high-resolution artist images from Wikipedia/Wikimedia Commons.
+        Often provides 1500-5000px images for popular artists.
+        Free, no API key required, but slower than other sources (2-3 API calls).
+        
+        Args:
+            artist: Artist name to search for
+            
+        Returns:
+            List of image dicts with Wikipedia/Wikimedia images
+        """
+        try:
+            # Step 1: Search Wikipedia for artist page
+            search_url = "https://en.wikipedia.org/w/api.php"
+            search_params = {
+                'action': 'query',
+                'format': 'json',
+                'list': 'search',
+                'srsearch': f"{artist} musician",  # Add "musician" to refine search and avoid false matches
+                'srlimit': 1,
+                'srnamespace': 0  # Only search in main namespace (articles, not talk pages)
+            }
+            
+            resp = self.session.get(search_url, params=search_params, timeout=self.timeout)
+            if resp.status_code != 200:
+                return []
+            
+            data = resp.json()
+            if not data.get('query', {}).get('search'):
+                return []
+            
+            # Get page title from search results
+            page_title = data['query']['search'][0]['title']
+            
+            # Step 2: Get page images (requesting high resolution)
+            images_url = "https://en.wikipedia.org/w/api.php"
+            images_params = {
+                'action': 'query',
+                'format': 'json',
+                'titles': page_title,
+                'prop': 'pageimages',
+                'pithumbsize': 4000,  # Request up to 4000px (Wikipedia's max for thumbnails)
+                'pilimit': 1  # Only get the main infobox image (usually the best artist photo)
+            }
+            
+            resp = self.session.get(images_url, params=images_params, timeout=self.timeout)
+            if resp.status_code != 200:
+                return []
+            
+            data = resp.json()
+            pages = data.get('query', {}).get('pages', {})
+            
+            images = []
+            for page_id, page_data in pages.items():
+                # Main infobox image (usually highest quality portrait photo)
+                if page_data.get('thumbnail'):
+                    thumb = page_data['thumbnail']
+                    # Filter out tiny images/icons (Wikipedia sometimes returns small icons)
+                    # Only include images that are at least 300px wide (likely to be actual photos)
+                    if thumb.get('width', 0) > 300:
+                        images.append({
+                            'url': thumb['source'],
+                            'source': 'Wikipedia',
+                            'type': 'photo',
+                            'width': thumb.get('width', 0),
+                            'height': thumb.get('height', 0)
+                        })
+            
+            if images:
+                logger.debug(f"Wikipedia: Found {len(images)} image(s) for {artist} (resolution: {images[0].get('width', 0)}x{images[0].get('height', 0)})")
+            
+            return images
+            
+        except Exception as e:
+            logger.debug(f"Wikipedia fetch failed for {artist}: {e}")
             return []
 

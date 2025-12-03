@@ -249,6 +249,14 @@ ALBUM_ART = {
     "min_resolution": conf("album_art.min_resolution", 3000)  # Prefer 3000x3000px for best quality
 }
 
+ARTIST_IMAGE = {
+    "timeout": conf("artist_image.timeout", 5),
+    # Enable Wikipedia/Wikimedia integration (provides 1500-5000px high-res images)
+    "enable_wikipedia": conf("artist_image.enable_wikipedia", True),
+    # Enable FanArt.tv album covers (fetches album artwork, can be disabled if too many duplicates)
+    "enable_fanart_albumcover": conf("artist_image.enable_fanart_albumcover", True)
+}
+
 # Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})
