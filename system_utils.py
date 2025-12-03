@@ -501,6 +501,7 @@ def save_image_original(image_data: bytes, output_path: Path, file_extension: st
     Save image data in its original format without conversion.
     Preserves the pristine quality of the source image.
     Uses atomic write pattern (temp file + os.replace) to prevent corruption.
+    Includes retry logic for Windows file locking issues (antivirus, thumbnail cache).
     
     Args:
         image_data: Raw image bytes from the provider
@@ -532,9 +533,32 @@ def save_image_original(image_data: bytes, output_path: Path, file_extension: st
             with open(temp_path, 'wb') as f:
                 f.write(image_data)
             
-            # Atomic replace - if this fails, original file is untouched
-            os.replace(temp_path, output_path)
-            return True
+            # CRITICAL FIX: Atomic replace with retry for Windows file locking
+            # Windows may temporarily lock files due to antivirus scanning, thumbnail cache, or delayed handle release
+            # No lock needed here - each image has a unique filename, so no thread contention
+            # Retry logic matches save_album_db_metadata() for consistency
+            for attempt in range(3):
+                try:
+                    # Remove existing file if it exists (Windows requires this before replace)
+                    if output_path.exists():
+                        os.remove(output_path)
+                    os.replace(temp_path, output_path)
+                    return True
+                except OSError as e:
+                    if attempt < 2:
+                        # Wait briefly before retry (0.1s, 0.2s)
+                        time.sleep(0.1 * (attempt + 1))
+                        logger.debug(f"Retry {attempt + 1}/3 for {output_path.name}: {e}")
+                    else:
+                        # Final attempt failed - log error and clean up
+                        logger.error(f"Failed to atomically replace {output_path.name} after 3 attempts: {e}")
+                        # Clean up temp file
+                        if temp_path.exists():
+                            try:
+                                os.remove(temp_path)
+                            except:
+                                pass
+                        raise
         except Exception as write_err:
             # Clean up temp file if it exists
             if temp_path.exists():
