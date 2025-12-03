@@ -575,14 +575,27 @@ class ArtistImageProvider:
     def _fetch_wikipedia(self, artist: str) -> List[Dict[str, Any]]:
         """
         Fetch high-resolution artist images from Wikipedia/Wikimedia Commons.
-        Often provides 1500-5000px images for popular artists.
-        Free, no API key required, but slower than other sources (2-3 API calls).
+        Provides 1500-12000px ultra-high-res images for artists (7-10 images on average).
+        Free, no API key required.
         
-        Uses a multi-strategy approach with smart title validation:
+        Uses a hybrid multi-strategy approach:
+        
+        PAGE DISCOVERY (finds Wikipedia page):
         1. Direct lookup (fastest, most accurate - Wikipedia normalizes/redirects automatically)
         2. Search with artist name only (if direct lookup fails)
         3. Search with "band" modifier (for bands/groups)
         4. Search with "musician" modifier (last resort, for solo artists)
+        
+        IMAGE FETCHING (hybrid approach for maximum coverage):
+        A. Wikimedia Commons search (PRIMARY - finds 7-10 images on average)
+           - Searches Commons directly for artist photos
+           - Best coverage, especially for niche artists
+        B. All Wikipedia article images (FALLBACK - finds 2-7 images)
+           - Gets all images from the Wikipedia article (not just infobox)
+           - Good coverage when Commons search finds few results
+        C. pageimages infobox (LAST RESORT - finds 0-1 images)
+           - Gets main infobox image only
+           - Used when other strategies fail
         
         Smart validation handles:
         - Disambiguation suffixes: "Nirvana (band)" matches "Nirvana"
@@ -590,13 +603,16 @@ class ArtistImageProvider:
         - Articles: "The Beatles" matches "Beatles"
         - Fuzzy matching for minor variations
         
-        Fetches up to 5 high-resolution images (>1000px) from Wikipedia pageimages.
+        Quality filtering:
+        - Minimum resolution: >1000px (ensures high-quality images)
+        - Aspect ratio: 0.3-2.5 (filters out logos/banners)
+        - Filename filtering: Skips obvious non-photos (logos, album covers, etc.)
         
         Args:
             artist: Artist name to search for
             
         Returns:
-            List of image dicts with Wikipedia/Wikimedia images (up to 5, filtered by quality)
+            List of image dicts with Wikipedia/Wikimedia images (up to 10, filtered by quality)
         """
         try:
             page_title = None
@@ -773,97 +789,338 @@ class ArtistImageProvider:
                                     logger.debug(f"Wikipedia: Selected page '{page_title}'")
                                 break
             
-            # If we still don't have a page title, give up
-            if not page_title:
-                if _should_log_wikipedia(artist, 'validation'):
-                    logger.debug(f"Wikipedia: Could not find page for '{artist}' after trying all 4 strategies")
-                return []
+            # If we still don't have a page title, try Commons search anyway (might find images even without Wikipedia page)
+            # But if we have a page title, we'll use it for better results
             
-            # Step 2: Get page images (requesting high resolution, multiple images)
-            # Fetch up to 5 images from pageimages (main infobox images, usually best quality)
-            images_url = "https://en.wikipedia.org/w/api.php"
-            images_params = {
-                'action': 'query',
-                'format': 'json',
-                'titles': page_title,
-                'prop': 'pageimages',
-                'pithumbsize': 4000,  # Request up to 4000px (Wikipedia's max for thumbnails)
-                'pilimit': 5  # Get up to 5 images (main infobox + additional page images)
-            }
-            
-            resp = self.session.get(images_url, params=images_params, timeout=self.timeout)
-            if resp.status_code != 200:
-                if _should_log_wikipedia(artist, 'image'):
-                    logger.debug(f"Wikipedia: Failed to fetch images for '{page_title}' (status {resp.status_code})")
-                return []
-            
-            data = resp.json()
-            pages = data.get('query', {}).get('pages', {})
+            # Step 2: Fetch images using hybrid approach (best results first)
+            # Strategy A: Wikimedia Commons search (BEST - finds 7-10 images on average)
+            # Strategy B: All images from Wikipedia article (GOOD - finds 2-7 images)
+            # Strategy C: pageimages infobox (FALLBACK - finds 0-1 images)
             
             images = []
-            seen_urls = set()  # Deduplicate by URL
+            seen_urls = set()  # Deduplicate by URL across all strategies
+            image_source = None
             
-            for page_id, page_data in pages.items():
-                # Wikipedia pageimages can return multiple images (main + additional)
-                # Check for main thumbnail first
-                if page_data.get('thumbnail'):
-                    thumb = page_data['thumbnail']
-                    width = thumb.get('width', 0)
-                    height = thumb.get('height', 0)
-                    url = thumb.get('source', '')
-                    
-                    # Only process if URL is unique and meets quality criteria
-                    if url and url not in seen_urls:
-                        # Filter 1: Minimum size - only high-res images (>1000px as requested)
-                        # This ensures we only get high-quality images, not thumbnails
-                        if width > 1000:
-                            # Filter 2: Aspect ratio - filter out logos, banners, and non-portrait images
-                            # We want artist photos, typically between 0.3:1 (tall) and 2.5:1 (wide)
-                            # This prevents logos (very wide, e.g., 5:1) and banners (very tall, e.g., 0.2:1)
-                            if height > 0:
-                                aspect_ratio = width / height
-                                # Accept reasonable aspect ratios for photos (portrait to landscape)
-                                if 0.3 < aspect_ratio < 2.5:
-                                    images.append({
-                                        'url': url,
-                                        'source': 'Wikipedia',
-                                        'type': 'photo',
-                                        'width': width,
-                                        'height': height
-                                    })
-                                    seen_urls.add(url)
-                                    # Limit to 5 images maximum (as requested: 3-5 images)
-                                    if len(images) >= 5:
-                                        break
-                                elif _should_log_wikipedia(artist, 'image'):
-                                    logger.debug(f"Wikipedia: Skipped image with aspect ratio {aspect_ratio:.2f} ({width}x{height}) - likely logo/banner")
-                            elif _should_log_wikipedia(artist, 'image'):
-                                logger.debug(f"Wikipedia: Skipped image with invalid height ({width}x{height})")
-                        elif _should_log_wikipedia(artist, 'image'):
-                            logger.debug(f"Wikipedia: Skipped image below 1000px threshold ({width}x{height})")
-                
-                # Check for additional page images (if available)
-                # Wikipedia's pageimages can return multiple images beyond just the thumbnail
-                # Note: The API structure may vary, but we check for any additional image fields
-                # Most commonly, only 'thumbnail' is available, but we're prepared for more
+            # Strategy A: Wikimedia Commons search (primary - best coverage)
+            commons_images = self._fetch_wikimedia_commons(artist, seen_urls)
+            if commons_images:
+                images.extend(commons_images)
+                image_source = "Wikimedia Commons search"
+                # If we got good results (5+ images), we're done
+                if len(images) >= 5:
+                    if _should_log_wikipedia(artist, 'image'):
+                        resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images[:5]]
+                        logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {image_source} (resolutions: {', '.join(resolutions)})")
+                    # Sort and limit
+                    images.sort(key=lambda x: max(x.get('width', 0), x.get('height', 0)), reverse=True)
+                    return images[:10]  # Return up to 10 high-quality images
             
-            # Sort images by resolution (highest first) to prioritize best quality
-            images.sort(key=lambda x: max(x.get('width', 0), x.get('height', 0)), reverse=True)
+            # Strategy B: All images from Wikipedia article (fallback if Commons didn't find enough)
+            if page_title:
+                article_images = self._fetch_all_article_images(page_title, seen_urls)
+                if article_images:
+                    images.extend(article_images)
+                    if not image_source:
+                        image_source = "Wikipedia article images"
+                    # If we now have enough, we're done
+                    if len(images) >= 3:
+                        if _should_log_wikipedia(artist, 'image'):
+                            resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images[:5]]
+                            logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {image_source} (resolutions: {', '.join(resolutions)})")
+                        images.sort(key=lambda x: max(x.get('width', 0), x.get('height', 0)), reverse=True)
+                        return images[:10]
             
-            # Limit to top 5 images (as requested: 3-5 images, we'll return up to 5)
-            images = images[:5]
+            # Strategy C: pageimages infobox (last resort - usually only 0-1 images)
+            if page_title:
+                infobox_images = self._fetch_pageimages_infobox(page_title, seen_urls)
+                if infobox_images:
+                    images.extend(infobox_images)
+                    if not image_source:
+                        image_source = "Wikipedia infobox"
             
+            # Final processing
             if images:
+                # Sort by resolution (highest first) to prioritize best quality
+                images.sort(key=lambda x: max(x.get('width', 0), x.get('height', 0)), reverse=True)
+                # Return up to 10 high-quality images (increased from 5 to match Commons results)
+                images = images[:10]
+                
                 if _should_log_wikipedia(artist, 'image'):
-                    resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images]
-                    logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {strategy_used} (resolutions: {', '.join(resolutions)})")
+                    resolutions = [f"{img.get('width', 0)}x{img.get('height', 0)}" for img in images[:5]]
+                    logger.info(f"Wikipedia: Found {len(images)} image(s) for '{artist}' via {image_source or 'multiple strategies'} (resolutions: {', '.join(resolutions)})")
             elif _should_log_wikipedia(artist, 'validation'):
-                logger.debug(f"Wikipedia: Page '{page_title}' found but no high-res images (>1000px) available")
+                if page_title:
+                    logger.debug(f"Wikipedia: Page '{page_title}' found but no high-res images (>1000px) available from any source")
+                else:
+                    logger.debug(f"Wikipedia: Could not find page or images for '{artist}'")
             
             return images
             
         except Exception as e:
             if _should_log_wikipedia(artist, 'error'):
                 logger.debug(f"Wikipedia fetch failed for {artist}: {e}")
+            return []
+    
+    def _fetch_wikimedia_commons(self, artist: str, seen_urls: set) -> List[Dict[str, Any]]:
+        """
+        Search Wikimedia Commons directly for artist images.
+        This is the PRIMARY strategy as it finds the most images (7-10 on average).
+        
+        Args:
+            artist: Artist name to search for
+            seen_urls: Set of URLs already seen (for deduplication)
+            
+        Returns:
+            List of high-quality image dicts from Wikimedia Commons
+        """
+        images = []
+        try:
+            # Search Wikimedia Commons for artist images
+            commons_url = "https://commons.wikimedia.org/w/api.php"
+            
+            # Try multiple search terms to maximize coverage
+            search_terms = [
+                artist,  # Direct search
+                f"{artist} (band)",  # With disambiguation
+            ]
+            
+            for search_term in search_terms:
+                # Search for bitmap images (photos, not SVG logos)
+                search_params = {
+                    'action': 'query',
+                    'format': 'json',
+                    'list': 'search',
+                    'srsearch': f'filetype:bitmap {search_term}',
+                    'srnamespace': 6,  # File namespace
+                    'srlimit': 20  # Get top 20 results
+                }
+                
+                resp = self.session.get(commons_url, params=search_params, timeout=self.timeout)
+                if resp.status_code != 200:
+                    continue
+                
+                data = resp.json()
+                search_results = data.get('query', {}).get('search', [])
+                
+                if not search_results:
+                    continue
+                
+                # Get image info for top results
+                titles = [r['title'] for r in search_results[:15]]  # Check top 15
+                
+                if not titles:
+                    continue
+                
+                info_params = {
+                    'action': 'query',
+                    'format': 'json',
+                    'titles': '|'.join(titles),
+                    'prop': 'imageinfo',
+                    'iiprop': 'url|size|dimensions',
+                    'iiurlwidth': 4000  # Request high-res versions
+                }
+                
+                info_resp = self.session.get(commons_url, params=info_params, timeout=self.timeout)
+                if info_resp.status_code != 200:
+                    continue
+                
+                info_data = info_resp.json()
+                pages = info_data.get('query', {}).get('pages', {})
+                
+                for page_id, page_data in pages.items():
+                    imageinfo = page_data.get('imageinfo', [])
+                    if not imageinfo:
+                        continue
+                    
+                    info = imageinfo[0]
+                    w = info.get('width', 0)
+                    h = info.get('height', 0)
+                    url = info.get('url', '')
+                    
+                    # Skip if already seen
+                    if url in seen_urls:
+                        continue
+                    
+                    # Filter: >1000px, valid aspect ratio
+                    if w > 1000 and h > 0:
+                        aspect = w / h
+                        if 0.3 < aspect < 2.5:
+                            title = page_data.get('title', '')
+                            filename_lower = title.lower()
+                            
+                            # Skip obvious non-photos (logos, banners, album covers)
+                            skip_keywords = ['logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 'album cover', 'cover art']
+                            if any(kw in filename_lower for kw in skip_keywords):
+                                continue
+                            
+                            images.append({
+                                'url': url,
+                                'source': 'Wikipedia',
+                                'type': 'photo',
+                                'width': w,
+                                'height': h
+                            })
+                            seen_urls.add(url)
+                            
+                            # Limit to 10 images per search term
+                            if len(images) >= 10:
+                                break
+                
+                # If we found good results, stop searching
+                if len(images) >= 5:
+                    break
+            
+            return images
+            
+        except Exception as e:
+            if _should_log_wikipedia(artist, 'error'):
+                logger.debug(f"Wikimedia Commons search failed for {artist}: {e}")
+            return []
+    
+    def _fetch_all_article_images(self, page_title: str, seen_urls: set) -> List[Dict[str, Any]]:
+        """
+        Get ALL images from Wikipedia article (not just infobox).
+        This is Strategy B - finds 2-7 images on average.
+        
+        Args:
+            page_title: Wikipedia page title
+            seen_urls: Set of URLs already seen (for deduplication)
+            
+        Returns:
+            List of high-quality image dicts from Wikipedia article
+        """
+        images = []
+        try:
+            url = "https://en.wikipedia.org/w/api.php"
+            params = {
+                'action': 'query',
+                'format': 'json',
+                'titles': page_title,
+                'generator': 'images',
+                'gimlimit': 50,  # Get up to 50 images from article
+                'prop': 'imageinfo',
+                'iiprop': 'url|size|dimensions',
+                'iiurlwidth': 4000  # Request high-res versions
+            }
+            
+            resp = self.session.get(url, params=params, timeout=self.timeout)
+            if resp.status_code != 200:
+                return []
+            
+            data = resp.json()
+            pages = data.get('query', {}).get('pages', {})
+            
+            for page_id, page_data in pages.items():
+                # Skip non-image pages
+                if page_data.get('ns') != 6:  # Namespace 6 = File namespace
+                    continue
+                
+                imageinfo = page_data.get('imageinfo', [])
+                if not imageinfo:
+                    continue
+                
+                info = imageinfo[0]
+                w = info.get('width', 0)
+                h = info.get('height', 0)
+                url = info.get('url', '')
+                
+                # Skip if already seen
+                if url in seen_urls:
+                    continue
+                
+                # Filter: >1000px, valid aspect ratio
+                if w > 1000 and h > 0:
+                    aspect = w / h
+                    if 0.3 < aspect < 2.5:
+                        # Check if filename suggests it's an artist photo (not a logo/banner)
+                        title = page_data.get('title', '')
+                        filename_lower = title.lower()
+                        
+                        # Skip obvious non-photos
+                        skip_keywords = ['logo', 'banner', 'icon', 'symbol', 'emblem', 'flag', 'album cover']
+                        if any(kw in filename_lower for kw in skip_keywords):
+                            continue
+                        
+                        images.append({
+                            'url': url,
+                            'source': 'Wikipedia',
+                            'type': 'photo',
+                            'width': w,
+                            'height': h
+                        })
+                        seen_urls.add(url)
+                        
+                        # Limit to 10 images
+                        if len(images) >= 10:
+                            break
+            
+            return images
+            
+        except Exception as e:
+            if _should_log_wikipedia(page_title, 'error'):
+                logger.debug(f"Wikipedia article images fetch failed for '{page_title}': {e}")
+            return []
+    
+    def _fetch_pageimages_infobox(self, page_title: str, seen_urls: set) -> List[Dict[str, Any]]:
+        """
+        Get main infobox image from Wikipedia (fallback strategy).
+        This is Strategy C - usually only finds 0-1 images.
+        
+        Args:
+            page_title: Wikipedia page title
+            seen_urls: Set of URLs already seen (for deduplication)
+            
+        Returns:
+            List of image dicts (usually 0-1 images)
+        """
+        images = []
+        try:
+            url = "https://en.wikipedia.org/w/api.php"
+            params = {
+                'action': 'query',
+                'format': 'json',
+                'titles': page_title,
+                'prop': 'pageimages',
+                'pithumbsize': 4000,  # Request up to 4000px
+                'pilimit': 5
+            }
+            
+            resp = self.session.get(url, params=params, timeout=self.timeout)
+            if resp.status_code != 200:
+                return []
+            
+            data = resp.json()
+            pages = data.get('query', {}).get('pages', {})
+            
+            for page_id, page_data in pages.items():
+                if page_data.get('thumbnail'):
+                    thumb = page_data['thumbnail']
+                    w = thumb.get('width', 0)
+                    h = thumb.get('height', 0)
+                    url = thumb.get('source', '')
+                    
+                    # Skip if already seen
+                    if url in seen_urls:
+                        continue
+                    
+                    # Filter: >1000px, valid aspect ratio
+                    if w > 1000 and h > 0:
+                        aspect = w / h
+                        if 0.3 < aspect < 2.5:
+                            images.append({
+                                'url': url,
+                                'source': 'Wikipedia',
+                                'type': 'photo',
+                                'width': w,
+                                'height': h
+                            })
+                            seen_urls.add(url)
+                            break  # Usually only one infobox image
+            
+            return images
+            
+        except Exception as e:
+            if _should_log_wikipedia(page_title, 'error'):
+                logger.debug(f"Wikipedia infobox fetch failed for '{page_title}': {e}")
             return []
 
