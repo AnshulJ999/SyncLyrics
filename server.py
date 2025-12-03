@@ -35,6 +35,10 @@ _slideshow_cache = {
 }
 _SLIDESHOW_CACHE_TTL = 3600  # 1 hour
 
+# Global throttle for cover art logs (prevents spam when frontend makes multiple requests)
+# Key: file path (str), Value: last log timestamp
+_cover_art_log_throttle = {}
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -993,7 +997,14 @@ async def get_cover_art():
             try:
                 # DEBUG: Log size to verify quality
                 file_size = art_path.stat().st_size
-                logger.info(f"Serving cover art: {art_path.name} ({file_size} bytes)")
+                
+                # Throttle logging: only log once every 60 seconds per file
+                # This prevents spam when frontend makes multiple simultaneous requests (main display, background, thumbnails, etc.)
+                current_time = time.time()
+                last_log_time = _cover_art_log_throttle.get(str(art_path), 0)
+                if current_time - last_log_time > 60:
+                    logger.info(f"Serving cover art: {art_path.name} ({file_size} bytes)")
+                    _cover_art_log_throttle[str(art_path)] = current_time
                 
                 # Determine mimetype based on extension (preserves original format)
                 ext = art_path.suffix.lower()

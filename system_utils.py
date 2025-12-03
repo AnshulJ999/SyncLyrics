@@ -77,6 +77,11 @@ _artist_download_tracker = set()
 _artist_image_log_throttle = {}
 _ARTIST_IMAGE_LOG_THROTTLE_SECONDS = 60  # Log at most once per minute per artist
 
+# Cache for ensure_artist_image_db results to prevent spamming checks
+# Key: artist, Value: (timestamp, result_list)
+# This prevents the function from running expensive logic when called repeatedly for the same artist
+_artist_db_check_cache = {}
+
 # Global instance for ArtistImageProvider (singleton pattern)
 _artist_image_provider: Optional[ArtistImageProvider] = None
 
@@ -2905,7 +2910,17 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # return [] 
 
     # Declare global variables for throttle tracking
-    global _artist_image_log_throttle
+    global _artist_image_log_throttle, _artist_db_check_cache
+
+    # Check cache first (debouncing)
+    # If we checked this artist recently (within 60 seconds), return cached result
+    # This prevents spamming the logic/logs when frontend polls frequently
+    current_time = time.time()
+    cached_data = _artist_db_check_cache.get(artist)
+    if cached_data:
+        timestamp, cached_result = cached_data
+        if current_time - timestamp < 60:
+            return cached_result
 
     # CRITICAL FIX: Use composite key (artist + spotify_id) to prevent race conditions
     # This ensures that if track changes, we don't save images from previous artist
@@ -2935,11 +2950,33 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 
                 metadata_path = folder / "metadata.json"
                 existing_metadata = {}
+                
+                # Check if artist images already exist in DB (optimization)
+                # If images exist, return immediately (no need to re-fetch)
                 if metadata_path.exists():
                     try:
                         with open(metadata_path, 'r', encoding='utf-8') as f:
                             existing_metadata = json.load(f)
-                    except: pass
+                        
+                        existing_images = existing_metadata.get("images", [])
+                        
+                        # If images exist, return immediately (no need to re-fetch)
+                        if len(existing_images) > 0:
+                            from urllib.parse import quote
+                            encoded_folder = quote(folder.name, safe='')
+                            result_paths = [
+                                f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
+                                for img in existing_images 
+                                if img.get('downloaded') and img.get('filename')
+                            ]
+                            
+                            # Update cache
+                            _artist_db_check_cache[artist] = (time.time(), result_paths)
+                            return result_paths
+                            
+                    except Exception as e:
+                        logger.debug(f"Failed to load cached artist images: {e}")
+                        # Continue to fetch if cache read fails
 
                 # Initialize our new dedicated artist image provider (singleton pattern)
                 # Use global instance to prevent re-initialization on every call
@@ -3054,9 +3091,15 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             name_changed = current_artist != original_artist
                             id_changed = current_artist_id != original_spotify_id
                             
-                            # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                            # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT NON-NULL ID
                             # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
-                            id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                            # FIX: Ignore if current_artist_id became None (lost connection) but name is still same
+                            # This prevents false positives when switching from Spotify (has ID) to Windows Media (no ID)
+                            id_mismatch_is_critical = (
+                                original_spotify_id is not None and 
+                                current_artist_id is not None and 
+                                current_artist_id != original_spotify_id
+                            )
                             
                             if name_changed or id_mismatch_is_critical:
                                 logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) during fetch, discarding images")
@@ -3127,9 +3170,15 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     name_changed = current_artist != original_artist
                                     id_changed = current_artist_id != original_spotify_id
                                     
-                                    # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                                    # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT NON-NULL ID
                                     # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
-                                    id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                                    # FIX: Ignore if current_artist_id became None (lost connection) but name is still same
+                                    # This prevents false positives when switching from Spotify (has ID) to Windows Media (no ID)
+                                    id_mismatch_is_critical = (
+                                        original_spotify_id is not None and 
+                                        current_artist_id is not None and 
+                                        current_artist_id != original_spotify_id
+                                    )
                                     
                                     if name_changed or id_mismatch_is_critical:
                                         logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) during download, discarding image")
@@ -3234,9 +3283,15 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         name_changed = current_artist != original_artist
                         id_changed = current_artist_id != original_spotify_id
                         
-                        # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT ID
+                        # Only consider ID change a failure if we HAD an ID originally and it changed to a DIFFERENT NON-NULL ID
                         # If original_spotify_id was None and now it's set, but artist name is same, that's fine.
-                        id_mismatch_is_critical = (original_spotify_id is not None and id_changed)
+                        # FIX: Ignore if current_artist_id became None (lost connection) but name is still same
+                        # This prevents false positives when switching from Spotify (has ID) to Windows Media (no ID)
+                        id_mismatch_is_critical = (
+                            original_spotify_id is not None and 
+                            current_artist_id is not None and 
+                            current_artist_id != original_spotify_id
+                        )
                         
                         if name_changed or id_mismatch_is_critical:
                             logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) before metadata save, discarding")
@@ -3274,18 +3329,24 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     
                     await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
                 else:
-                    logger.debug(f"Skipping metadata save for {artist} - no changes detected")
+                    # Commented out to reduce log spam - this is internal optimization feedback, not actionable debugging info
+                    # logger.debug(f"Skipping metadata save for {artist} - no changes detected")
+                    pass
                 
                 # Return list of LOCAL paths for the frontend
                 # We return paths relative to the DB root for the API to serve
                 # URL encode folder name and filename to handle special characters safely
                 from urllib.parse import quote
                 encoded_folder = quote(folder.name, safe='')
-                return [
+                result_paths = [
                     f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
                     for img in saved_images 
                     if img.get('downloaded') and img.get('filename')
                 ]
+                
+                # Update cache
+                _artist_db_check_cache[artist] = (time.time(), result_paths)
+                return result_paths
 
             except Exception as e:
                 logger.error(f"Error ensuring artist image DB: {e}")
