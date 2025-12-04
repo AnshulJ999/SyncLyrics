@@ -177,6 +177,11 @@ class SettingsManager:
             "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, True, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
             "album_art.min_resolution": Setting("Min Resolution", int, 3000, False, "Album Art", "Preferred resolution (px)", "number", min_val=640, max_val=3000),
             
+            # Artist Image
+            "artist_image.timeout": Setting("Timeout", int, 5, False, "Artist Image", "Request timeout (s)", "number"),
+            "artist_image.enable_wikipedia": Setting("Wikipedia", bool, False, False, "Artist Image", "Enable Wikipedia/Wikimedia", "switch"),
+            "artist_image.enable_fanart_albumcover": Setting("FanArt Album Covers", bool, True, False, "Artist Image", "Fetch FanArt.tv album covers", "switch"),
+
             # Visual Mode
             "visual_mode.enabled": Setting("Visual Mode", bool, True, False, "Visual Mode", "Enable visual mode for instrumentals", "switch"),
             "visual_mode.delay_seconds": Setting("Delay", int, 6, False, "Visual Mode", "Delay before hiding lyrics (s)", "slider", min_val=1, max_val=60),

@@ -252,7 +252,7 @@ ALBUM_ART = {
 ARTIST_IMAGE = {
     "timeout": conf("artist_image.timeout", 5),
     # Enable Wikipedia/Wikimedia integration (provides 1500-5000px high-res images)
-    "enable_wikipedia": conf("artist_image.enable_wikipedia", True),
+    "enable_wikipedia": conf("artist_image.enable_wikipedia", False),
     # Enable FanArt.tv album covers (fetches album artwork, can be disabled if too many duplicates)
     "enable_fanart_albumcover": conf("artist_image.enable_fanart_albumcover", True)
 }
