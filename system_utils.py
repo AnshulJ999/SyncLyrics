@@ -739,6 +739,8 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     This performs blocking I/O operations (network request and file save).
     Preserves the original image format without conversion.
     
+    Includes retry logic with exponential backoff for transient failures (403, network errors).
+    
     Args:
         url: URL to download image from
         path: Path where to save the image file (extension will be determined automatically)
@@ -748,23 +750,64 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         - success: True if download and save succeeded, False otherwise
         - extension: File extension used (e.g., '.jpg', '.png')
     """
-    try:
-        response = requests.get(url, timeout=10, stream=True)
-        response.raise_for_status()
-        
-        # Get Content-Type from response headers
-        content_type = response.headers.get('Content-Type', '')
-        
-        # Determine file extension from URL or Content-Type
-        file_extension = determine_image_extension(url, content_type)
-        
-        # Save original image bytes (no conversion = pristine quality)
-        success = save_image_original(response.content, path, file_extension)
-        
-        return (success, file_extension)
-    except Exception as e:
-        logger.warning(f"Download failed for {url}: {e}")
-        return (False, '.jpg')  # Return default extension on failure
+    # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
+    # Use same User-Agent as ArtistImageProvider for consistency
+    # Referer header prevents hotlinking protection and reduces 403 errors
+    headers = {
+        'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)',
+        'Referer': 'https://en.wikipedia.org/'  # Required by Wikimedia Commons to prevent hotlinking
+    }
+    
+    # Retry logic with very small exponential backoff (0.1s, 0.2s, 0.4s)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=10, stream=True, headers=headers)
+            response.raise_for_status()
+            
+            # Get Content-Type from response headers
+            content_type = response.headers.get('Content-Type', '')
+            
+            # Determine file extension from URL or Content-Type
+            file_extension = determine_image_extension(url, content_type)
+            
+            # Save original image bytes (no conversion = pristine quality)
+            success = save_image_original(response.content, path, file_extension)
+            
+            if success:
+                return (True, file_extension)
+            else:
+                # Save failed, but request succeeded - don't retry
+                if attempt == max_retries - 1:
+                    logger.warning(f"Download succeeded but save failed for {url}")
+                return (False, '.jpg')
+                
+        except requests.exceptions.HTTPError as e:
+            # Retry on 403/429 (rate limiting) or 5xx (server errors)
+            if e.response.status_code in (403, 429, 500, 502, 503, 504):
+                if attempt < max_retries - 1:
+                    # Very small exponential backoff: 0.1s, 0.2s, 0.4s
+                    delay = 0.1 * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+            # Don't retry on 404 or other client errors
+            if attempt == max_retries - 1:
+                logger.warning(f"Download failed for {url}: {e}")
+            return (False, '.jpg')
+            
+        except (requests.exceptions.RequestException, Exception) as e:
+            # Retry on network errors (timeout, connection errors, etc.)
+            if attempt < max_retries - 1:
+                # Very small exponential backoff: 0.1s, 0.2s, 0.4s
+                delay = 0.1 * (2 ** attempt)
+                time.sleep(delay)
+                continue
+            # Final attempt failed
+            logger.warning(f"Download failed for {url}: {e}")
+            return (False, '.jpg')
+    
+    # Should never reach here, but return failure just in case
+    return (False, '.jpg')
 
 async def ensure_album_art_db(
     artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
@@ -2044,8 +2087,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                         artist_images_complete = False
                 
                 # Trigger background task ONLY if artist images are incomplete (and not already running)
-                # Use composite key with 'no_id' since Windows Media doesn't have artist_id
-                artist_request_key = f"{artist}::no_id"
+                # Use artist name only as key (consistent with ensure_artist_image_db)
+                artist_request_key = artist
                 
                 if not artist_images_complete and artist_request_key not in _artist_download_tracker:
                     # Start background task to fetch from ALL missing sources
@@ -2389,8 +2432,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         artist_images_complete = False
                 
                 # Trigger background task ONLY if artist images are incomplete (and not already running)
-                # Use composite key to prevent duplicate downloads for same artist+ID
-                artist_request_key = f"{captured_artist}::{captured_artist_id or 'no_id'}"
+                # Use artist name only as key (consistent with ensure_artist_image_db)
+                artist_request_key = captured_artist
                 
                 if not artist_images_complete and artist_request_key not in _artist_download_tracker:
                     # Start background task to fetch from ALL missing sources
@@ -3098,18 +3141,25 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
             if v[0] > cutoff_time  # v is (timestamp, result_list) tuple
         }
 
-    # CRITICAL FIX: Use composite key (artist + spotify_id) to prevent race conditions
-    # This ensures that if track changes, we don't save images from previous artist
-    request_key = f"{artist}::{spotify_artist_id or 'no_id'}"
+    # CRITICAL FIX: Use artist name only as key (more stable than composite key)
+    # Using spotify_id in key causes race conditions when spotify_id changes or is initially None
+    # Artist name is stable and prevents duplicate downloads for the same artist
+    request_key = artist
     
-    # Prevent duplicate downloads for the same artist+ID combination
+    # Prevent duplicate downloads for the same artist
     if request_key in _artist_download_tracker:
         return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
+    # CRITICAL FIX: Instead of clearing all entries (which causes race conditions),
+    # remove only the oldest entries to make room for new ones
+    # This prevents concurrent downloads from being allowed when tracker is cleared
     if len(_artist_download_tracker) > 50:
-        logger.warning("Artist download tracker full, clearing to prevent leaks")
-        _artist_download_tracker.clear()
+        logger.warning("Artist download tracker full, removing oldest entries to prevent leaks")
+        # Remove oldest 10 entries (FIFO-like behavior)
+        # Convert to list, remove first 10, then rebuild set
+        entries_list = list(_artist_download_tracker)
+        _artist_download_tracker = set(entries_list[10:])
 
     _artist_download_tracker.add(request_key)
     
@@ -3525,10 +3575,9 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 return []
     finally:
         # Always remove from tracker, even if error occurred
-        # Use composite key for removal (use original values stored at start)
+        # Use artist name only (same as when we added it)
         try:
-            request_key = f"{original_artist}::{original_spotify_id or 'no_id'}"
-            _artist_download_tracker.discard(request_key)
+            _artist_download_tracker.discard(original_artist)
         except:
             # Fallback if original_artist not defined (shouldn't happen, but defensive)
             _artist_download_tracker.discard(artist)
