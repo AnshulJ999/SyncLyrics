@@ -959,7 +959,12 @@ function updateControlState(trackInfo) {
     const nextBtn = document.getElementById('btn-next');
 
     // Enable controls for Spotify or Spotify Hybrid (Windows Media enriched with Spotify)
-    const canControl = trackInfo.source === 'spotify' || trackInfo.source === 'spotify_hybrid';
+    // OPTIMISTIC ENABLING: Also enable for Windows Media if app_id contains "spotify"
+    // This prevents controls from being greyed out during the 1-3 second enrichment delay
+    const canControl = 
+        trackInfo.source === 'spotify' || 
+        trackInfo.source === 'spotify_hybrid' ||
+        (trackInfo.source === 'windows_media' && trackInfo.app_id && trackInfo.app_id.toLowerCase().includes('spotify'));
 
     if (prevBtn) prevBtn.disabled = !canControl;
     if (nextBtn) nextBtn.disabled = !canControl;

@@ -2303,6 +2303,14 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                  except asyncio.TimeoutError:
                      pass # Fallback to Windows thumbnail
 
+        # Re-fetch app_id safely for frontend control logic (optimistic enabling)
+        # This allows frontend to enable controls immediately for Spotify app before enrichment completes
+        app_id = None
+        try:
+            app_id = current_session.source_app_user_model_id.lower()
+        except:
+            pass  # If unavailable, app_id remains None (frontend will wait for enrichment)
+
         # CRITICAL FIX: Separate album_art_url (top left display) from background_image_url (background)
         result = {
             "track_id": current_track_id,  # ADDED: Normalized ID for frontend change detection
@@ -2316,6 +2324,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
             "is_playing": True,
             "source": "windows_media",
+            "app_id": app_id,  # ADDED: Pass app_id for optimistic control enabling (enables controls for spotify.exe before enrichment)
             "background_style": saved_background_style  # Return saved style preference
         }
         
