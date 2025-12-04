@@ -48,9 +48,12 @@ def conf(key, default=None):
 # ==========================================
 
 RESOURCES_DIR = ROOT_DIR / "resources"
-DATABASE_DIR = ROOT_DIR / "lyrics_database"
-CACHE_DIR = ROOT_DIR / "cache"
-ALBUM_ART_DB_DIR = ROOT_DIR / "album_art_database"
+
+# Data directories - can be overridden via environment variables for persistent storage
+# In HAOS, set these to /config/synclyrics/* for persistence across addon restarts
+DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
+CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
+ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
 
 for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
     d.mkdir(parents=True, exist_ok=True)

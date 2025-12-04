@@ -15,7 +15,9 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-SETTINGS_FILE = Path(__file__).parent / "settings.json"
+# Allow overriding the settings file location via environment variable
+# This is crucial for HAOS/Docker persistence
+SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(Path(__file__).parent / "settings.json")))
 
 @dataclass
 class Setting:
@@ -187,7 +189,7 @@ class SettingsManager:
             "visual_mode.delay_seconds": Setting("Delay", int, 6, False, "Visual Mode", "Delay before hiding lyrics (s)", "slider", min_val=1, max_val=60),
             "visual_mode.auto_sharp": Setting("Auto Sharp", bool, True, False, "Visual Mode", "Auto-switch to sharp mode in visual mode", "switch"),
             "visual_mode.slideshow.enabled": Setting("Slideshow", bool, True, False, "Visual Mode", "Enable slideshow when no music", "switch"),
-            "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 360, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
+            "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
         }
         
         self.load_settings()

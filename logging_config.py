@@ -18,8 +18,14 @@ else:
     ROOT_DIR = Path(__file__).parent
 
 # Create logs directory if it doesn't exist
-LOGS_DIR = ROOT_DIR / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+# Allow overriding via environment variable for HAOS/Docker persistence
+env_logs_dir = os.getenv("SYNCLYRICS_LOGS_DIR")
+if env_logs_dir:
+    LOGS_DIR = Path(env_logs_dir)
+else:
+    LOGS_DIR = ROOT_DIR / "logs"
+
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Define log formats
 CONSOLE_FORMAT = '(%(filename)s:%(lineno)d) %(levelname)s - %(message)s'
