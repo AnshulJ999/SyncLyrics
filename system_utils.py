@@ -3182,7 +3182,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # return [] 
 
     # Declare global variables for throttle tracking
-    global _artist_image_log_throttle, _artist_db_check_cache
+    global _artist_image_log_throttle, _artist_db_check_cache, _artist_download_tracker
 
     # Check cache first (debouncing)
     # If we checked this artist recently (within 60 seconds), return cached result
