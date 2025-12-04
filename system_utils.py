@@ -100,19 +100,6 @@ _MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 _discovery_cache = {}
 _MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 
-# Cache for load_artist_image_from_db() results
-# Key: artist (str), Value: (timestamp, result_dict)
-# Caches the result to avoid calling discover_custom_images on every poll cycle (10x per second)
-_artist_image_load_cache = {}
-_MAX_ARTIST_IMAGE_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
-_ARTIST_IMAGE_CACHE_TTL = 10  # Cache for 10 seconds (refresh when artist changes or after TTL)
-
-# Database versioning for artist images
-# v1: Initial implementation (Deezer, AudioDB, unsorted FanArt)
-# v2: Added Wikipedia, sorted FanArt by likes, improved Spotify resolution
-# Increment this whenever we add new providers or improve logic
-ARTIST_DB_VERSION = 2
-
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -752,8 +739,6 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     This performs blocking I/O operations (network request and file save).
     Preserves the original image format without conversion.
     
-    Includes retry logic with exponential backoff for transient failures (403, network errors).
-    
     Args:
         url: URL to download image from
         path: Path where to save the image file (extension will be determined automatically)
@@ -763,64 +748,23 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         - success: True if download and save succeeded, False otherwise
         - extension: File extension used (e.g., '.jpg', '.png')
     """
-    # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
-    # Use same User-Agent as ArtistImageProvider for consistency
-    # Referer header prevents hotlinking protection and reduces 403 errors
-    headers = {
-        'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)',
-        'Referer': 'https://en.wikipedia.org/'  # Required by Wikimedia Commons to prevent hotlinking
-    }
-    
-    # Retry logic with very small exponential backoff (0.1s, 0.2s, 0.4s)
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=10, stream=True, headers=headers)
-            response.raise_for_status()
-            
-            # Get Content-Type from response headers
-            content_type = response.headers.get('Content-Type', '')
-            
-            # Determine file extension from URL or Content-Type
-            file_extension = determine_image_extension(url, content_type)
-            
-            # Save original image bytes (no conversion = pristine quality)
-            success = save_image_original(response.content, path, file_extension)
-            
-            if success:
-                return (True, file_extension)
-            else:
-                # Save failed, but request succeeded - don't retry
-                if attempt == max_retries - 1:
-                    logger.warning(f"Download succeeded but save failed for {url}")
-                return (False, '.jpg')
-                
-        except requests.exceptions.HTTPError as e:
-            # Retry on 403/429 (rate limiting) or 5xx (server errors)
-            if e.response.status_code in (403, 429, 500, 502, 503, 504):
-                if attempt < max_retries - 1:
-                    # Very small exponential backoff: 0.1s, 0.2s, 0.4s
-                    delay = 0.1 * (2 ** attempt)
-                    time.sleep(delay)
-                    continue
-            # Don't retry on 404 or other client errors
-            if attempt == max_retries - 1:
-                logger.warning(f"Download failed for {url}: {e}")
-            return (False, '.jpg')
-            
-        except (requests.exceptions.RequestException, Exception) as e:
-            # Retry on network errors (timeout, connection errors, etc.)
-            if attempt < max_retries - 1:
-                # Very small exponential backoff: 0.1s, 0.2s, 0.4s
-                delay = 0.1 * (2 ** attempt)
-                time.sleep(delay)
-                continue
-            # Final attempt failed
-            logger.warning(f"Download failed for {url}: {e}")
-            return (False, '.jpg')
-    
-    # Should never reach here, but return failure just in case
-    return (False, '.jpg')
+    try:
+        response = requests.get(url, timeout=10, stream=True)
+        response.raise_for_status()
+        
+        # Get Content-Type from response headers
+        content_type = response.headers.get('Content-Type', '')
+        
+        # Determine file extension from URL or Content-Type
+        file_extension = determine_image_extension(url, content_type)
+        
+        # Save original image bytes (no conversion = pristine quality)
+        success = save_image_original(response.content, path, file_extension)
+        
+        return (success, file_extension)
+    except Exception as e:
+        logger.warning(f"Download failed for {url}: {e}")
+        return (False, '.jpg')  # Return default extension on failure
 
 async def ensure_album_art_db(
     artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
@@ -933,62 +877,20 @@ async def ensure_album_art_db(
                 # This fixes cases where user might have deleted images but metadata.json remains
                 file_exists_on_disk = image_path.exists()
                 
-                # UPGRADE/DOWNGRADE PROTECTION LOGIC: For Spotify, check actual file resolution first
-                # This prevents downgrading from 1400px to 640px (critical bug fix)
+                # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
                 should_upgrade = False
-                should_downgrade_protection = False  # NEW: Prevent downgrading high-res to low-res
-                actual_file_resolution = 0  # Will be set if we can read the file
-                
-                if provider_name == "Spotify" and file_exists_on_disk:
-                    # CRITICAL FIX: Check ACTUAL file resolution first (more reliable than metadata)
-                    # This prevents the bug where a 1400px file gets overwritten by a 640px download
-                    try:
-                        def get_actual_resolution(path: Path) -> int:
-                            """Extract actual resolution from existing image file"""
-                            with Image.open(path) as img:
-                                return max(img.size)
-                        
-                        actual_file_resolution = await loop.run_in_executor(None, get_actual_resolution, image_path)
-                        
-                        # If file is already 1400px+, don't download a lower resolution version
-                        if actual_file_resolution >= 1400:
-                            # Check if new URL is lower resolution
-                            if resolution < actual_file_resolution:
-                                should_downgrade_protection = True
-                                logger.info(f"Skipping download: Existing Spotify image is {actual_file_resolution}px, new URL is {resolution}px (preventing downgrade) for {artist} - {title}")
-                            # If new URL is same or higher resolution, allow upgrade
-                            elif resolution >= actual_file_resolution:
-                                should_upgrade = True
-                                logger.info(f"Found existing {actual_file_resolution}px Spotify image, upgrading to {resolution}px for {artist} - {title}")
-                        # If file is 640px (or close), try to upgrade to 1400px
-                        elif actual_file_resolution <= 650:  # Allow small margin for rounding
-                            if resolution > actual_file_resolution:
-                                should_upgrade = True
-                                logger.info(f"Found existing {actual_file_resolution}px Spotify image, attempting upgrade to {resolution}px for {artist} - {title}")
-                    except Exception as e:
-                        logger.debug(f"Could not check actual file resolution for {image_path}: {e}, using metadata fallback")
-                        # Fallback to metadata check if file read fails
-                        actual_file_resolution = 0
-                    
-                    # Only check metadata if we couldn't read actual file
-                    if actual_file_resolution == 0 and existing_metadata:
-                        existing_provider_data = existing_metadata.get("providers", {}).get("Spotify", {})
-                        existing_width = existing_provider_data.get("width", 0)
-                        existing_height = existing_provider_data.get("height", 0)
-                        existing_resolution = max(existing_width, existing_height)
-                        # If existing image is 640px (or close to it), try to upgrade
-                        if existing_resolution <= 650:  # Allow small margin for rounding
-                            if resolution > existing_resolution:
-                                should_upgrade = True
-                                logger.info(f"Found existing 640px Spotify image (from metadata), attempting upgrade to {resolution}px for {artist} - {title}")
-                        # If existing is 1400px+ and new is lower, prevent downgrade
-                        elif existing_resolution >= 1400 and resolution < existing_resolution:
-                            should_downgrade_protection = True
-                            logger.info(f"Skipping download: Existing Spotify image is {existing_resolution}px (from metadata), new URL is {resolution}px (preventing downgrade) for {artist} - {title}")
+                if provider_name == "Spotify" and file_exists_on_disk and existing_metadata:
+                    existing_provider_data = existing_metadata.get("providers", {}).get("Spotify", {})
+                    existing_width = existing_provider_data.get("width", 0)
+                    existing_height = existing_provider_data.get("height", 0)
+                    existing_resolution = max(existing_width, existing_height)
+                    # If existing image is 640px (or close to it), try to upgrade
+                    if existing_resolution <= 650:  # Allow small margin for rounding
+                        should_upgrade = True
+                        logger.info(f"Found existing 640px Spotify image, attempting upgrade to 1400px for {artist} - {title}")
 
                 # Download image if we don't have it, if it's missing, or if we should upgrade
-                # BUT NOT if we're preventing a downgrade (critical: never downgrade from high-res to low-res)
-                if (not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade) and not should_downgrade_protection:
+                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
                     try:
                         # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
                         # This prevents race conditions when the same provider downloads for the same album simultaneously
@@ -1364,38 +1266,7 @@ def discover_custom_images(folder: Path, metadata: Dict[str, Any], is_artist_ima
                 del _discovery_cache[oldest_key]
             
             _discovery_cache[folder_key] = (folder_mtime, discovered_count)
-            
-            # Only log at INFO level if discovered images are truly "Custom" (user-added)
-            # Provider images (Wikipedia, Deezer, etc.) discovered during active downloads
-            # should be logged at DEBUG to prevent spam during downloads
-            # Check filenames to see if they match provider download patterns
-            is_custom_only = True
-            if is_artist_images:
-                images = metadata.get("images", [])
-                # Check if any discovered images match provider download filename patterns
-                # Provider images are named like "wikipedia_0.jpg", "deezer_0.jpg", etc.
-                provider_filename_patterns = ['wikipedia_', 'deezer_', 'theaudiodb_', 'fanart_', 'spotify_']
-                for img in images:
-                    filename = img.get('filename', '').lower()
-                    # If filename matches provider pattern, it's from active download, not custom
-                    if any(pattern in filename for pattern in provider_filename_patterns):
-                        is_custom_only = False
-                        break
-            else:
-                # For album art, check providers dict keys
-                providers = metadata.get("providers", {})
-                provider_filename_patterns = ['wikipedia', 'deezer', 'theaudiodb', 'fanart', 'spotify', 'itunes', 'lastfm']
-                for provider_name in providers.keys():
-                    if any(pattern in provider_name.lower() for pattern in provider_filename_patterns):
-                        is_custom_only = False
-                        break
-            
-            # Only log at INFO if truly custom images (not from active downloads)
-            if is_custom_only:
-                logger.info(f"Auto-discovered {discovered_count} custom image(s) in {folder.name}")
-            else:
-                # Provider images discovered during active downloads - log at DEBUG to prevent spam
-                logger.debug(f"Auto-discovered {discovered_count} image(s) in {folder.name} (from active downloads)")
+            logger.info(f"Auto-discovered {discovered_count} custom image(s) in {folder.name}")
         else:
             # No new images, but update cache to prevent re-scanning
             _discovery_cache[folder_key] = (folder_mtime, 0)
@@ -1641,9 +1512,6 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     Load preferred artist image from database if available.
     Returns the preferred image path if found.
     
-    OPTIMIZATION: Results are cached to avoid calling discover_custom_images on every poll cycle (10x per second).
-    Cache refreshes when artist changes or after 10 seconds.
-    
     Args:
         artist: Artist name
         
@@ -1654,24 +1522,11 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     if not FEATURES.get("album_art_db", True):
         return None
     
-    # OPTIMIZATION: Check cache first to avoid repeated file I/O and discovery calls
-    current_time = time.time()
-    if artist in _artist_image_load_cache:
-        cached_time, cached_result = _artist_image_load_cache[artist]
-        # Use cache if less than TTL seconds old
-        if (current_time - cached_time) < _ARTIST_IMAGE_CACHE_TTL:
-            return cached_result
-    
     try:
         folder = get_album_db_folder(artist, None)  # Artist-only folder
         metadata_path = folder / "metadata.json"
         
         if not metadata_path.exists():
-            # Cache None result to avoid repeated checks
-            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
-                oldest_key = next(iter(_artist_image_load_cache))
-                del _artist_image_load_cache[oldest_key]
-            _artist_image_load_cache[artist] = (current_time, None)
             return None
         
         # Load metadata
@@ -1680,75 +1535,32 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         
         # Check if this is artist images metadata
         if metadata.get("type") != "artist_images":
-            # Cache None result
-            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
-                oldest_key = next(iter(_artist_image_load_cache))
-                del _artist_image_load_cache[oldest_key]
-            _artist_image_load_cache[artist] = (current_time, None)
             return None
-        
-        # OPTIMIZATION: Skip discovery if folder mtime changed recently (within last 3 seconds)
-        # This indicates active downloads are in progress, and discovery will run once at the end
-        # This prevents the discovery loop issue where discovery runs 10 times during downloads
-        try:
-            folder_key = str(folder.resolve())
-        except (OSError, ValueError) as e:
-            logger.debug(f"Could not resolve folder path for cache key: {e}")
-            folder_key = str(folder)  # Fallback to string representation
-        
-        # Check if folder mtime changed recently (active downloads)
-        folder_mtime = 0
-        try:
-            if folder.exists():
-                folder_mtime = max(
-                    (f.stat().st_mtime for f in folder.iterdir() if f.is_file()),
-                    default=0
-                )
-        except OSError:
-            pass
-        
-        # FIX #4: Skip discovery if folder changed within last 3 seconds (active downloads)
-        # Removed debug log to prevent spam - this is expected behavior during downloads
-        skip_discovery = False
-        if folder_key in _discovery_cache:
-            cached_mtime, _ = _discovery_cache[folder_key]
-            # If folder mtime changed very recently (within 3 seconds), skip discovery
-            # This prevents discovery loop during active downloads
-            if folder_mtime > cached_mtime and (current_time - folder_mtime) < 3.0:
-                skip_discovery = True
-                # Silent skip - no log spam (this is expected behavior during downloads)
         
         # CRITICAL FIX: Auto-discover custom images that aren't in metadata
         # This allows users to drop images into folders without manual JSON editing
         # Uses mtime caching to avoid performance impact on every metadata load
-        # SKIP during active downloads to prevent discovery loop (will run once at end of downloads)
-        if not skip_discovery:
-            metadata = discover_custom_images(folder, metadata, is_artist_images=True)
+        metadata = discover_custom_images(folder, metadata, is_artist_images=True)
         
         # If new images were discovered, save updated metadata
         # Check if discovery found new images by comparing cache
         # CRITICAL FIX: Handle folder path resolution failures to prevent crashes
         # This ensures consistent error handling with album art loading path
-        if not skip_discovery:
-            try:
-                # CRITICAL: Re-resolve folder_key here in case it wasn't set earlier (defensive programming)
-                # This ensures we have a valid folder_key even if the earlier try-except didn't run
-                if 'folder_key' not in locals():
-                    folder_key = str(folder.resolve())
-            except (OSError, ValueError) as e:
-                logger.debug(f"Could not resolve folder path for cache key: {e}")
-                folder_key = str(folder)  # Fallback to string representation
-            
-            if folder_key in _discovery_cache:
-                _, discovered_count = _discovery_cache[folder_key]
-                if discovered_count > 0:
-                    # Save updated metadata with discovered images
-                    # Use existing save function which handles locks properly
-                    save_album_db_metadata(folder, metadata)
-                    # Invalidate cache after save
-                    metadata_path_str = str(metadata_path)
-                    if metadata_path_str in _album_art_metadata_cache:
-                        del _album_art_metadata_cache[metadata_path_str]
+        try:
+            folder_key = str(folder.resolve())
+        except (OSError, ValueError) as e:
+            logger.debug(f"Could not resolve folder path for cache key: {e}")
+            folder_key = str(folder)  # Fallback to string representation
+        if folder_key in _discovery_cache:
+            _, discovered_count = _discovery_cache[folder_key]
+            if discovered_count > 0:
+                # Save updated metadata with discovered images
+                # Use existing save function which handles locks properly
+                save_album_db_metadata(folder, metadata)
+                # Invalidate cache after save
+                metadata_path_str = str(metadata_path)
+                if metadata_path_str in _album_art_metadata_cache:
+                    del _album_art_metadata_cache[metadata_path_str]
         
         preferred_provider = metadata.get("preferred_provider")
         preferred_filename = metadata.get("preferred_image_filename")  # NEW: Most robust matching method
@@ -1853,16 +1665,7 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                 if metadata_path_str in _album_art_metadata_cache:
                     del _album_art_metadata_cache[metadata_path_str]
         
-        result = {"path": image_path, "metadata": metadata}
-        
-        # OPTIMIZATION: Cache result to avoid repeated file I/O and discovery calls
-        # Cache refreshes when artist changes or after TTL seconds
-        if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
-            oldest_key = next(iter(_artist_image_load_cache))
-            del _artist_image_load_cache[oldest_key]
-        _artist_image_load_cache[artist] = (current_time, result)
-        
-        return result
+        return {"path": image_path, "metadata": metadata}
         
     except Exception as e:
         logger.debug(f"Failed to load artist image from DB: {e}")
@@ -2234,16 +2037,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                             # Windows Media doesn't provide artist_id, so Spotify fallback isn't available
                             # Last.fm is excluded from backfill as it's not necessary
                             
-                            # SMART BACKFILL: Check version first (triggers upgrade for old DB)
-                            db_version = artist_metadata_check.get("db_version", 1)
-                            if db_version < ARTIST_DB_VERSION:
-                                # Old version detected - force upgrade to get Wikipedia and sorted FanArt
-                                artist_images_complete = False
-                            else:
-                                # Current version - check if we have all expected sources
-                                # FIX: Add Wikipedia to expected sources so we retry if it failed previously
-                                expected_sources.add("Wikipedia") 
-                                artist_images_complete = expected_sources.issubset(existing_sources)
+                            # Check if we have all expected sources
+                            artist_images_complete = expected_sources.issubset(existing_sources)
                     except Exception as e:
                         logger.debug(f"Failed to check artist images completeness: {e}")
                         artist_images_complete = False
@@ -2587,16 +2382,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                             # NOTE: Last.fm is excluded from backfill as it's not necessary
                             # Last.fm images are often low-quality placeholders and not needed for selection menu
                             
-                            # SMART BACKFILL: Check version first (triggers upgrade for old DB)
-                            db_version = artist_metadata_check.get("db_version", 1)
-                            if db_version < ARTIST_DB_VERSION:
-                                # Old version detected - force upgrade to get Wikipedia and sorted FanArt
-                                artist_images_complete = False
-                            else:
-                                # Current version - check if we have all expected sources
-                                # FIX: Add Wikipedia to expected sources so we retry if it failed previously
-                                expected_sources.add("Wikipedia") 
-                                artist_images_complete = expected_sources.issubset(existing_sources)
+                            # Check if we have all expected sources
+                            artist_images_complete = expected_sources.issubset(existing_sources)
                     except Exception as e:
                         logger.debug(f"Failed to check artist images completeness: {e}")
                         artist_images_complete = False
@@ -3289,8 +3076,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Temporarily disable artist image fetching while we work on the bug. This is intentional. 
     # return [] 
 
-    # Declare global variables for throttle tracking and provider singleton
-    global _artist_image_log_throttle, _artist_db_check_cache, _artist_image_provider
+    # Declare global variables for throttle tracking
+    global _artist_image_log_throttle, _artist_db_check_cache
 
     # Check cache first (debouncing)
     # If we checked this artist recently (within 60 seconds), return cached result
@@ -3316,10 +3103,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     request_key = f"{artist}::{spotify_artist_id or 'no_id'}"
     
     # Prevent duplicate downloads for the same artist+ID combination
-    # CRITICAL: Track if download is already in progress BEFORE checking cache/early return
-    # This prevents discovery loop where each downloaded file triggers a new discovery
-    download_in_progress = request_key in _artist_download_tracker
-    if download_in_progress:
+    if request_key in _artist_download_tracker:
         return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
@@ -3344,119 +3128,16 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 existing_metadata = {}
                 
                 # Check if artist images already exist in DB (optimization)
-                # SMART BACKFILL: Check version and missing sources before early return
-                should_fetch = False
-                needs_fanart_upgrade = False
-                
+                # If images exist, return immediately (no need to re-fetch)
                 if metadata_path.exists():
                     try:
                         with open(metadata_path, 'r', encoding='utf-8') as f:
                             existing_metadata = json.load(f)
                         
                         existing_images = existing_metadata.get("images", [])
-                        db_version = existing_metadata.get("db_version", 1)
-                        existing_sources = {img.get('source') for img in existing_images if img.get('downloaded')}
                         
-                        # Check 1: Is DB version outdated?
-                        if db_version < ARTIST_DB_VERSION:
-                            logger.info(f"Artist DB for '{artist}' is v{db_version} (current: v{ARTIST_DB_VERSION}). Triggering upgrade.")
-                            should_fetch = True
-                            needs_fanart_upgrade = True  # Will replace old unsorted FanArt with sorted ones
-                        
-                        # Check 2: Missing Wikipedia? (Smart Backfill)
-                        # Initialize provider to check if Wikipedia is enabled
-                        if _artist_image_provider is None:
-                            _artist_image_provider = ArtistImageProvider()
-                        
-                        if _artist_image_provider.enable_wikipedia and 'Wikipedia' not in existing_sources:
-                            logger.info(f"Artist DB for '{artist}' missing Wikipedia. Triggering backfill.")
-                            should_fetch = True
-                            # Don't force FanArt upgrade if just backfilling Wikipedia (unless version is old)
-                            if db_version >= ARTIST_DB_VERSION:
-                                needs_fanart_upgrade = False
-                        
-                        # Check 3: Do we have ANY images?
-                        if not existing_images:
-                            should_fetch = True
-                        
-                        # If images exist and no fetch needed, return immediately (fast path)
-                        if not should_fetch and len(existing_images) > 0:
-                            # CRITICAL FIX: Skip discovery during active downloads to prevent discovery loop
-                            # The discovery loop happens when:
-                            # 1. Download starts for artist X
-                            # 2. First image downloads → folder mtime changes
-                            # 3. Next poll calls this function → early return path
-                            # 4. Discovery runs → finds newly downloaded image → saves metadata
-                            # 5. Second image downloads → folder mtime changes again
-                            # 6. Repeat 10 times (once per downloaded image)
-                            # 
-                            # Solution: Skip discovery if ANY download is in progress for this artist
-                            # Discovery will run once after ALL downloads complete (line ~3841)
-                            
-                            # Check if any download is in progress for this artist (any spotify_id variant)
-                            # We check all possible keys because spotify_id might be None or different
-                            # CRITICAL FIX: Convert set to list to prevent RuntimeError if set is modified during iteration
-                            any_download_in_progress = any(
-                                key.startswith(f"{artist}::") 
-                                for key in list(_artist_download_tracker)  # Convert to list first for thread safety
-                            )
-                            
-                            if not any_download_in_progress:
-                                # No downloads in progress - safe to run discovery
-                                # This allows users to drop images into folders without manual JSON editing
-                                # The discovery function scans the folder and adds any new image files to metadata
-                                existing_metadata = discover_custom_images(folder, existing_metadata, is_artist_images=True)
-                                
-                                # Check if discovery found new custom images
-                                updated_images = existing_metadata.get("images", [])
-                                if len(updated_images) > len(existing_images):
-                                    # New custom images found - save updated metadata
-                                    custom_count = len(updated_images) - len(existing_images)
-                                    logger.info(f"Discovered {custom_count} custom image(s) for '{artist}'")
-                                    # Save updated metadata with discovered images
-                                    loop = asyncio.get_running_loop()
-                                    await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
-                                    existing_images = updated_images
-                            else:
-                                # Download in progress - skip discovery to prevent loop
-                                # Discovery will run once after all downloads complete
-                                logger.debug(f"Skipping discovery for '{artist}' - download in progress")
-                            
-                            # --- SELF-HEALING: Remove deleted files from metadata ---
-                            # Check if files still exist on disk and remove missing ones
-                            # This ensures the API never returns broken links and keeps metadata in sync with disk
-                            original_count = len(existing_images)
-                            validated_images = []
-                            
-                            for img in existing_images:
-                                filename = img.get('filename', '')
-                                if filename and (folder / filename).exists():
-                                    validated_images.append(img)
-                            
-                            # If files were deleted, save cleaned metadata
-                            if len(validated_images) < original_count:
-                                removed_count = original_count - len(validated_images)
-                                logger.info(f"Removed {removed_count} missing file(s) from metadata for '{artist}'")
-                                
-                                # Update metadata with cleaned list (preserve all fields)
-                                existing_metadata["images"] = validated_images
-                                existing_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
-                                # Preserve db_version if it exists, otherwise use current version
-                                if "db_version" not in existing_metadata:
-                                    existing_metadata["db_version"] = ARTIST_DB_VERSION
-                                
-                                # Save asynchronously using executor (non-blocking)
-                                loop = asyncio.get_running_loop()
-                                try:
-                                    await loop.run_in_executor(None, save_album_db_metadata, folder, existing_metadata)
-                                except Exception as e:
-                                    logger.error(f"Failed to save cleaned metadata for {artist}: {e}")
-                                    # Continue with validated list even if save failed
-                                
-                                existing_images = validated_images
-                            # ------------------------------------------
-                            
-                            # Return all images (including newly discovered custom ones, excluding deleted files)
+                        # If images exist, return immediately (no need to re-fetch)
+                        if len(existing_images) > 0:
                             from urllib.parse import quote
                             encoded_folder = quote(folder.name, safe='')
                             result_paths = [
@@ -3472,10 +3153,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     except Exception as e:
                         logger.debug(f"Failed to load cached artist images: {e}")
                         # Continue to fetch if cache read fails
-                        should_fetch = True
 
                 # Initialize our new dedicated artist image provider (singleton pattern)
                 # Use global instance to prevent re-initialization on every call
+                global _artist_image_provider
                 if _artist_image_provider is None:
                     _artist_image_provider = ArtistImageProvider()
                 artist_provider = _artist_image_provider
@@ -3542,31 +3223,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
-                
-                # FIX #1: NON-DESTRUCTIVE UPGRADE - Only remove old FanArt if new photos are actually better
-                # This prevents data loss where good photos are deleted and replaced with logos
-                if needs_fanart_upgrade and all_images:
-                    # Filter new FanArt images - ONLY keep photos (backgrounds/thumbs), exclude logos
-                    # CRITICAL FIX: Explicit logo exclusion as primary filter (future-proofing)
-                    # Logos are 800x310 and have type='logo', we don't want those
-                    new_fanart_photos = [
-                        img for img in all_images 
-                        if img.get('source') == 'FanArt.tv' 
-                        and img.get('type') != 'logo'  # Explicit exclusion (primary filter)
-                        and img.get('type') in ['background', 'thumbnail']  # Only photos, not logos
-                        and not (img.get('width') == 800 and img.get('height') == 310)  # Double-check no logos
-                    ]
-                    
-                    # Only remove old FanArt if we have better new photos
-                    if len(new_fanart_photos) > 0:
-                        old_fanart_count = sum(1 for img in saved_images if img.get('source') == 'FanArt.tv')
-                        saved_images = [img for img in saved_images if img.get('source') != 'FanArt.tv']
-                        logger.info(f"Upgraded FanArt for '{artist}': Removed {old_fanart_count} old, added {len(new_fanart_photos)} new photos")
-                    else:
-                        # New images are only logos or no photos - keep old photos!
-                        # This is correct behavior (not a warning) - we're preventing data loss
-                        logger.info(f"FanArt upgrade for '{artist}' found only logos or no photos, keeping existing photos to prevent data loss")
-                
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
                 # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
@@ -3580,28 +3236,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 loop = asyncio.get_running_loop()
                 
                 # Track counts per source for filename generation
-                # CRITICAL FIX: Initialize based on existing images to prevent filename collisions
-                # This ensures new images get unique filenames (e.g., if deezer_0.jpg exists, next becomes deezer_1.jpg)
                 source_counts = {}
-                for img in saved_images:
-                    filename = img.get('filename', '')
-                    if not filename:
-                        continue
-                        
-                    # Parse filename to get source and index (e.g., "deezer_0.jpg")
-                    try:
-                        stem = Path(filename).stem  # "deezer_0"
-                        if '_' in stem:
-                            parts = stem.rsplit('_', 1)
-                            if len(parts) == 2 and parts[1].isdigit():
-                                src = parts[0]
-                                idx = int(parts[1])
-                                if src not in source_counts:
-                                    source_counts[src] = idx
-                                else:
-                                    source_counts[src] = max(source_counts[src], idx)
-                    except Exception:
-                        continue
                 
                 # CRITICAL FIX: Check if artist changed BEFORE processing images (optimization)
                 # This prevents running the check 18+ times inside the loop (one per image)
@@ -3668,87 +3303,25 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     width = img_dict.get('width', 0)
                     height = img_dict.get('height', 0)
                     
-                    # UPGRADE/DOWNGRADE PROTECTION LOGIC: For Spotify, check actual file resolution first
-                    # This prevents downgrading from 1400px to 640px (critical bug fix)
+                    # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
                     should_upgrade = False
-                    should_downgrade_protection = False  # NEW: Prevent downgrading high-res to low-res
                     existing_image_index = None
-                    actual_file_resolution = 0  # Will be set if we can read the file
-                    
                     if source.lower() == "spotify" and file_path.exists():
-                        # CRITICAL FIX: Check ACTUAL file resolution first (more reliable than metadata)
-                        # This prevents the bug where a 1400px file gets overwritten by a 640px download
-                        try:
-                            def get_actual_resolution_artist(path: Path) -> int:
-                                """Extract actual resolution from existing image file"""
-                                with Image.open(path) as img:
-                                    return max(img.size)
-                            
-                            actual_file_resolution = await loop.run_in_executor(None, get_actual_resolution_artist, file_path)
-                            
-                            # If file is already 1400px+, don't download a lower resolution version
-                            if actual_file_resolution >= 1400:
-                                # Check if new URL is lower resolution
-                                if max(width, height) < actual_file_resolution:
-                                    should_downgrade_protection = True
-                                    logger.info(f"Skipping download: Existing Spotify artist image is {actual_file_resolution}px, new URL is {max(width, height)}px (preventing downgrade) for {artist}")
-                                # If new URL is same or higher resolution, allow upgrade
-                                elif max(width, height) >= actual_file_resolution:
+                        # Check if we have metadata for this image (match by filename or URL)
+                        for idx, img in enumerate(saved_images):
+                            if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
+                                existing_width = img.get('width', 0)
+                                existing_height = img.get('height', 0)
+                                existing_resolution = max(existing_width, existing_height)
+                                # If existing image is 640px (or close to it), try to upgrade
+                                if existing_resolution <= 650:  # Allow small margin for rounding
                                     should_upgrade = True
-                                    # Find existing image index for update
-                                    for idx, img in enumerate(saved_images):
-                                        if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
-                                            existing_image_index = idx
-                                            break
-                                    logger.info(f"Found existing {actual_file_resolution}px Spotify artist image, upgrading to {max(width, height)}px for {artist}")
-                            # If file is 640px (or close), try to upgrade to 1400px
-                            elif actual_file_resolution <= 650:  # Allow small margin for rounding
-                                if max(width, height) > actual_file_resolution:
-                                    should_upgrade = True
-                                    # Find existing image index for update
-                                    for idx, img in enumerate(saved_images):
-                                        if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
-                                            existing_image_index = idx
-                                            break
-                                    logger.info(f"Found existing {actual_file_resolution}px Spotify artist image, attempting upgrade to {max(width, height)}px for {artist}")
-                        except Exception as e:
-                            logger.debug(f"Could not check actual file resolution for {file_path}: {e}, using metadata fallback")
-                            # Fallback to metadata check if file read fails
-                            actual_file_resolution = 0
-                        
-                        # Only check metadata if we couldn't read actual file
-                        if actual_file_resolution == 0:
-                            # Check if we have metadata for this image (match by filename or URL)
-                            for idx, img in enumerate(saved_images):
-                                if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
-                                    existing_width = img.get('width', 0)
-                                    existing_height = img.get('height', 0)
-                                    existing_resolution = max(existing_width, existing_height)
-                                    # If existing image is 640px (or close to it), try to upgrade
-                                    if existing_resolution <= 650:  # Allow small margin for rounding
-                                        if max(width, height) > existing_resolution:
-                                            should_upgrade = True
-                                            existing_image_index = idx
-                                            logger.info(f"Found existing {existing_resolution}px Spotify artist image (from metadata), attempting upgrade to {max(width, height)}px for {artist}")
-                                    # If existing is 1400px+ and new is lower, prevent downgrade
-                                    elif existing_resolution >= 1400 and max(width, height) < existing_resolution:
-                                        should_downgrade_protection = True
-                                        logger.info(f"Skipping download: Existing Spotify artist image is {existing_resolution}px (from metadata), new URL is {max(width, height)}px (preventing downgrade) for {artist}")
+                                    existing_image_index = idx
+                                    logger.info(f"Found existing 640px Spotify artist image, attempting upgrade to 1400px for {artist}")
                                     break
                     
-                    # Download image if we don't have it, or if we should upgrade
-                    # BUT NOT if we're preventing a downgrade (critical: never downgrade from high-res to low-res)
-                    if (not file_path.exists() or should_upgrade) and not should_downgrade_protection:
+                    if not file_path.exists() or should_upgrade:
                         success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
-                        
-                        # Add small delay between downloads to prevent rate limiting
-                        # Longer delay for Wikipedia/Wikimedia (more strict rate limits)
-                        # Shorter delay for other providers (faster, less strict)
-                        if 'wikimedia' in url.lower() or 'wikipedia' in url.lower():
-                            await asyncio.sleep(0.5)  # 1 second for Wikipedia (respectful)
-                        else:
-                            await asyncio.sleep(0.4)  # 0.5 seconds for other providers
-                        
                         if success:
                             # CRITICAL FIX: Update file_path to reflect actual file extension
                             # The download function saves with the correct extension (e.g., .png, .jpg)
@@ -3815,19 +3388,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     break
                         
                         if actual_file_path.exists():
-                            # CRITICAL FIX: Check if this file is already in saved_images by filename first
-                            # This prevents re-processing the same file multiple times when providers return
-                            # the same image with different URLs (common with Wikipedia/Wikimedia)
-                           # actual_filename = actual_file_path.name
-                          #  found_by_filename = any(img.get('filename') == actual_filename for img in saved_images)
-                            
-                          #  if found_by_filename:
-                                # File already in metadata, skip processing to prevent duplicates
-                            #    existing_urls.add(url)  # Mark URL as processed
-                           #     continue
-                            # Define actual_filename from the found file path (needed for line 3863)
-                            actual_filename = actual_file_path.name
-
                             # Extract actual resolution from existing file
                             try:
                                 def get_image_resolution_existing(path: Path) -> tuple:
@@ -3859,6 +3419,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             
                             if not found_existing:
                                 # File exists but not in metadata - add it with actual resolution
+                                actual_filename = actual_file_path.name
                                 saved_images.append({
                                     "source": source,
                                     "url": url,
@@ -3931,19 +3492,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Same optimization pattern as album art to reduce metadata.json writes
                 if metadata_changed or not metadata_path.exists():
                     # Save Metadata
-                    # Only upgrade version if we successfully fetched new images (error recovery)
-                    # If fetch failed but we're upgrading, keep old version to retry later
-                    if all_images or metadata_changed:
-                        final_db_version = ARTIST_DB_VERSION
-                    else:
-                        # Fetch failed - keep existing version (or default to 1 if no metadata existed)
-                        final_db_version = existing_metadata.get("db_version", 1) if existing_metadata else 1
-                    
                     metadata = {
                         "artist": artist,
                         "type": "artist_images",
                         "last_accessed": datetime.utcnow().isoformat() + "Z",
-                        "db_version": final_db_version,  # Track database version for smart backfill
                         "images": saved_images
                     }
                     
@@ -3952,41 +3504,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     # Commented out to reduce log spam - this is internal optimization feedback, not actionable debugging info
                     # logger.debug(f"Skipping metadata save for {artist} - no changes detected")
                     pass
-                
-                # --- SELF-HEALING: Remove deleted files from metadata before returning ---
-                # Check if files still exist on disk and remove missing ones
-                # This ensures the API never returns broken links and keeps metadata in sync with disk
-                original_count = len(saved_images)
-                validated_images = []
-                
-                for img in saved_images:
-                    filename = img.get('filename', '')
-                    if filename and (folder / filename).exists():
-                        validated_images.append(img)
-                
-                # If files were deleted, save cleaned metadata
-                if len(validated_images) < original_count:
-                    removed_count = original_count - len(validated_images)
-                    logger.info(f"Removed {removed_count} missing file(s) from metadata for '{artist}'")
-                    
-                    # Update metadata with cleaned list (use complete structure)
-                    metadata = {
-                        "artist": artist,
-                        "type": "artist_images",
-                        "last_accessed": datetime.utcnow().isoformat() + "Z",
-                        "db_version": ARTIST_DB_VERSION,  # Use current version for cleaned metadata
-                        "images": validated_images
-                    }
-                    
-                    # Save asynchronously using executor (non-blocking)
-                    try:
-                        await loop.run_in_executor(None, save_album_db_metadata, folder, metadata)
-                    except Exception as e:
-                        logger.error(f"Failed to save cleaned metadata for {artist}: {e}")
-                        # Continue with validated list even if save failed
-                    
-                    saved_images = validated_images
-                # ----------------------------------------------------------
                 
                 # Return list of LOCAL paths for the frontend
                 # We return paths relative to the DB root for the API to serve
@@ -3998,37 +3515,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     for img in saved_images 
                     if img.get('downloaded') and img.get('filename')
                 ]
-                
-                # CRITICAL FIX: Run discovery ONCE after all downloads complete
-                # This prevents the discovery loop issue where discovery runs 10 times during downloads
-                # Discovery will find all newly downloaded images in one pass instead of one-by-one
-                try:
-                    # Load current metadata to pass to discovery
-                    if metadata_path.exists():
-                        with open(metadata_path, 'r', encoding='utf-8') as f:
-                            final_metadata = json.load(f)
-                        
-                        # Run discovery once to find all newly downloaded images
-                        final_metadata = discover_custom_images(folder, final_metadata, is_artist_images=True)
-                        
-                        # Check if discovery found new images
-                        try:
-                            folder_key = str(folder.resolve())
-                        except (OSError, ValueError):
-                            folder_key = str(folder)
-                        
-                        if folder_key in _discovery_cache:
-                            _, discovered_count = _discovery_cache[folder_key]
-                            if discovered_count > 0:
-                                # Save updated metadata with discovered images
-                                await loop.run_in_executor(None, save_album_db_metadata, folder, final_metadata)
-                                logger.debug(f"Discovery completed after downloads for {artist}: found {discovered_count} new image(s)")
-                except Exception as e:
-                    logger.debug(f"Error running discovery after downloads for {artist}: {e}")
-                
-                # Invalidate load cache so next call will see the new images
-                if artist in _artist_image_load_cache:
-                    del _artist_image_load_cache[artist]
                 
                 # Update cache
                 _artist_db_check_cache[artist] = (time.time(), result_paths)
