@@ -776,10 +776,13 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
     # Use same User-Agent as ArtistImageProvider for consistency
     # Referer header prevents hotlinking protection and reduces 403 errors
+
     headers = {
-        'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)',
-        'Referer': 'https://en.wikipedia.org/'  # Required by Wikimedia Commons to prevent hotlinking
+        'User-Agent': 'SyncLyrics/1.0.0 (https://github.com/AnshulJ999/SyncLyrics; contact@example.com)'
     }
+    # Only add Referer for Wikipedia/Wikimedia to prevent hotlinking protection
+    if 'wikipedia' in url.lower() or 'wikimedia' in url.lower():
+        headers['Referer'] = 'https://en.wikipedia.org/'
     
     # Retry logic with very small exponential backoff (0.1s, 0.2s, 0.4s)
     max_retries = 3
