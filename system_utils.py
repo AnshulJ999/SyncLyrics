@@ -1802,8 +1802,15 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
         artist_images = artist_metadata.get("images", [])
         
         # Defensive logging: Log if no images found or all images failed to download
+        # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second during polling)
         if not artist_images:
-            logger.debug(f"No artist images found in DB for fallback: {artist}")
+            current_time = time.time()
+            log_key = f"no_fallback_{artist}"
+            last_log_time = _artist_image_log_throttle.get(log_key, 0)
+            if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+                logger.debug(f"No artist images found in DB for fallback: {artist}")
+                _artist_image_log_throttle[log_key] = current_time
+                _cleanup_artist_image_log_throttle()
             return None
         
         # Use first available artist image as fallback (no explicit preference needed)
@@ -1819,7 +1826,14 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
                     }
         
         # Log if images exist but none are downloaded or available
-        logger.debug(f"Artist images found in DB for {artist} but none are downloaded or available")
+        # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second during polling)
+        current_time = time.time()
+        log_key = f"no_downloaded_{artist}"
+        last_log_time = _artist_image_log_throttle.get(log_key, 0)
+        if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
+            logger.debug(f"Artist images found in DB for {artist} but none are downloaded or available")
+            _artist_image_log_throttle[log_key] = current_time
+            _cleanup_artist_image_log_throttle()
         return None
     except Exception as e:
         logger.debug(f"Failed to load artist image fallback: {e}")

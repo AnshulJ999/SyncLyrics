@@ -16,7 +16,6 @@ if "__compiled__" in globals() or getattr(sys, 'frozen', False):
     ROOT_DIR = Path(sys.argv[0]).parent
 else:
     ROOT_DIR = Path(__file__).parent
-import sys
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = ROOT_DIR / "logs"
@@ -124,6 +123,9 @@ def setup_logging(
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('requests').setLevel(logging.WARNING)
     logging.getLogger('charset_normalizer').setLevel(logging.WARNING)
+    logging.getLogger('asyncio').setLevel(logging.WARNING)  # Suppress asyncio DEBUG noise
+    logging.getLogger('hypercorn').setLevel(logging.INFO)  # Only show INFO+ from hypercorn
+    logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx DEBUG noise (if used)
     
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):
