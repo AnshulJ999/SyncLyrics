@@ -25,7 +25,7 @@ except ImportError:
 from PIL import Image
 from config import DEBUG, RESOURCES_DIR
 from lyrics import get_timed_lyrics
-from state_manager import get_state
+from state_manager import get_state, reset_state
 from server import app
 from logging_config import setup_logging, get_logger
 # NOTE: SpotifyAPI is accessed via get_shared_spotify_client() singleton throughout the app
@@ -211,7 +211,18 @@ async def main() -> NoReturn:
         logger.info("System tray disabled (headless mode or missing dependency).")
 
     # Get active display methods
-    methods = [method for method, active in get_state()["representationMethods"].items() 
+    # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key
+    # This handles corrupted state files or state files from old versions gracefully
+    # Also handles edge case where state file contains valid JSON but not a dict (e.g., null, [], string)
+    state = get_state()
+    if not isinstance(state, dict):
+        # State file contains invalid data (not a dict), use default
+        logger.warning("State file contains invalid data (not a dict), resetting to defaults")
+        reset_state()
+        state = get_state()
+    
+    representation_methods = state.get("representationMethods", {"terminal": False})
+    methods = [method for method, active in representation_methods.items() 
               if active and method != "notifications"]
     
     last_printed_lyric_per_method = {"terminal": None}
