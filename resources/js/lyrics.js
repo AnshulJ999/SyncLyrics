@@ -260,6 +260,24 @@ function updateBackground() {
         return; // Exit early - minimal mode doesn't use visual backgrounds
     }
 
+    // FIX: If showAlbumArt is false, force default background (no art) and remove effects
+    if (!displayConfig.showAlbumArt) {
+        bgLayer.classList.remove('visible');
+        bgOverlay.classList.remove('visible');
+        
+        // Use album colors if enabled, otherwise default blue gradient
+        if (displayConfig.useAlbumColors && currentColors) {
+             document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
+        } else {
+             document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
+        }
+
+        // Ensure mode classes are removed so they don't affect lyrics text
+        document.body.classList.remove('soft-mode');
+        document.body.classList.remove('sharp-mode');
+        return;
+    }
+
     // CRITICAL FIX: Use background_image_url if available (artist image when selected), 
     // otherwise fallback to album_art_url (album art)
     // This separates the background image from the album art display in the top left corner

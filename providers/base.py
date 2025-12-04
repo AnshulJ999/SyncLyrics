@@ -13,13 +13,14 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Tuple, Dict, Any
 import requests
 import logging
-from logging_config import get_logger, setup_logging  # Import setup_logging
+from logging_config import get_logger  # Removed setup_logging import - logging is configured in sync_lyrics.py
 from config import get_provider_config  # Add this import
 
 # Set up logging
 # logging.basicConfig(level=logging.INFO)
 
-setup_logging()
+# setup_logging()  # REMOVED: Early call overrides main config from sync_lyrics.py
+# Logging is configured once in sync_lyrics.py with proper environment variable support
 logger = get_logger(__name__)
 
 class LyricsProvider(ABC):

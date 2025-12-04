@@ -8,6 +8,9 @@ import uuid
 
 from benedict import benedict
 
+# Allow overriding state file location via environment variable for HAOS persistence
+# This ensures state.json is written to /config/state.json instead of /app/state.json
+STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", "state.json")
 
 DEFAULT_STATE = {
     "theme": "dark",
@@ -48,16 +51,22 @@ def set_state(new_state: dict):
     with _state_lock:
         # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
         # This provides extra safety even though we have a lock (defense in depth)
+        # Temp file must be in the same directory as STATE_FILE for atomic replace to work
+        state_dir = os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else "."
         temp_filename = f"state_{uuid.uuid4().hex}.json.tmp"
-        temp_path = temp_filename
+        temp_path = os.path.join(state_dir, temp_filename) if state_dir != "." else temp_filename
         try:
             with open(temp_path, "w") as f:
                 json.dump(new_state, f, indent=4)
             
             # Atomic replace (works on both Windows and Unix)
-            if path.exists("state.json"):
-                os.remove("state.json")
-            os.replace(temp_path, "state.json")
+            # Ensure target directory exists if using absolute path
+            if os.path.dirname(STATE_FILE):
+                os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+            
+            if path.exists(STATE_FILE):
+                os.remove(STATE_FILE)
+            os.replace(temp_path, STATE_FILE)
             
             # Update cache immediately
             state = new_state
@@ -92,13 +101,13 @@ def get_state() -> dict:
     # Cache expired or doesn't exist, read from disk
     # Use lock to prevent concurrent reads during write
     with _state_lock:
-        if not path.exists("state.json"):
+        if not path.exists(STATE_FILE):
             reset_state()
             return state
         
         # Read from disk
         try:
-            with open("state.json", "r") as f:
+            with open(STATE_FILE, "r") as f:
                 state = json.load(f)
                 state_cache_time = current_time
                 return state
