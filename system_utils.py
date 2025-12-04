@@ -3815,6 +3815,19 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                                     break
                         
                         if actual_file_path.exists():
+                            # CRITICAL FIX: Check if this file is already in saved_images by filename first
+                            # This prevents re-processing the same file multiple times when providers return
+                            # the same image with different URLs (common with Wikipedia/Wikimedia)
+                           # actual_filename = actual_file_path.name
+                          #  found_by_filename = any(img.get('filename') == actual_filename for img in saved_images)
+                            
+                          #  if found_by_filename:
+                                # File already in metadata, skip processing to prevent duplicates
+                            #    existing_urls.add(url)  # Mark URL as processed
+                           #     continue
+                            # Define actual_filename from the found file path (needed for line 3863)
+                            actual_filename = actual_file_path.name
+
                             # Extract actual resolution from existing file
                             try:
                                 def get_image_resolution_existing(path: Path) -> tuple:
@@ -3846,7 +3859,6 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             
                             if not found_existing:
                                 # File exists but not in metadata - add it with actual resolution
-                                actual_filename = actual_file_path.name
                                 saved_images.append({
                                     "source": source,
                                     "url": url,
