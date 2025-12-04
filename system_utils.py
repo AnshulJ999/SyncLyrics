@@ -2054,6 +2054,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         
         # Flag to track if we found art in DB
         found_in_db = False
+        # CRITICAL FIX: Separate flag for album art (not artist image fallback)
+        # This ensures background fetch triggers even when artist image fallback is used
+        album_art_found_in_db = False
         album_art_url = None
         result_extra_fields = {}  # Store album_art_path for direct serving
         saved_background_style = None  # Initialize to prevent UnboundLocalError
@@ -2067,6 +2070,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         db_result = load_album_art_from_db(artist, album, title)
         if db_result:
             found_in_db = True
+            album_art_found_in_db = True  # CRITICAL: Only set when actual album art is found
             db_image_path = db_result["path"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
             
@@ -2172,7 +2176,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # Fallback: Check for artist image if no album art found (but no explicit preference)
         # This uses first available artist image as fallback when no album art exists
         # Only use for background, not for album art display
-        if not found_in_db:
+        # CRITICAL FIX #2: Use album_art_found_in_db check - don't set found_in_db here
+        # found_in_db is for display purposes only, album_art_found_in_db controls background fetch
+        if not album_art_found_in_db:
             fallback_result = _get_artist_image_fallback(artist)
             if fallback_result:
                 artist_image_path = fallback_result["path"]
@@ -2182,7 +2188,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 background_image_url = album_art_url
                 result_extra_fields = {"album_art_path": str(artist_image_path)}
                 background_image_path = str(artist_image_path)
-                found_in_db = True
+                found_in_db = True  # For display purposes only - album_art_found_in_db stays False
                 # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
                 # Use same throttle mechanism as artist image fetching
                 current_time = time.time()
@@ -2195,7 +2201,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
-        if not found_in_db:
+        if not album_art_found_in_db:
             try:
                 thumbnail_ref = info.thumbnail
                 # Create a unique filename for this track's thumbnail to avoid race conditions
@@ -2237,9 +2243,11 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 3. Background High-Res Fetch (Progressive Upgrade)
         # Only if not found in DB and not checked this session
+        # CRITICAL FIX #2: Use album_art_found_in_db instead of found_in_db
+        # This ensures background fetch triggers even when artist image fallback is used
         # Use 'win::' namespace to avoid blocking Spotify fetcher which might have better URLs
         checked_key = f"win::{current_track_id}"
-        if not found_in_db and checked_key not in _db_checked_tracks:
+        if not album_art_found_in_db and checked_key not in _db_checked_tracks:
             if current_track_id not in _running_art_upgrade_tasks:
                  _db_checked_tracks[checked_key] = time.time()
                  if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
@@ -2402,6 +2410,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         
         # Flag to track if we found art in DB
         found_in_db = False
+        # CRITICAL FIX: Separate flag for album art (not artist image fallback)
+        # This ensures background fetch triggers even when artist image fallback is used
+        album_art_found_in_db = False
         album_art_path = None  # Store direct path for serving without copying
         saved_background_style = None  # Initialize to prevent UnboundLocalError
         db_metadata = None  # Initialize to prevent UnboundLocalError
@@ -2415,6 +2426,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         db_result = load_album_art_from_db(captured_artist, captured_album, captured_title)
         if db_result:
             found_in_db = True
+            album_art_found_in_db = True  # CRITICAL: Only set when actual album art is found
             db_image_path = db_result["path"]
             db_metadata = db_result["metadata"]
             saved_background_style = db_result.get("background_style")  # Capture saved style
@@ -2458,8 +2470,10 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     _cleanup_artist_image_log_throttle()
         
         # If no album art found but artist image is selected, still set background
+        # CRITICAL FIX: Don't set found_in_db here - we want to keep album_art_found_in_db = False
+        # so the background fetch still triggers. found_in_db is only for display purposes.
         if not found_in_db and artist_image_result:
-            found_in_db = True  # At least we have something for background
+            found_in_db = True  # At least we have something for background (display only)
         
         # CRITICAL FIX: Check if artist images DB is populated with ALL expected sources
         # This ensures all provider options are available in the selection menu (similar to album art backfill)
@@ -2524,83 +2538,93 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             except Exception as e:
                 logger.debug(f"Failed to check/trigger artist image backfill: {e}")
         
+        # CRITICAL FIX #1: Initialize defaults (assume incomplete if no metadata)
+        # This ensures background fetch triggers even when db_metadata is None (new songs)
+        db_is_complete = False
+        has_invalid_resolution = False
+        
+        # Determine which providers SHOULD be there
+        # Spotify is always a source if we are here (since we have raw_spotify_url)
+        expected_providers = {"Spotify"}
+        
+        # Check if other providers are enabled in the singleton instance
+        # We need to get the provider instance to check config
+        # FIX: Removed redundant local import that was causing UnboundLocalError
+        art_provider = get_album_art_provider()
+        
+        if art_provider.enable_itunes:
+            expected_providers.add("iTunes")
+        
+        if art_provider.enable_lastfm and art_provider.lastfm_api_key:
+            expected_providers.add("LastFM")
+        
         # Check if DB is already populated with ALL enabled providers (only if we have album art metadata)
         if db_metadata:
             # This logic respects user config: if Last.fm is disabled/no key, we won't look for it.
             existing_providers = set(db_metadata.get("providers", {}).keys())
-            
-            # Determine which providers SHOULD be there
-            # Spotify is always a source if we are here (since we have raw_spotify_url)
-            expected_providers = {"Spotify"}
-            
-            # Check if other providers are enabled in the singleton instance
-            # We need to get the provider instance to check config
-            # FIX: Removed redundant local import that was causing UnboundLocalError
-            art_provider = get_album_art_provider()
-            
-            if art_provider.enable_itunes:
-                expected_providers.add("iTunes")
-            
-            if art_provider.enable_lastfm and art_provider.lastfm_api_key:
-                expected_providers.add("LastFM")
                 
             # If we have all expected providers, the DB is complete
             db_is_complete = expected_providers.issubset(existing_providers)
             
             # SELF-HEAL: Check if any existing provider has invalid/unknown resolution
             # This ensures we re-run the check to fix metadata for files that were downloaded but have 0x0 resolution
-            has_invalid_resolution = False
-            if db_metadata:  # Corrected variable name
-                for p_name, p_data in db_metadata.get("providers", {}).items():
-                    if p_data.get("downloaded") and (p_data.get("width", 0) == 0 or "unknown" in str(p_data.get("resolution", "")).lower()):
-                        has_invalid_resolution = True
-                        logger.debug(f"Found invalid resolution for {p_name}, triggering self-heal")
-                        break
+            for p_name, p_data in db_metadata.get("providers", {}).items():
+                if p_data.get("downloaded") and (p_data.get("width", 0) == 0 or "unknown" in str(p_data.get("resolution", "")).lower()):
+                    has_invalid_resolution = True
+                    logger.debug(f"Found invalid resolution for {p_name}, triggering self-heal")
+                    break
+        else:
+            # No metadata means definitely incomplete - need to fetch album art
+            db_is_complete = False
 
-            # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
-            # Use raw_spotify_url (not album_art_url which is now a local path)
-            # CRITICAL FIX: Only run this once per track to prevent infinite loops
-            # Use 'spot::' namespace to distinguish from Windows fetcher checks
-            checked_key = f"spot::{captured_track_id}"
-            if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and checked_key not in _db_checked_tracks:
-                # Mark as checked immediately to prevent re-entry on next poll
-                _db_checked_tracks[checked_key] = time.time()
-                
-                # Limit set size to prevent memory leaks (FIFO eviction)
-                if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
-                    _db_checked_tracks.popitem(last=False)  # Remove oldest
+        # CRITICAL FIX #2: Use album_art_found_in_db instead of found_in_db
+        # This ensures background fetch triggers even when artist image fallback is used
+        # Trigger background task ONLY if DB is incomplete OR has invalid data (and not already running)
+        # Use raw_spotify_url (not album_art_url which is now a local path)
+        # CRITICAL FIX: Only run this once per track to prevent infinite loops
+        # Use 'spot::' namespace to distinguish from Windows fetcher checks
+        checked_key = f"spot::{captured_track_id}"
+        if (not db_is_complete or has_invalid_resolution) and captured_track_id not in _running_art_upgrade_tasks and checked_key not in _db_checked_tracks:
+            # Mark as checked immediately to prevent re-entry on next poll
+            _db_checked_tracks[checked_key] = time.time()
+            
+            # Limit set size to prevent memory leaks (FIFO eviction)
+            if len(_db_checked_tracks) > _MAX_DB_CHECKED_SIZE:
+                _db_checked_tracks.popitem(last=False)  # Remove oldest
 
-                async def background_refresh_db():
-                    try:
-                        # This function now returns the best URL and resolution
-                        # Pass retry_count=1 to prevent infinite recursion
-                        result = await ensure_album_art_db(
-                            captured_artist,
-                            captured_album,
-                            captured_title,
-                            raw_spotify_url,
-                            retry_count=1
-                        )
-                        # Check result; if failed, uncheck to allow retry on next poll
-                        if not result:
-                            if checked_key in _db_checked_tracks:
-                                del _db_checked_tracks[checked_key]
-                        return result
-                    except Exception as e:
-                        logger.debug(f"Background DB refresh failed: {e}")
-                        # Remove from checked on error to allow retry
+            async def background_refresh_db():
+                try:
+                    # This function now returns the best URL and resolution
+                    # Pass retry_count=1 to prevent infinite recursion
+                    result = await ensure_album_art_db(
+                        captured_artist,
+                        captured_album,
+                        captured_title,
+                        raw_spotify_url,
+                        retry_count=1
+                    )
+                    # Check result; if failed, uncheck to allow retry on next poll
+                    if not result:
                         if checked_key in _db_checked_tracks:
                             del _db_checked_tracks[checked_key]
-                    finally:
-                        _running_art_upgrade_tasks.pop(captured_track_id, None)
-                
-                # Use tracked task
-                task = create_tracked_task(background_refresh_db())
-                _running_art_upgrade_tasks[captured_track_id] = task
+                    return result
+                except Exception as e:
+                    logger.debug(f"Background DB refresh failed: {e}")
+                    # Remove from checked on error to allow retry
+                    if checked_key in _db_checked_tracks:
+                        del _db_checked_tracks[checked_key]
+                finally:
+                    _running_art_upgrade_tasks.pop(captured_track_id, None)
+            
+            # Use tracked task
+            task = create_tracked_task(background_refresh_db())
+            _running_art_upgrade_tasks[captured_track_id] = task
         
         # Fallback: Check for artist image if no album art found (but no explicit preference)
         # This uses first available artist image as fallback when no album art exists
-        if not found_in_db:
+        # CRITICAL FIX #2: Use album_art_found_in_db check - don't set found_in_db here
+        # found_in_db is for display purposes only, album_art_found_in_db controls background fetch
+        if not album_art_found_in_db:
             fallback_result = _get_artist_image_fallback(captured_artist)
             if fallback_result:
                 artist_image_path = fallback_result["path"]
@@ -2610,7 +2634,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 background_image_url = album_art_url
                 album_art_path = str(artist_image_path)
                 background_image_path = str(artist_image_path)
-                found_in_db = True
+                found_in_db = True  # For display purposes only - album_art_found_in_db stays False
                 # CRITICAL FIX: Throttle log to prevent spam (30+ logs per second)
                 # Use same throttle mechanism as artist image fetching
                 current_time = time.time()
@@ -2659,9 +2683,11 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     
                     # CRITICAL FIX: Don't run background task if we just loaded from DB
                     # OR if we have already checked/populated the DB for this track in this session
+                    # CRITICAL FIX #2: Use album_art_found_in_db instead of found_in_db
+                    # This ensures background task runs even when artist image fallback is used
                     # Use 'spot::' namespace to distinguish from Windows fetcher checks
                     checked_key = f"spot::{captured_track_id}"
-                    if not found_in_db and checked_key not in _db_checked_tracks:
+                    if not album_art_found_in_db and checked_key not in _db_checked_tracks:
                         if captured_track_id in _running_art_upgrade_tasks:
                             # Task already running - only log once per track to prevent spam
                             if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_art_upgrade_running_track_id') or \
