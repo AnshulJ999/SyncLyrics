@@ -106,7 +106,7 @@ _MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 # This prevents the discovery loop issue where discovery runs repeatedly during active downloads
 _artist_image_load_cache = {}
 _MAX_ARTIST_IMAGE_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
-_ARTIST_IMAGE_CACHE_TTL = 60  # Cache for 60 seconds (refresh when artist changes or after TTL)
+_ARTIST_IMAGE_CACHE_TTL = 15  # Cache for 15 seconds (refresh when artist changes or after TTL)
 
 def create_tracked_task(coro):
     """
@@ -1579,7 +1579,7 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     Returns the preferred image path if found.
     
     OPTIMIZATION: Results are cached to avoid calling discover_custom_images on every poll cycle (10x per second).
-    Cache refreshes when artist changes or after 60 seconds.
+    Cache refreshes when artist changes or after 15 seconds.
     
     Args:
         artist: Artist name
@@ -2443,6 +2443,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
                     logger.debug(f"Using preferred artist image for background: {captured_artist}")
                     _artist_image_log_throttle[log_key] = current_time
+                    _cleanup_artist_image_log_throttle()
         
         # If no album art found but artist image is selected, still set background
         if not found_in_db and artist_image_result:
@@ -2606,6 +2607,7 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                 if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
                     logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {captured_artist}")
                     _artist_image_log_throttle[log_key] = current_time
+                    _cleanup_artist_image_log_throttle()
         
         # Progressive Enhancement: Return Spotify 640px immediately, upgrade in background
         if album_art_url:
