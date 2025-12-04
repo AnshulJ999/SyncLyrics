@@ -98,17 +98,23 @@
 }
 
 .provider-modal-content {
-    background: rgba(30, 32, 48, 0.9);
+    background: rgba(30, 32, 48, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     padding: 32px;
-    max-width: 480px;
-    width: 90%;
-    max-height: 85vh;
+    max-width: 800px; /* Reverted to original size */
+    width: 95%; /* Wider on mobile */
+    max-height: 85vh; /* Reverted to original size */
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.95) translateY(20px);
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* Prevent pull-to-refresh and overscroll bounce inside modal */
+    overscroll-behavior: contain;
+    overscroll-behavior-y: contain; /* Vertical only - more specific */
+    -webkit-overscroll-behavior: contain; /* Safari/WebView support */
+    -webkit-overscroll-behavior-y: contain; /* Safari/WebView vertical */
+    touch-action: manipulation; /* Allow scrolling and zoom, but prevent pull-to-refresh and double-tap zoom */
 }
 
 .provider-modal:not(.hidden) .provider-modal-content {
@@ -312,6 +318,42 @@
     transform: translateY(-1px);
 }
 
+/* Instrumental Button - Cycles between Auto and Marked as Instrumental */
+.btn-instrumental {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-instrumental:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+}
+
+/* Active state - Marked as Instrumental (Blue) */
+.btn-instrumental.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #60a5fa;
+}
+
+.btn-instrumental.active:hover {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.7);
+    color: #93c5fd;
+}
+
 /* Scrollbar for modal */
 .provider-modal-content::-webkit-scrollbar {
     width: 6px;
@@ -393,3 +435,317 @@
         right: calc(0.5rem + 40px + 8px);
     }
 }
+
+/* ========== PROVIDER TABS ========== */
+.provider-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.provider-tab {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+    position: relative;
+    bottom: -1px; /* Align with border */
+}
+
+.provider-tab:hover {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.provider-tab.active {
+    color: #fff;
+    border-bottom-color: #3b82f6;
+}
+
+.provider-tab-content {
+    display: none;
+}
+
+.provider-tab-content.active {
+    display: block;
+}
+
+/* ========== ALBUM ART GRID ========== */
+.art-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+    /* Prevent pull-to-refresh and overscroll bounce */
+    overscroll-behavior: contain;
+    touch-action: manipulation; /* Allow scrolling and zoom, but prevent pull-to-refresh and double-tap zoom */
+}
+
+
+.art-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.03);
+    border: 2px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    aspect-ratio: 1; /* Square cards */
+}
+
+.art-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.art-card.selected {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.art-card-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.art-card-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+    padding: 12px;
+    color: #fff;
+}
+
+.art-card-provider {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.art-card-resolution {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.art-card-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #3b82f6;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.art-card.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 140px;
+}
+
+.art-card.loading::after {
+    content: '';
+    width: 24px;
+    height: 24px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments for art grid */
+@media (max-width: 600px) {
+    .art-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 12px;
+    }
+    
+    .provider-tabs {
+        margin-bottom: 20px;
+    }
+    
+    .provider-tab {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+}
+
+/* DESKTOP SPLIT VIEW (New) */
+@media (min-width: 768px) {
+    .provider-modal-content {
+        max-width: 800px;
+        width: 90%;
+        max-height: 80vh; /* Reverted to original size */
+        min-height: 500px; /* Ensure modal has minimum height for split view */
+        overflow-y: hidden; /* Prevent body scroll, use inner scroll */
+        display: flex;
+        flex-direction: column;
+    }
+
+    .provider-content-wrapper {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        overflow: hidden;
+        flex: 1; /* Take remaining height */
+        min-height: 0; /* CRITICAL: Allows nested flex/grid scrolling to work properly */
+    }
+
+    .provider-tabs {
+        display: none; /* Hide tabs on desktop */
+    }
+
+    .provider-tab-content {
+        display: flex !important; /* Force show both */
+        flex-direction: column;
+        overflow: hidden;
+        height: 100%;
+    }
+
+    /* Scrollable areas within columns */
+    .provider-list, 
+    #album-art-grid {
+        overflow-y: auto;
+        padding-right: 8px; /* Space for scrollbar */
+        flex: 1;
+        /* Custom Scrollbar for inner lists */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.1);
+        /* Prevent pull-to-refresh and overscroll bounce */
+        overscroll-behavior: contain;
+        touch-action: manipulation; /* Allow scrolling and zoom, but prevent pull-to-refresh and double-tap zoom */
+    }
+    
+    /* Headers for columns (simulated) */
+    .provider-tab-content::before {
+        content: attr(data-title);
+        display: block;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        flex-shrink: 0; /* Prevent header from being squished when content is long */
+    }
+    
+    .provider-modal-footer {
+        margin-top: auto; /* Push to bottom if content is short */
+        flex-shrink: 0; /* Prevent footer from being squished when content is long */
+    }
+}
+
+/* COMPACT Background Style Controls */
+.style-controls-section {
+    /* Remove padding and background for cleaner look */
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    margin-bottom: 16px;
+    text-align: left; /* Align with content */
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Spread title and buttons */
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 12px;
+}
+
+.style-controls-section h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 600;
+    /* Renamed "Background Style" to simpler "Style" in your head if desired, or keep as is */
+}
+
+.style-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-bottom: 0; /* Remove margin */
+}
+
+.style-btn {
+    padding: 4px 12px; /* Smaller padding */
+    font-size: 0.75rem; /* Smaller text */
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; /* Less rounded, more sleek */
+    cursor: pointer;
+    transition: all 0.2s;
+    color: rgba(255,255,255,0.7);
+}
+
+.style-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.style-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Hide the hint text */
+.style-hint {
+    display: none;
+}
+
+/* FIX: Grid Overlapping */
+.art-grid {
+    display: grid;
+    /* Use auto-fill with a fixed minimum to ensure consistent rows */
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+    /* Ensure the grid respects the container width */
+    width: 100%; 
+    /* Ensure content flows naturally */
+    grid-auto-rows: min-content; /* Changed from max-content to min-content to fit content exactly */
+    align-items: start; /* Align items to top of their cells */
+}
+/* Header for Artist Images Section */
+/*
+.artist-images-header {
+    grid-column: 1 / -1; 
+    width: 100%;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
+    font-size: 0.9rem;
+    font-weight: 600;
+    
+    display: flex;
+    align-items: center;
+    
+    grid-row-start: auto;
+}
+*/

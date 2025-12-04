@@ -83,7 +83,7 @@ body {
     transform: translateZ(0);
     -webkit-font-smoothing: antialiased;
     position: relative;
-    /* Subtle text glow effect */
+    /* Subtle text glow effect - REVERTED to original elegant style */
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
@@ -101,9 +101,17 @@ body {
 /* Lines immediately before/after current */
 .previous,
 .next {
-    opacity: 0.60;
+    opacity: 0.7; /* Increased from 0.6 for readability */
     font-size: clamp(1rem, 2.5vw, 1.8rem);
     transform: translateY(5px);
+    
+    /* STANDARD: No background pill by default */
+    background: none;
+    margin: 0 auto;
+    width: fit-content;
+    
+    /* STANDARD: Clean, elegant text shadow */
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 /* Currently active line */
@@ -111,28 +119,40 @@ body {
     font-size: clamp(1.5rem, 4vw, 3rem);
     opacity: 1;
     font-weight: 500;
-    /* Enhanced glow effect */
+    
+    /* STANDARD: Stronger glow for active line */
     text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    
     transform: scale(1.02);
     letter-spacing: 0.5px;
+    
     /* Apply floating animation */
     animation: wave 3s ease-in-out infinite;
+    position: relative;
+    z-index: 10;
+    
+    /* STANDARD: No background pill by default */
+    background: none;
+    width: fit-content;
+    padding: 0;
+    margin: 0 auto;
+    box-shadow: none;
+    border-radius: 0;
 }
 
 /* ========== ANIMATIONS ========== */
 @keyframes wave {
-
-    /* Gentle floating animation for current line */
+    /* Gentle floating animation for current line + Scale */
     0% {
-        transform: translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 
     50% {
-        transform: translateY(-2px);
+        transform: scale(1.02) translateY(-2px);
     }
 
     100% {
-        transform: translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 }
 
@@ -177,9 +197,10 @@ body {
 }
 
 .nav-link {
+    /* Merged styles */
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 1rem; /* Kept the more generous padding */
     border-radius: 0.5rem;
     transition: all 0.2s ease;
     background: none;
@@ -188,14 +209,10 @@ body {
     font-size: 0.9rem;
 }
 
-.nav-link:hover {
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(255, 255, 255, 0.1);
-}
-
+.nav-link:hover,
 .nav-link.active {
-    color: #fff;
-    background: rgba(59, 130, 246, 0.2);
+    color: white; /* Removed !important as specificity is now clean */
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .nav-link.exit-link {
@@ -210,24 +227,6 @@ body {
 /* Update content padding to account for bottom nav */
 #content {
     padding-bottom: 4rem;
-}
-
-/* ========== NAVIGATION ELEMENTS ========== */
-.nav-link {
-    /* Semi-transparent white text */
-    color: rgba(255, 255, 255, 0.7) !important;
-    padding: 0.3rem 0.8rem !important;
-    transition: all 0.3s ease;
-    font-size: clamp(0.8rem, 2vw, 0.9rem);
-    text-decoration: none;
-}
-
-/* Hover and active states for nav links */
-.nav-link:hover,
-.nav-link.active {
-    color: white !important;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
 }
 
 /* Exit button styling */
@@ -296,11 +295,6 @@ body[data-minimal="true"] #footer {
     display: none !important;
 }
 
-/* Transparent background in minimal mode */
-body[data-minimal="true"] {
-    background: transparent;
-}
-
 /* Adjust lyrics container in minimal mode */
 body[data-minimal="true"] #lyrics {
     min-height: 100vh;
@@ -335,21 +329,30 @@ body[data-minimal="true"] #lyrics {
 }
 
 /* ========== HOME ASSISTANT SPECIFIC STYLES ========== */
-/* Default transparent background */
-body {
-    background: transparent;
+
+/* Minimal Mode overrides: Restore colored gradient background + Hidden UI */
+body[data-minimal="true"] {
+    /* Restore the default gradient background (same as normal mode) */
+    background: linear-gradient(135deg, #1e2030 0%, #2f354d 100%);
 }
 
-/* Remove any background styles from #lyrics */
-#lyrics {
+body[data-minimal="true"] #lyrics {
     background: none;
+    min-height: 100vh;
+    padding: 0;
 }
 
-/* Add gradient background only for non-Home Assistant contexts */
-@media not all and (min-width: 600px) {
-    body {
-        background: linear-gradient(135deg, #24273a 0%, #363b54 100%);
-    }
+/* Hide elements in minimal mode */
+body[data-minimal="true"] .bottom-nav,
+body[data-minimal="true"] #header,
+body[data-minimal="true"] #footer,
+body[data-minimal="true"] .settings-toggle,
+body[data-minimal="true"] .track-header,
+body[data-minimal="true"] #player-ui-container,
+body[data-minimal="true"] .album-art,
+body[data-minimal="true"] .background-layer,
+body[data-minimal="true"] .background-overlay {
+    display: none !important;
 }
 
 /* ========== SETTINGS TOGGLE ========== */
@@ -449,19 +452,40 @@ body {
     max-width: 400px;
 }
 
+/* Album Art Link Container */
+#album-art-link {
+    display: block;
+    text-decoration: none;
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Hover effect for clickable album art */
+#album-art-link[href^="spotify:"]:hover,
+#album-art-link[href^="https://open.spotify.com"]:hover {
+    transform: scale(1.05);
+}
+
+#album-art-link[href="#"] {
+    cursor: default;
+}
+
 .album-art {
     width: clamp(90px, 12vw, 110px);
     height: clamp(90px, 12vw, 110px);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    transition: all 0.5s ease;
+    /* Smooth fade transition for image changes (prevents flickering during DB population) */
+    transition: opacity 0.3s ease, all 0.5s ease;
     object-fit: cover;
     /* Hide by default until valid src is loaded */
     opacity: 0;
+    display: block;
 }
 
-/* Show album art only when it has a valid HTTP(S) URL */
-.album-art[src^="http"] {
+/* Show album art only when it has a valid HTTP(S) URL or local path */
+.album-art[src^="http"],
+.album-art[src^="/"] {
     opacity: 1;
 }
 
@@ -576,13 +600,71 @@ body.hide-nav #player-ui-container {
 /* ========== PLAYBACK CONTROLS ========== */
 .playback-controls {
     display: flex;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: rgba(26, 27, 38, 0.6);
-    backdrop-filter: blur(10px);
+    justify-content: space-between; /* Spreads Left, Center, Right */
+    align-items: center;
+    gap: 10px;
+    padding: 0.5rem 1.5rem; /* Increased side padding */
+    background: rgba(26, 27, 38, 0.7); /* Slightly darker for better contrast */
+    backdrop-filter: blur(15px);
     border-radius: 50px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     pointer-events: auto;
+    width: clamp(300px, 90%, 500px); /* Fixed width constraint for centering */
+    margin: 0 auto; /* Center the whole bar */
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.controls-left,
+.controls-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.controls-left {
+    justify-content: flex-start;
+}
+
+.controls-right {
+    justify-content: flex-end;
+}
+
+.controls-center {
+    flex: 2;
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem; /* Space between Prev/Play/Next */
+}
+
+/* New Lyric Toggle Button (Bottom Left) */
+.lyrics-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.lyrics-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .lyrics-toggle-btn {
+    display: none !important;
 }
 
 .control-btn {
@@ -785,39 +867,120 @@ body[data-minimal="true"] .album-art {
     display: block;
 }
 
-/* ========== SHARP MODE (No Blur, No Scaling) ========== */
+/* ========== SHARP MODE (No Blur, High Res) ========== */
 /* Sharp mode: Super sharp and clear album art with no blur effects */
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
-    /* Remove all blur filters for maximum sharpness and clarity */
-    filter: none !important;
-    /* Remove scaling transform to show image at native size (no upscaling artifacts) */
+    /* Micro-blur (0.5px) reduces jagged edges without looking blurry */
+    filter: blur(0.5px) !important;
+
+    /* Reset transforms to prevent scaling blur */
     transform: none !important;
     -webkit-transform: none !important;
-    /* Optimize image rendering for maximum sharpness */
-    /* Use high-quality rendering - auto is best for photos (smooth scaling) */
-    image-rendering: auto;
-    /* Force hardware acceleration for better quality (without transforms) */
+
+    /* KEY: Forces browser to use best smoothing algorithm (bicubic/lanczos) */
+    image-rendering: high-quality; 
+    
+    /* Performance hints for smooth transitions */
+    will-change: opacity, background-image;
+    
+    /* Hardware acceleration */
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
-    /* Ensure crisp rendering */
-    -webkit-font-smoothing: antialiased;
 }
 
 body.sharp-mode .background-overlay {
     /* Remove backdrop blur that causes haziness - this was the main culprit! */
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    /* Keep a subtle dark overlay for text readability, but much lighter than blurred mode */
-    background: rgba(0, 0, 0, 0.2) !important;
+    /* backdrop-filter: none !important; */
+    /* -webkit-backdrop-filter: none !important; */
+     /* FIX: Override the default flat black 0.6 opacity */
+    /* Make it almost transparent to let the art shine */
+ /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
+    backdrop-filter: blur(0.5px) saturate(105%) !important;
+    -webkit-backdrop-filter: blur(0.5px) saturate(105%) !important;
+    /* Very transparent background (5%) to let the art shine */
+    background: rgba(0, 0, 0, 0.05) !important;
+
+    /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
+    /* background: rgba(0, 0, 0, 0.1) !important; */
+    /* Vignette gradient: vibrant center, dark edges for text readability */
+    /* Keeps the center of the 3000px art vibrant while darkening edges for text contrast */
+
+
+   /* background: radial-gradient(circle at center, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.75) 100%) !important;*/
 }
+
+/* ========== SHARP MODE SPECIFIC OVERRIDES ========== */
+/* Since Sharp Mode has almost no global overlay (5%), we need stronger local contrast for text */
+
+body.sharp-mode .current {
+    /* RADIAL GRADIENT FADE - Darkest in the very center behind text */
+    background: radial-gradient(
+        closest-side,
+        rgba(0, 0, 0, 0.0) 0%,    /* Very subtle core */
+        rgba(0, 0, 0, 0.0) 80%,   /* Extends far out before fading */
+        transparent 100%
+    ) !important;
+    
+    /* Blends the dark pill with the album art color */
+    mix-blend-mode: luminosity; 
+    
+    /* Tighter padding = smaller shadow footprint */
+    padding: 10px 32px; 
+    width: fit-content;
+    max-width: 90%;
+    margin: 0 auto;
+    
+    /* Explicitly reset global box/border styles */
+    box-shadow: none;
+    border-radius: 0; 
+
+    /* HYBRID SHADOW: Crisp Black Definition + Ethereal White Halo */
+    text-shadow: 
+        /* CHANGE 1: Increase opacity (last number) from 0.5 to 0.8 or 1.0 for darker outline */
+        /* You can also increase the blur (3rd number) from 4px to 8px for a wider shadow */
+        0 2px 4px rgba(0, 0, 0, 0.9),   
+
+        /* CHANGE 2: Increase white glow opacity from 0.3 to 0.5 for more pop against dark backgrounds */
+        0 0 20px rgba(255, 255, 255, 0.5) !important; 
+    
+    /* Smooth transition for the pill effect */
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+}
+
+/* Also slightly darken the adjacent lines in Sharp Mode */
+body.sharp-mode .previous,
+body.sharp-mode .next {
+    /* SUBTLE PILL BACKGROUND for readability on light art */
+    background: radial-gradient(
+        closest-side,
+        rgba(0, 0, 0, 0.0) 0%,
+        rgba(0, 0, 0, 0.0) 75%,
+        transparent 100%
+    ) !important;
+    
+    /* Inherit blend mode behavior */
+    mix-blend-mode: luminosity;
+    
+    padding: 4px 20px;
+    width: fit-content;
+    margin: 0 auto;
+    
+    /* HYBRID SHADOW: Definition + Soft Glow */
+    text-shadow: 
+        0 1px 2px rgba(0, 0, 0, 0.8), /* Increased from 0.5 to match your strong style */
+        0 0 10px rgba(255, 255, 255, 0.2) !important; /* Slight bump for visibility */
+        
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 
 /* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
 /* Soft mode: Medium blur album art background - balanced between sharp and blurred */
 /* Provides good image clarity with better text readability than sharp mode */
 body.soft-mode .background-layer {
     /* Medium blur (6px) - provides softness while maintaining image clarity */
-    filter: blur(6px) !important;
+    filter: blur(3px) !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
@@ -827,10 +990,10 @@ body.soft-mode .background-layer {
 
 body.soft-mode .background-overlay {
     /* Light backdrop blur (10px) - softens edges without major haziness */
-    backdrop-filter: blur(10px) saturate(140%) !important;
-    -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
+    backdrop-filter: blur(5px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(5px) saturate(140%) !important;
     /* Medium dark overlay for better text contrast and readability */
-    background: rgba(0, 0, 0, 0.35) !important;
+    background: rgba(0, 0, 0, 0.20) !important;
 }
 
 /* ========== SPOTIFY LOGIN OVERLAY ========== */
@@ -969,3 +1132,340 @@ body.soft-mode .background-overlay {
     margin-top: 16px;
     margin-bottom: 0;
 }
+
+/* ========== VISUAL MODE STYLES ========== */
+
+/* Visual Mode - Hide Lyrics Container */
+.lyrics-container {
+    transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.lyrics-container.visual-mode-hidden {
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+}
+
+/* Slideshow Base */
+.slideshow-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 2s ease-in-out;
+    z-index: 0;
+}
+
+.slideshow-image.active {
+    opacity: 1;
+}
+
+/* Ken Burns Effect - Pan and Zoom */
+.ken-burns-effect {
+    animation: kenBurns 8s ease-out forwards;
+}
+
+@keyframes kenBurns {
+    0% {
+        transform: scale(1) translate(0, 0);
+    }
+    100% {
+        transform: scale(1.1) translate(-2%, -2%);
+    }
+}
+
+/* Alternate Ken Burns animations for variety */
+.ken-burns-effect:nth-child(even) {
+    animation: kenBurnsAlt 8s ease-out forwards;
+}
+
+@keyframes kenBurnsAlt {
+    0% {
+        transform: scale(1.05) translate(-1%, 0);
+    }
+    100% {
+        transform: scale(1.15) translate(1%, -3%);
+    }
+}
+
+/* Ensure background layer can contain slideshow images */
+.background-layer {
+    position: fixed; /* Changed back to fixed */
+    overflow: hidden;
+}
+
+/* Like Button Active State */
+#btn-like.liked {
+    color: #1DB954; /* Spotify Green */
+    text-shadow: 0 0 10px rgba(29, 185, 84, 0.4);
+}
+
+/* Queue Drawer */
+.queue-drawer {
+    position: fixed;
+    top: 0;
+    right: -300px; /* Hidden by default */
+    width: 300px; /* Slightly wider */
+    max-width: 85vw; /* Responsive on mobile */
+    height: 100vh;
+    height: 100dvh;
+    
+    /* Transparent background as requested, slight blur for readability */
+    /* background: rgba(0, 0, 0, 0.3); 
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    
+    border-left: 1px solid rgba(255, 255, 255, 0.1); */
+
+    z-index: 2000;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /*  box-shadow: -10px 0 40px rgba(0,0,0,0.6); */
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    /* FIX: Ensure interactions work inside */
+    pointer-events: auto; 
+}
+
+/* Queue Backdrop - Disable strictly for the lyrics area interaction */
+.queue-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* Totally transparent so it doesn't darken the lyrics */
+    background: transparent; 
+    z-index: 1999; /* Below drawer, above content */
+    opacity: 0;
+    pointer-events: none; /* Default to pass-through */
+    transition: none; /* Instant toggle */
+}
+
+.queue-backdrop.visible {
+    /* Still transparent, but blocks clicks to content */
+    opacity: 1; 
+    pointer-events: auto; /* Catch clicks */
+}
+
+/* Ensure scrolling works */
+.queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+    -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+    pointer-events: auto; /* Explicitly enable pointer events */
+
+    /* Hide Scrollbar - Chrome, Safari, Opera */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+    
+}
+
+.queue-list::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+    width: 0;
+    height: 0;
+    background: transparent;
+}
+
+/* RESTORED: Missing Queue Styles */
+.queue-drawer.open {
+    right: 0;
+}
+
+/* Queue Header Controls */
+.queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.queue-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: white;
+}
+
+#queue-close {
+  /*  background: none;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    font-size: 1.5rem;
+    cursor: pointer;
+    /* Hide the X button as requested */
+    display: none;
+
+}
+
+/* Queue Backdrop for clicking outside */
+.queue-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+   /* background: rgba(0,0,0,0.5); */
+    z-index: 1999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.queue-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+    -webkit-overflow-scrolling: touch;
+    /* FIX: Ensure scrollable area is clickable */
+    pointer-events: auto;
+}
+
+.queue-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: background 0.2s;
+}
+
+.queue-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.queue-art {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.queue-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.queue-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.queue-artist {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Background Style Controls in Modal */
+.style-controls-section {
+    /* Remove padding and background for cleaner look */
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    margin-bottom: 16px;
+    text-align: left; /* Align with content */
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Spread title and buttons */
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 12px;
+}
+
+.style-controls-section h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 600;
+    /* Renamed "Background Style" to simpler "Style" in your head if desired, or keep as is */
+}
+
+.style-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-bottom: 0; /* Remove margin */
+}
+
+.style-btn {
+    padding: 4px 12px; /* Smaller padding */
+    font-size: 0.75rem; /* Smaller text */
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; /* Less rounded, more sleek */
+    cursor: pointer;
+    transition: all 0.2s;
+    color: rgba(255,255,255,0.7);
+}
+
+.style-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.style-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Hide the hint text */
+.style-hint {
+    display: none;
+}
+
+/* FIX: Grid Overlapping */
+.art-grid {
+    display: grid;
+    /* Use auto-fill with a fixed minimum to ensure consistent rows */
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+    /* Ensure the grid respects the container width */
+    width: 100%; 
+    /* Ensure content flows naturally */
+    grid-auto-rows: min-content; /* Changed from max-content to min-content to fit content exactly */
+    align-items: start; /* Align items to top of their cells */
+}
+
+/* Header for Artist Images Section */
+.artist-images-header {
+    grid-column: 1 / -1; /* Span full width */
+    width: 100%;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
+    font-size: 0.9rem;
+    font-weight: 600;
+    /* Ensure it breaks the grid flow visually */
+    display: flex;
+    align-items: center;
+    /* Force it to start on a new row */
+    grid-row-start: auto;
+
+}
+

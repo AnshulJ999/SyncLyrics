@@ -5,7 +5,7 @@ import os
 import tempfile
 from typing import Optional, List, Tuple, Dict, Set, Any
 
-from system_utils import get_current_song_meta_data
+from system_utils import get_current_song_meta_data, create_tracked_task
 from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
@@ -17,11 +17,12 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # Initialize providers
-# Priority Order:
-# 1. LRCLib (Best, Open Source)
-# 2. Spotify + Musicxmatch (Good, Synced - Race in parallel)
-# 3. NetEase (Good coverage)
-# 4. QQ Music (Fallback)
+# Priority Order (from settings.json):
+# 1. Spotify (Priority 1) - Best for Spotify users
+# 2. LRCLib (Priority 2) - Open Source, good quality
+# 3. NetEase (Priority 3) - Good coverage
+# 4. QQ Music (Priority 4) - Fallback
+# 5. Musicxmatch (Priority 5) - Disabled by default
 providers = [
     LRCLIBProvider(),      # Priority 1
     SpotifyLyrics(),       # Priority 2
@@ -125,11 +126,144 @@ def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
 
     return set()
 
+
+def _normalize_provider_result(result: Optional[Any]) -> Tuple[Optional[List[Tuple[float, str]]], Dict[str, Any]]:
+    """
+    Normalize provider output into a lyrics list and metadata dict.
+
+    This allows new providers to return dictionaries while maintaining backwards
+    compatibility with existing ones that return lists.
+    """
+    if not result:
+        return None, {}
+
+    if isinstance(result, list):
+        return result, {}
+
+    if isinstance(result, dict):
+        lyrics = result.get("lyrics")
+        if not isinstance(lyrics, list):
+            return None, {}
+
+        metadata = {key: value for key, value in result.items() if key != "lyrics"}
+        metadata.setdefault("is_instrumental", False)
+        return lyrics, metadata
+
+    return None, {}
+
+
+def _apply_instrumental_marker(lyrics: Optional[List[Tuple[float, str]]], metadata: Dict[str, Any]) -> Optional[List[Tuple[float, str]]]:
+    """Ensures instrumental tracks at least have a single placeholder lyric."""
+    if metadata.get("is_instrumental") and not lyrics:
+        return [(0.0, "Instrumental")]
+    return lyrics
+
+def _is_manually_instrumental(artist: str, title: str) -> bool:
+    """Checks if a song is manually marked as instrumental in the database."""
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+    
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return False
+    
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # Check for manual instrumental flag
+        return data.get("is_instrumental_manual", False) is True
+    except Exception as e:
+        logger.debug(f"Could not check manual instrumental flag ({artist} - {title}): {e}")
+        return False
+
+
+def _is_cached_instrumental(artist: str, title: str) -> bool:
+    """Returns True if cached metadata indicates the song is instrumental."""
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return False
+
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        metadata = data.get("metadata", {})
+        if not isinstance(metadata, dict):
+            return False
+
+        for provider_meta in metadata.values():
+            if isinstance(provider_meta, dict) and provider_meta.get("is_instrumental"):
+                return True
+    except Exception as exc:
+        logger.debug(f"Could not read cached metadata for instrumental flag ({artist} - {title}): {exc}")
+
+    return False
+
+async def set_manual_instrumental(artist: str, title: str, is_instrumental: bool) -> bool:
+    """
+    Marks or unmarks a song as instrumental manually.
+    Returns True if successful, False otherwise.
+    """
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+    
+    db_path = _get_db_path(artist, title)
+    if not db_path:
+        return False
+    
+    async with _db_lock:
+        try:
+            # Load existing file if it exists
+            data = {
+                "artist": artist,
+                "title": title,
+                "saved_lyrics": {}
+            }
+            
+            if os.path.exists(db_path):
+                try:
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                    # Preserve existing structure
+                    if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                        data = existing
+                    elif "lyrics" in existing:
+                        # Legacy format - migrate
+                        legacy_source = existing.get("source", "Unknown")
+                        legacy_lyrics = existing.get("lyrics", [])
+                        if legacy_lyrics:
+                            data["saved_lyrics"][legacy_source] = legacy_lyrics
+                except Exception as e:
+                    logger.warning(f"Could not load existing DB for instrumental marking: {e}")
+            
+            # Set or remove the manual flag
+            if is_instrumental:
+                data["is_instrumental_manual"] = True
+            else:
+                # Remove the flag if unmarking
+                data.pop("is_instrumental_manual", None)
+            
+            # Save using atomic write pattern
+            dir_path = os.path.dirname(db_path)
+            fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            os.replace(temp_path, db_path)
+            
+            logger.info(f"Marked {artist} - {title} as {'instrumental' if is_instrumental else 'NOT instrumental'} (manual)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to mark instrumental flag: {e}")
+            return False
+
 def _normalized_song_key(artist: str, title: str) -> str:
     """Creates a consistent key for tracking per-song background tasks."""
     return f"{artist.strip().lower()}::{title.strip().lower()}"
 
-async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> None:
+async def _save_to_db(artist: str, title: str, lyrics: list, source: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Saves found lyrics to disk with multi-provider support (merge mode)."""
     if not FEATURES.get("save_lyrics_locally", False) or not lyrics: return
     
@@ -170,6 +304,9 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str) -> Non
             # Note: preferred_provider field is preserved from existing data (if present)
             # It should only be modified via set_provider_preference(), not during automatic saves
             data["saved_lyrics"][source] = lyrics
+            if metadata:
+                data.setdefault("metadata", {})
+                data["metadata"][source] = metadata
             
             # Save merged data using atomic write pattern
             # This prevents corruption if app crashes during write:
@@ -218,9 +355,11 @@ def _save_all_results_background(
                         continue
 
                     try:
-                        lyrics = await task
+                        raw_result = await task
+                        lyrics, metadata = _normalize_provider_result(raw_result)
+                        lyrics = _apply_instrumental_marker(lyrics, metadata)
                         if lyrics:
-                            await _save_to_db(artist, title, lyrics, provider.name)
+                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
                             logger.info(f"Background save complete for {provider.name}")
                     except Exception as exc:
                         logger.debug(f"Background provider error ({provider.name}): {exc}")
@@ -230,7 +369,7 @@ def _save_all_results_background(
         except Exception as exc:
             logger.error(f"Background collection error: {exc}")
 
-    asyncio.create_task(collect_remaining())
+    create_tracked_task(collect_remaining())
 
 def _backfill_missing_providers(
     artist: str,
@@ -290,9 +429,11 @@ def _backfill_missing_providers(
                         continue
 
                     try:
-                        lyrics = await task
+                        raw_result = await task
+                        lyrics, metadata = _normalize_provider_result(raw_result)
+                        lyrics = _apply_instrumental_marker(lyrics, metadata)
                         if lyrics:
-                            await _save_to_db(artist, title, lyrics, provider.name)
+                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
                             logger.info(f"Backfill saved lyrics from {provider.name}")
                             
                             # Check again after saving - if we now have 3 providers, stop
@@ -309,7 +450,7 @@ def _backfill_missing_providers(
         finally:
             _backfill_tracker.discard(song_key)
 
-    asyncio.create_task(run_backfill())
+    create_tracked_task(run_backfill())
 
 # ==========================================
 # Provider Management Functions
@@ -387,10 +528,25 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
                 current_song_lyrics = lyrics
                 current_song_provider = provider_name
                 
-                # Update preference in DB
+                # Update preference in DB using atomic write pattern
+                # FIX: Use temp file to prevent race conditions during rapid song skipping
                 data['preferred_provider'] = provider_name
-                with open(db_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
+                dir_path = os.path.dirname(db_path)
+                try:
+                    # Create temp file in same directory (required for atomic rename)
+                    fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    # Atomic replace - if this fails, original file is untouched
+                    os.replace(temp_path, db_path)
+                except Exception as write_err:
+                    # Clean up temp file if it exists
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                    raise write_err
                 
                 logger.info(f"Switched to cached {provider_name} lyrics")
                 return {
@@ -403,23 +559,41 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
     # Lyrics not cached - fetch them
     try:
         if asyncio.iscoroutinefunction(provider_obj.get_lyrics):
-            lyrics = await provider_obj.get_lyrics(artist, title)
+            raw_result = await provider_obj.get_lyrics(artist, title)
         else:
-            lyrics = await asyncio.to_thread(provider_obj.get_lyrics, artist, title)
-        
+            raw_result = await asyncio.to_thread(provider_obj.get_lyrics, artist, title)
+
+        lyrics, metadata = _normalize_provider_result(raw_result)
+        lyrics = _apply_instrumental_marker(lyrics, metadata)
+
         if lyrics:
             # Save to DB with preference
-            await _save_to_db(artist, title, lyrics, provider_name)
+            await _save_to_db(artist, title, lyrics, provider_name, metadata=metadata)
             
-            # Update preference in DB
+            # Update preference in DB using atomic write pattern
+            # FIX: Use temp file to prevent race conditions during rapid song skipping
             db_path = _get_db_path(artist, title)
             if db_path:
                 async with _db_lock:
                     with open(db_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                     data['preferred_provider'] = provider_name
-                    with open(db_path, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    dir_path = os.path.dirname(db_path)
+                    try:
+                        # Create temp file in same directory (required for atomic rename)
+                        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=4, ensure_ascii=False)
+                        # Atomic replace - if this fails, original file is untouched
+                        os.replace(temp_path, db_path)
+                    except Exception as write_err:
+                        # Clean up temp file if it exists
+                        if 'temp_path' in locals() and os.path.exists(temp_path):
+                            try:
+                                os.unlink(temp_path)
+                            except:
+                                pass
+                        raise write_err
             
             # Update current state
             current_song_lyrics = lyrics
@@ -463,8 +637,23 @@ async def clear_provider_preference(artist: str, title: str) -> bool:
             if 'preferred_provider' in data:
                 del data['preferred_provider']
                 
-                with open(db_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
+                # FIX: Use temp file to prevent race conditions during rapid song skipping
+                dir_path = os.path.dirname(db_path)
+                try:
+                    # Create temp file in same directory (required for atomic rename)
+                    fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    # Atomic replace - if this fails, original file is untouched
+                    os.replace(temp_path, db_path)
+                except Exception as write_err:
+                    # Clean up temp file if it exists
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                    raise write_err
                 
                 logger.info(f"Cleared provider preference for {artist} - {title}")
         
@@ -519,6 +708,34 @@ async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:
 # Main Logic
 # ==========================================
 
+async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
+    """
+    Background task helper to fetch lyrics without blocking the UI.
+    
+    This function runs in the background after _update_song has already
+    updated current_song_data and released the lock. This prevents the
+    UI from freezing while waiting for internet requests to complete.
+    """
+    global current_song_lyrics, current_song_data, current_song_provider
+
+    try:
+        # Use the global _get_lyrics function to fetch from internet providers
+        fetched_lyrics = await _get_lyrics(target_artist, target_title)
+        
+        # CRITICAL: Check if song is still the same before setting lyrics
+        # This prevents stale lyrics from a previous song being displayed
+        # if the user skipped to a new song while this fetch was in progress
+        if (current_song_data and 
+            current_song_data["artist"] == target_artist and 
+            current_song_data["title"] == target_title):
+            current_song_lyrics = fetched_lyrics
+            logger.info(f"Background fetch completed for {target_artist} - {target_title}")
+        else:
+            # Song changed during fetch - discard these lyrics to prevent wrong display
+            logger.debug(f"Discarded background lyrics for {target_artist} - {target_title} (song changed)")
+    except Exception as e:
+        logger.error(f"Error in background fetch for {target_artist}: {e}")
+
 async def _update_song():
     """
     Updates current song data and fetches lyrics if changed.
@@ -569,6 +786,21 @@ async def _update_song():
             target_artist = new_song_data["artist"]
             target_title = new_song_data["title"]
             
+            # Check if song is manually marked as instrumental
+            # If so, skip all lyrics searching and mark as instrumental immediately
+            if _is_manually_instrumental(target_artist, target_title):
+                logger.info(f"Song {target_artist} - {target_title} is manually marked as instrumental, skipping lyrics search")
+                # Set instrumental marker as lyrics (single line with instrumental indicator)
+                current_song_lyrics = [(0, "Instrumental")]
+                current_song_provider = "Instrumental"
+                return  # Skip all provider searches
+
+            if _is_cached_instrumental(target_artist, target_title):
+                logger.info(f"Song {target_artist} - {target_title} is cached as instrumental, skipping lyrics search")
+                current_song_lyrics = [(0, "Instrumental")]
+                current_song_provider = "Instrumental (cached)"
+                return
+            
             # 1. Try Local DB First (Zero Latency)
             local_lyrics = _load_from_db(target_artist, target_title)
             if local_lyrics:
@@ -593,19 +825,14 @@ async def _update_song():
                     else:
                         logger.debug(f"Skipping backfill for {target_artist} - {target_title} (already have {len(saved_providers)} providers)")
             else:
-                # 2. Try Internet (Smart Race)
-                # This can take time, so we validate after fetch completes
-                fetched_lyrics = await _get_lyrics(target_artist, target_title)
-                
-                # CRITICAL: Only set lyrics if song hasn't changed during fetch
-                # This prevents stale lyrics from being displayed after rapid song changes
-                if (current_song_data and 
-                    current_song_data["artist"] == target_artist and 
-                    current_song_data["title"] == target_title):
-                    current_song_lyrics = fetched_lyrics
-                else:
-                    # Song changed during fetch - discard these lyrics
-                    logger.debug(f"Discarded lyrics for {target_artist} - {target_title} (song changed during fetch)")
+                # 2. Try Internet (Smart Race) - BACKGROUND
+                # CRITICAL PERFORMANCE FIX: Don't await internet fetch inside lock
+                # Starting a background task allows the UI to remain responsive while
+                # lyrics are being fetched from providers. The lock is released immediately
+                # so other operations can continue, and _fetch_and_set_lyrics will update
+                # current_song_lyrics when the fetch completes (if song hasn't changed).
+                current_song_lyrics = [(0, "Searching lyrics...")] 
+                create_tracked_task(_fetch_and_set_lyrics(target_artist, target_title))
         else:
             # Song hasn't changed, just update the metadata (position, etc.)
             current_song_data = new_song_data
@@ -632,17 +859,19 @@ async def _get_lyrics(artist: str, title: str):
         best_provider_name = None
         for provider in sorted_providers:
             try:
-                # Check if the method is async or sync and handle accordingly
                 if asyncio.iscoroutinefunction(provider.get_lyrics):
-                    lyrics = await provider.get_lyrics(artist, title)
+                    raw_result = await provider.get_lyrics(artist, title)
                 else:
-                    lyrics = await asyncio.to_thread(provider.get_lyrics, artist, title)
-                
+                    raw_result = await asyncio.to_thread(provider.get_lyrics, artist, title)
+
+                lyrics, metadata = _normalize_provider_result(raw_result)
+                lyrics = _apply_instrumental_marker(lyrics, metadata)
+
                 if lyrics:
                     logger.info(f"Found lyrics using {provider.name}")
-                    await _save_to_db(artist, title, lyrics, provider.name) # Save result
+                    await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
                     if best_lyrics is None:
-                        best_lyrics = lyrics  # Keep first usable result for display
+                        best_lyrics = lyrics
                         best_provider_name = provider.name
             except Exception as e:
                 logger.error(f"Error with {provider.name}: {e}")
@@ -682,17 +911,18 @@ async def _get_lyrics(artist: str, title: str):
                 continue
 
             try:
-                lyrics = await task
+                raw_result = await task
             except Exception as exc:
                 logger.debug(f"Provider task failed for {getattr(provider, 'name', 'Unknown')}: {exc}")
                 continue
-            
+
+            lyrics, metadata = _normalize_provider_result(raw_result)
+            lyrics = _apply_instrumental_marker(lyrics, metadata)
+
             if lyrics:
-                # Save every provider result so the DB accumulates data over time
-                await _save_to_db(artist, title, lyrics, provider.name)
+                await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
                 logger.info(f"Saved lyrics using {provider.name} (Priority {provider.priority})")
 
-                # Track the best lyrics we have so far for display
                 if provider.priority < best_priority:
                     best_priority = provider.priority
                     best_result = lyrics
@@ -736,13 +966,16 @@ async def _get_lyrics(artist: str, title: str):
                         continue
 
                     try:
-                        lyrics = await task
+                        raw_result = await task
                     except Exception as exc:
                         logger.debug(f"Provider task failed during grace window ({getattr(provider, 'name', 'Unknown')}): {exc}")
                         continue
-                    
+
+                    lyrics, metadata = _normalize_provider_result(raw_result)
+                    lyrics = _apply_instrumental_marker(lyrics, metadata)
+
                     if lyrics:
-                        await _save_to_db(artist, title, lyrics, provider.name)
+                        await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
                         logger.info(f"Grace window got lyrics from {provider.name} (Priority {provider.priority})")
 
                         if provider.priority < best_priority:
@@ -843,7 +1076,23 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
     if current_song_lyrics is None: return "Lyrics not found"
     
     idx = _find_current_lyric_index()
+
+    # Explicit Flag Check (New)
+    is_instrumental = False
     
+    # 1. Check if the lyrics list itself has a special flag (we can attach this in providers)
+    # For now, we improve the text check to be less brittle
+    if len(current_song_lyrics) == 1:
+        text = current_song_lyrics[0][1].lower().strip()
+        # Check for known "Instrumental" markers from providers
+        # Expanded list to catch more symbols and common provider placeholders
+        if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+            is_instrumental = True
+    
+    # Note: Instrumental breaks (sections within songs marked with "(Instrumental)", "[Solo]", etc.)
+    # are treated as normal lyric lines and will be displayed. They are not filtered out.
+    # The frontend will display them as regular lyrics, which is the correct behavior.
+            
     # Handle instrumental / intro
     if idx == -1:
         # Look ahead to see what the first lyric is

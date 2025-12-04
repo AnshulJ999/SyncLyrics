@@ -48,10 +48,14 @@ def conf(key, default=None):
 # ==========================================
 
 RESOURCES_DIR = ROOT_DIR / "resources"
-DATABASE_DIR = ROOT_DIR / "lyrics_database"
-CACHE_DIR = ROOT_DIR / "cache"
 
-for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR]:
+# Data directories - can be overridden via environment variables for persistent storage
+# In HAOS, set these to /config/synclyrics/* for persistence across addon restarts
+DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
+CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
+ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
+
+for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 DEBUG = {
@@ -94,11 +98,11 @@ UI = {
             "text": conf("ui.themes.light.text", "#000000")
         }
     },
-    "animation_styles": conf("ui.animation_styles", ["wave"]),
-    "background_styles": conf("ui.background_styles", ["gradient"]),
+    "animation_styles": conf("ui.animation_styles", ["wave", "fade", "slide", "none"]),
+    "background_styles": conf("ui.background_styles", ["gradient", "solid", "albumart"]),
     "minimal_mode": {
         "enabled": conf("ui.minimal_mode.enabled", False),
-        "hide_elements": conf("ui.minimal_mode.hide_elements", [])
+        "hide_elements": conf("ui.minimal_mode.hide_elements", ["bottom-nav"])
     }
 }
 
@@ -116,8 +120,14 @@ LYRICS = {
 SPOTIFY = {
     "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
     "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
-    "redirect_uri": conf("spotify.redirect_uri", "http://localhost:9012/callback"),
-    "scope": ["user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing"],
+    "redirect_uri": conf("spotify.redirect_uri", "http://127.0.0.1:9012/callback"),
+    "scope": [
+        "user-read-playback-state", 
+        "user-modify-playback-state", 
+        "user-read-currently-playing",
+        "user-library-read",    # ADDED: Check if song is liked
+        "user-library-modify"   # ADDED: Like/Unlike songs
+    ],
     "cache": {
         "metadata_ttl": conf("spotify.cache.metadata_ttl", 2.0),
         "enabled": conf("spotify.cache.enabled", True),
@@ -127,7 +137,7 @@ SPOTIFY = {
 PROVIDERS = {
     "lrclib": {
         "enabled": conf("providers.lrclib.enabled", True),
-        "priority": conf("providers.lrclib.priority", 1),
+        "priority": conf("providers.lrclib.priority", 2),
         "base_url": "https://lrclib.net/api",
         "timeout": conf("providers.lrclib.timeout", 10),
         "retries": conf("providers.lrclib.retries", 3),
@@ -135,7 +145,7 @@ PROVIDERS = {
     },
     "spotify": {
         "enabled": conf("providers.spotify.enabled", True),
-        "priority": conf("providers.spotify.priority", 2),
+        "priority": conf("providers.spotify.priority", 1),
         "base_url": os.getenv("SPOTIFY_BASE_URL", "https://fake-spotify-lyrics-api-azure.vercel.app"),
         "timeout": conf("providers.spotify.timeout", 10),
         "retries": conf("providers.spotify.retries", 3),
@@ -156,7 +166,7 @@ PROVIDERS = {
         "cache_duration": conf("providers.netease.cache_duration", 86400)
     },
     "musicxmatch": {
-        "enabled": conf("providers.musicxmatch.enabled", True),
+        "enabled": conf("providers.musicxmatch.enabled", False),
         "priority": conf("providers.musicxmatch.priority", 5),
         "timeout": conf("providers.musicxmatch.timeout", 10),
         "retries": conf("providers.musicxmatch.retries", 3),
@@ -226,7 +236,28 @@ FEATURES = {
     "parallel_provider_fetch": conf("features.parallel_provider_fetch", True),
     "provider_stats": conf("features.provider_stats", False),
     "auto_theme": conf("features.auto_theme", True),
-    "album_art_colors": conf("features.album_art_colors", True)
+    "album_art_colors": conf("features.album_art_colors", True),
+    "album_art_db": conf("features.album_art_db", True)
+}
+
+ALBUM_ART = {
+    "timeout": conf("album_art.timeout", 5),
+    "retries": conf("album_art.retries", 2),
+    # Note: lastfm_api_key is NOT in config - it's only read from environment variable
+    # for security (should be in .env file, not settings.json)
+    "enable_itunes": conf("album_art.enable_itunes", True),
+    "enable_lastfm": conf("album_art.enable_lastfm", True),
+    # Default to True since enhancement is proven to work and always falls back to 640px if unavailable
+    "enable_spotify_enhanced": conf("album_art.enable_spotify_enhanced", True),
+    "min_resolution": conf("album_art.min_resolution", 3000)  # Prefer 3000x3000px for best quality
+}
+
+ARTIST_IMAGE = {
+    "timeout": conf("artist_image.timeout", 5),
+    # Enable Wikipedia/Wikimedia integration (provides 1500-5000px high-res images)
+    "enable_wikipedia": conf("artist_image.enable_wikipedia", False),
+    # Enable FanArt.tv album covers (fetches album artwork, can be disabled if too many duplicates)
+    "enable_fanart_albumcover": conf("artist_image.enable_fanart_albumcover", True)
 }
 
 # Helper functions

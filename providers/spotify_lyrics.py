@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import requests
 import os
 import time
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 import logging
@@ -42,8 +43,13 @@ class SpotifyLyrics(LyricsProvider):
         # an instance here. This ensures all API calls use the singleton instance and
         # statistics are consolidated across the entire app.
             
-    async def get_lyrics(self, artist: str, title: str) -> Optional[List[Tuple[float, str]]]:
-        """Get lyrics for a track by searching Spotify"""
+    async def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+        """
+        Get lyrics for a track by searching Spotify
+
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing synced lyrics and metadata
+        """
         try:
             # Return None if both artist and title are empty
             if not artist.strip() and not title.strip():
@@ -75,7 +81,9 @@ class SpotifyLyrics(LyricsProvider):
             
             if not track_matches:
                 logger.info(f"Spotify - Searching Spotify for {artist} - {title}")
-                track = spotify_client.search_track(artist, title)
+                # Run blocking search in executor to avoid freezing the UI
+                loop = asyncio.get_running_loop()
+                track = await loop.run_in_executor(None, spotify_client.search_track, artist, title)
                 if not track:
                     logger.info(f"No track found on Spotify for: {artist} - {title}")
                     return None
@@ -86,11 +94,17 @@ class SpotifyLyrics(LyricsProvider):
             # CRITICAL FIX: Implement retry logic with exponential backoff
             # Retry on 404 (might be temporary server issue), server errors (5xx), and connection errors
             last_error = None
+            loop = asyncio.get_running_loop()
+            
             for attempt in range(self.retries):
                 try:
-                    response = requests.get(
-                        f"{self.api_url}/?url={track_url}&format=lrc",
-                        timeout=self.timeout
+                    # Run blocking request in executor to avoid freezing the UI
+                    response = await loop.run_in_executor(
+                        None, 
+                        lambda: requests.get(
+                            f"{self.api_url}/?url={track_url}&format=lrc",
+                            timeout=self.timeout
+                        )
                     )
                     
                     # Distinguish between different error types
@@ -98,9 +112,9 @@ class SpotifyLyrics(LyricsProvider):
                         # 404 might be temporary server issue (Vercel cold start, deployment issue)
                         # Retry 2-3 times before giving up
                         if attempt < self.retries - 1:
-                            backoff = 3 * (2 ** attempt)  # Exponential: 3s, 6s, 12s
+                            backoff = 2 * (2 ** attempt)  # Exponential: 3s, 6s, 12s
                             logger.warning(f"Spotify Proxy returned 404 (server might be unavailable), retry {attempt + 1}/{self.retries} in {backoff}s")
-                            time.sleep(backoff)
+                            await asyncio.sleep(backoff)  # Async sleep (non-blocking)
                             continue
                         else:
                             logger.info(f"Spotify Proxy - No lyrics found for {artist} - {title} (404 after {self.retries} attempts)")
@@ -109,14 +123,14 @@ class SpotifyLyrics(LyricsProvider):
                         # Rate limited - retry with backoff
                         retry_after = int(response.headers.get('Retry-After', 2 ** attempt))
                         logger.warning(f"Spotify Proxy rate limited, retrying after {retry_after}s")
-                        time.sleep(retry_after)
+                        await asyncio.sleep(retry_after)  # Async sleep (non-blocking)
                         continue
                     elif response.status_code >= 500:
                         # Server error - retry with exponential backoff
                         if attempt < self.retries - 1:
                             backoff = 2 ** attempt  # Exponential: 1s, 2s, 4s
                             logger.warning(f"Spotify Proxy server error {response.status_code}, retry {attempt + 1}/{self.retries} in {backoff}s")
-                            time.sleep(backoff)
+                            await asyncio.sleep(backoff)  # Async sleep (non-blocking)
                             continue
                         else:
                             logger.error(f"Spotify Proxy server error {response.status_code} after {self.retries} attempts")
@@ -158,14 +172,19 @@ class SpotifyLyrics(LyricsProvider):
                         seconds = float(time_parts[0]) * 60 + float(time_parts[1])
                         processed_lyrics.append((seconds, line['words']))
                     
-                    return processed_lyrics if processed_lyrics else None
+                    if processed_lyrics:
+                        return {
+                            "lyrics": processed_lyrics,
+                            "is_instrumental": False
+                        }
+                    return None
                     
                 except requests.exceptions.Timeout:
                     # Timeout - retry with backoff
                     if attempt < self.retries - 1:
                         backoff = 2 ** attempt
                         logger.warning(f"Spotify Proxy timeout, retry {attempt + 1}/{self.retries} in {backoff}s")
-                        time.sleep(backoff)
+                        await asyncio.sleep(backoff)  # Async sleep (non-blocking)
                         continue
                     else:
                         logger.error(f"Spotify Proxy timeout after {self.retries} attempts")
@@ -176,7 +195,7 @@ class SpotifyLyrics(LyricsProvider):
                     if attempt < self.retries - 1:
                         backoff = 2 ** attempt
                         logger.warning(f"Spotify Proxy connection error, retry {attempt + 1}/{self.retries} in {backoff}s")
-                        time.sleep(backoff)
+                        await asyncio.sleep(backoff)  # Async sleep (non-blocking)
                         continue
                     else:
                         logger.error(f"Spotify Proxy connection error after {self.retries} attempts: {e}")

@@ -6,13 +6,20 @@ sync_lyrics.dist/
 sync_lyrics.onefile-build/
 sync_lyrics.bin
 sync_lyrics.exe
-sync_lyrics.spec
 build_final/
 build_output/
 Unused/
 tests/
 full_project_code.txt
-share_project.py
+features.md
+.kiro
+
+# share_project.py
+.cursor
+
+
+album_art_database
+
 
 # resources/images/icon.ico
 lyrics_database/
@@ -80,3 +87,20 @@ ha_addon/DISTRIBUTION_GUIDE.md
 ha_addon/DEPLOY_INSTRUCTIONS.md
 nuke_branches.ps1
 run_synclyrics_hidden.vbs
+stable checkpoint after bug fixing full_project_code.txt
+.cache old
+notes.md
+ANALYSIS_SUMMARY.md
+ANALYSIS_AND_PLAN.md
+FINAL_ANALYSIS.md
+ISSUE_EVALUATION.md
+FIXES_APPLIED.md
+ALBUM_ART_FLICKERING_FIX_EVALUATION.md
+FEEDBACK_EVALUATION.md
+PROPOSED_FIXES.md
+
+system_utils_diff.patch
+system_utils - new (broken).txt
+AI Docs
+/AI Docs
+diff_output.txt

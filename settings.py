@@ -6,6 +6,7 @@ Handles dynamic configuration management using settings.json
 import json
 import shutil
 import os
+import uuid  # Add this import
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -14,7 +15,9 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-SETTINGS_FILE = Path(__file__).parent / "settings.json"
+# Allow overriding the settings file location via environment variable
+# This is crucial for HAOS/Docker persistence
+SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(Path(__file__).parent / "settings.json")))
 
 @dataclass
 class Setting:
@@ -71,8 +74,8 @@ class SettingsManager:
             "ui.themes.light.bg_start": Setting("Light Start", str, "#ffffff", False, "UI", "Light mode gradient start", "color"),
             "ui.themes.light.bg_end": Setting("Light End", str, "#f0f0f0", False, "UI", "Light mode gradient end", "color"),
             "ui.themes.light.text": Setting("Light Text", str, "#000000", False, "UI", "Light mode text color", "color"),
-            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade"], False, "UI", "Enabled animations"),
-            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid"], False, "UI", "Enabled backgrounds"),
+            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade", "slide", "none"], False, "UI", "Enabled animations"),
+            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid", "albumart"], False, "UI", "Enabled backgrounds"),
             "ui.minimal_mode.enabled": Setting("Minimal Mode", bool, False, False, "UI", "Hide extra UI elements", "switch"),
             "ui.minimal_mode.hide_elements": Setting("Hidden Elements", list, ["bottom-nav"], False, "UI", "Elements to hide in minimal mode"),
             "ui.blur_strength": Setting("Blur Strength", int, 10, False, "UI", "Background blur (px)", "slider", min_val=0, max_val=50),
@@ -90,13 +93,13 @@ class SettingsManager:
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),
-            "providers.lrclib.priority": Setting("LRCLib Priority", int, 1, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
+            "providers.lrclib.priority": Setting("LRCLib Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.lrclib.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.lrclib.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.lrclib.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
             "providers.spotify.enabled": Setting("Spotify", bool, True, True, "Providers", "Enable Spotify Lyrics", "switch"),
-            "providers.spotify.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
+            "providers.spotify.priority": Setting("Priority", int, 1, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.spotify.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.spotify.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.spotify.token_refresh_buffer": Setting("Buffer", int, 300, False, "Providers", "Token refresh buffer (s)", "number"),
@@ -114,7 +117,7 @@ class SettingsManager:
             "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
-            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, True, True, "Providers", "Enable Musicxmatch", "switch"),
+            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
             "providers.musicxmatch.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
             "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
             "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
@@ -141,6 +144,9 @@ class SettingsManager:
             "system.windows.media_session.timeout": Setting("Timeout", int, 5, False, "System", "SMTC timeout (s)", "number"),
             "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "System", "Enable GSettings", "switch"),
             "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "System", "Require Playerctl", "switch"),
+            
+            # New Blocklist Setting
+            "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "text"),
 
             # Features
             "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Features", "Enable minimal mode", "switch"),
@@ -150,6 +156,7 @@ class SettingsManager:
             "features.provider_stats": Setting("Stats", bool, False, False, "Features", "Track provider stats", "switch"),
             "features.auto_theme": Setting("Auto Theme", bool, True, False, "Features", "Auto-switch theme", "switch"),
             "features.album_art_colors": Setting("Art Colors", bool, True, False, "Features", "Use album art colors", "switch"),
+            "features.album_art_db": Setting("Album Art DB", bool, True, False, "Features", "Enable album art database", "switch"),
 
             # Media Source
             "media_source.spotify.enabled": Setting("Spotify Source", bool, True, True, "Media", "Enable Spotify source", "switch"),
@@ -160,10 +167,29 @@ class SettingsManager:
             "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             
             # Spotify API
-            # Spotify API
-            "spotify.redirect_uri": Setting("Redirect URI", str, "http://localhost:9012/callback", True, "Spotify API", "Callback URL"),
-            "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 3.0, False, "Spotify API", "Metadata cache (s)", "number"),
+            "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
+            "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),
+            
+            # Album Art
+            "album_art.timeout": Setting("Timeout", int, 5, False, "Album Art", "Request timeout (s)", "number", min_val=1, max_val=30),
+            "album_art.retries": Setting("Retries", int, 2, False, "Album Art", "Max retries", "number", min_val=0, max_val=5),
+            "album_art.enable_itunes": Setting("iTunes", bool, True, False, "Album Art", "Enable iTunes source", "switch"),
+            "album_art.enable_lastfm": Setting("Last.fm", bool, True, False, "Album Art", "Enable Last.fm source", "switch"),
+            "album_art.enable_spotify_enhanced": Setting("Spotify Enhanced", bool, True, False, "Album Art", "Try to enhance Spotify URLs", "switch"),
+            "album_art.min_resolution": Setting("Min Resolution", int, 3000, False, "Album Art", "Preferred resolution (px)", "number", min_val=640, max_val=3000),
+            
+            # Artist Image
+            "artist_image.timeout": Setting("Timeout", int, 5, False, "Artist Image", "Request timeout (s)", "number"),
+            "artist_image.enable_wikipedia": Setting("Wikipedia", bool, False, False, "Artist Image", "Enable Wikipedia/Wikimedia", "switch"),
+            "artist_image.enable_fanart_albumcover": Setting("FanArt Album Covers", bool, True, False, "Artist Image", "Fetch FanArt.tv album covers", "switch"),
+
+            # Visual Mode
+            "visual_mode.enabled": Setting("Visual Mode", bool, True, False, "Visual Mode", "Enable visual mode for instrumentals", "switch"),
+            "visual_mode.delay_seconds": Setting("Delay", int, 6, False, "Visual Mode", "Delay before hiding lyrics (s)", "slider", min_val=1, max_val=60),
+            "visual_mode.auto_sharp": Setting("Auto Sharp", bool, True, False, "Visual Mode", "Auto-switch to sharp mode in visual mode", "switch"),
+            "visual_mode.slideshow.enabled": Setting("Slideshow", bool, True, False, "Visual Mode", "Enable slideshow when no music", "switch"),
+            "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
         }
         
         self.load_settings()
@@ -181,15 +207,33 @@ class SettingsManager:
             try:
                 with open(SETTINGS_FILE, 'r') as f:
                     saved = json.load(f)
-                    # Update keys that exist in definitions
+                    # Update keys
                     for key, val in saved.items():
+                        # LENIENT MODE: Allow loading keys even if not in definitions
                         if key in self._definitions:
+                            # Type conversion if known
                             self._settings[key] = self._definitions[key].validate_and_convert(val)
+                        else:
+                            # Store as-is if unknown
+                            self._settings[key] = val
             except Exception as e:
                 logger.error(f"Failed to load settings.json: {e}")
 
-    def get(self, key: str) -> Any:
-        return self._settings.get(key, self._definitions[key].default)
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get a setting value.
+        Priority:
+        1. Loaded value (from JSON or Schema Default)
+        2. Schema Default (if key in definitions but not in settings dict yet)
+        3. Provided 'default' argument (if key unknown)
+        """
+        if key in self._settings:
+            return self._settings[key]
+        
+        if key in self._definitions:
+            return self._definitions[key].default
+            
+        return default
 
     def set(self, key: str, value: Any) -> bool:
         if key not in self._definitions:
@@ -203,16 +247,39 @@ class SettingsManager:
     def save_to_config(self) -> None:
         """Save current memory settings to JSON file"""
         try:
-            with open(SETTINGS_FILE, 'w') as f:
+            # FIX: Use unique temp filename to prevent concurrent writes from overwriting each other
+            # This prevents race conditions when multiple settings updates happen simultaneously
+            temp_filename = f"settings_{uuid.uuid4().hex}.json.tmp"
+            temp_path = SETTINGS_FILE.parent / temp_filename
+            
+            with open(temp_path, 'w') as f:
                 json.dump(self._settings, f, indent=4, sort_keys=True)
+            
+            # Atomic replace (works on both Windows and Unix)
+            if SETTINGS_FILE.exists():
+                try:
+                    os.remove(SETTINGS_FILE)
+                except:
+                    pass
+            os.replace(temp_path, SETTINGS_FILE)
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
+            # Clean up temp file if it exists
+            if 'temp_path' in locals() and temp_path.exists():
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
 
     def get_all(self) -> Dict:
         """Return formatted settings for UI"""
         result = {}
         for key, val in self._settings.items():
-            defin = self._definitions[key]
+            # Skip keys not in definitions (e.g., loaded from JSON but not defined in schema)
+            defin = self._definitions.get(key)
+            if not defin:
+                continue
+                
             cat = defin.category or "Misc"
             if cat not in result: result[cat] = {}
             
