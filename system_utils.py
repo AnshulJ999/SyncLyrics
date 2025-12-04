@@ -100,6 +100,14 @@ _MAX_METADATA_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 _discovery_cache = {}
 _MAX_DISCOVERY_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
 
+# Cache for load_artist_image_from_db() results
+# Key: artist (str), Value: (timestamp, result_dict)
+# Caches the result to avoid calling discover_custom_images on every poll cycle (10x per second)
+# This prevents the discovery loop issue where discovery runs repeatedly during active downloads
+_artist_image_load_cache = {}
+_MAX_ARTIST_IMAGE_CACHE_SIZE = 50  # Limit cache size to prevent memory leaks
+_ARTIST_IMAGE_CACHE_TTL = 60  # Cache for 60 seconds (refresh when artist changes or after TTL)
+
 def create_tracked_task(coro):
     """
     Create a background task with automatic cleanup and error logging.
@@ -119,6 +127,21 @@ def create_tracked_task(coro):
     
     task.add_done_callback(cleanup)
     return task
+
+def _cleanup_artist_image_log_throttle():
+    """
+    Helper function to clean up old entries from _artist_image_log_throttle.
+    Prevents memory leaks by removing entries older than 5 minutes when cache exceeds 100 entries.
+    This should be called periodically when the throttle is accessed.
+    """
+    global _artist_image_log_throttle
+    if len(_artist_image_log_throttle) > 100:
+        current_time = time.time()
+        cutoff_time = current_time - 300  # 5 minutes
+        _artist_image_log_throttle = {
+            k: v for k, v in _artist_image_log_throttle.items()
+            if v > cutoff_time
+        }
 
 # Cache for color extraction to avoid re-processing the same image
 # Key: file_path, Value: (mtime, [color1, color2])
@@ -1555,6 +1578,9 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     Load preferred artist image from database if available.
     Returns the preferred image path if found.
     
+    OPTIMIZATION: Results are cached to avoid calling discover_custom_images on every poll cycle (10x per second).
+    Cache refreshes when artist changes or after 60 seconds.
+    
     Args:
         artist: Artist name
         
@@ -1565,11 +1591,24 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     if not FEATURES.get("album_art_db", True):
         return None
     
+    # OPTIMIZATION: Check cache first to avoid repeated file I/O and discovery calls
+    current_time = time.time()
+    if artist in _artist_image_load_cache:
+        cached_time, cached_result = _artist_image_load_cache[artist]
+        # Use cache if less than TTL seconds old
+        if (current_time - cached_time) < _ARTIST_IMAGE_CACHE_TTL:
+            return cached_result
+    
     try:
         folder = get_album_db_folder(artist, None)  # Artist-only folder
         metadata_path = folder / "metadata.json"
         
         if not metadata_path.exists():
+            # Cache None result to avoid repeated checks
+            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(_artist_image_load_cache))
+                del _artist_image_load_cache[oldest_key]
+            _artist_image_load_cache[artist] = (current_time, None)
             return None
         
         # Load metadata
@@ -1578,6 +1617,11 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
         
         # Check if this is artist images metadata
         if metadata.get("type") != "artist_images":
+            # Cache None result
+            if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(_artist_image_load_cache))
+                del _artist_image_load_cache[oldest_key]
+            _artist_image_load_cache[artist] = (current_time, None)
             return None
         
         # CRITICAL FIX: Auto-discover custom images that aren't in metadata
@@ -1708,10 +1752,24 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                 if metadata_path_str in _album_art_metadata_cache:
                     del _album_art_metadata_cache[metadata_path_str]
         
-        return {"path": image_path, "metadata": metadata}
+        result = {"path": image_path, "metadata": metadata}
+        
+        # OPTIMIZATION: Cache result to avoid repeated file I/O and discovery calls
+        # Cache refreshes when artist changes or after TTL seconds
+        if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+            oldest_key = next(iter(_artist_image_load_cache))
+            del _artist_image_load_cache[oldest_key]
+        _artist_image_load_cache[artist] = (current_time, result)
+        
+        return result
         
     except Exception as e:
         logger.debug(f"Failed to load artist image from DB: {e}")
+        # Cache None result to avoid repeated checks
+        if len(_artist_image_load_cache) >= _MAX_ARTIST_IMAGE_CACHE_SIZE:
+            oldest_key = next(iter(_artist_image_load_cache))
+            del _artist_image_load_cache[oldest_key]
+        _artist_image_load_cache[artist] = (current_time, None)
         return None
 
 def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
@@ -2045,6 +2103,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
                     logger.debug(f"Using preferred artist image for background: {artist}")
                     _artist_image_log_throttle[log_key] = current_time
+                    _cleanup_artist_image_log_throttle()
         
         # CRITICAL FIX: Check if artist images DB is populated with ALL expected sources
         # This ensures all provider options are available in the selection menu (similar to album art backfill)
@@ -2129,6 +2188,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 if (current_time - last_log_time) >= _ARTIST_IMAGE_LOG_THROTTLE_SECONDS:
                     logger.debug(f"Using artist image '{fallback_result.get('source')}' as fallback for {artist}")
                     _artist_image_log_throttle[log_key] = current_time
+                    _cleanup_artist_image_log_throttle()
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
@@ -3208,7 +3268,12 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Use global instance to prevent re-initialization on every call
                 global _artist_image_provider
                 if _artist_image_provider is None:
-                    _artist_image_provider = ArtistImageProvider()
+                    try:
+                        _artist_image_provider = ArtistImageProvider()
+                    except Exception as e:
+                        logger.error(f"Failed to initialize ArtistImageProvider: {e}", exc_info=True)
+                        # Graceful degradation: return empty list instead of crashing
+                        return []
                 artist_provider = _artist_image_provider
                 
                 # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
@@ -3262,14 +3327,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     # Update throttle timestamp
                     _artist_image_log_throttle[artist] = current_time
                     
-                    # Clean up old entries to prevent memory leak (keep only last 100 artists)
-                    if len(_artist_image_log_throttle) > 100:
-                        # Remove oldest entries (artists not logged in last 5 minutes)
-                        cutoff_time = current_time - 300  # 5 minutes
-                        _artist_image_log_throttle = {
-                            k: v for k, v in _artist_image_log_throttle.items() 
-                            if v > cutoff_time
-                        }
+                    # Clean up old entries to prevent memory leak
+                    _cleanup_artist_image_log_throttle()
 
                 # Download and Save
                 saved_images = existing_metadata.get("images", [])
