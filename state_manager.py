@@ -5,8 +5,12 @@ import time
 import threading
 import os
 import uuid
+import logging
 
 from benedict import benedict
+
+# Get logger for this module (will be configured by logging_config.py)
+logger = logging.getLogger(__name__)
 
 # Allow overriding state file location via environment variable for HAOS persistence
 # This ensures state.json is written to /config/state.json instead of /app/state.json
@@ -25,7 +29,10 @@ state_cache_time = 0
 STATE_CACHE_TTL = 2.0  # Cache for 2 seconds to reduce disk I/O
 
 # Thread lock to prevent concurrent writes (cross-platform)
-_state_lock = threading.Lock()
+# CRITICAL FIX: Use RLock (re-entrant lock) instead of Lock to prevent deadlock
+# When get_state() calls reset_state() which calls set_state(), the same thread
+# needs to acquire the lock multiple times. RLock allows this, Lock does not.
+_state_lock = threading.RLock()
 
 
 def reset_state(): 
@@ -36,8 +43,6 @@ def reset_state():
         set_state(DEFAULT_STATE)
     except Exception as e:
         # Log error but don't re-raise - let get_state() handle it
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to reset state to default: {e}", exc_info=True)
         # Update in-memory cache even if file write fails
         global state, state_cache_time
@@ -66,12 +71,13 @@ def set_state(new_state: dict):
         temp_filename = f"state_{uuid.uuid4().hex}.json.tmp"
         temp_path = os.path.join(state_dir, temp_filename) if state_dir != "." else temp_filename
         
-        # CRITICAL FIX: Create directory FIRST, before trying to write
-        # This prevents FileNotFoundError if the directory doesn't exist
-        if os.path.dirname(STATE_FILE):
-            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-        
         try:
+            # CRITICAL FIX: Create directory FIRST, before trying to write
+            # This prevents FileNotFoundError if the directory doesn't exist
+            # Moved inside try block to handle permission errors gracefully
+            if os.path.dirname(STATE_FILE):
+                os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+            
             with open(temp_path, "w") as f:
                 json.dump(new_state, f, indent=4)
             
@@ -122,8 +128,6 @@ def get_state() -> dict:
                 return state
             except Exception as e:
                 # If reset_state() fails (e.g., permission error), log and return default in-memory
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Failed to create state file at {STATE_FILE}: {e}", exc_info=True)
                 # Return default state in memory (won't persist, but app won't crash)
                 state = DEFAULT_STATE.copy()
@@ -138,8 +142,6 @@ def get_state() -> dict:
                 return state
         except Exception as e:
             # If read fails (corrupted file), try to reset to default
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Failed to read state file {STATE_FILE}: {e}, attempting reset")
             try:
                 reset_state()

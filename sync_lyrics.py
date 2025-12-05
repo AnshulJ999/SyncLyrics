@@ -239,6 +239,12 @@ async def main() -> NoReturn:
             logger.warning("Using default state due to reset_state() failure")
     
     representation_methods = state.get("representationMethods", {"terminal": False})
+    # CRITICAL FIX: Validate that representation_methods is actually a dict
+    # If state.json was manually edited to have null/[]/string, .items() would crash
+    if not isinstance(representation_methods, dict):
+        logger.warning(f"representationMethods is not a dict (got {type(representation_methods)}), using default")
+        representation_methods = {"terminal": False}
+    
     methods = [method for method, active in representation_methods.items() 
               if active and method != "notifications"]
     logger.debug(f"Active display methods: {methods}")
