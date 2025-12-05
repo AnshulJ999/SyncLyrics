@@ -104,11 +104,13 @@ export function updateBackground() {
     else if (displayConfig.useAlbumColors && currentColors) {
         bgLayer.classList.remove('visible');
         bgOverlay.classList.remove('visible');
+        bgLayer.style.backgroundImage = '';
         document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
     }
     else {
         bgLayer.classList.remove('visible');
         bgOverlay.classList.remove('visible');
+        bgLayer.style.backgroundImage = '';
         document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
     }
 
