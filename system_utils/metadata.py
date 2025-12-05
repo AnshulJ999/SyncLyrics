@@ -17,10 +17,11 @@ from typing import Optional, Dict, Any, List
 
 import config
 from . import state
+from .state import ACTIVE_INTERVAL, IDLE_INTERVAL, IDLE_WAIT_TIME
 from .helpers import create_tracked_task, _normalize_track_id, _log_app_state
 from .image import extract_dominant_colors, get_cached_art_path
 from .album_art import get_album_db_folder, ensure_album_art_db
-from config import CACHE_DIR, ACTIVE_INTERVAL, IDLE_INTERVAL, IDLE_WAIT_TIME
+from config import CACHE_DIR
 from logging_config import get_logger
 from providers.album_art import get_album_art_provider
 from providers.spotify_api import get_shared_spotify_client
@@ -29,6 +30,7 @@ logger = get_logger(__name__)
 
 # Platform detection (module-level constant)
 DESKTOP = platform.system()
+
 
 
 def _perform_debug_art_update(result: Dict[str, Any]):

@@ -118,3 +118,86 @@ def sanitize_folder_name(name: str) -> str:
         sanitized = "Unknown"
     
     return sanitized
+
+
+def _log_app_state() -> None:
+    """Log key application state periodically."""
+    import logging
+    from state_manager import get_state, set_state
+    from providers.spotify_api import get_shared_spotify_client
+    
+    current_time = time.time()
+    
+    if current_time - state._last_state_log_time < state.STATE_LOG_INTERVAL:
+        return
+        
+    state._last_state_log_time = current_time
+    
+    # Lazy import to avoid circular dependency
+    # get_current_song_meta_data is in metadata.py which imports helpers.py
+    from .metadata import get_current_song_meta_data
+    
+    is_active = getattr(get_current_song_meta_data, '_is_active', True)
+    last_song = getattr(get_current_song_meta_data, '_last_song', 'None')
+    last_source = getattr(get_current_song_meta_data, '_last_source', 'None')
+
+    # Update state file
+    app_state = get_state()
+    app_state['current_song'] = last_song
+    app_state['active_source'] = last_source
+    set_state(app_state)
+
+    # --- LOGGING LOGIC ---
+    # We log if the level is INFO or lower, regardless of "Debug Mode" toggle.
+    if logger.isEnabledFor(logging.INFO):
+        current_time_str = time.strftime("%I:%M %p - %b %d, %Y")
+        
+        # Base state summary
+        state_summary = (
+            f"\nApplication State Summary:\n"
+            f"|- Time: {current_time_str}\n"
+            f"|- Mode: {'Active' if is_active else 'Idle'}\n"
+            f"|- Current Song: {last_song}\n"
+            f"|- Active Source: {last_source}\n"
+            f"|- Metadata Fetches:\n"
+            f"|  |- Spotify: {state._metadata_fetch_counters['spotify']}\n"
+            f"|  `- Windows Media: {state._metadata_fetch_counters['windows_media']}\n"
+        )
+        logger.info(state_summary)
+
+        # Log Spotify API stats if available (this is the important one for rate limits)
+        # Use shared singleton instance to get consolidated stats from entire app
+        spotify_client = get_shared_spotify_client()
+        if spotify_client and spotify_client.initialized:
+            try:
+                stats = spotify_client.get_request_stats()
+                
+                # Calculate requests per hour for rate limit awareness
+                # Spotify's rate limit is typically ~180 requests/minute
+                total_requests = stats['Total Requests']
+                
+                spotify_stats = (
+                    "\nSpotify API Statistics:\n"
+                    f"|- Total API Requests: {total_requests}\n"
+                    f"|- Total Function Calls: {stats['Total Function Calls']}\n"
+                    f"|- Cache Hits: {stats['Cached Responses']} ({stats['Cache Hit Rate']})\n"
+                    f"|- API Calls by Endpoint:\n"
+                )
+            
+                for endpoint, count in stats['API Calls'].items():
+                    if count > 0:  # Only show endpoints that have been called
+                        spotify_stats += f"|  |- {endpoint}: {count}\n"
+                
+                # Always show errors section if there are any errors
+                total_errors = sum(stats['Errors'].values())
+                if total_errors > 0:
+                    spotify_stats += f"|- Errors ({total_errors} total):\n"
+                    for error_type, count in stats['Errors'].items():
+                        if count > 0:  # Only show error types that occurred
+                            spotify_stats += f"|  |- {error_type}: {count}\n"
+                
+                spotify_stats += f"`- Cache Age: {stats['Cache Age']}"
+                logger.info(spotify_stats)
+                
+            except Exception as e:
+                logger.error(f"Failed to log Spotify stats: {e}")
