@@ -1,5 +1,7 @@
 from os import path
 from typing import Any
+import sys  # Added sys
+from pathlib import Path  # Added Path
 import json 
 import time
 import threading
@@ -14,7 +16,12 @@ logger = logging.getLogger(__name__)
 
 # Allow overriding state file location via environment variable for HAOS persistence
 # This ensures state.json is written to /config/state.json instead of /app/state.json
-STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", "state.json")
+if "__compiled__" in globals() or getattr(sys, 'frozen', False):
+    ROOT_DIR = Path(sys.executable).parent
+else:
+    ROOT_DIR = Path(__file__).parent
+
+STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", str(ROOT_DIR / "state.json"))
 
 DEFAULT_STATE = {
     "theme": "dark",

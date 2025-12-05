@@ -6,6 +6,7 @@ Handles dynamic configuration management using settings.json
 import json
 import shutil
 import os
+import sys  # Added sys
 import uuid  # Add this import
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,12 @@ logger = get_logger(__name__)
 
 # Allow overriding the settings file location via environment variable
 # This is crucial for HAOS/Docker persistence
-SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(Path(__file__).parent / "settings.json")))
+if "__compiled__" in globals() or getattr(sys, 'frozen', False):
+    ROOT_DIR = Path(sys.executable).parent
+else:
+    ROOT_DIR = Path(__file__).parent
+
+SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(ROOT_DIR / "settings.json")))
 
 @dataclass
 class Setting:

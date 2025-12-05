@@ -22,7 +22,7 @@ except ImportError:
 # Path Configuration
 # ==========================================
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
-    ROOT_DIR = Path(sys.argv[0]).parent
+    ROOT_DIR = Path(sys.executable).parent
 else:
     ROOT_DIR = Path(__file__).parent
 
