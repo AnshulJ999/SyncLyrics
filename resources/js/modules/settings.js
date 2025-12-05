@@ -13,6 +13,7 @@ import {
 } from './state.js';
 import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
+import { applySoftMode, applySharpMode } from './background.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -82,6 +83,10 @@ export function initializeDisplay() {
     // Apply visibility
     applyDisplayConfig();
 
+    // Apply mode styling (CSS classes for soft/sharp)
+    applySoftMode();
+    applySharpMode();
+
     // Setup settings panel (if not minimal)
     if (!displayConfig.minimal) {
         setupSettingsPanel();
@@ -142,10 +147,8 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
 
 /**
  * Setup the settings panel event handlers
- * 
- * @param {Function} applyModesFn - Optional callback to apply soft/sharp modes
  */
-export function setupSettingsPanel(applyModesFn = null) {
+export function setupSettingsPanel() {
     const settingsToggle = document.getElementById('settings-toggle');
     const settingsPanel = document.getElementById('settings-panel');
     const copyUrlBtn = document.getElementById('copy-url-btn');
@@ -202,7 +205,7 @@ export function setupSettingsPanel(applyModesFn = null) {
         const el = document.getElementById(id);
         if (el) {
             el.addEventListener('change', (e) => {
-                handleCheckboxChange(id, e.target.checked, applyModesFn);
+                handleCheckboxChange(id, e.target.checked);
             });
         }
     });
@@ -233,9 +236,8 @@ export function setupSettingsPanel(applyModesFn = null) {
  * 
  * @param {string} id - Checkbox ID
  * @param {boolean} checked - Whether checkbox is checked
- * @param {Function} applyModesFn - Optional callback to apply modes
  */
-function handleCheckboxChange(id, checked, applyModesFn = null) {
+function handleCheckboxChange(id, checked) {
     if (id === 'opt-album-art') displayConfig.showAlbumArt = checked;
     if (id === 'opt-track-info') displayConfig.showTrackInfo = checked;
     if (id === 'opt-controls') displayConfig.showControls = checked;
@@ -274,7 +276,8 @@ function handleCheckboxChange(id, checked, applyModesFn = null) {
     }
 
     applyDisplayConfig();
-    if (applyModesFn) applyModesFn();
+    applySoftMode();
+    applySharpMode();
     updateUrlDisplay();
 
     // Update browser URL without page reload
