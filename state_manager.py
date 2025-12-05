@@ -32,8 +32,18 @@ def reset_state():
     """
     This function resets the state to the default state.
     """
-
-    set_state(DEFAULT_STATE)
+    try:
+        set_state(DEFAULT_STATE)
+    except Exception as e:
+        # Log error but don't re-raise - let get_state() handle it
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to reset state to default: {e}", exc_info=True)
+        # Update in-memory cache even if file write fails
+        global state, state_cache_time
+        state = DEFAULT_STATE.copy()
+        state_cache_time = time.time()
+        raise  # Re-raise so caller knows it failed
 
 
 def set_state(new_state: dict):
@@ -55,14 +65,17 @@ def set_state(new_state: dict):
         state_dir = os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else "."
         temp_filename = f"state_{uuid.uuid4().hex}.json.tmp"
         temp_path = os.path.join(state_dir, temp_filename) if state_dir != "." else temp_filename
+        
+        # CRITICAL FIX: Create directory FIRST, before trying to write
+        # This prevents FileNotFoundError if the directory doesn't exist
+        if os.path.dirname(STATE_FILE):
+            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        
         try:
             with open(temp_path, "w") as f:
                 json.dump(new_state, f, indent=4)
             
             # Atomic replace (works on both Windows and Unix)
-            # Ensure target directory exists if using absolute path
-            if os.path.dirname(STATE_FILE):
-                os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
             
             if path.exists(STATE_FILE):
                 os.remove(STATE_FILE)
@@ -102,8 +115,20 @@ def get_state() -> dict:
     # Use lock to prevent concurrent reads during write
     with _state_lock:
         if not path.exists(STATE_FILE):
-            reset_state()
-            return state
+            # File doesn't exist, try to create default state
+            # Wrap in try-except to handle permission/directory errors gracefully
+            try:
+                reset_state()
+                return state
+            except Exception as e:
+                # If reset_state() fails (e.g., permission error), log and return default in-memory
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create state file at {STATE_FILE}: {e}", exc_info=True)
+                # Return default state in memory (won't persist, but app won't crash)
+                state = DEFAULT_STATE.copy()
+                state_cache_time = current_time
+                return state
         
         # Read from disk
         try:
@@ -112,9 +137,19 @@ def get_state() -> dict:
                 state_cache_time = current_time
                 return state
         except Exception as e:
-            # If read fails (corrupted file), reset to default
-            reset_state()
-            return state
+            # If read fails (corrupted file), try to reset to default
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to read state file {STATE_FILE}: {e}, attempting reset")
+            try:
+                reset_state()
+                return state
+            except Exception as reset_error:
+                # If reset also fails, return default in-memory
+                logger.error(f"Failed to reset state file: {reset_error}", exc_info=True)
+                state = DEFAULT_STATE.copy()
+                state_cache_time = current_time
+                return state
 
 
 def set_attribute_js_notation(state: dict, attribute: str, value: Any) -> dict:

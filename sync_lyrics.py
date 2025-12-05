@@ -214,21 +214,42 @@ async def main() -> NoReturn:
     # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key
     # This handles corrupted state files or state files from old versions gracefully
     # Also handles edge case where state file contains valid JSON but not a dict (e.g., null, [], string)
-    state = get_state()
+    try:
+        logger.debug(f"Attempting to get state from: {os.getenv('SYNCLYRICS_STATE_FILE', 'state.json')}")
+        state = get_state()
+        logger.debug(f"State retrieved successfully, type: {type(state)}")
+    except Exception as e:
+        logger.error(f"Failed to get state: {e}", exc_info=True)
+        # Use default state if get_state() fails completely
+        from state_manager import DEFAULT_STATE
+        state = DEFAULT_STATE.copy()
+        logger.warning("Using default state due to get_state() failure")
+    
     if not isinstance(state, dict):
         # State file contains invalid data (not a dict), use default
         logger.warning("State file contains invalid data (not a dict), resetting to defaults")
-        reset_state()
-        state = get_state()
+        try:
+            reset_state()
+            state = get_state()
+        except Exception as e:
+            logger.error(f"Failed to reset state: {e}", exc_info=True)
+            # Use default state if reset also fails
+            from state_manager import DEFAULT_STATE
+            state = DEFAULT_STATE.copy()
+            logger.warning("Using default state due to reset_state() failure")
     
     representation_methods = state.get("representationMethods", {"terminal": False})
     methods = [method for method, active in representation_methods.items() 
               if active and method != "notifications"]
+    logger.debug(f"Active display methods: {methods}")
     
     last_printed_lyric_per_method = {"terminal": None}
 
     try:
         logger.info("Entering main loop...")
+        state_file_path = os.getenv('SYNCLYRICS_STATE_FILE', 'state.json')
+        logger.debug(f"State file path: {state_file_path}")
+        logger.debug(f"State file exists: {path.exists(state_file_path)}")
         while True:
             if "terminal" in methods:
                 lyric = await get_timed_lyrics()
