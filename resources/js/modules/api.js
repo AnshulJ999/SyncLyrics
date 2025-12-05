@@ -10,6 +10,7 @@
 import {
     displayConfig,
     visualModeConfig,
+    currentColors,
     setUpdateInterval,
     setCurrentColors
 } from './state.js';
@@ -152,13 +153,11 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
 
         // Update background if colors are present
         if (data.colors) {
-            import('./state.js').then(state => {
-                if (data.colors[0] !== state.currentColors[0] || data.colors[1] !== state.currentColors[1]) {
-                    state.setCurrentColors(data.colors);
-                    if (updateBackgroundFn) updateBackgroundFn();
-                    if (updateThemeColorFn) updateThemeColorFn(data.colors[0]);
-                }
-            });
+            if (data.colors[0] !== currentColors[0] || data.colors[1] !== currentColors[1]) {
+                setCurrentColors(data.colors);
+                if (updateBackgroundFn) updateBackgroundFn();
+                if (updateThemeColorFn) updateThemeColorFn(data.colors[0]);
+            }
         }
 
         // Update provider info

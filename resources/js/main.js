@@ -20,10 +20,12 @@ import {
     currentArtistImages,
     visualModeActive,
     queueDrawerOpen,
+    manualStyleOverride,
     setLastTrackInfo,
-    setLastLyrics,
     setLastCheckTime,
-    setCurrentArtistImages
+    setCurrentArtistImages,
+    setManualStyleOverride,
+    setManualVisualModeOverride
 } from './modules/state.js';
 
 // Utils (Level 1)
@@ -33,10 +35,10 @@ import { normalizeTrackId, sleep, areLyricsDifferent } from './modules/utils.js'
 import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages } from './modules/api.js';
 
 // DOM (Level 1)
-import { setLyricsInDom, updateThemeColor, showToast } from './modules/dom.js';
+import { setLyricsInDom, updateThemeColor } from './modules/dom.js';
 
 // Settings (Level 2)
-import { initializeDisplay, applyDisplayConfig } from './modules/settings.js';
+import { initializeDisplay } from './modules/settings.js';
 
 // Controls (Level 2)
 import {
@@ -46,8 +48,9 @@ import {
     updateTrackInfo,
     updateAlbumArt,
     setupQueueInteractions,
+    toggleQueueDrawer,
+    fetchAndRenderQueue,
     checkLikedStatus,
-    updateLikeButton,
     toggleLike,
     setupTouchControls
 } from './modules/controls.js';
@@ -55,8 +58,7 @@ import {
 // Background (Level 2)
 import {
     updateBackground,
-    applySoftMode,
-    applySharpMode,
+    getCurrentBackgroundStyle,
     applyBackgroundStyle,
     checkForVisualMode,
     enterVisualMode,
@@ -69,7 +71,7 @@ import {
 import { startSlideshow, stopSlideshow } from './modules/slideshow.js';
 
 // Provider (Level 3)
-import { setupProviderUI, updateProviderDisplay } from './modules/provider.js';
+import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -156,21 +158,68 @@ async function updateLoop() {
             // Reset visual mode on track change
             resetVisualModeState();
 
-            // Update liked status for new track
-            if (trackInfo.id) {
-                checkLikedStatus(trackInfo.id);
-            }
+            // Reset manual overrides on track change
+            setManualVisualModeOverride(false);
+            setManualStyleOverride(false);
 
-            // Fetch artist images for visual mode
+            // Update instrumental button state
+            updateInstrumentalButtonState();
+
+            // Clear current artist images
+            setCurrentArtistImages([]);
+
+            // Fetch artist images for visual mode (non-blocking)
             if (trackInfo.artist_id && visualModeConfig.enabled) {
                 fetchArtistImages(trackInfo.artist_id).then(images => {
                     setCurrentArtistImages(images);
                 });
             }
+
+            // Update liked status for new track
+            if (trackInfo.id) {
+                checkLikedStatus(trackInfo.id);
+            }
+
+            // Reset style buttons in modal
+            updateStyleButtonsInModal(trackInfo.background_style || 'blur');
+
+            // Refresh queue if drawer is open
+            if (queueDrawerOpen) {
+                console.log('[Main] Track changed, refreshing queue...');
+                fetchAndRenderQueue();
+            }
         }
 
         // Update track info
         setLastTrackInfo(trackInfo);
+
+        // Apply background style with priority: Saved Preference > URL Params > Default
+        if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
+            const currentStyle = getCurrentBackgroundStyle();
+            if (currentStyle !== trackInfo.background_style) {
+                console.log(`[Main] Applying saved background style: ${trackInfo.background_style}`);
+                applyBackgroundStyle(trackInfo.background_style);
+            }
+        } else if (!manualStyleOverride && !visualModeActive) {
+            // Priority 2: URL parameters (fallback if no saved preference)
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentStyle = getCurrentBackgroundStyle();
+            let urlStyle = null;
+
+            if (urlParams.has('sharpAlbumArt') && urlParams.get('sharpAlbumArt') === 'true') {
+                urlStyle = 'sharp';
+            } else if (urlParams.has('softAlbumArt') && urlParams.get('softAlbumArt') === 'true') {
+                urlStyle = 'soft';
+            } else if (urlParams.has('artBackground') && urlParams.get('artBackground') === 'true') {
+                urlStyle = 'blur';
+            }
+
+            if (urlStyle && currentStyle !== urlStyle) {
+                console.log(`[Main] Applying URL background style: ${urlStyle}`);
+                applyBackgroundStyle(urlStyle);
+            }
+        }
+
         updateTrackInfo(trackInfo);
         updateAlbumArt(trackInfo, updateBackground);
         updateProgress(trackInfo);
@@ -221,13 +270,15 @@ async function main() {
         likeBtn.addEventListener('click', toggleLike);
     }
 
-    // Setup queue button
+    // Setup queue buttons
     const queueBtn = document.getElementById('btn-queue');
     if (queueBtn) {
-        queueBtn.addEventListener('click', async () => {
-            const { toggleQueueDrawer } = await import('./modules/controls.js');
-            toggleQueueDrawer();
-        });
+        queueBtn.addEventListener('click', toggleQueueDrawer);
+    }
+
+    const queueCloseBtn = document.getElementById('queue-close');
+    if (queueCloseBtn) {
+        queueCloseBtn.addEventListener('click', toggleQueueDrawer);
     }
 
     console.log('[Main] Initialization complete. Starting update loop...');
