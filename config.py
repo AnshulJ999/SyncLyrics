@@ -61,7 +61,7 @@ for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
 DEBUG = {
     "enabled": conf("debug.enabled", False),
     "log_file": conf("debug.log_file", "synclyrics.log"),
-    "log_level": conf("debug.log_level", "WARNING"),
+    "log_level": conf("debug.log_level", "INFO"),
     "log_providers": conf("debug.log_providers", True),
     "log_polling": conf("debug.log_polling", True),
     "log_to_console": conf("debug.log_to_console", True),
