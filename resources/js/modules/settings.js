@@ -13,7 +13,7 @@ import {
 } from './state.js';
 import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
-import { applySoftMode, applySharpMode } from './background.js';
+import { applySoftMode, applySharpMode, updateBackground } from './background.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -278,6 +278,7 @@ function handleCheckboxChange(id, checked) {
     applyDisplayConfig();
     applySoftMode();
     applySharpMode();
+    updateBackground();
     updateUrlDisplay();
 
     // Update browser URL without page reload
