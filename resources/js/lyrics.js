@@ -1374,6 +1374,13 @@ async function selectAlbumArt(providerName, imageUrl = null, filename = null, ty
         const result = await response.json();
 
         if (result.status === 'success') {
+            // CRITICAL FIX: Force refresh of metadata to get new image URLs immediately
+            // This ensures updateBackground() uses fresh data instead of stale lastTrackInfo
+            const freshTrack = await getCurrentTrack();
+            if (freshTrack && !freshTrack.error) {
+                lastTrackInfo = freshTrack;  // Update global state with new URLs
+            }
+
             // Update UI to show selected state
             const cards = document.querySelectorAll('.art-card');
             cards.forEach(card => {
@@ -1409,6 +1416,7 @@ async function selectAlbumArt(providerName, imageUrl = null, filename = null, ty
                 }
 
                 // Also update background if using art background
+                // Now uses fresh lastTrackInfo with updated URLs
                 if (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt) {
                     updateBackground();
                 }
@@ -1503,6 +1511,13 @@ async function clearAlbumArtPreference() {
         const result = await response.json();
 
         if (result.status === 'success') {
+            // CRITICAL FIX: Force refresh of metadata to get new image URLs immediately
+            // This ensures updateBackground() uses fresh data instead of stale lastTrackInfo
+            const freshTrack = await getCurrentTrack();
+            if (freshTrack && !freshTrack.error) {
+                lastTrackInfo = freshTrack;  // Update global state with new URLs
+            }
+
             hideProviderModal();
             showToast('Reset album art preference');
             
@@ -1513,6 +1528,7 @@ async function clearAlbumArtPreference() {
                  const baseUrl = currentSrc.split('?')[0];
                  albumArt.src = `${baseUrl}?t=${Date.now()}`;
             }
+            // Now uses fresh lastTrackInfo with updated URLs
             updateBackground(); // Update background too
         } else {
             showToast('Failed to reset preference', 'error');

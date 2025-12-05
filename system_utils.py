@@ -26,6 +26,7 @@ import shutil
 from datetime import datetime
 from io import BytesIO
 import uuid
+import hashlib
 
 # Initialize Logger
 logger = get_logger(__name__)
@@ -1366,6 +1367,11 @@ def load_album_art_from_db(artist: str, album: Optional[str], title: Optional[st
         return None
     
     try:
+        # CRITICAL FIX: Silently return early if artist is empty (prevents log noise during track transitions)
+        # This happens during the brief moment when a song ends and the next hasn't started yet
+        if not artist:
+            return None
+        
         # Match saving logic: use title as fallback if album is missing
         folder_name = album if album else title
         if not folder_name:
@@ -1774,6 +1780,19 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
             del _artist_image_load_cache[oldest_key]
         _artist_image_load_cache[artist] = (current_time, None)
         return None
+
+def clear_artist_image_cache(artist: str) -> None:
+    """
+    Clear the artist image load cache for a specific artist.
+    This is called when the user changes their artist image preference to ensure
+    the new preference is immediately reflected without waiting for the cache TTL.
+    
+    Args:
+        artist: Artist name to clear from cache
+    """
+    if artist in _artist_image_load_cache:
+        del _artist_image_load_cache[artist]
+        logger.debug(f"Cleared artist image cache for '{artist}'")
 
 def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
     """
@@ -3436,7 +3455,21 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     logger.debug(f"Failed to check current artist before download: {e}")
                     # Continue if check fails (defensive)
                 
-                for img_dict in all_images:
+                # OPTIMIZATION: Process images in parallel batches to significantly speed up downloads
+                # Process 8 images at a time to balance speed with resource usage
+                # This reduces total time from ~3 minutes (90 images x 2s each) to ~23 seconds (12 batches x ~2s each)
+                PARALLEL_BATCH_SIZE = 8
+                
+                # Helper function to process a single image (extracted from loop for parallelization)
+                async def _process_single_image(img_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                    """
+                    Process a single artist image: download, extract resolution, and return result.
+                    Returns a dict with processing results, or None if image should be skipped.
+                    This function is designed to be called in parallel batches.
+                    
+                    Note: File path generation and upgrade logic are handled in sequential processing
+                    to avoid race conditions with source_counts and to ensure correct filename indices.
+                    """
                     url = img_dict.get('url')
                     source = img_dict.get('source', 'unknown')
                     
@@ -3445,162 +3478,187 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     # iTunes Search API is designed for app icons and album art, not artist photos
                     # LastFM artist images are often low-quality placeholders
                     if source in ["iTunes", "LastFM", "Last.fm"]:
-                        continue  # Skip these providers for artist images
+                        return None  # Skip these providers for artist images
                     
-                    if not url or url in existing_urls:
-                        continue
+                    # Note: existing_urls check is redundant here since images_to_process is already filtered
+                    # But we keep url validation
+                    if not url:
+                        return None
                     
-                    # Generate filename with source prefix and index
                     # Sanitize source name (remove dots, special chars) for filename safety
                     safe_source = source.lower().replace('.', '').replace(' ', '_').replace('-', '_')
-                    if safe_source not in source_counts:
-                        source_counts[safe_source] = 0
-                    else:
-                        source_counts[safe_source] += 1
-                    
-                    idx = source_counts[safe_source]
-                    filename = f"{safe_source}_{idx}.jpg"
-                    file_path = folder / filename
                     
                     # Get width/height from provider as fallback (will be replaced with actual values if file exists)
                     width = img_dict.get('width', 0)
                     height = img_dict.get('height', 0)
                     
-                    # UPGRADE LOGIC: If this is Spotify and we have an existing 640px image, try to upgrade to 1400px
-                    should_upgrade = False
-                    existing_image_index = None
-                    if source.lower() == "spotify" and file_path.exists():
-                        # Check if we have metadata for this image (match by filename or URL)
-                        for idx, img in enumerate(saved_images):
-                            if img.get('filename') == filename or (img.get('source', '').lower() == 'spotify' and img.get('url') == url):
-                                existing_width = img.get('width', 0)
-                                existing_height = img.get('height', 0)
-                                existing_resolution = max(existing_width, existing_height)
-                                # If existing image is 640px (or close to it), try to upgrade
-                                if existing_resolution <= 650:  # Allow small margin for rounding
-                                    should_upgrade = True
-                                    existing_image_index = idx
-                                    logger.info(f"Found existing 640px Spotify artist image, attempting upgrade to 1400px for {artist}")
-                                    break
+                    # Download the image to a temporary location first
+                    # We can't generate the final filename yet because we don't know the index (source_counts)
+                    # Use a temporary filename based on URL hash to avoid conflicts
+                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+                    temp_filename = f"temp_{url_hash}"
+                    temp_file_path = folder / temp_filename
                     
-                    if not file_path.exists() or should_upgrade:
-                        success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, file_path.with_suffix(''))
-                        if success:
-                            # CRITICAL FIX: Update file_path to reflect actual file extension
-                            # The download function saves with the correct extension (e.g., .png, .jpg)
-                            # but file_path was initialized with .jpg. Update it so cleanup works correctly.
-                            file_path = file_path.with_suffix(ext)
-                            
-                            # CRITICAL FIX: Extract actual resolution from downloaded image file
-                            # This ensures 100% accurate resolution information (not just provider's claimed values)
-                            try:
-                                def get_image_resolution(path: Path) -> tuple:
-                                    """Extract actual width/height from image file"""
-                                    with Image.open(path) as img:
-                                        return img.size
-                                
-                                actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, file_path)
-                                width = actual_width
-                                height = actual_height
-                                logger.debug(f"Extracted actual resolution for {source} image: {width}x{height}")
-                            except Exception as e:
-                                logger.debug(f"Failed to extract resolution from {file_path}, using provider values: {e}")
-                                # Keep provider values as fallback
-                            
-                            # Note: Artist validation is now done ONCE before the loop starts (optimization)
-                            # This prevents running the check 18+ times (once per image), which was causing
-                            # excessive cache clears and metadata fetches. The final validation before
-                            # metadata save (line ~3270) will catch any changes that occurred during download.
-                            
-                            filename = f"{safe_source}_{idx}{ext}"
-                            
-                            # If upgrading, update existing entry instead of appending new one
-                            if should_upgrade and existing_image_index is not None:
-                                # Update existing entry with new resolution and URL
-                                saved_images[existing_image_index].update({
-                                    "url": url,  # Update to enhanced URL (1400px)
-                                    "width": width,
-                                    "height": height,
-                                    "downloaded": True
-                                })
-                                logger.info(f"Upgraded Spotify artist image from 640px to {width}x{height} for {artist}")
-                            else:
-                                # New image - append to list
-                                saved_images.append({
-                                    "source": source,
-                                    "url": url,
-                                    "filename": filename,
-                                    "width": width,      # Actual resolution extracted from file
-                                    "height": height,    # Actual resolution extracted from file
-                                    "downloaded": True,
-                                    "added_at": datetime.utcnow().isoformat() + "Z"
-                                })
-                            
-                            existing_urls.add(url)  # Mark as processed
-                            metadata_changed = True  # New image added or upgraded, need to save
-                    else:
-                        # File already exists - check if it's already in saved_images and update resolution if missing
-                        # First, try to find the actual file (might have different extension than .jpg)
-                        actual_file_path = file_path
-                        if not actual_file_path.exists():
-                            # Try common extensions
-                            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
-                                test_path = file_path.with_suffix(ext)
-                                if test_path.exists():
-                                    actual_file_path = test_path
-                                    break
+                    # Download the image
+                    success, ext = await loop.run_in_executor(None, _download_and_save_sync, url, temp_file_path)
+                    if success:
+                        # Update temp_file_path to reflect actual file extension
+                        temp_file_path = temp_file_path.with_suffix(ext)
                         
-                        if actual_file_path.exists():
-                            # Extract actual resolution from existing file
+                        # CRITICAL FIX: Extract actual resolution from downloaded image file
+                        # This ensures 100% accurate resolution information (not just provider's claimed values)
+                        try:
+                            def get_image_resolution(path: Path) -> tuple:
+                                """Extract actual width/height from image file"""
+                                with Image.open(path) as img:
+                                    return img.size
+                            
+                            actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution, temp_file_path)
+                            width = actual_width
+                            height = actual_height
+                            logger.debug(f"Extracted actual resolution for {source} image: {width}x{height}")
+                        except Exception as e:
+                            logger.debug(f"Failed to extract resolution from {temp_file_path}, using provider values: {e}")
+                            # Keep provider values as fallback
+                        
+                        # Return result for sequential processing (to avoid race conditions with source_counts)
+                        # The sequential processing will rename temp_file_path to the final filename
+                        return {
+                            "type": "new_download",
+                            "source": source,
+                            "url": url,
+                            "temp_file_path": temp_file_path,  # Temporary file, will be renamed
+                            "width": width,
+                            "height": height,
+                            "ext": ext,
+                            "safe_source": safe_source
+                        }
+                    else:
+                        return None  # Download failed, skip
+                
+                # Filter images that need processing (skip iTunes/LastFM and duplicates)
+                images_to_process = []
+                for img_dict in all_images:
+                    url = img_dict.get('url')
+                    source = img_dict.get('source', 'unknown')
+                    if source in ["iTunes", "LastFM", "Last.fm"]:
+                        continue
+                    if url and url not in existing_urls:
+                        images_to_process.append(img_dict)
+                
+                # Process images in batches of 8 (parallel downloads within batch, sequential batches)
+                for batch_start in range(0, len(images_to_process), PARALLEL_BATCH_SIZE):
+                    batch = images_to_process[batch_start:batch_start + PARALLEL_BATCH_SIZE]
+                    
+                    # Process entire batch in parallel
+                    batch_results = await asyncio.gather(*[_process_single_image(img_dict) for img_dict in batch], return_exceptions=True)
+                    
+                    # Process results sequentially to update saved_images and avoid race conditions
+                    for result in batch_results:
+                        if isinstance(result, Exception):
+                            logger.debug(f"Error processing image in batch: {result}")
+                            continue
+                        if result is None:
+                            continue  # Image was skipped
+                        
+                        source = result["source"]
+                        url = result["url"]
+                        safe_source = result["safe_source"]
+                        
+                        # Safety check: Skip if URL was already processed (prevents duplicates from parallel processing)
+                        if url in existing_urls:
+                            # Clean up temp file if it exists
+                            if result.get("temp_file_path") and result["temp_file_path"].exists():
+                                try:
+                                    result["temp_file_path"].unlink()
+                                except:
+                                    pass
+                            continue
+                        
+                        # Check if we already have this image in saved_images (for upgrade logic)
+                        existing_image_index = None
+                        should_upgrade = False
+                        for idx_check, img in enumerate(saved_images):
+                            if img.get('url') == url:
+                                # Found existing image with same URL - check if upgrade needed
+                                if source.lower() == "spotify":
+                                    existing_width = img.get('width', 0)
+                                    existing_height = img.get('height', 0)
+                                    existing_resolution = max(existing_width, existing_height)
+                                    # If existing image is 640px (or close to it), try to upgrade
+                                    if existing_resolution <= 650:  # Allow small margin for rounding
+                                        should_upgrade = True
+                                        existing_image_index = idx_check
+                                        logger.info(f"Found existing 640px Spotify artist image, attempting upgrade to 1400px for {artist}")
+                                else:
+                                    # Same URL, different source or already high-res - skip
+                                    existing_image_index = idx_check
+                                break
+                        
+                        # If we found an existing image and it's not an upgrade, skip
+                        if existing_image_index is not None and not should_upgrade:
+                            # Clean up temp file
+                            if result.get("temp_file_path") and result["temp_file_path"].exists():
+                                try:
+                                    result["temp_file_path"].unlink()
+                                except:
+                                    pass
+                            continue
+                        
+                        # Update source_counts (sequential to avoid race conditions)
+                        if safe_source not in source_counts:
+                            source_counts[safe_source] = 0
+                        else:
+                            source_counts[safe_source] += 1
+                        
+                        idx = source_counts[safe_source]
+                        ext = result["ext"]
+                        filename = f"{safe_source}_{idx}{ext}"
+                        final_file_path = folder / filename
+                        
+                        # Move temp file to final location
+                        temp_file_path = result["temp_file_path"]
+                        if temp_file_path.exists():
                             try:
-                                def get_image_resolution_existing(path: Path) -> tuple:
-                                    """Extract actual width/height from existing image file"""
-                                    with Image.open(path) as img:
-                                        return img.size
-                                
-                                actual_width, actual_height = await loop.run_in_executor(None, get_image_resolution_existing, actual_file_path)
-                                width = actual_width
-                                height = actual_height
-                                logger.debug(f"Extracted actual resolution from existing {source} image: {width}x{height}")
+                                # Move temp file to final location
+                                temp_file_path.rename(final_file_path)
                             except Exception as e:
-                                logger.debug(f"Failed to extract resolution from existing {actual_file_path}, using provider values: {e}")
-                                # Keep provider values as fallback
-                            
-                            # Check if this image is already in saved_images (by URL)
-                            # If yes, update width/height if missing; if no, add it
-                            found_existing = False
-                            for img in saved_images:
-                                if img.get('url') == url:
-                                    # Update width/height if missing
-                                    if not img.get('width') or not img.get('height'):
-                                        img['width'] = width
-                                        img['height'] = height
-                                        logger.debug(f"Updated resolution for existing {source} image in metadata: {width}x{height}")
-                                        metadata_changed = True  # Resolution updated, need to save
-                                    found_existing = True
-                                    break
-                            
-                            if not found_existing:
-                                # File exists but not in metadata - add it with actual resolution
-                                actual_filename = actual_file_path.name
-                                saved_images.append({
-                                    "source": source,
-                                    "url": url,
-                                    "filename": actual_filename,
-                                    "width": width,      # Actual resolution extracted from file
-                                    "height": height,    # Actual resolution extracted from file
-                                    "downloaded": True,
-                                    "added_at": datetime.utcnow().isoformat() + "Z"
-                                })
-                                logger.debug(f"Added existing {source} image to metadata with resolution: {width}x{height}")
-                                metadata_changed = True  # New image added to metadata, need to save
-                            
-                            existing_urls.add(url)  # Mark as processed
-                            
-                            # CRITICAL FIX: Track this as a newly downloaded file for cleanup if validation fails
-                            # Only track if it's not in the original existing_filenames
-                            if filename not in existing_filenames:
-                                newly_downloaded_files.append((file_path, filename))
+                                logger.debug(f"Failed to rename temp file {temp_file_path} to {final_file_path}: {e}")
+                                # Try copy as fallback
+                                try:
+                                    shutil.copy2(temp_file_path, final_file_path)
+                                    temp_file_path.unlink()
+                                except Exception as e2:
+                                    logger.debug(f"Failed to copy temp file: {e2}")
+                                    continue  # Skip this image if we can't move/copy it
+                        
+                        if should_upgrade and existing_image_index is not None:
+                            # Upgrading existing image
+                            saved_images[existing_image_index].update({
+                                "url": url,  # Update to enhanced URL (1400px)
+                                "width": result["width"],
+                                "height": result["height"],
+                                "downloaded": True
+                            })
+                            logger.info(f"Upgraded Spotify artist image from 640px to {result['width']}x{result['height']} for {artist}")
+                        else:
+                            # New image - append to list
+                            saved_images.append({
+                                "source": source,
+                                "url": url,
+                                "filename": filename,
+                                "width": result["width"],
+                                "height": result["height"],
+                                "downloaded": True,
+                                "added_at": datetime.utcnow().isoformat() + "Z"
+                            })
+                        
+                        existing_urls.add(url)  # Mark as processed
+                        metadata_changed = True  # New image added or upgraded, need to save
+                        
+                        # Track for cleanup if validation fails
+                        if filename not in existing_filenames:
+                            newly_downloaded_files.append((final_file_path, filename))
                 
                 # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
                 # IMPORTANT: Force fresh metadata fetch (bypass cache) to detect rapid track changes

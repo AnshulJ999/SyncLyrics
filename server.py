@@ -8,7 +8,7 @@ from functools import wraps
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
 from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, set_manual_instrumental
 import lyrics as lyrics_module
-from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art
+from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art, clear_artist_image_cache
 from state_manager import *
 from config import LYRICS, RESOURCES_DIR, ALBUM_ART_DB_DIR
 from settings import settings
@@ -796,6 +796,10 @@ async def set_album_art_preference():
             # Log successful preference save for observability
             logger.info(f"Set artist image preference to '{provider_name}' for {artist}")
             
+            # CRITICAL FIX: Clear artist image cache to ensure new preference is immediately reflected
+            # Without this, the cache (15-second TTL) would continue serving the old image until it expires
+            clear_artist_image_cache(artist)
+            
             # Store filename for use outside lock
             filename = matching_image.get("filename")
         
@@ -846,6 +850,10 @@ async def set_album_art_preference():
                         # Save the cleared metadata
                         save_album_db_metadata(artist_folder_clear, artist_metadata_clear)
                         logger.info(f"Cleared artist image preference when album art '{provider_name}' was selected")
+                        
+                        # CRITICAL FIX: Clear artist image cache to ensure album art is immediately shown
+                        # When album art is selected, it overrides artist image preference, so we need to clear the cache
+                        clear_artist_image_cache(artist)
                 except (IOError, OSError, json.JSONDecodeError) as e:
                     # Expected errors - file issues or JSON parsing
                     logger.warning(f"Failed to clear artist image preference: {e}")
