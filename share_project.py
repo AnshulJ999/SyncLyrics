@@ -25,6 +25,8 @@ SKIP_FOLDERS = {
     'env',
     '.git',
     '.idea',
+    'AI Docs',
+    '/AI Docs',
     '.vscode',
     'logs',               # Added: Log files
     'album_art_database', # Added: Large database folder
