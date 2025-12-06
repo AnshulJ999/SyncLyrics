@@ -180,9 +180,19 @@ class ReaperAudioSource:
         If auto_detect is enabled:
         - Starts recognition when Reaper detected
         - Stops recognition when Reaper closes (unless manual mode)
+        
+        On first call, immediately checks Reaper status (bypasses throttle)
+        to detect already-running Reaper on SyncLyrics startup.
         """
         if not self._enabled or not self._auto_detect:
             return
+        
+        # Force immediate check on first call (detect already-running Reaper)
+        if self._last_reaper_check == 0:
+            self._reaper_running = self.is_reaper_running()
+            self._last_reaper_check = time.time()
+            if self._reaper_running:
+                logger.info("Reaper detected on startup")
         
         reaper_running = await self.check_reaper_status()
         
