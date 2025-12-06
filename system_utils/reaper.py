@@ -340,7 +340,7 @@ class ReaperAudioSource:
             "duration": 0,  # Unknown from Shazam
             "is_playing": self._engine.is_playing,
             "source": "audio_recognition",
-            "album_art_url": song.get("album_art_url"),  # From ShazamIO
+            # "album_art_url": song.get("album_art_url"),  # From ShazamIO
             "track_id": None,
             # New Shazam metadata fields (future use)
             "isrc": song.get("isrc"),
@@ -349,6 +349,8 @@ class ReaperAudioSource:
             "background_image_url": song.get("background_image_url"),
             "genre": song.get("genre"),
             "shazam_lyrics_text": song.get("shazam_lyrics_text"),
+            # Shazam's album art (available but not used)
+            "_shazam_album_art_url": song.get("album_art_url"),  # Keep for debugging
             # Default colors (will be overridden by album art extraction)
             "colors": ("#24273a", "#363b54"),
             # Additional metadata for debugging
