@@ -40,3 +40,7 @@ pyinstaller>=6.0.0
 musicxmatch_api
 zeroconf>=0.131.0
 spotipy>=2.23.0
+
+# Audio Recognition (Reaper Integration)
+shazamio==0.6.0            # Audio fingerprinting via Shazam (pin exact version)
+sounddevice>=0.5.0         # Cross-platform audio capture

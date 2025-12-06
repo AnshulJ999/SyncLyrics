@@ -26,6 +26,9 @@ from logging_config import get_logger
 from providers.album_art import get_album_art_provider
 from providers.spotify_api import get_shared_spotify_client
 
+# Audio recognition (Reaper integration)
+from .reaper import get_reaper_source
+
 logger = get_logger(__name__)
 
 # Platform detection (module-level constant)
@@ -146,6 +149,52 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # CRITICAL FIX: Lock the entire fetching process
     # This prevents the race condition where Task B reads cache while Task A is still updating it
     async with state._meta_data_lock:
+        # ========================================================================
+        # AUDIO RECOGNITION CHECK (Highest Priority)
+        # If audio recognition is active (Reaper mode or manual), use it first
+        # ========================================================================
+        try:
+            audio_rec_config = config.AUDIO_RECOGNITION
+            if audio_rec_config.get("enabled", False):
+                reaper_source = get_reaper_source()
+                
+                # Configure if not already done
+                device_id = audio_rec_config.get("device_id", -1)
+                if device_id == -1:
+                    device_id = None  # Auto-detect
+                    
+                reaper_source.configure(
+                    device_id=device_id,
+                    device_name=audio_rec_config.get("device_name", ""),
+                    recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
+                    capture_duration=audio_rec_config.get("capture_duration", 4.0),
+                    latency_offset=audio_rec_config.get("latency_offset", 0.0),
+                    auto_detect=audio_rec_config.get("reaper_auto_detect", True)
+                )
+                
+                # Auto-manage: start/stop based on Reaper detection
+                if audio_rec_config.get("reaper_auto_detect", True):
+                    await reaper_source.auto_manage()
+                
+                # If audio recognition is active, use it (highest priority)
+                if reaper_source.is_active:
+                    result = await reaper_source.get_metadata()
+                    if result:
+                        logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
+                        # Process like other sources (colors, art, etc.)
+                        # Store result and update tracking
+                        get_current_song_meta_data._last_result = result
+                        get_current_song_meta_data._last_check_time = time.time()
+                        song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
+                        get_current_song_meta_data._last_song = song_name
+                        get_current_song_meta_data._is_active = True
+                        get_current_song_meta_data._last_active_time = time.time()
+                        return result
+                        
+        except Exception as e:
+            logger.error(f"Audio recognition check failed: {e}")
+        # ========================================================================
+        
         current_time = time.time()
         last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
         is_active = getattr(get_current_song_meta_data, '_is_active', True)

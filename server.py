@@ -1381,6 +1381,120 @@ async def toggle_liked_status():
         
     return jsonify({"success": success})
 
+
+# ============================================================================
+# Audio Recognition API (Reaper Integration)
+# ============================================================================
+
+@app.route('/api/audio-recognition/status', methods=['GET'])
+async def audio_recognition_status():
+    """
+    Get audio recognition status.
+    Returns current state, mode, song info, and device configuration.
+    """
+    try:
+        from system_utils.reaper import get_reaper_source, ReaperAudioSource
+        from audio_recognition import AudioCaptureManager
+        
+        source = get_reaper_source()
+        status = source.get_status()
+        
+        # Add device availability info
+        status["device_available"] = source._engine.capture.is_device_available() if source._engine else False
+        
+        return jsonify(status)
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e),
+            "available": False
+        })
+    except Exception as e:
+        logger.error(f"Audio recognition status error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/start', methods=['POST'])
+async def audio_recognition_start():
+    """
+    Start audio recognition manually.
+    Body: {"manual": true} (optional, defaults to true for manual trigger)
+    """
+    try:
+        from system_utils.reaper import get_reaper_source
+        
+        data = await request.get_json() or {}
+        manual = data.get("manual", True)
+        
+        source = get_reaper_source()
+        await source.start(manual=manual)
+        
+        return jsonify({
+            "status": "started",
+            "mode": "manual" if manual else "reaper"
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition start error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/stop', methods=['POST'])
+async def audio_recognition_stop():
+    """Stop audio recognition."""
+    try:
+        from system_utils.reaper import get_reaper_source
+        
+        source = get_reaper_source()
+        await source.stop()
+        
+        return jsonify({"status": "stopped"})
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition stop error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/devices', methods=['GET'])
+async def audio_recognition_devices():
+    """
+    List available audio capture devices.
+    Returns device list with auto-detected loopback recommendation.
+    """
+    try:
+        from audio_recognition import AudioCaptureManager
+        
+        devices = AudioCaptureManager.list_devices()
+        recommended = AudioCaptureManager.find_loopback_device()
+        
+        return jsonify({
+            "devices": devices,
+            "recommended": recommended,
+            "count": len(devices)
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e),
+            "devices": []
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition devices error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # --- System Routes ---
 
 @app.route('/settings', methods=['GET', 'POST'])
