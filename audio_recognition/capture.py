@@ -58,7 +58,7 @@ class AudioCaptureManager:
     DEFAULT_SAMPLE_RATE = 44100
     DEFAULT_CHANNELS = 2
     DEFAULT_DURATION = 4.0
-    MIN_AMPLITUDE = 100  # Minimum amplitude to consider valid audio
+    MIN_AMPLITUDE = 50  # Minimum amplitude to consider valid audio
     
     # Known loopback device name patterns (PRIORITY ORDER - most specific first!)
     # CRITICAL: "loopback" must come BEFORE generic "motu" to avoid matching physical inputs
@@ -83,10 +83,14 @@ class AudioCaptureManager:
         Initialize capture manager.
         
         Args:
-            device_id: Specific device ID to use (None = auto-detect)
+            device_id: Specific device ID to use (None or -1 = auto-detect)
             device_name: Device name to find (overrides device_id if provided)
             sample_rate: Sample rate in Hz (None = auto-detect from device, default: 44100)
         """
+        # Normalize -1 to None (backward compatibility)
+        if device_id == -1:
+            device_id = None
+            
         self._device_id = device_id
         self._device_name = device_name
         self._requested_sample_rate = sample_rate
@@ -96,6 +100,9 @@ class AudioCaptureManager:
         # Cache for device resolution (avoid repeated lookups)
         self._resolved_device_id: Optional[int] = None
         self._resolved_sample_rate: Optional[int] = None
+        
+        # Flag to abort ongoing capture
+        self._abort_capture = False
         
         if not sd:
             logger.error("sounddevice not installed. Audio capture unavailable.")
@@ -268,6 +275,15 @@ class AudioCaptureManager:
         except Exception:
             return False
     
+    def abort(self):
+        """Abort any ongoing capture. Call before cleanup."""
+        self._abort_capture = True
+        try:
+            if sd:
+                sd.stop()
+        except Exception as e:
+            logger.debug(f"Error aborting capture: {e}")
+    
     async def capture(self, duration: float = DEFAULT_DURATION) -> Optional[AudioChunk]:
         """
         Capture audio for the specified duration.
@@ -301,6 +317,9 @@ class AudioCaptureManager:
         def _blocking_capture() -> Optional[AudioChunk]:
             """Blocking capture function to run in executor."""
             try:
+                if self._abort_capture:
+                    return None
+                    
                 capture_start = time.time()
                 
                 logger.debug(f"Starting capture: device={device_id}, duration={duration}s, rate={self.sample_rate}")
@@ -313,7 +332,13 @@ class AudioCaptureManager:
                     device=device_id,
                     dtype='int16'
                 )
-                sd.wait()  # Wait for recording to complete
+                
+                # Wait for recording, but check abort flag
+                if not self._abort_capture:
+                    sd.wait()  # Wait for recording to complete
+                else:
+                    sd.stop()  # Abort the recording
+                    return None
                 
                 chunk = AudioChunk(
                     data=audio_data,

@@ -242,6 +242,9 @@ class RecognitionEngine:
         self._set_state(EngineState.STOPPING)
         self._stop_requested = True
         
+        # Abort any ongoing capture to prevent blocking
+        self.capture.abort()
+        
         if self._task:
             try:
                 # Wait for task to complete

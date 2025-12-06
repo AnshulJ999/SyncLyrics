@@ -120,5 +120,6 @@
     "visual_mode.delay_seconds": 6,
     "visual_mode.auto_sharp": true,
     "visual_mode.slideshow.enabled": false,
-    "visual_mode.slideshow.interval_seconds": 8
+    "visual_mode.slideshow.interval_seconds": 8,
+    "audio_recognition.device_id": null
 }

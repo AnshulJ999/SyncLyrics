@@ -97,6 +97,17 @@ async def cleanup() -> None:
         except Exception as e:
             logger.error(f"Error unregistering mDNS: {e}")
 
+    # Stop audio recognition engine to prevent crash
+    try:
+        from system_utils.reaper import get_reaper_source
+        logger.info("Stopping audio recognition...")
+        source = get_reaper_source()
+        if source and source.is_active:
+            await source.stop()
+            logger.info("Audio recognition stopped")
+    except Exception as e:
+        logger.error(f"Failed to stop audio recognition: {e}")
+
     # Cancel server task first
     if _server_task:
         _server_task.cancel()
