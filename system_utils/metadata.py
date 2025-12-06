@@ -158,13 +158,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
             if audio_rec_config.get("enabled", False):
                 reaper_source = get_reaper_source()
                 
-                # Configure if not already done
-                device_id = audio_rec_config.get("device_id", -1)
-                if device_id == -1:
-                    device_id = None  # Auto-detect
-                    
+                # Configure with settings from config
                 reaper_source.configure(
-                    device_id=device_id,
+                    device_id=audio_rec_config.get("device_id"),  # None = auto-detect
                     device_name=audio_rec_config.get("device_name", ""),
                     recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
                     capture_duration=audio_rec_config.get("capture_duration", 4.0),

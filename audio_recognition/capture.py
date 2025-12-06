@@ -60,49 +60,79 @@ class AudioCaptureManager:
     DEFAULT_DURATION = 4.0
     MIN_AMPLITUDE = 100  # Minimum amplitude to consider valid audio
     
-    # Known loopback device name patterns (priority order)
+    # Known loopback device name patterns (PRIORITY ORDER - most specific first!)
+    # CRITICAL: "loopback" must come BEFORE generic "motu" to avoid matching physical inputs
     LOOPBACK_PATTERNS = [
-        "motu",
-        "loopback",
-        "vb-cable",
-        "vb-audio",
-        "voicemeeter",
-        "stereo mix",
-        "what u hear",
-        "wave out",
+        "loopback",      # Priority 1: Explicit "loopback" in name (e.g., "Loopback (MOTU M Series)")
+        "stereo mix",    # Priority 2: Windows default loopback
+        "what u hear",   # Priority 3: Creative Sound Blaster loopback
+        "vb-cable",      # Priority 4: Virtual audio cable
+        "vb-audio",      # Priority 5: VB-Audio virtual devices
+        "voicemeeter",   # Priority 6: Voicemeeter
+        "wave out",      # Priority 7: Generic wave out
+        "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
     ]
     
     def __init__(
         self, 
         device_id: Optional[int] = None,
         device_name: Optional[str] = None,
-        sample_rate: int = DEFAULT_SAMPLE_RATE
+        sample_rate: Optional[int] = None
     ):
         """
         Initialize capture manager.
         
         Args:
-            device_id: Specific device ID to use
+            device_id: Specific device ID to use (None = auto-detect)
             device_name: Device name to find (overrides device_id if provided)
-            sample_rate: Sample rate in Hz (default: 44100)
+            sample_rate: Sample rate in Hz (None = auto-detect from device, default: 44100)
         """
         self._device_id = device_id
         self._device_name = device_name
-        self.sample_rate = sample_rate
+        self._requested_sample_rate = sample_rate
+        self.sample_rate = sample_rate or self.DEFAULT_SAMPLE_RATE
         self.channels = self.DEFAULT_CHANNELS
+        
+        # Cache for device resolution (avoid repeated lookups)
+        self._resolved_device_id: Optional[int] = None
+        self._resolved_sample_rate: Optional[int] = None
         
         if not sd:
             logger.error("sounddevice not installed. Audio capture unavailable.")
             
     @property
     def device_id(self) -> Optional[int]:
-        """Get current device ID, resolving by name if needed."""
+        """Get current device ID, resolving by name if needed. Cached to avoid repeated lookups."""
+        # Return cached value if available
+        if self._resolved_device_id is not None:
+            return self._resolved_device_id
+        
+        # Resolve device ID (priority: name > explicit ID > auto-detect)
         if self._device_name:
-            # Try to find device by name
-            found_id = self.find_device_by_name(self._device_name)
-            if found_id is not None:
-                return found_id
-        return self._device_id
+            self._resolved_device_id = self.find_device_by_name(self._device_name)
+            if self._resolved_device_id is not None:
+                logger.info(f"Resolved device by name '{self._device_name}': ID {self._resolved_device_id}")
+                return self._resolved_device_id
+        
+        if self._device_id is not None:
+            self._resolved_device_id = self._device_id
+        else:
+            self._resolved_device_id = self.find_loopback_device()
+            if self._resolved_device_id is not None:
+                logger.info(f"Auto-detected loopback device: ID {self._resolved_device_id}")
+        
+        return self._resolved_device_id
+    
+    def _get_device_sample_rate(self, device_id: int) -> int:
+        """Get the native sample rate of a device."""
+        try:
+            device_info = sd.query_devices(device_id, 'input')
+            native_rate = int(device_info.get('default_samplerate', self.DEFAULT_SAMPLE_RATE))
+            logger.debug(f"Device {device_id} native sample rate: {native_rate} Hz")
+            return native_rate
+        except Exception as e:
+            logger.warning(f"Failed to get sample rate for device {device_id}: {e}")
+            return self.DEFAULT_SAMPLE_RATE
     
     @staticmethod
     def is_available() -> bool:
@@ -242,6 +272,7 @@ class AudioCaptureManager:
         """
         Capture audio for the specified duration.
         Runs in executor to avoid blocking the event loop.
+        Auto-detects sample rate from device if not specified.
         
         Args:
             duration: Capture duration in seconds (default: 4.0)
@@ -255,11 +286,14 @@ class AudioCaptureManager:
             
         device_id = self.device_id
         if device_id is None:
-            # Try auto-detection
-            device_id = self.find_loopback_device()
-            if device_id is None:
-                logger.error("No audio device configured or auto-detected")
-                return None
+            logger.error("No audio device configured or auto-detected")
+            return None
+        
+        # Auto-detect sample rate from device if not specified
+        if self._requested_sample_rate is None and self._resolved_sample_rate is None:
+            self._resolved_sample_rate = self._get_device_sample_rate(device_id)
+            self.sample_rate = self._resolved_sample_rate
+            logger.info(f"Using device native sample rate: {self.sample_rate} Hz")
         
         # Run blocking capture in executor
         loop = asyncio.get_event_loop()

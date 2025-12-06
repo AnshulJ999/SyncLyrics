@@ -265,7 +265,7 @@ ARTIST_IMAGE = {
 AUDIO_RECOGNITION = {
     "enabled": conf("audio_recognition.enabled", True),
     "reaper_auto_detect": conf("audio_recognition.reaper_auto_detect", True),
-    "device_id": conf("audio_recognition.device_id", -1),  # -1 = auto-detect
+    "device_id": conf("audio_recognition.device_id"),  # None = auto-detect
     "device_name": conf("audio_recognition.device_name", ""),
     "capture_duration": conf("audio_recognition.capture_duration", 4.0),
     "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
