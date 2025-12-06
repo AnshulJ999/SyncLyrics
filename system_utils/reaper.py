@@ -331,7 +331,7 @@ class ReaperAudioSource:
             position = 0
         
         # Return in standard system_utils format
-        # Now includes album art from ShazamIO
+        # Now includes full Shazam metadata
         return {
             "artist": song["artist"],
             "title": song["title"],
@@ -342,6 +342,13 @@ class ReaperAudioSource:
             "source": "audio_recognition",
             "album_art_url": song.get("album_art_url"),  # From ShazamIO
             "track_id": None,
+            # New Shazam metadata fields (future use)
+            "isrc": song.get("isrc"),
+            "shazam_url": song.get("shazam_url"),
+            "spotify_url": song.get("spotify_url"),
+            "background_image_url": song.get("background_image_url"),
+            "genre": song.get("genre"),
+            "shazam_lyrics_text": song.get("shazam_lyrics_text"),
             # Default colors (will be overridden by album art extraction)
             "colors": ("#24273a", "#363b54"),
             # Additional metadata for debugging

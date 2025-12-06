@@ -34,7 +34,7 @@ class RecognitionResult:
     
     Attributes:
         title: Song title
-        artist: Song artist
+        artist: Song artist (unmodified from Shazam)
         album: Album name (if available)
         offset: Position in song at capture START (seconds)
         capture_start_time: Unix timestamp when capture started
@@ -44,6 +44,12 @@ class RecognitionResult:
         frequency_skew: Shazam's frequency skew value
         track_id: Shazam's track identifier (for dedup)
         album_art_url: URL to album cover art
+        isrc: International Standard Recording Code
+        shazam_url: URL to view song on Shazam
+        spotify_url: URL to play on Spotify (if available)
+        background_image_url: Background image for visual modes
+        genre: Primary genre
+        shazam_lyrics_text: Raw lyrics text from Shazam (unsynced)
     """
     title: str
     artist: str
@@ -56,6 +62,12 @@ class RecognitionResult:
     track_id: Optional[str] = None
     album: Optional[str] = None
     album_art_url: Optional[str] = None
+    isrc: Optional[str] = None
+    shazam_url: Optional[str] = None
+    spotify_url: Optional[str] = None
+    background_image_url: Optional[str] = None
+    genre: Optional[str] = None
+    shazam_lyrics_text: Optional[str] = None
     
     def get_current_position(self) -> float:
         """
@@ -184,9 +196,23 @@ class ShazamRecognizer:
             track = result.get('track', {})
             match = result['matches'][0]
             
+            # Extract core fields - keep artist name as-is from Shazam
             title = track.get('title', 'Unknown')
             artist = track.get('subtitle', 'Unknown')
             offset = match.get('offset', 0)
+            
+            # Extract ISRC (International Standard Recording Code)
+            isrc = track.get('isrc')
+            
+            # Extract URLs
+            shazam_url = track.get('url')
+            spotify_url = self._extract_spotify_url(track)
+            
+            # Extract genre
+            genre = None
+            genres = track.get('genres', {})
+            if isinstance(genres, dict):
+                genre = genres.get('primary')
             
             # Extract album and cover art from Shazam response
             # Shazam stores images in 'images' or 'share' sections
@@ -204,15 +230,21 @@ class ShazamRecognizer:
                             break
             
             # Try to get cover art URL
-            # Priority: coverart > images.coverart > share.image
+            # Priority: coverarthq (high-res) > coverart > share.image
             images = track.get('images', {})
             album_art_url = (
-                images.get('coverart') or 
-                images.get('coverarthq') or
+                images.get('coverarthq') or  # High-res first
+                images.get('coverart') or
                 track.get('share', {}).get('image')
             )
             
-            # Build result with latency compensation built-in
+            # Extract background image for visual modes
+            background_image_url = images.get('background')
+            
+            # Extract lyrics if available (unsynced text)
+            shazam_lyrics_text = self._extract_lyrics(track)
+            
+            # Build result with latency compensation and all metadata
             recognition = RecognitionResult(
                 title=title,
                 artist=artist,
@@ -224,7 +256,13 @@ class ShazamRecognizer:
                 frequency_skew=match.get('frequencyskew', 0.0),
                 track_id=track.get('key'),
                 album=album,
-                album_art_url=album_art_url
+                album_art_url=album_art_url,
+                isrc=isrc,
+                shazam_url=shazam_url,
+                spotify_url=spotify_url,
+                background_image_url=background_image_url,
+                genre=genre,
+                shazam_lyrics_text=shazam_lyrics_text
             )
             
             latency = recognition.get_latency()
@@ -264,3 +302,63 @@ class ShazamRecognizer:
             wf.writeframes(audio.data.tobytes())
         
         return buffer.getvalue()
+    
+    def _extract_spotify_url(self, track: dict) -> Optional[str]:
+        """
+        Extract Spotify URL from Shazam track data.
+        
+        Shazam sometimes includes Spotify links in hub.actions or providers.
+        
+        Args:
+            track: Shazam track dict
+            
+        Returns:
+            Spotify URL or None
+        """
+        try:
+            # Check hub.actions for Spotify
+            hub = track.get('hub', {})
+            actions = hub.get('actions', [])
+            for action in actions:
+                uri = action.get('uri', '')
+                if 'spotify' in uri.lower():
+                    return uri
+            
+            # Check providers array
+            providers = track.get('providers', [])
+            for provider in providers:
+                if provider.get('type') == 'spotify':
+                    actions = provider.get('actions', [])
+                    for action in actions:
+                        uri = action.get('uri', '')
+                        if uri:
+                            return uri
+        except Exception as e:
+            logger.debug(f"Could not extract Spotify URL: {e}")
+        
+        return None
+    
+    def _extract_lyrics(self, track: dict) -> Optional[str]:
+        """
+        Extract lyrics text from Shazam track data.
+        
+        Shazam sometimes includes unsynced lyrics in sections.
+        
+        Args:
+            track: Shazam track dict
+            
+        Returns:
+            Lyrics text or None
+        """
+        try:
+            sections = track.get('sections', [])
+            for section in sections:
+                if section.get('type') == 'LYRICS':
+                    # Lyrics are in text array
+                    text_lines = section.get('text', [])
+                    if text_lines:
+                        return '\n'.join(text_lines)
+        except Exception as e:
+            logger.debug(f"Could not extract lyrics: {e}")
+        
+        return None

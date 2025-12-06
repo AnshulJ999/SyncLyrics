@@ -92,6 +92,10 @@ class RecognitionEngine:
         self._consecutive_failures = 0
         self._stop_requested = False
         
+        # Adaptive interval state machine
+        self._first_detection = False  # False = scanning, True = detected once
+        self._verified_detection = False  # False = verifying, True = verified
+        
         # Position tracking for interpolation
         self._last_position_update = 0.0
         self._frozen_position: Optional[float] = None
@@ -149,10 +153,10 @@ class RecognitionEngine:
     
     def get_current_song(self) -> Optional[Dict[str, Any]]:
         """
-        Get current song info including album art.
+        Get current song info including all metadata.
         
         Returns:
-            {"artist": str, "title": str, "album": str, "album_art_url": str} or None
+            Full song dict with all Shazam metadata fields or None
         """
         if self._last_result is None:
             return None
@@ -160,7 +164,13 @@ class RecognitionEngine:
             "artist": self._last_result.artist,
             "title": self._last_result.title,
             "album": self._last_result.album,
-            "album_art_url": self._last_result.album_art_url
+            "album_art_url": self._last_result.album_art_url,
+            "isrc": self._last_result.isrc,
+            "shazam_url": self._last_result.shazam_url,
+            "spotify_url": self._last_result.spotify_url,
+            "background_image_url": self._last_result.background_image_url,
+            "genre": self._last_result.genre,
+            "shazam_lyrics_text": self._last_result.shazam_lyrics_text
         }
     
     def is_result_stale(self, threshold: Optional[float] = None) -> bool:
@@ -225,6 +235,8 @@ class RecognitionEngine:
         self._stop_requested = False
         self._consecutive_failures = 0
         self._frozen_position = None
+        self._first_detection = False
+        self._verified_detection = False
         
         self._set_state(EngineState.STARTING)
         
@@ -302,9 +314,19 @@ class RecognitionEngine:
                 logger.error(f"Recognition loop error: {e}")
                 self._handle_failed_recognition()
             
-            # Wait before next cycle
+            # Adaptive interval based on detection state
             if not self._stop_requested:
-                await asyncio.sleep(self.interval)
+                if not self._first_detection:
+                    # State 1: Scanning for song - rapid polls
+                    interval = 1.0
+                elif not self._verified_detection:
+                    # State 2: Verification - quick re-check
+                    interval = 0.5
+                else:
+                    # State 3: Normal tracking
+                    interval = 3.0
+                
+                await asyncio.sleep(interval)
         
         logger.info("Recognition loop ended")
     
@@ -333,6 +355,11 @@ class RecognitionEngine:
         self._set_state(EngineState.RECOGNIZING)
         result = await self.recognizer.recognize(audio)
         
+        # Check if we're stopping - don't process result if shutdown in progress
+        if self._stop_requested:
+            logger.debug("Stop requested, discarding recognition result")
+            return None
+        
         return result
     
     def _handle_successful_recognition(self, result: RecognitionResult):
@@ -341,9 +368,20 @@ class RecognitionEngine:
         self._is_playing = True
         self._frozen_position = None  # Unfreeze position
         
+        # Update adaptive interval state machine
+        if not self._first_detection:
+            logger.debug("First detection - moving to verification state")
+            self._first_detection = True
+        elif not self._verified_detection:
+            logger.debug("Detection verified - moving to normal tracking")
+            self._verified_detection = True
+        
         # Check for song change
         if not result.is_same_song(self._last_result):
             logger.info(f"Song changed to: {result}")
+            
+            # Reset to verification state for new song
+            self._verified_detection = False
             
             # Call song change callback
             if self.on_song_change:
