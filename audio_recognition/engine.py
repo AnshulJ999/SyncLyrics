@@ -147,18 +147,20 @@ class RecognitionEngine:
         
         return max(0, position)  # Don't go negative
     
-    def get_current_song(self) -> Optional[Dict[str, str]]:
+    def get_current_song(self) -> Optional[Dict[str, Any]]:
         """
-        Get current song info.
+        Get current song info including album art.
         
         Returns:
-            {"artist": str, "title": str} or None
+            {"artist": str, "title": str, "album": str, "album_art_url": str} or None
         """
         if self._last_result is None:
             return None
         return {
             "artist": self._last_result.artist,
-            "title": self._last_result.title
+            "title": self._last_result.title,
+            "album": self._last_result.album,
+            "album_art_url": self._last_result.album_art_url
         }
     
     def is_result_stale(self, threshold: Optional[float] = None) -> bool:

@@ -27,6 +27,9 @@ except ImportError as e:
     EngineState = None
     RecognitionResult = None
 
+# Shutdown guard - prevents auto-restart during app cleanup
+_shutting_down = False
+
 
 class ReaperAudioSource:
     """
@@ -184,6 +187,12 @@ class ReaperAudioSource:
         On first call, immediately checks Reaper status (bypasses throttle)
         to detect already-running Reaper on SyncLyrics startup.
         """
+        global _shutting_down
+        
+        # Don't auto-start during shutdown!
+        if _shutting_down:
+            return
+        
         if not self._enabled or not self._auto_detect:
             return
         
@@ -239,6 +248,11 @@ class ReaperAudioSource:
     
     async def stop(self):
         """Stop audio recognition."""
+        global _shutting_down
+        
+        # Set shutdown flag to prevent auto-restart during cleanup
+        _shutting_down = True
+        
         if self._engine:
             await self._engine.stop()
             self._engine = None
@@ -317,15 +331,16 @@ class ReaperAudioSource:
             position = 0
         
         # Return in standard system_utils format
+        # Now includes album art from ShazamIO
         return {
             "artist": song["artist"],
             "title": song["title"],
-            "album": None,  # Shazam doesn't provide album reliably
+            "album": song.get("album"),  # From ShazamIO
             "position": position,
             "duration": 0,  # Unknown from Shazam
             "is_playing": self._engine.is_playing,
             "source": "audio_recognition",
-            "album_art_url": None,
+            "album_art_url": song.get("album_art_url"),  # From ShazamIO
             "track_id": None,
             # Default colors (will be overridden by album art extraction)
             "colors": ("#24273a", "#363b54"),

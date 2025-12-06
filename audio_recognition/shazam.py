@@ -35,6 +35,7 @@ class RecognitionResult:
     Attributes:
         title: Song title
         artist: Song artist
+        album: Album name (if available)
         offset: Position in song at capture START (seconds)
         capture_start_time: Unix timestamp when capture started
         recognition_time: Unix timestamp when recognition completed
@@ -42,6 +43,7 @@ class RecognitionResult:
         time_skew: Shazam's time skew value
         frequency_skew: Shazam's frequency skew value
         track_id: Shazam's track identifier (for dedup)
+        album_art_url: URL to album cover art
     """
     title: str
     artist: str
@@ -52,6 +54,8 @@ class RecognitionResult:
     time_skew: float = 0.0
     frequency_skew: float = 0.0
     track_id: Optional[str] = None
+    album: Optional[str] = None
+    album_art_url: Optional[str] = None
     
     def get_current_position(self) -> float:
         """
@@ -184,6 +188,30 @@ class ShazamRecognizer:
             artist = track.get('subtitle', 'Unknown')
             offset = match.get('offset', 0)
             
+            # Extract album and cover art from Shazam response
+            # Shazam stores images in 'images' or 'share' sections
+            album = None
+            album_art_url = None
+            
+            # Try to get album name from sections
+            sections = track.get('sections', [])
+            for section in sections:
+                if section.get('type') == 'SONG':
+                    metadata = section.get('metadata', [])
+                    for item in metadata:
+                        if item.get('title') == 'Album':
+                            album = item.get('text')
+                            break
+            
+            # Try to get cover art URL
+            # Priority: coverart > images.coverart > share.image
+            images = track.get('images', {})
+            album_art_url = (
+                images.get('coverart') or 
+                images.get('coverarthq') or
+                track.get('share', {}).get('image')
+            )
+            
             # Build result with latency compensation built-in
             recognition = RecognitionResult(
                 title=title,
@@ -194,7 +222,9 @@ class ShazamRecognizer:
                 confidence=1.0,  # Shazam doesn't expose confidence directly
                 time_skew=match.get('timeskew', 0.0),
                 frequency_skew=match.get('frequencyskew', 0.0),
-                track_id=track.get('key')
+                track_id=track.get('key'),
+                album=album,
+                album_art_url=album_art_url
             )
             
             latency = recognition.get_latency()

@@ -176,7 +176,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 if reaper_source.is_active:
                     result = await reaper_source.get_metadata()
                     if result:
-                        logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
+                        # logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
                         # Process like other sources (colors, art, etc.)
                         # Store result and update tracking
                         get_current_song_meta_data._last_result = result
