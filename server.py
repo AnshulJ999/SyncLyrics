@@ -1399,8 +1399,15 @@ async def audio_recognition_status():
         source = get_reaper_source()
         status = source.get_status()
         
-        # Add device availability info
-        status["device_available"] = source._engine.capture.is_device_available() if source._engine else False
+        # Add device availability info with proper null checks
+        try:
+            status["device_available"] = (
+                source._engine.capture.is_device_available() 
+                if source._engine and hasattr(source._engine, 'capture') and source._engine.capture
+                else False
+            )
+        except Exception:
+            status["device_available"] = False
         
         return jsonify(status)
         
