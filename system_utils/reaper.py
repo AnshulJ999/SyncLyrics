@@ -16,6 +16,14 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Optional psutil import (for process detection)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
 # Import audio recognition components
 try:
     from audio_recognition import RecognitionEngine, EngineState, RecognitionResult
@@ -68,49 +76,84 @@ class ReaperAudioSource:
     @staticmethod
     def is_reaper_running() -> bool:
         """
-        Check if Reaper.exe is running (Windows only).
+        Check if Reaper.exe is running by checking the process list.
+        
+        Uses process matching (not window titles) for accurate detection.
+        Works on Windows and Unix systems.
         
         Returns:
             True if Reaper process detected
         """
-        if platform.system() != "Windows":
-            return False
-        
         try:
-            # Use win32gui to find Reaper windows
-            import win32gui
-            
-            reaper_found = False
-            
-            def check_window(hwnd, _):
-                nonlocal reaper_found
-                if win32gui.IsWindowVisible(hwnd):
-                    title = win32gui.GetWindowText(hwnd)
-                    # Reaper window titles typically contain "REAPER"
-                    if "REAPER" in title.upper():
-                        reaper_found = True
-                return True
-            
-            win32gui.EnumWindows(check_window, None)
-            return reaper_found
-            
-        except ImportError:
-            logger.debug("win32gui not available, trying process check")
-            
-            # Fallback: check process list
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ['tasklist', '/FI', 'IMAGENAME eq reaper.exe'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                return 'reaper.exe' in result.stdout.lower()
-            except Exception as e:
-                logger.debug(f"Process check failed: {e}")
-                return False
+            # Try psutil first (cross-platform, most reliable)
+            if PSUTIL_AVAILABLE:
+                process_name = "reaper.exe" if platform.system() == "Windows" else "reaper"
                 
+                # Check all running processes
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        proc_name = proc.info['name'].lower()
+                        if proc_name == process_name.lower():
+                            logger.debug(f"Reaper process found: {proc_name} (PID: {proc.info['pid']})")
+                            return True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        # Process may have terminated or we don't have permission
+                        continue
+                
+                return False
+            else:
+                # psutil not available, use platform-specific commands
+                logger.debug("psutil not available, using platform-specific process check")
+                
+                import subprocess
+                
+                if platform.system() == "Windows":
+                    # Windows: use tasklist command
+                    try:
+                        result = subprocess.run(
+                            ['tasklist', '/FI', 'IMAGENAME eq reaper.exe', '/FO', 'CSV'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                        )
+                        # Check if reaper.exe appears in output (excluding header)
+                        output = result.stdout.lower()
+                        # CSV format: "Image Name","PID","Session Name",...
+                        # We want to find "reaper.exe" in the first column
+                        lines = output.strip().split('\n')
+                        for line in lines[1:]:  # Skip header
+                            if line.startswith('"reaper.exe"'):
+                                logger.debug("Reaper process found via tasklist")
+                                return True
+                        return False
+                    except Exception as e:
+                        logger.debug(f"Windows process check failed: {e}")
+                        return False
+                else:
+                    # Unix/Linux/macOS: use ps command
+                    try:
+                        result = subprocess.run(
+                            ['ps', '-A'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        # Check if "reaper" appears in process list
+                        output = result.stdout.lower()
+                        # Look for exact process name match (avoid false positives)
+                        lines = output.split('\n')
+                        for line in lines:
+                            # ps output format varies, but typically has process name
+                            # Look for standalone "reaper" word (not "reaperd" or "reaperize")
+                            if ' reaper ' in line or line.strip().endswith(' reaper'):
+                                logger.debug("Reaper process found via ps")
+                                return True
+                        return False
+                    except Exception as e:
+                        logger.debug(f"Unix process check failed: {e}")
+                        return False
+                        
         except Exception as e:
             logger.debug(f"Reaper detection failed: {e}")
             return False
