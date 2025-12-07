@@ -188,7 +188,7 @@ class RecognitionEngine:
                 "background_image_url": self._last_result.background_image_url,
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
-                "album_art_url": self._last_result.album_art_url,
+                "album_art_url": self._enriched_metadata.get("album_art_url") or self._last_result.album_art_url,
                 # Debug fields
                 "_shazam_artist": self._last_result.artist,
                 "_shazam_title": self._last_result.title,

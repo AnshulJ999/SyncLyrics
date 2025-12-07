@@ -416,8 +416,8 @@ class ReaperAudioSource:
             "background_image_url": song.get("background_image_url"),
             "genre": song.get("genre"),
             "shazam_lyrics_text": song.get("shazam_lyrics_text"),
-            # Shazam's album art (available but not used - DB takes precedence)
-            "_shazam_album_art_url": song.get("album_art_url"),
+            # Album art URL (enriched from Spotify or fallback to Shazam)
+            "album_art_url": song.get("album_art_url"),
             # Default colors (will be overridden by album art extraction)
             "colors": ("#24273a", "#363b54"),
             # Debug metadata
