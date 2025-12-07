@@ -312,6 +312,13 @@ class RecognitionEngine:
             finally:
                 self._task = None
         
+        # Cleanup ShazamIO aiohttp sessions
+        if self.recognizer:
+            try:
+                await self.recognizer.close()
+            except Exception:
+                pass
+        
         self._set_state(EngineState.IDLE)
         logger.info("Recognition engine stopped")
     

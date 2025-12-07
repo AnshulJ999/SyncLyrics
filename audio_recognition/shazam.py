@@ -158,6 +158,20 @@ class ShazamRecognizer:
         """Check if ShazamIO is available."""
         return Shazam is not None
     
+    async def close(self):
+        """Close the Shazam client and cleanup resources (aiohttp sessions)."""
+        if self._shazam:
+            # ShazamIO may have internal aiohttp session
+            # Try to close it if possible
+            try:
+                if hasattr(self._shazam, 'close'):
+                    await self._shazam.close()
+                elif hasattr(self._shazam, '_session'):
+                    await self._shazam._session.close()
+            except Exception:
+                pass  # Best effort cleanup
+            self._shazam = None
+    
     async def recognize(self, audio: AudioChunk) -> Optional[RecognitionResult]:
         """
         Recognize a song from an audio chunk.

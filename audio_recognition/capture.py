@@ -280,21 +280,21 @@ class AudioCaptureManager:
             return False
     
     async def is_device_available_async(self) -> bool:
-        """Async version of is_device_available. Runs in executor to avoid blocking event loop."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.is_device_available)
+        """Async version of is_device_available. Runs in daemon executor."""
+        from system_utils.helpers import run_in_daemon_executor
+        return await run_in_daemon_executor(self.is_device_available)
     
     @staticmethod
     async def list_devices_async() -> List[Dict[str, Any]]:
-        """Async version of list_devices. Runs in executor to avoid blocking event loop."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, AudioCaptureManager.list_devices)
+        """Async version of list_devices. Runs in daemon executor."""
+        from system_utils.helpers import run_in_daemon_executor
+        return await run_in_daemon_executor(AudioCaptureManager.list_devices)
     
     @classmethod
     async def find_loopback_device_async(cls) -> Optional[int]:
-        """Async version of find_loopback_device. Runs in executor to avoid blocking event loop."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, cls.find_loopback_device)
+        """Async version of find_loopback_device. Runs in daemon executor."""
+        from system_utils.helpers import run_in_daemon_executor
+        return await run_in_daemon_executor(cls.find_loopback_device)
     
     def abort(self):
         """Abort any ongoing capture. Call before cleanup."""
@@ -368,10 +368,11 @@ class AudioCaptureManager:
             logger.error("sounddevice not available")
             return None
         
-        # CRITICAL FIX: Run device resolution in executor to avoid freezing event loop
+        # CRITICAL FIX: Run device resolution in daemon executor to avoid freezing event loop
         # sd.query_devices() is a BLOCKING call that can take seconds on Windows!
-        loop = asyncio.get_running_loop()
-        device_id, sample_rate = await loop.run_in_executor(None, self._resolve_device_sync)
+        # Daemon threads are killed on app exit, preventing zombie processes.
+        from system_utils.helpers import run_in_daemon_executor
+        device_id, sample_rate = await run_in_daemon_executor(self._resolve_device_sync)
         
         if device_id is None:
             logger.error("No audio device configured or auto-detected")
@@ -444,7 +445,16 @@ class AudioCaptureManager:
                 return None
         
         try:
-            return await loop.run_in_executor(None, _blocking_capture)
+            # CRITICAL FIX: Add timeout to prevent hanging forever if PortAudio blocks
+            # Daemon executor ensures thread is killed on app exit
+            return await asyncio.wait_for(
+                run_in_daemon_executor(_blocking_capture),
+                timeout=duration + 3.0  # Capture duration + safety margin
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Audio capture timeout after {duration + 3.0}s - aborting")
+            self._abort_capture = True
+            return None
         except Exception as e:
             logger.error(f"Executor capture failed: {e}")
             return None

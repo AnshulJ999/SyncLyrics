@@ -209,13 +209,14 @@ class ReaperAudioSource:
         self._last_reaper_check = now
         was_running = self._reaper_running
         
-        # CRITICAL FIX: Run blocking psutil.process_iter() call in executor
+        # CRITICAL FIX: Run blocking psutil.process_iter() call in daemon executor
         # to prevent freezing the event loop for seconds during process iteration
         # AND add timeout to prevent indefinite hang if psutil blocks (common on Windows)
-        loop = asyncio.get_running_loop()
+        # Daemon threads are killed on app exit, preventing zombie processes
+        from system_utils.helpers import run_in_daemon_executor
         try:
             self._reaper_running = await asyncio.wait_for(
-                loop.run_in_executor(None, self.is_reaper_running),
+                run_in_daemon_executor(self.is_reaper_running),
                 timeout=2.0
             )
         except asyncio.TimeoutError:

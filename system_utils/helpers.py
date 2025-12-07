@@ -8,12 +8,106 @@ from __future__ import annotations
 import re
 import time
 import asyncio
-from typing import Optional
+import concurrent.futures
+from typing import Optional, Callable, Any
 
 from . import state
 from logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# Daemon Executor for Blocking Operations
+# =============================================================================
+# Uses TRUE daemon threads that are automatically killed when Python exits.
+# This prevents "zombie" Python processes when audio driver or psutil hangs.
+# Standard ThreadPoolExecutor creates non-daemon threads, so we subclass it.
+
+import threading
+import weakref
+from concurrent.futures import ThreadPoolExecutor
+
+
+class DaemonThreadPoolExecutor(ThreadPoolExecutor):
+    """
+    ThreadPoolExecutor that creates daemon threads.
+    
+    Daemon threads are automatically terminated when the main program exits,
+    even if they are blocked in C-level calls (like PortAudio or psutil).
+    This ensures Python can always exit cleanly.
+    """
+    
+    def _adjust_thread_count(self):
+        """Override to create daemon threads instead of regular threads."""
+        # This is copied from the parent class but with daemon=True
+        if len(self._threads) < self._max_workers:
+            # When the executor gets lost, the weakref callback will wake up
+            # the worker threads.
+            def weakref_cb(_, q=self._work_queue):
+                q.put(None)
+            
+            num_threads = len(self._threads)
+            thread_name = f'{self._thread_name_prefix or self}_{num_threads}'
+            t = threading.Thread(
+                name=thread_name,
+                target=self._worker,
+                args=(
+                    weakref.ref(self, weakref_cb),
+                    self._work_queue,
+                    self._initializer,
+                    self._initargs,
+                ),
+                daemon=True  # THIS IS THE KEY CHANGE - daemon threads auto-terminate
+            )
+            t.start()
+            self._threads.add(t)
+            self._adjust_thread_count()  # Tail recursion to add more if needed
+
+
+_daemon_executor: Optional[DaemonThreadPoolExecutor] = None
+
+
+def _get_daemon_executor() -> DaemonThreadPoolExecutor:
+    """Get or create the daemon thread executor with true daemon threads."""
+    global _daemon_executor
+    if _daemon_executor is None:
+        _daemon_executor = DaemonThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="SyncLyrics_Daemon"
+        )
+    return _daemon_executor
+
+
+async def run_in_daemon_executor(func: Callable, *args: Any) -> Any:
+    """
+    Run a blocking function in a TRUE daemon thread executor.
+    
+    Daemon threads are automatically killed when the main program exits,
+    preventing the app from hanging if the task (e.g. audio I/O, psutil) is stuck.
+    This works even if cleanup() is skipped due to a crash.
+    
+    Args:
+        func: Blocking function to run
+        *args: Arguments to pass to the function
+        
+    Returns:
+        Result of the function
+    """
+    loop = asyncio.get_running_loop()
+    executor = _get_daemon_executor()
+    return await loop.run_in_executor(executor, func, *args)
+
+
+def shutdown_daemon_executor():
+    """Shutdown the daemon executor. Call during app cleanup."""
+    global _daemon_executor
+    if _daemon_executor is not None:
+        try:
+            _daemon_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        _daemon_executor = None
 
 
 def create_tracked_task(coro):

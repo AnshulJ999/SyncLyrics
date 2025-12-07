@@ -97,22 +97,33 @@ async def cleanup() -> None:
         except Exception as e:
             logger.error(f"Error unregistering mDNS: {e}")
 
-    # Stop audio recognition engine to prevent crash
+    # Stop audio recognition engine FIRST (most likely to hang)
     try:
         from system_utils.reaper import get_reaper_source
         logger.info("Stopping audio recognition...")
         source = get_reaper_source()
         if source and source.is_active:
             try:
-                # Add timeout to prevent hang when engine is in PAUSED state
-                await asyncio.wait_for(source.stop(), timeout=5.0)
+                # Reduced timeout - we have force cleanup as backup
+                await asyncio.wait_for(source.stop(), timeout=3.0)
                 logger.info("Audio recognition stopped")
             except asyncio.TimeoutError:
-                logger.warning("Audio recognition stop timeout - forcing shutdown")
+                logger.warning("Audio recognition stop timeout - forcing cleanup")
+                # Force cleanup of audio resources
+                if source._engine and source._engine.capture:
+                    source._engine.capture.abort()
     except Exception as e:
         logger.error(f"Failed to stop audio recognition: {e}")
+    
+    # Cleanup PortAudio/sounddevice state (Fix 3)
+    try:
+        import sounddevice as sd
+        sd.stop()  # Stop all active streams
+        logger.debug("PortAudio streams stopped")
+    except Exception:
+        pass  # sounddevice may not be installed or stream not active
 
-    # Cancel server task first
+    # Cancel server task
     if _server_task:
         _server_task.cancel()
         try:
@@ -133,6 +144,23 @@ async def cleanup() -> None:
             await asyncio.get_running_loop().run_in_executor(None, lambda: _tray_thread.join(timeout=1.0))
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
+
+    # Cancel all remaining async tasks (Fix 4) - prevents orphaned HTTP requests
+    for task in asyncio.all_tasks():
+        if task is not asyncio.current_task():
+            task.cancel()
+            try:
+                await asyncio.wait_for(task, timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+    # Shutdown daemon executor (Fix 5) - ensures all daemon threads are stopped
+    try:
+        from system_utils.helpers import shutdown_daemon_executor
+        shutdown_daemon_executor()
+        logger.debug("Daemon executor shutdown")
+    except Exception:
+        pass
 
     queue.put("exit")
     await asyncio.sleep(0.5)
