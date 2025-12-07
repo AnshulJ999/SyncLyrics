@@ -88,7 +88,13 @@
     "system.windows.media_session.enabled": true,
     "system.windows.media_session.preferred": true,
     "system.windows.media_session.timeout": 5,
-    "system.windows.app_blocklist": ["chrome", "msedge", "firefox", "brave", "comet"],
+    "system.windows.app_blocklist": [
+        "chrome",
+        "msedge",
+        "firefox",
+        "brave",
+        "comet"
+    ],
     "system.linux.gsettings_enabled": true,
     "system.linux.playerctl_required": true,
     "features.minimal_ui": true,
@@ -121,5 +127,11 @@
     "visual_mode.auto_sharp": true,
     "visual_mode.slideshow.enabled": false,
     "visual_mode.slideshow.interval_seconds": 8,
-    "audio_recognition.device_id": null
+    "audio_recognition.enabled": true,
+    "audio_recognition.reaper_auto_detect": true,
+    "audio_recognition.device_id": null,
+    "audio_recognition.device_name": "",
+    "audio_recognition.capture_duration": 4.0,
+    "audio_recognition.recognition_interval": 4.0,
+    "audio_recognition.latency_offset": 0.0
 }
