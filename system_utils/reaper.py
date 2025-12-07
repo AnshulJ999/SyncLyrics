@@ -242,7 +242,7 @@ class ReaperAudioSource:
         # Force immediate check on first call (detect already-running Reaper)
         if self._last_reaper_check == 0:
             self._reaper_running = self.is_reaper_running()
-            self._last_reaper_check = time.time()
+            # Don't set _last_reaper_check here - let check_reaper_status do it
             if self._reaper_running:
                 logger.info("Reaper detected on startup")
         
