@@ -42,6 +42,6 @@ zeroconf>=0.131.0
 spotipy>=2.23.0
 
 # Audio Recognition (Reaper Integration)
-shazamio>=0.6.0            # Audio fingerprinting via Shazam
+shazamio>=0.8.1            # Audio fingerprinting via Shazam
 sounddevice>=0.5.0         # Cross-platform audio capture
 psutil>=5.9.0              # Process detection for Reaper (optional, has fallbacks)
