@@ -246,18 +246,8 @@ class ReaperAudioSource:
         if not self._enabled or not self._auto_detect:
             return
         
-        # Force immediate check on first call (detect already-running Reaper)
-        if self._last_reaper_check == 0:
-            # CRITICAL FIX: Run blocking psutil call in executor to avoid freezing event loop
-            loop = asyncio.get_running_loop()
-            self._reaper_running = await loop.run_in_executor(
-                None,
-                self.is_reaper_running
-            )
-            # Don't set _last_reaper_check here - let check_reaper_status do it
-            if self._reaper_running:
-                logger.info("Reaper detected on startup")
-        
+        # check_reaper_status() handles throttling and first-call detection properly
+        # It also runs the blocking psutil call in executor to avoid freezing event loop
         reaper_running = await self.check_reaper_status()
         
         if reaper_running and not self.is_active:

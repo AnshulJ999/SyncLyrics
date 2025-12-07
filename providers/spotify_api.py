@@ -431,13 +431,11 @@ class SpotifyAPI:
             # Instead, we mark as not initialized and let the web-based OAuth flow handle it
             cached_token = self.auth_manager.get_cached_token()
             if cached_token:
-                # We have tokens from cache - test if they're valid
-                if self._test_connection():
-                    self.initialized = True
-                    logger.info("Spotify API initialized successfully with cached tokens")
-                else:
-                    self.initialized = False
-                    logger.warning("Cached tokens invalid - re-authentication required")
+                # OPTIMIZATION: Don't test connection synchronously in __init__
+                # This blocks the event loop for seconds/minutes if network is slow
+                # Assume initialized if tokens exist, let the first async request handle auth errors
+                self.initialized = True
+                logger.info("Spotify API initialized with cached tokens (connection verification deferred)")
             else:
                 # No cached tokens - don't test connection, wait for web auth
                 self.initialized = False
