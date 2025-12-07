@@ -260,16 +260,12 @@ async def get_current_song_meta_data() -> Optional[dict]:
         sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
                         if s.get("enabled", False)]
 
-        result = None
+        # Initialize BEFORE conditional to avoid NameError when audio recognition is used
+        windows_media_checked = False
+        windows_media_result = None
+        
         # Use result from audio recognition if available, otherwise fetch from other sources
-        if 'result' in locals() and result:
-             pass # We already have a result from audio recognition
-        else:
-            result = None
-            windows_media_checked = False
-            windows_media_result = None
-            
-            # 1. Fetch Primary Data from sorted sources
+        if not result:
             # 1. Fetch Primary Data from sorted sources
             for source in sorted_sources:
                 try:
