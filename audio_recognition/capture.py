@@ -287,6 +287,53 @@ class AudioCaptureManager:
         except Exception as e:
             logger.debug(f"Error aborting capture: {e}")
     
+    def _resolve_device_sync(self) -> tuple:
+        """
+        Synchronously resolve device ID and sample rate.
+        MUST be called from executor thread - contains blocking sd.query_devices() calls.
+        
+        Returns:
+            Tuple of (device_id, sample_rate) or (None, None) on error
+        """
+        # Return cached values if available
+        if self._resolved_device_id is not None and self._resolved_sample_rate is not None:
+            return (self._resolved_device_id, self._resolved_sample_rate)
+        
+        # Resolve device ID (priority: name > explicit ID > auto-detect)
+        device_id = None
+        
+        if self._device_name:
+            device_id = self.find_device_by_name(self._device_name)
+            if device_id is not None:
+                logger.info(f"Resolved device by name '{self._device_name}': ID {device_id}")
+        
+        if device_id is None and self._device_id is not None:
+            device_id = self._device_id
+        
+        if device_id is None:
+            device_id = self.find_loopback_device()
+            if device_id is not None:
+                logger.info(f"Auto-detected loopback device: ID {device_id}")
+        
+        if device_id is None:
+            return (None, None)
+        
+        # Cache resolved device ID
+        self._resolved_device_id = device_id
+        
+        # Resolve sample rate
+        if self._requested_sample_rate is not None:
+            sample_rate = self._requested_sample_rate
+        else:
+            sample_rate = self._get_device_sample_rate(device_id)
+            logger.info(f"Using device native sample rate: {sample_rate} Hz")
+        
+        # Cache resolved sample rate
+        self._resolved_sample_rate = sample_rate
+        self.sample_rate = sample_rate
+        
+        return (device_id, sample_rate)
+    
     async def capture(self, duration: float = DEFAULT_DURATION) -> Optional[AudioChunk]:
         """
         Capture audio for the specified duration.
@@ -304,20 +351,15 @@ class AudioCaptureManager:
         if not sd:
             logger.error("sounddevice not available")
             return None
-            
-        device_id = self.device_id
+        
+        # CRITICAL FIX: Run device resolution in executor to avoid freezing event loop
+        # sd.query_devices() is a BLOCKING call that can take seconds on Windows!
+        loop = asyncio.get_running_loop()
+        device_id, sample_rate = await loop.run_in_executor(None, self._resolve_device_sync)
+        
         if device_id is None:
             logger.error("No audio device configured or auto-detected")
             return None
-        
-        # Auto-detect sample rate from device if not specified
-        if self._requested_sample_rate is None and self._resolved_sample_rate is None:
-            self._resolved_sample_rate = self._get_device_sample_rate(device_id)
-            self.sample_rate = self._resolved_sample_rate
-            logger.info(f"Using device native sample rate: {self.sample_rate} Hz")
-        
-        # Run blocking capture in executor
-        loop = asyncio.get_running_loop()  # FIX: Use modern API (get_event_loop deprecated in 3.10+)
         
         def _blocking_capture() -> Optional[AudioChunk]:
             """Blocking capture function to run in executor."""
