@@ -234,6 +234,29 @@ class ReaperAudioSource:
         mode_str = "manual" if manual else "auto (Reaper)"
         logger.info(f"Starting audio recognition ({mode_str})")
         
+        # Create metadata enricher callback using Spotify API
+        metadata_enricher = None
+        try:
+            from providers.spotify_api import get_shared_spotify_client
+            spotify_client = get_shared_spotify_client()
+            
+            if spotify_client and spotify_client.initialized:
+                # Create async wrapper for the sync ISRC search
+                # This runs in thread executor to avoid blocking the event loop
+                async def spotify_enricher(isrc: str):
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(
+                        None,
+                        spotify_client.search_track_by_isrc,
+                        isrc
+                    )
+                metadata_enricher = spotify_enricher
+                logger.debug("Spotify metadata enricher configured")
+            else:
+                logger.debug("Spotify not available for metadata enrichment")
+        except Exception as e:
+            logger.debug(f"Could not set up Spotify enricher: {e}")
+        
         # Create engine with current settings
         self._engine = RecognitionEngine(
             device_id=self._device_id,
@@ -241,6 +264,7 @@ class ReaperAudioSource:
             recognition_interval=self._recognition_interval,
             capture_duration=self._capture_duration,
             latency_offset=self._latency_offset,
+            metadata_enricher=metadata_enricher,
             on_song_change=self._on_song_change
         )
         
@@ -331,32 +355,35 @@ class ReaperAudioSource:
             position = 0
         
         # Return in standard system_utils format
-        # Now includes full Shazam metadata
+        # Now includes enriched Spotify metadata when available
         return {
-            "artist": song["artist"],
-            "title": song["title"],
-            "album": song.get("album"),  # From ShazamIO
+            "artist": song["artist"],  # From Spotify if enriched, else Shazam
+            "title": song["title"],    # From Spotify if enriched, else Shazam
+            "album": song.get("album"),
             "position": position,
-            "duration": 0,  # Unknown from Shazam
+            "duration": song.get("duration_ms", 0) // 1000 if song.get("duration_ms") else 0,
             "is_playing": self._engine.is_playing,
             "source": "audio_recognition",
-            # "album_art_url": song.get("album_art_url"),  # From ShazamIO
-            "track_id": None,
-            # New Shazam metadata fields (future use)
+            # Track ID from Spotify enrichment (for album art cache busting, etc.)
+            "track_id": song.get("track_id"),
+            # Shazam/Spotify metadata fields
             "isrc": song.get("isrc"),
             "shazam_url": song.get("shazam_url"),
             "spotify_url": song.get("spotify_url"),
             "background_image_url": song.get("background_image_url"),
             "genre": song.get("genre"),
             "shazam_lyrics_text": song.get("shazam_lyrics_text"),
-            # Shazam's album art (available but not used)
-            "_shazam_album_art_url": song.get("album_art_url"),  # Keep for debugging
+            # Shazam's album art (available but not used - DB takes precedence)
+            "_shazam_album_art_url": song.get("album_art_url"),
             # Default colors (will be overridden by album art extraction)
             "colors": ("#24273a", "#363b54"),
-            # Additional metadata for debugging
+            # Debug metadata
             "_audio_rec_mode": self.mode,
             "_audio_rec_state": self._engine.state.value if self._engine else None,
             "_reaper_detected": self._reaper_running,
+            "_spotify_enriched": song.get("_spotify_enriched", False),
+            "_shazam_artist": song.get("_shazam_artist"),  # Original Shazam artist
+            "_shazam_title": song.get("_shazam_title"),    # Original Shazam title
         }
     
     def get_status(self) -> Dict[str, Any]:

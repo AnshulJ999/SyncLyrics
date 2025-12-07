@@ -59,6 +59,7 @@ class RecognitionEngine:
         recognition_interval: float = DEFAULT_INTERVAL,
         capture_duration: float = DEFAULT_CAPTURE_DURATION,
         latency_offset: float = 0.0,
+        metadata_enricher: Optional[Callable[[str], Any]] = None,
         on_song_change: Optional[Callable[[RecognitionResult], None]] = None,
         on_state_change: Optional[Callable[[EngineState], None]] = None
     ):
@@ -71,6 +72,9 @@ class RecognitionEngine:
             recognition_interval: Seconds between recognition attempts
             capture_duration: Seconds of audio to capture each cycle
             latency_offset: Additional latency offset (user-adjustable)
+            metadata_enricher: Optional async callback to enrich metadata using ISRC.
+                               Signature: async (isrc: str) -> Optional[Dict]
+                               Returns dict with canonical metadata (artist, title, etc.)
             on_song_change: Callback when song changes (sync, wrapped in try/except)
             on_state_change: Callback when state changes (sync)
         """
@@ -83,6 +87,7 @@ class RecognitionEngine:
         
         self.on_song_change = on_song_change
         self.on_state_change = on_state_change
+        self.metadata_enricher = metadata_enricher
         
         # State
         self._state = EngineState.IDLE
@@ -99,6 +104,9 @@ class RecognitionEngine:
         # Position tracking for interpolation
         self._last_position_update = 0.0
         self._frozen_position: Optional[float] = None
+        
+        # Spotify enrichment cache (populated by metadata_enricher)
+        self._enriched_metadata: Optional[Dict[str, Any]] = None
         
     @property
     def state(self) -> EngineState:
@@ -153,13 +161,41 @@ class RecognitionEngine:
     
     def get_current_song(self) -> Optional[Dict[str, Any]]:
         """
-        Get current song info including all metadata.
+        Get current song info with Spotify enrichment.
+        
+        Returns data with canonical metadata from Spotify if enrichment succeeded,
+        otherwise falls back to Shazam's original metadata.
         
         Returns:
-            Full song dict with all Shazam metadata fields or None
+            Full song dict with metadata or None
         """
         if self._last_result is None:
             return None
+        
+        # Use Spotify enriched data if available
+        if self._enriched_metadata:
+            return {
+                # Canonical metadata from Spotify
+                "artist": self._enriched_metadata["artist"],
+                "title": self._enriched_metadata["title"],
+                "album": self._enriched_metadata.get("album"),
+                "track_id": self._enriched_metadata.get("track_id"),
+                "duration_ms": self._enriched_metadata.get("duration_ms", 0),
+                # Shazam-only fields (preserved)
+                "isrc": self._last_result.isrc,
+                "shazam_url": self._last_result.shazam_url,
+                "spotify_url": self._last_result.spotify_url,
+                "background_image_url": self._last_result.background_image_url,
+                "genre": self._last_result.genre,
+                "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
+                "album_art_url": self._last_result.album_art_url,
+                # Debug fields
+                "_shazam_artist": self._last_result.artist,
+                "_shazam_title": self._last_result.title,
+                "_spotify_enriched": True,
+            }
+        
+        # Fallback to Shazam data
         return {
             "artist": self._last_result.artist,
             "title": self._last_result.title,
@@ -170,7 +206,10 @@ class RecognitionEngine:
             "spotify_url": self._last_result.spotify_url,
             "background_image_url": self._last_result.background_image_url,
             "genre": self._last_result.genre,
-            "shazam_lyrics_text": self._last_result.shazam_lyrics_text
+            "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
+            "track_id": None,
+            "duration_ms": 0,
+            "_spotify_enriched": False,
         }
     
     def is_result_stale(self, threshold: Optional[float] = None) -> bool:
@@ -301,8 +340,8 @@ class RecognitionEngine:
                 result = await self._do_recognition()
                 
                 if result:
-                    # Success
-                    self._handle_successful_recognition(result)
+                    # Success - enrich with Spotify (async)
+                    await self._handle_successful_recognition(result)
                 else:
                     # Failure
                     self._handle_failed_recognition()
@@ -362,8 +401,12 @@ class RecognitionEngine:
         
         return result
     
-    def _handle_successful_recognition(self, result: RecognitionResult):
-        """Handle a successful recognition result."""
+    async def _handle_successful_recognition(self, result: RecognitionResult):
+        """
+        Handle a successful recognition result.
+        
+        Enriches metadata with Spotify if enricher is available.
+        """
         self._consecutive_failures = 0
         self._is_playing = True
         self._frozen_position = None  # Unfreeze position
@@ -377,11 +420,15 @@ class RecognitionEngine:
             self._verified_detection = True
         
         # Check for song change
-        if not result.is_same_song(self._last_result):
+        song_changed = not result.is_same_song(self._last_result)
+        if song_changed:
             logger.info(f"Song changed to: {result}")
             
             # Reset to verification state for new song
             self._verified_detection = False
+            
+            # Clear previous enrichment (will re-enrich below)
+            self._enriched_metadata = None
             
             # Call song change callback
             if self.on_song_change:
@@ -389,6 +436,21 @@ class RecognitionEngine:
                     self.on_song_change(result)
                 except Exception as e:
                     logger.error(f"Song change callback error: {e}")
+        
+        # Enrich with Spotify using ISRC (only on song change or if not yet enriched)
+        if self.metadata_enricher and result.isrc and (song_changed or self._enriched_metadata is None):
+            try:
+                logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
+                enriched = await self.metadata_enricher(result.isrc)
+                if enriched:
+                    self._enriched_metadata = enriched
+                    logger.info(f"Spotify enrichment: {result.artist} → {enriched['artist']}")
+                else:
+                    self._enriched_metadata = None
+                    logger.debug(f"Spotify enrichment failed, using Shazam metadata")
+            except Exception as e:
+                logger.debug(f"Metadata enrichment error: {e}")
+                self._enriched_metadata = None
         
         self._last_result = result
         self._set_state(EngineState.ACTIVE)

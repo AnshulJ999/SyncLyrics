@@ -773,6 +773,84 @@ class SpotifyAPI:
             logger.error(f"Error searching track: {e}")
             return None
 
+    def search_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for a track on Spotify using ISRC code.
+        
+        ISRC (International Standard Recording Code) uniquely identifies recordings.
+        This provides exact matching, unlike text search which can be ambiguous.
+        
+        Used by audio recognition to get canonical Spotify metadata
+        (proper capitalization, Spotify track ID) from Shazam's ISRC codes.
+        
+        Args:
+            isrc: ISRC code (e.g., "USHR10622153")
+            
+        Returns:
+            Dict with Spotify metadata or None if not found:
+            {
+                'artist': str,      # Canonical artist name
+                'title': str,       # Canonical track title  
+                'album': str,       # Album name
+                'track_id': str,    # Spotify track ID
+                'duration_ms': int, # Track duration
+                'album_art_url': str,  # High-res album art
+            }
+        """
+        if not self.initialized:
+            logger.debug("Spotify not initialized, skipping ISRC search")
+            return None
+            
+        if not isrc:
+            return None
+            
+        try:
+            # Track API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['search'] += 1
+            
+            # Search by ISRC - returns exact match
+            results = self.sp.search(q=f"isrc:{isrc}", type='track', limit=1)
+            
+            if not results or not results.get('tracks') or not results['tracks'].get('items'):
+                logger.debug(f"No Spotify match for ISRC: {isrc}")
+                return None
+                
+            track = results['tracks']['items'][0]
+            
+            # Get highest quality album art
+            album_images = track['album'].get('images', [])
+            album_art_url = None
+            if album_images:
+                largest_image = max(album_images,
+                                   key=lambda img: (img.get('width', 0) or 0) * (img.get('height', 0) or 0),
+                                   default=album_images[0] if album_images else None)
+                if largest_image:
+                    album_art_url = largest_image['url']
+                    # Enhance to 1400px if available
+                    album_art_url = enhance_spotify_image_url_sync(album_art_url)
+            
+            result = {
+                'artist': track['artists'][0]['name'],
+                'title': track['name'],
+                'album': track['album']['name'],
+                'track_id': track['id'],
+                'duration_ms': track['duration_ms'],
+                'album_art_url': album_art_url,
+            }
+            
+            logger.info(f"ISRC lookup success: {isrc} → {result['artist']} - {result['title']}")
+            return result
+            
+        except ReadTimeout:
+            self.request_stats['errors']['timeout'] += 1
+            logger.debug(f"ISRC search timed out: {isrc}")
+            return None
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.debug(f"ISRC search error for {isrc}: {e}")
+            return None
+
     def get_request_stats(self) -> Dict[str, Any]:
         """
         Get current API request statistics for monitoring rate limits.
