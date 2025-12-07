@@ -402,31 +402,35 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
                  # FIX: Wait for DB to avoid flicker
                  try:
-                     # Wait 300ms for high-res art
-                     await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
+                     # Refined Fix: Use asyncio.wait to avoid cancelling the background task on timeout
+                     # wait_for() would CANCEL the task on timeout, killing the download
+                     # wait() just returns - task stays in pending set and continues running
+                     done, pending = await asyncio.wait([task], timeout=0.3)
                      
-                     # Check DB again!
-                     db_result = load_album_art_from_db(artist, album, title)
-                     if db_result:
-                         # Found it! Update variables to use High-Res immediately
-                         found_in_db = True
-                         db_image_path = db_result["path"]
-                         
-                         # NEW: Use path directly instead of copying (eliminates race conditions)
-                         try:
-                             # FIX: Add timestamp for cache busting
-                             mtime = int(time.time())
+                     if task in done:
+                         # Task completed within timeout - check DB for high-res art
+                         db_result = load_album_art_from_db(artist, album, title)
+                         if db_result:
+                             # Found it! Update variables to use High-Res immediately
+                             found_in_db = True
+                             db_image_path = db_result["path"]
+                             
+                             # NEW: Use path directly instead of copying (eliminates race conditions)
                              try:
-                                 if db_image_path.exists():
-                                     mtime = int(db_image_path.stat().st_mtime)
-                             except: pass
-                             album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-                             result_extra_fields = {"album_art_path": str(db_image_path)}
-                         except Exception as e:
-                             logger.debug(f"Failed to set DB art path after wait: {e}")
-                             # If setting path fails, we fall back to the Windows thumbnail which is already set
-                 except asyncio.TimeoutError:
-                     pass # Fallback to Windows thumbnail
+                                 # FIX: Add timestamp for cache busting
+                                 mtime = int(time.time())
+                                 try:
+                                     if db_image_path.exists():
+                                         mtime = int(db_image_path.stat().st_mtime)
+                                 except: pass
+                                 album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                                 result_extra_fields = {"album_art_path": str(db_image_path)}
+                             except Exception as e:
+                                 logger.debug(f"Failed to set DB art path after wait: {e}")
+                     # If task in pending: timeout occurred, but task continues in background
+                     # Next poll cycle will see the result in DB
+                 except Exception:
+                     pass  # Fallback to Windows thumbnail
 
         # Re-fetch app_id safely for frontend control logic (optimistic enabling)
         # This allows frontend to enable controls immediately for Spotify app before enrichment completes

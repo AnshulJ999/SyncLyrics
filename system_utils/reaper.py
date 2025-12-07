@@ -208,7 +208,14 @@ class ReaperAudioSource:
         
         self._last_reaper_check = now
         was_running = self._reaper_running
-        self._reaper_running = self.is_reaper_running()
+        
+        # CRITICAL FIX: Run blocking psutil.process_iter() call in executor
+        # to prevent freezing the event loop for seconds during process iteration
+        loop = asyncio.get_running_loop()
+        self._reaper_running = await loop.run_in_executor(
+            None,
+            self.is_reaper_running
+        )
         
         # Log state changes
         if self._reaper_running and not was_running:
@@ -241,7 +248,12 @@ class ReaperAudioSource:
         
         # Force immediate check on first call (detect already-running Reaper)
         if self._last_reaper_check == 0:
-            self._reaper_running = self.is_reaper_running()
+            # CRITICAL FIX: Run blocking psutil call in executor to avoid freezing event loop
+            loop = asyncio.get_running_loop()
+            self._reaper_running = await loop.run_in_executor(
+                None,
+                self.is_reaper_running
+            )
             # Don't set _last_reaper_check here - let check_reaper_status do it
             if self._reaper_running:
                 logger.info("Reaper detected on startup")
