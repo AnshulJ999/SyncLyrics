@@ -340,6 +340,19 @@ class ReaperAudioSource:
             self._engine = None
         
         self._manual_mode = False
+        
+        # CRITICAL FIX: Clear metadata cache so Windows/Spotify can take over
+        # Without this, stale audio_recognition data persists and blocks other sources
+        try:
+            from system_utils.metadata import get_current_song_meta_data
+            if hasattr(get_current_song_meta_data, '_last_result'):
+                last_result = get_current_song_meta_data._last_result
+                if last_result and last_result.get('source') == 'audio_recognition':
+                    get_current_song_meta_data._last_result = None
+                    logger.debug("Cleared audio recognition cache")
+        except Exception as e:
+            logger.debug(f"Failed to clear metadata cache: {e}")
+        
         logger.info("Audio recognition stopped")
     
     def _on_song_change(self, result: RecognitionResult):
