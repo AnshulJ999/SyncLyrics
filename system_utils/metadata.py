@@ -187,8 +187,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
                             current_song = f"{result.get('artist', '')} - {result.get('title', '')}"
                             
-                            # If same song AND already has enriched data (album_art_path), use cache
-                            if cached_song == current_song and cached_result.get('album_art_path'):
+                            # If same song, use cached result (prevents spam during downloads)
+                            # Don't require album_art_path - enrichment may still be downloading
+                            if cached_song == current_song:
                                 # Update position from fresh result but keep enriched metadata
                                 cached_result['position'] = result.get('position', 0)
                                 cached_result['is_playing'] = result.get('is_playing', True)
@@ -499,8 +500,13 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # Or if it's the same but now we have a local path
                     if cached_url:
                         result["album_art_url"] = cached_url
+                        # CRITICAL: Also update background_image_url so background changes!
+                        # Otherwise Shazam's original background stays stuck
+                        result["background_image_url"] = cached_url
                     if cached_path:
                         result["album_art_path"] = str(cached_path)
+                        # Also set background_image_path for local serving
+                        result["background_image_path"] = str(cached_path)
                         
                 # B. Color Extraction
                 # If we have a local path now (from DB/Cache), we can extract colors
