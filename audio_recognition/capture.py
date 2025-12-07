@@ -338,12 +338,27 @@ class AudioCaptureManager:
                     dtype='int16'
                 )
                 
-                # Wait for recording, but check abort flag
-                if not self._abort_capture:
-                    sd.wait()  # Wait for recording to complete
-                else:
-                    sd.stop()  # Abort the recording
-                    return None
+                # Wait for recording with interruptible polling loop
+                # CRITICAL FIX: sd.wait() is blocking and cannot be interrupted by asyncio timeouts
+                # Instead, poll sd.get_stream().active every 50ms while checking abort flag
+                # This allows abort() to immediately stop capture instead of waiting full duration
+                while True:
+                    if self._abort_capture:
+                        logger.debug("Capture aborted during recording")
+                        sd.stop()
+                        return None
+                    
+                    # Check if recording is still active
+                    try:
+                        stream = sd.get_stream()
+                        if stream is None or not stream.active:
+                            break  # Recording finished
+                    except Exception:
+                        # Stream query failed, assume finished
+                        break
+                    
+                    # Brief sleep to avoid busy-waiting (50ms = responsive but not CPU-intensive)
+                    time.sleep(0.05)
                 
                 chunk = AudioChunk(
                     data=audio_data,
