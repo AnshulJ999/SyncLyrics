@@ -281,11 +281,9 @@ class AudioCaptureManager:
     def abort(self):
         """Abort any ongoing capture. Call before cleanup."""
         self._abort_capture = True
-        try:
-            if sd:
-                sd.stop()
-        except Exception as e:
-            logger.debug(f"Error aborting capture: {e}")
+        # NOTE: Do NOT call sd.stop() here. With InputStream approach, the capture loop
+        # checks _abort_capture and exits cleanly, closing stream in same thread.
+        # Cross-thread sd.stop() can cause PortAudio deadlocks on Windows.
     
     def _resolve_device_sync(self) -> tuple:
         """
@@ -371,36 +369,46 @@ class AudioCaptureManager:
                 
                 logger.debug(f"Starting capture: device={device_id}, duration={duration}s, rate={self.sample_rate}")
                 
-                # Record audio
-                audio_data = sd.rec(
-                    int(duration * self.sample_rate),
-                    samplerate=self.sample_rate,
-                    channels=self.channels,
-                    device=device_id,
-                    dtype='int16'
-                )
+                # FIX: Use InputStream with blocking read() loop instead of sd.rec() + polling
+                # This is safer because:
+                # 1. stream.read() blocks efficiently on hardware, no time.sleep() spinning
+                # 2. Abort by breaking the loop - the 'with' block closes stream in SAME thread
+                # 3. No cross-thread sd.stop() needed (which can deadlock on Windows/PortAudio)
+                data_list = []
+                total_frames = int(duration * self.sample_rate)
+                frames_read = 0
                 
-                # Wait for recording with interruptible polling loop
-                # CRITICAL FIX: sd.wait() is blocking and cannot be interrupted by asyncio timeouts
-                # Instead, poll sd.get_stream().active every 50ms while checking abort flag
-                # This allows abort() to immediately stop capture instead of waiting full duration
-                while True:
-                    if self._abort_capture:
-                        logger.debug("Capture aborted during recording")
-                        sd.stop()
-                        return None
+                # Chunk size for reading (100ms) - allows frequent abort checks
+                chunk_size = int(self.sample_rate * 0.1)
+                
+                with sd.InputStream(samplerate=self.sample_rate,
+                                    channels=self.channels,
+                                    device=device_id,
+                                    dtype='int16') as stream:
                     
-                    # Check if recording is still active
-                    try:
-                        stream = sd.get_stream()
-                        if stream is None or not stream.active:
-                            break  # Recording finished
-                    except Exception:
-                        # Stream query failed, assume finished
-                        break
+                    while frames_read < total_frames:
+                        if self._abort_capture:
+                            logger.debug("Capture aborted via flag")
+                            # Breaking exits 'with' block, which safely closes stream in same thread
+                            return None
+                        
+                        # Calculate frames to read in this iteration
+                        to_read = min(chunk_size, total_frames - frames_read)
+                        
+                        # Blocking read - waits for hardware, no spinning
+                        chunk_data, overflow = stream.read(to_read)
+                        
+                        if overflow:
+                            logger.debug("Audio input overflow (data lost)")
+                            
+                        data_list.append(chunk_data)
+                        frames_read += to_read
+                
+                # Combine chunks
+                if not data_list:
+                    return None
                     
-                    # Brief sleep to avoid busy-waiting (50ms = responsive but not CPU-intensive)
-                    time.sleep(0.05)
+                audio_data = np.concatenate(data_list)
                 
                 chunk = AudioChunk(
                     data=audio_data,
