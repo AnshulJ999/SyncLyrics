@@ -210,9 +210,11 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
 
     if (trackInfo.album_art_url) {
         // Add cache buster to force reload when song changes
-        // Uses track_id (unique per song) or timestamp as fallback
+        // Uses track_id (unique per song) or stable artist+title fallback
         let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
-        const cacheBuster = trackInfo.track_id || trackInfo.id || Date.now();
+        // Stable fallback: use artist_title instead of Date.now() to prevent reload spam
+        const stableFallback = `${trackInfo.artist || ''}_${trackInfo.title || ''}`.replace(/\s+/g, '_');
+        const cacheBuster = trackInfo.track_id || trackInfo.id || stableFallback;
         targetUrl = targetUrl.includes('?')
             ? `${targetUrl}&cb=${cacheBuster}`
             : `${targetUrl}?cb=${cacheBuster}`;

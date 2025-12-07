@@ -265,6 +265,12 @@ class ReaperAudioSource:
         Args:
             manual: True if user-triggered (won't auto-stop when Reaper closes)
         """
+        global _shutting_down
+        
+        # Reset shutdown guard - allows restart after manual stop
+        # This flag is only meant to prevent restart during app cleanup
+        _shutting_down = False
+        
         if not AUDIO_REC_AVAILABLE:
             logger.error("Audio recognition not available")
             return

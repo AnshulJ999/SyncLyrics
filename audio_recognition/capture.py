@@ -299,6 +299,8 @@ class AudioCaptureManager:
         Returns:
             AudioChunk with captured data, or None on error
         """
+        # Reset abort flag at start of capture (robustness for reused instances)
+        self._abort_capture = False
         if not sd:
             logger.error("sounddevice not available")
             return None

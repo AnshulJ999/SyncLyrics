@@ -106,6 +106,7 @@ class RecognitionEngine:
         
         # Spotify enrichment cache (populated by metadata_enricher)
         self._enriched_metadata: Optional[Dict[str, Any]] = None
+        self._enrichment_attempted = False  # Prevents retry spam for songs not on Spotify
         
     @property
     def state(self) -> EngineState:
@@ -428,6 +429,7 @@ class RecognitionEngine:
             
             # Clear previous enrichment (will re-enrich below)
             self._enriched_metadata = None
+            self._enrichment_attempted = False  # Allow enrichment for new song
             
             # Call song change callback
             if self.on_song_change:
@@ -437,7 +439,12 @@ class RecognitionEngine:
                     logger.error(f"Song change callback error: {e}")
         
         # Enrich with Spotify using ISRC (only on song change or if not yet enriched)
-        if self.metadata_enricher and result.isrc and (song_changed or self._enriched_metadata is None):
+        # _enrichment_attempted prevents retry spam for songs not on Spotify
+        should_enrich = (self.metadata_enricher and result.isrc and 
+                         (song_changed or (self._enriched_metadata is None and not self._enrichment_attempted)))
+        
+        if should_enrich:
+            self._enrichment_attempted = True  # Prevent retry on failure
             try:
                 logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
                 enriched = await self.metadata_enricher(result.isrc)
@@ -446,7 +453,7 @@ class RecognitionEngine:
                     logger.info(f"Spotify enrichment: {result.artist} → {enriched['artist']}")
                 else:
                     self._enriched_metadata = None
-                    logger.debug(f"Spotify enrichment failed, using Shazam metadata")
+                    logger.debug("Spotify enrichment failed, using Shazam metadata")
             except Exception as e:
                 logger.debug(f"Metadata enrichment error: {e}")
                 self._enriched_metadata = None
