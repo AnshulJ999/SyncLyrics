@@ -181,24 +181,34 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # Only use result if actually playing (allows fallback to Spotify when Reaper is paused)
                     if result and result.get('is_playing', False):
                         # logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
-                        # Process like other sources (colors, art, etc.)
-                        # Store result and update tracking
-                        # FIX: Do NOT return early! Let it flow to Album Art DB and Color Extraction.
+                        # Check if this is the same song we already have cached AND enriched
+                        cached_result = getattr(get_current_song_meta_data, '_last_result', None)
+                        if cached_result and cached_result.get('source') == 'audio_recognition':
+                            cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
+                            current_song = f"{result.get('artist', '')} - {result.get('title', '')}"
+                            
+                            # If same song AND already has enriched data (album_art_path), use cache
+                            if cached_song == current_song and cached_result.get('album_art_path'):
+                                # Update position from fresh result but keep enriched metadata
+                                cached_result['position'] = result.get('position', 0)
+                                cached_result['is_playing'] = result.get('is_playing', True)
+                                return cached_result
+                        
+                        # New song or not yet enriched - store and proceed to enrichment
                         get_current_song_meta_data._last_result = result
                         get_current_song_meta_data._last_check_time = time.time()
                         song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
                         get_current_song_meta_data._last_song = song_name
                         get_current_song_meta_data._is_active = True
                         get_current_song_meta_data._last_active_time = time.time()
-                        # AUDIO REC SUCCESS: Skip cache check + source polling, go to enrichment
+                        # Continue to enrichment (album art DB, color extraction)
                         
         except Exception as e:
             logger.error(f"Audio recognition check failed: {e}")
         # ========================================================================
         
-        # FIX: If audio recognition already got a valid result, skip cache check and source polling.
-        # This prevents the cache logic from using stale 'last_song' values and accidentally
-        # overwriting the audio recognition result with Windows/Spotify data.
+        # Check if audio recognition already provided a valid result
+        # If so, skip Windows/Spotify source polling but still respect normal cache interval
         audio_rec_success = result is not None and result.get('source') == 'audio_recognition'
         
         current_time = time.time()
@@ -211,8 +221,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
         last_song = getattr(get_current_song_meta_data, '_last_song', None)
         last_track_id = getattr(get_current_song_meta_data, '_last_track_id', None)
         
-        # Only use cache if within interval AND song hasn't changed
-        # SKIP if audio recognition already succeeded (audio_rec_success flag)
+        # Standard cache check for non-audio-rec sources
+        # Audio rec handles its own caching above with the early return
         if not audio_rec_success and (current_time - last_check) < required_interval:
             cached_result = getattr(get_current_song_meta_data, '_last_result', None)
             if cached_result:
