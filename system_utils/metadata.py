@@ -149,6 +149,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # CRITICAL FIX: Lock the entire fetching process
     # This prevents the race condition where Task B reads cache while Task A is still updating it
     async with state._meta_data_lock:
+        result = None  # Initialize before audio recognition block to prevent NameError
+        
         # ========================================================================
         # AUDIO RECOGNITION CHECK (Highest Priority)
         # If audio recognition is active (Reaper mode or manual), use it first
