@@ -178,31 +178,32 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 if reaper_source.is_active:
                     result = await reaper_source.get_metadata()
                     
-                    # Only use result if actually playing (allows fallback to Spotify when Reaper is paused)
-                    if result and result.get('is_playing', False):
-                        # logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
-                        # Check if this is the same song we already have cached AND enriched
+                    if result:
+                        # CRITICAL FIX: Cache check must run for BOTH playing AND paused states
+                        # Otherwise paused state triggers ensure_album_art_db spam (26+ calls/10s)
                         cached_result = getattr(get_current_song_meta_data, '_last_result', None)
                         if cached_result and cached_result.get('source') == 'audio_recognition':
                             cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
                             current_song = f"{result.get('artist', '')} - {result.get('title', '')}"
                             
-                            # If same song, use cached result (prevents spam during downloads)
-                            # Don't require album_art_path - enrichment may still be downloading
+                            # If same song, return cached result (works for both playing and paused)
                             if cached_song == current_song:
-                                # Update position from fresh result but keep enriched metadata
+                                # Update position and playing state from fresh result
                                 cached_result['position'] = result.get('position', 0)
-                                cached_result['is_playing'] = result.get('is_playing', True)
+                                cached_result['is_playing'] = result.get('is_playing', False)
                                 return cached_result
                         
-                        # New song or not yet enriched - store and proceed to enrichment
-                        get_current_song_meta_data._last_result = result
-                        get_current_song_meta_data._last_check_time = time.time()
-                        song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
-                        get_current_song_meta_data._last_song = song_name
-                        get_current_song_meta_data._is_active = True
-                        get_current_song_meta_data._last_active_time = time.time()
-                        # Continue to enrichment (album art DB, color extraction)
+                        # New song or not yet cached - only proceed to enrichment if playing
+                        # When paused, fall through to Spotify/Windows (allows fallback)
+                        if result.get('is_playing', False):
+                            # New song or not yet enriched - store and proceed to enrichment
+                            get_current_song_meta_data._last_result = result
+                            get_current_song_meta_data._last_check_time = time.time()
+                            song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
+                            get_current_song_meta_data._last_song = song_name
+                            get_current_song_meta_data._is_active = True
+                            get_current_song_meta_data._last_active_time = time.time()
+                            # Continue to enrichment (album art DB, color extraction)
                         
         except Exception as e:
             logger.error(f"Audio recognition check failed: {e}")
