@@ -181,13 +181,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         # logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
                         # Process like other sources (colors, art, etc.)
                         # Store result and update tracking
+                        # FIX: Do NOT return early! Let it flow to Album Art DB and Color Extraction.
                         get_current_song_meta_data._last_result = result
                         get_current_song_meta_data._last_check_time = time.time()
                         song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
                         get_current_song_meta_data._last_song = song_name
                         get_current_song_meta_data._is_active = True
                         get_current_song_meta_data._last_active_time = time.time()
-                        return result
+                        # return result  <-- REMOVED to allow pipeline processing
+
                         
         except Exception as e:
             logger.error(f"Audio recognition check failed: {e}")
@@ -259,27 +261,33 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         if s.get("enabled", False)]
 
         result = None
-        windows_media_checked = False
-        windows_media_result = None
-        
-        # 1. Fetch Primary Data from sorted sources
-        for source in sorted_sources:
-            try:
-                if source["name"] == "windows_media" and DESKTOP == "Windows":
-                    windows_media_checked = True
-                    windows_media_result = await _get_current_song_meta_data_windows()
-                    if windows_media_result:
-                        result = windows_media_result
-                elif source["name"] == "spotify":
-                    result = await _get_current_song_meta_data_spotify()
-                elif source["name"] == "gnome" and DESKTOP == "Linux":
-                    result = _get_current_song_meta_data_gnome()
-                    
-                if result:
-                    # Source is already set in the function
-                    break
-            except Exception:
-                continue
+        # Use result from audio recognition if available, otherwise fetch from other sources
+        if 'result' in locals() and result:
+             pass # We already have a result from audio recognition
+        else:
+            result = None
+            windows_media_checked = False
+            windows_media_result = None
+            
+            # 1. Fetch Primary Data from sorted sources
+            # 1. Fetch Primary Data from sorted sources
+            for source in sorted_sources:
+                try:
+                    if source["name"] == "windows_media" and DESKTOP == "Windows":
+                        windows_media_checked = True
+                        windows_media_result = await _get_current_song_meta_data_windows()
+                        if windows_media_result:
+                            result = windows_media_result
+                    elif source["name"] == "spotify":
+                        result = await _get_current_song_meta_data_spotify()
+                    elif source["name"] == "gnome" and DESKTOP == "Linux":
+                        result = _get_current_song_meta_data_gnome()
+                        
+                    if result:
+                        # Source is already set in the function
+                        break
+                except Exception:
+                    continue
         
         # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
         is_spotify_only = (result and 
@@ -451,6 +459,46 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         #    logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
             except Exception as e:
                 logger.error(f"Hybrid enrichment failed: {e}")
+
+        # 3. AUDIO RECOGNITION ENRICHMENT
+        # Similar to Hybrid/Windows, we need to check the Album Art DB and extract colors
+        if result and result.get("source") == "audio_recognition":
+            try:
+                # A. Album Art DB Check (User Preferences & Caching)
+                art_url = result.get("album_art_url")
+                artist = result.get("artist", "")
+                title = result.get("title", "")
+                album = result.get("album", "")
+                
+                # Check DB/Cache
+                # This ensures we respect user overrides and download high-res art
+                db_result = await ensure_album_art_db(
+                    artist, 
+                    album, 
+                    title, 
+                    art_url
+                )
+                
+                if db_result:
+                    cached_url, cached_path = db_result
+                    
+                    # If DB has a different URL (user override), use it
+                    # Or if it's the same but now we have a local path
+                    if cached_url:
+                        result["album_art_url"] = cached_url
+                    if cached_path:
+                        result["album_art_path"] = str(cached_path)
+                        
+                # B. Color Extraction
+                # If we have a local path now (from DB/Cache), we can extract colors
+                if result.get("album_art_path"):
+                     local_art_path = Path(result["album_art_path"])
+                     if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
+                          # Only extract if we have default colors
+                          result["colors"] = await extract_dominant_colors(local_art_path)
+                          
+            except Exception as e:
+                logger.error(f"Audio recognition enrichment failed: {e}")
         
         # 4. If we still don't have colors (e.g. local file), extract them
         if result and result.get("source") == "windows_media":
