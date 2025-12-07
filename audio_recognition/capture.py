@@ -254,6 +254,9 @@ class AudioCaptureManager:
         """
         self._device_id = device_id
         self._device_name = device_name
+        # FIX: Clear cached device resolution so new device takes effect immediately
+        self._resolved_device_id = None
+        self._resolved_sample_rate = None
         
         if device_name:
             logger.info(f"Set capture device by name: {device_name}")
@@ -312,7 +315,7 @@ class AudioCaptureManager:
             logger.info(f"Using device native sample rate: {self.sample_rate} Hz")
         
         # Run blocking capture in executor
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()  # FIX: Use modern API (get_event_loop deprecated in 3.10+)
         
         def _blocking_capture() -> Optional[AudioChunk]:
             """Blocking capture function to run in executor."""

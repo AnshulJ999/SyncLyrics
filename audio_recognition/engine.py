@@ -102,7 +102,6 @@ class RecognitionEngine:
         self._verified_detection = False  # False = verifying, True = verified
         
         # Position tracking for interpolation
-        self._last_position_update = 0.0
         self._frozen_position: Optional[float] = None
         
         # Spotify enrichment cache (populated by metadata_enricher)
@@ -362,8 +361,8 @@ class RecognitionEngine:
                     # State 2: Verification - quick re-check
                     interval = 0.5
                 else:
-                    # State 3: Normal tracking
-                    interval = 3.0
+                    # State 3: Normal tracking - use configured interval
+                    interval = self.interval
                 
                 await asyncio.sleep(interval)
         

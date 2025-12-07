@@ -190,12 +190,16 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         get_current_song_meta_data._last_song = song_name
                         get_current_song_meta_data._is_active = True
                         get_current_song_meta_data._last_active_time = time.time()
-                        # return result  <-- REMOVED to allow pipeline processing
-
+                        # AUDIO REC SUCCESS: Skip cache check + source polling, go to enrichment
                         
         except Exception as e:
             logger.error(f"Audio recognition check failed: {e}")
         # ========================================================================
+        
+        # FIX: If audio recognition already got a valid result, skip cache check and source polling.
+        # This prevents the cache logic from using stale 'last_song' values and accidentally
+        # overwriting the audio recognition result with Windows/Spotify data.
+        audio_rec_success = result is not None and result.get('source') == 'audio_recognition'
         
         current_time = time.time()
         last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
@@ -208,7 +212,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
         last_track_id = getattr(get_current_song_meta_data, '_last_track_id', None)
         
         # Only use cache if within interval AND song hasn't changed
-        if (current_time - last_check) < required_interval:
+        # SKIP if audio recognition already succeeded (audio_rec_success flag)
+        if not audio_rec_success and (current_time - last_check) < required_interval:
             cached_result = getattr(get_current_song_meta_data, '_last_result', None)
             if cached_result:
                 # IMPROVED: Check both song name AND track_id for more reliable change detection
