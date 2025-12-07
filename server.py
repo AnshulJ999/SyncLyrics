@@ -1400,12 +1400,12 @@ async def audio_recognition_status():
         status = source.get_status()
         
         # Add device availability info with proper null checks
+        # Use async method to avoid blocking event loop with sd.query_devices()
         try:
-            status["device_available"] = (
-                source._engine.capture.is_device_available() 
-                if source._engine and hasattr(source._engine, 'capture') and source._engine.capture
-                else False
-            )
+            if source._engine and hasattr(source._engine, 'capture') and source._engine.capture:
+                status["device_available"] = await source._engine.capture.is_device_available_async()
+            else:
+                status["device_available"] = False
         except Exception:
             status["device_available"] = False
         
@@ -1482,8 +1482,9 @@ async def audio_recognition_devices():
     try:
         from audio_recognition import AudioCaptureManager
         
-        devices = AudioCaptureManager.list_devices()
-        recommended = AudioCaptureManager.find_loopback_device()
+        # Use async methods to avoid blocking event loop with sd.query_devices()
+        devices = await AudioCaptureManager.list_devices_async()
+        recommended = await AudioCaptureManager.find_loopback_device_async()
         
         return jsonify({
             "devices": devices,

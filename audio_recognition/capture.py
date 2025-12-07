@@ -264,7 +264,8 @@ class AudioCaptureManager:
             logger.info(f"Set capture device by ID: {device_id}")
     
     def is_device_available(self) -> bool:
-        """Check if the configured device is currently available."""
+        """Check if the configured device is currently available.
+        WARNING: This is a BLOCKING method. Use is_device_available_async() from async contexts."""
         if not sd:
             return False
             
@@ -277,6 +278,23 @@ class AudioCaptureManager:
             return 0 <= device_id < len(devices)
         except Exception:
             return False
+    
+    async def is_device_available_async(self) -> bool:
+        """Async version of is_device_available. Runs in executor to avoid blocking event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.is_device_available)
+    
+    @staticmethod
+    async def list_devices_async() -> List[Dict[str, Any]]:
+        """Async version of list_devices. Runs in executor to avoid blocking event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, AudioCaptureManager.list_devices)
+    
+    @classmethod
+    async def find_loopback_device_async(cls) -> Optional[int]:
+        """Async version of find_loopback_device. Runs in executor to avoid blocking event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, cls.find_loopback_device)
     
     def abort(self):
         """Abort any ongoing capture. Call before cleanup."""
