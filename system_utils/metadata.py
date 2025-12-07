@@ -484,14 +484,24 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 title = result.get("title", "")
                 album = result.get("album", "")
                 
-                # Check DB/Cache
-                # This ensures we respect user overrides and download high-res art
+                # Generate track_id for consistent URL generation
+                audio_rec_track_id = _normalize_track_id(artist, title)
+                
+                # Check DB/Cache - this also gives us saved preferences like background_style
                 db_result = await ensure_album_art_db(
                     artist, 
                     album, 
                     title, 
                     art_url
                 )
+                
+                # Also load from DB to get background_style (ensure_album_art_db doesn't return it)
+                from .album_art import load_album_art_from_db
+                album_art_db = load_album_art_from_db(artist, album, title)
+                if album_art_db:
+                    saved_background_style = album_art_db.get("background_style")
+                    if saved_background_style:
+                        result["background_style"] = saved_background_style
                 
                 if db_result:
                     cached_url, cached_path = db_result
@@ -500,15 +510,27 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # Or if it's the same but now we have a local path
                     if cached_url:
                         result["album_art_url"] = cached_url
-                        # CRITICAL: Also update background_image_url so background changes!
-                        # Otherwise Shazam's original background stays stuck
+                        # Default background to album art (may be overridden by artist image below)
                         result["background_image_url"] = cached_url
                     if cached_path:
                         result["album_art_path"] = str(cached_path)
                         # Also set background_image_path for local serving
                         result["background_image_path"] = str(cached_path)
-                        
-                # B. Color Extraction
+                
+                # B. Check for Artist Image Preference (like Windows/Spotify sources)
+                # If user selected an artist image for background, use it instead of album art
+                from .artist_image import load_artist_image_from_db
+                artist_image_result = load_artist_image_from_db(artist)
+                if artist_image_result:
+                    artist_image_path = artist_image_result["path"]
+                    if artist_image_path.exists():
+                        mtime = int(artist_image_path.stat().st_mtime)
+                        # Use artist image for background (keep album art for top-left display)
+                        result["background_image_url"] = f"/cover-art?id={audio_rec_track_id}&t={mtime}&type=background"
+                        result["background_image_path"] = str(artist_image_path)
+                        logger.debug(f"Audio rec: Using preferred artist image for background: {artist}")
+                
+                # C. Color Extraction
                 # If we have a local path now (from DB/Cache), we can extract colors
                 if result.get("album_art_path"):
                      local_art_path = Path(result["album_art_path"])
