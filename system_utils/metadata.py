@@ -175,7 +175,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 # If audio recognition is active, use it (highest priority)
                 if reaper_source.is_active:
                     result = await reaper_source.get_metadata()
-                    if result:
+                    
+                    # Only use result if actually playing (allows fallback to Spotify when Reaper is paused)
+                    if result and result.get('is_playing', False):
                         # logger.debug(f"Using audio recognition source: {result.get('artist')} - {result.get('title')}")
                         # Process like other sources (colors, art, etc.)
                         # Store result and update tracking
