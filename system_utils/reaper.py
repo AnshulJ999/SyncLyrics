@@ -211,11 +211,18 @@ class ReaperAudioSource:
         
         # CRITICAL FIX: Run blocking psutil.process_iter() call in executor
         # to prevent freezing the event loop for seconds during process iteration
+        # AND add timeout to prevent indefinite hang if psutil blocks (common on Windows)
         loop = asyncio.get_running_loop()
-        self._reaper_running = await loop.run_in_executor(
-            None,
-            self.is_reaper_running
-        )
+        try:
+            self._reaper_running = await asyncio.wait_for(
+                loop.run_in_executor(None, self.is_reaper_running),
+                timeout=2.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Reaper process detection timed out - keeping previous state")
+            # Keep previous state to avoid disrupting playback if it was just a hiccup
+        except Exception as e:
+            logger.debug(f"Reaper detection error: {e}")
         
         # Log state changes
         if self._reaper_running and not was_running:
