@@ -103,8 +103,12 @@ async def cleanup() -> None:
         logger.info("Stopping audio recognition...")
         source = get_reaper_source()
         if source and source.is_active:
-            await source.stop()
-            logger.info("Audio recognition stopped")
+            try:
+                # Add timeout to prevent hang when engine is in PAUSED state
+                await asyncio.wait_for(source.stop(), timeout=5.0)
+                logger.info("Audio recognition stopped")
+            except asyncio.TimeoutError:
+                logger.warning("Audio recognition stop timeout - forcing shutdown")
     except Exception as e:
         logger.error(f"Failed to stop audio recognition: {e}")
 
