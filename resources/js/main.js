@@ -73,6 +73,9 @@ import { startSlideshow, stopSlideshow } from './modules/slideshow.js';
 // Provider (Level 3)
 import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
 
+// Audio Source (Level 3)
+import audioSource from './modules/audioSource.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -260,6 +263,9 @@ async function main() {
     setupProviderUI();
     setupQueueInteractions();
     setupTouchControls();
+
+    // Initialize audio source module
+    audioSource.init();
 
     // Apply initial background
     updateBackground();

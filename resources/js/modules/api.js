@@ -371,3 +371,62 @@ export async function fetchRandomSlideshowImages(limit = 50) {
     }
     return [];
 }
+
+// ========== AUDIO RECOGNITION API ==========
+
+/**
+ * Get audio recognition status
+ * 
+ * @returns {Promise<Object>} Status including active, state, mode, current_song
+ */
+export async function getAudioRecognitionStatus() {
+    return apiFetch('/api/audio-recognition/status');
+}
+
+/**
+ * Get audio recognition config with session overrides
+ * 
+ * @returns {Promise<Object>} Config object
+ */
+export async function getAudioRecognitionConfig() {
+    return apiFetch('/api/audio-recognition/config');
+}
+
+/**
+ * Set audio recognition session config
+ * 
+ * @param {Object} config - Config updates to apply
+ * @returns {Promise<Object>} Updated config
+ */
+export async function setAudioRecognitionConfig(config) {
+    return postJson('/api/audio-recognition/configure', config);
+}
+
+/**
+ * Get available audio capture devices
+ * 
+ * @returns {Promise<Object>} Devices and recommended device
+ */
+export async function getAudioRecognitionDevices() {
+    return apiFetch('/api/audio-recognition/devices');
+}
+
+/**
+ * Start audio recognition
+ * 
+ * @param {boolean} manual - Whether this is a manual trigger
+ * @returns {Promise<Object>} Result
+ */
+export async function startAudioRecognition(manual = true) {
+    return postJson('/api/audio-recognition/start', { manual });
+}
+
+/**
+ * Stop audio recognition
+ * 
+ * @returns {Promise<Object>} Result
+ */
+export async function stopAudioRecognition() {
+    return postJson('/api/audio-recognition/stop', {});
+}
+

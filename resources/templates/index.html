@@ -26,8 +26,124 @@
 </div>
 {% endif %}
 
+<!-- Audio Source Toggle Button (left of settings gear) -->
+<button id="source-toggle" class="source-toggle" title="Audio Source Settings">
+    <span class="status-dot" id="source-status-dot"></span>
+    <span class="source-name" id="source-name">Select Source</span>
+    <span class="dropdown-arrow">▼</span>
+</button>
+
 <!-- Settings Toggle Button -->
 <button id="settings-toggle" class="settings-toggle" title="Display Settings">⚙</button>
+
+<!-- Audio Source Modal -->
+<div id="audio-source-modal" class="audio-source-modal">
+    <div class="audio-source-modal-content">
+        <div class="audio-source-header">
+            <h3>🎤 Audio Source</h3>
+            <button id="audio-source-close" class="audio-source-close">×</button>
+        </div>
+        
+        <div class="audio-source-body">
+            <!-- Status Section -->
+            <div class="audio-source-status">
+                <div class="status-row">
+                    <span class="status-label">Status</span>
+                    <span class="status-value" id="recognition-status">Idle</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Mode</span>
+                    <span class="status-value" id="recognition-mode">—</span>
+                </div>
+                <div class="status-row" id="last-recognition-row" style="display: none;">
+                    <span class="status-label">Last Recognition</span>
+                    <span class="status-value" id="last-recognition-time">—</span>
+                </div>
+            </div>
+            
+            <!-- HTTPS Warning (shown when mic selected on non-secure) -->
+            <div class="https-warning" id="https-warning">
+                <span class="https-warning-text">
+                    ⚠️ Browser microphone requires HTTPS. Enable HTTPS in settings or use a backend device.
+                </span>
+            </div>
+            
+            <!-- Device Selection -->
+            <div class="audio-source-section">
+                <h4>Capture Device</h4>
+                <select id="device-select" class="device-select">
+                    <optgroup label="System Audio (Backend)">
+                        <option value="">Loading devices...</option>
+                    </optgroup>
+                    <optgroup label="Browser Microphone (Frontend)">
+                        <option value="frontend:default">Default Microphone</option>
+                    </optgroup>
+                </select>
+            </div>
+            
+            <!-- Audio Level Meter (for frontend mic) -->
+            <div class="audio-level-container" id="audio-level-container" style="display: none;">
+                <h4>Audio Level</h4>
+                <div class="audio-level-meter">
+                    <div class="audio-level-fill" id="audio-level-fill"></div>
+                </div>
+            </div>
+            
+            <!-- Control Buttons -->
+            <div class="audio-source-controls">
+                <button id="recognition-start" class="control-btn-audio start">
+                    ▶ Start Recognition
+                </button>
+                <button id="recognition-stop" class="control-btn-audio stop" style="display: none;">
+                    ◼ Stop Recognition
+                </button>
+            </div>
+            
+            <!-- Current Song (when active) -->
+            <div class="current-song-info" id="current-song-info" style="display: none;">
+                <div class="current-song-label">Currently Recognized</div>
+                <div class="current-song-title" id="current-song-title">—</div>
+                <div class="current-song-artist" id="current-song-artist">—</div>
+            </div>
+            
+            <!-- Advanced Settings (Collapsible) -->
+            <button class="advanced-toggle" id="advanced-toggle">
+                <span>Advanced Settings</span>
+                <span class="arrow">▼</span>
+            </button>
+            <div class="advanced-content" id="advanced-content">
+                <div class="advanced-content-inner">
+                    <!-- Reaper Auto-Detect -->
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="reaper-auto-detect">
+                        <label class="checkbox-label" for="reaper-auto-detect">Auto-detect Reaper DAW</label>
+                    </div>
+                    
+                    <!-- Recognition Interval -->
+                    <div class="setting-row">
+                        <span class="setting-label">Recognition Interval (s)</span>
+                        <input type="number" class="setting-input" id="recognition-interval" 
+                               value="5" min="3" max="30" step="1">
+                    </div>
+                    
+                    <!-- Capture Duration -->
+                    <div class="setting-row">
+                        <span class="setting-label">Capture Duration (s)</span>
+                        <input type="number" class="setting-input" id="capture-duration" 
+                               value="4" min="3" max="10" step="0.5">
+                    </div>
+                    
+                    <!-- Latency Offset -->
+                    <div class="setting-row">
+                        <span class="setting-label">Latency Offset (s)</span>
+                        <input type="number" class="setting-input" id="latency-offset" 
+                               value="0" min="-5" max="5" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Settings Panel -->
 <div id="settings-panel" class="settings-panel" style="display: none;">

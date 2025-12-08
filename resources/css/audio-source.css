@@ -1,0 +1,483 @@
+/**
+ * Audio Source Button and Modal Styles
+ * For the unified audio source selection UI
+ */
+
+/* =============================================================================
+   Source Indicator Button (top-right, left of settings gear)
+   ============================================================================= */
+
+.source-toggle {
+    position: fixed;
+    top: 15px;
+    right: 60px; /* Position left of settings gear (which is at right: 15px) */
+    z-index: 1000;
+    
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 8px 12px;
+    
+    cursor: pointer;
+    transition: all 0.2s ease;
+    
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-toggle:hover {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.source-toggle:active {
+    transform: translateY(0);
+}
+
+/* Status indicator dot */
+.source-toggle .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transition: background 0.3s ease;
+}
+
+.source-toggle .status-dot.active {
+    background: #1DB954; /* Spotify green */
+    box-shadow: 0 0 6px rgba(29, 185, 84, 0.5);
+}
+
+.source-toggle .status-dot.listening {
+    background: #f39c12; /* Orange for listening */
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5); }
+    50% { opacity: 0.6; box-shadow: 0 0 12px rgba(243, 156, 18, 0.8); }
+}
+
+.source-toggle .source-name {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-toggle .dropdown-arrow {
+    font-size: 0.7rem;
+    opacity: 0.7;
+}
+
+
+/* =============================================================================
+   Audio Source Modal
+   ============================================================================= */
+
+.audio-source-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+    
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.audio-source-modal.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.audio-source-modal-content {
+    background: linear-gradient(180deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    
+    width: 90%;
+    max-width: 420px;
+    max-height: 80vh;
+    
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    
+    transform: translateY(20px) scale(0.95);
+    transition: transform 0.2s ease;
+}
+
+.audio-source-modal.visible .audio-source-modal-content {
+    transform: translateY(0) scale(1);
+}
+
+/* Modal Header */
+.audio-source-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.audio-source-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.audio-source-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    transition: color 0.2s ease;
+}
+
+.audio-source-close:hover {
+    color: #fff;
+}
+
+/* Modal Body */
+.audio-source-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Status Section */
+.audio-source-status {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.status-row:last-child {
+    margin-bottom: 0;
+}
+
+.status-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+}
+
+.status-value {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.status-value.active {
+    color: #1DB954;
+}
+
+.status-value.listening {
+    color: #f39c12;
+}
+
+.status-value.idle {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Device Selection Section */
+.audio-source-section {
+    margin-bottom: 20px;
+}
+
+.audio-source-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.device-select {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.device-select:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.device-select:focus {
+    outline: none;
+    border-color: #1DB954;
+}
+
+.device-select option {
+    background: #1e1e23;
+    color: #fff;
+}
+
+.device-select optgroup {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: normal;
+}
+
+/* Control Buttons */
+.audio-source-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.control-btn-audio {
+    flex: 1;
+    padding: 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.control-btn-audio.start {
+    background: #1DB954;
+    color: #fff;
+}
+
+.control-btn-audio.start:hover {
+    background: #1ed760;
+}
+
+.control-btn-audio.start:disabled {
+    background: rgba(29, 185, 84, 0.5);
+    cursor: not-allowed;
+}
+
+.control-btn-audio.stop {
+    background: rgba(255, 59, 48, 0.8);
+    color: #fff;
+}
+
+.control-btn-audio.stop:hover {
+    background: rgba(255, 59, 48, 1);
+}
+
+/* Audio Level Meter */
+.audio-level-container {
+    margin-bottom: 20px;
+}
+
+.audio-level-meter {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.audio-level-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1DB954, #1ed760);
+    border-radius: 4px;
+    transition: width 0.1s ease; /* Smooth per R8 */
+}
+
+/* Advanced Settings (Collapsible) */
+.advanced-toggle {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: none;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s ease;
+}
+
+.advanced-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.advanced-toggle .arrow {
+    transition: transform 0.2s ease;
+}
+
+.advanced-toggle.open .arrow {
+    transform: rotate(180deg);
+}
+
+.advanced-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.advanced-content.open {
+    max-height: 300px;
+}
+
+.advanced-content-inner {
+    padding: 16px 0;
+}
+
+/* Setting Row */
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.setting-row:last-child {
+    margin-bottom: 0;
+}
+
+.setting-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.setting-input {
+    width: 80px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.setting-input:focus {
+    outline: none;
+    border-color: #1DB954;
+}
+
+/* Checkbox Row */
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #1DB954;
+}
+
+.checkbox-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+/* HTTPS Warning */
+.https-warning {
+    background: rgba(243, 156, 18, 0.15);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    display: none;
+}
+
+.https-warning.visible {
+    display: block;
+}
+
+.https-warning-text {
+    color: #f39c12;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+/* Current Song Display */
+.current-song-info {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 16px;
+}
+
+.current-song-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.current-song-title {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.current-song-artist {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+}
+
+/* =============================================================================
+   Responsive Adjustments
+   ============================================================================= */
+
+@media (max-width: 480px) {
+    .source-toggle {
+        right: 50px;
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+    
+    .audio-source-modal-content {
+        width: 95%;
+        max-height: 85vh;
+    }
+    
+    .audio-source-body {
+        padding: 16px;
+    }
+}
