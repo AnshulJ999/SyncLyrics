@@ -25,6 +25,7 @@ let pollInterval = null;
 let currentConfig = null;
 let isActive = false;
 let isFrontendCapture = false; // True if currently using frontend mic capture
+let currentTrackSource = 'Spotify'; // Default display
 
 // DOM Elements (cached on init)
 let elements = {};
@@ -38,7 +39,7 @@ function cacheElements() {
         // Button
         sourceToggle: document.getElementById('source-toggle'),
         sourceName: document.getElementById('source-name'),
-        statusDot: document.getElementById('source-status-dot'),
+        // statusDot removed - using minimal design
 
         // Modal
         modal: document.getElementById('audio-source-modal'),
@@ -139,6 +140,14 @@ async function loadDevices() {
         const devices = result.devices || [];
         const recommended = result.recommended;
 
+        // Add "Auto" option first if there's a recommended device
+        if (recommended) {
+            const autoOpt = document.createElement('option');
+            autoOpt.value = 'backend:auto';
+            autoOpt.textContent = `Auto (${recommended.name})`;
+            backendOptgroup.appendChild(autoOpt);
+        }
+
         if (devices.length === 0) {
             const opt = document.createElement('option');
             opt.value = '';
@@ -150,9 +159,7 @@ async function loadDevices() {
                 const opt = document.createElement('option');
                 opt.value = `backend:${device.id}`;
                 opt.textContent = device.name;
-                if (recommended && device.id === recommended.id) {
-                    opt.textContent += ' (Recommended)';
-                }
+                // Don't add (Recommended) - the Auto option is the recommended one
                 backendOptgroup.appendChild(opt);
             });
         }
@@ -194,7 +201,7 @@ async function loadDevices() {
         select.appendChild(backendOptgroup);
         select.appendChild(frontendOptgroup);
 
-        // Select current device
+        // Select current device or Auto by default
         if (currentConfig) {
             const mode = currentConfig.mode || 'backend';
             const deviceId = currentConfig.device_id;
@@ -203,7 +210,13 @@ async function loadDevices() {
                 select.value = 'frontend:default';
             } else if (deviceId !== null && deviceId !== undefined) {
                 select.value = `backend:${deviceId}`;
+            } else {
+                // Default to Auto if no specific device configured
+                select.value = 'backend:auto';
             }
+        } else {
+            // Default to Auto
+            select.value = 'backend:auto';
         }
 
     } catch (error) {
@@ -259,6 +272,20 @@ async function refreshStatus() {
         }
 
         isActive = result.active || false;
+
+        // Also fetch current track to get the actual source if audio rec is inactive
+        if (!isActive) {
+            try {
+                const response = await fetch('/api/track/current');
+                const trackData = await response.json();
+                if (trackData && trackData.source) {
+                    currentTrackSource = trackData.source;
+                }
+            } catch (e) {
+                // Ignore errors fetching track
+            }
+        }
+
         updateStatusDisplay(result);
         updateButtonState();
 
@@ -281,29 +308,24 @@ function updateStatusDisplay(status) {
         elements.recognitionMode.textContent = capitalizeFirst(mode);
     }
 
-    // Update status dot
-    if (elements.statusDot) {
-        elements.statusDot.className = 'status-dot';
-        if (status.active) {
-            if (status.state === 'recognizing' || status.state === 'listening') {
-                elements.statusDot.classList.add('listening');
-            } else {
-                elements.statusDot.classList.add('active');
-            }
-        }
-    }
-
-    // Update button text
+    // Update button text - show current source
     if (elements.sourceName) {
         if (status.active) {
+            // Audio recognition is active
             const sourceName = status.capture_mode === 'frontend' ? 'Mic' : 'Shazam';
             elements.sourceName.textContent = sourceName;
-        } else if (status.source === 'spotify') {
-            elements.sourceName.textContent = 'Spotify';
-        } else if (status.source === 'windows') {
-            elements.sourceName.textContent = 'Windows';
         } else {
-            elements.sourceName.textContent = 'Select Source';
+            // Audio recognition not active - show current track source
+            const sourceMap = {
+                'spotify': 'Spotify',
+                'spotify_hybrid': 'Hybrid',
+                'windows': 'Windows',
+                'windows_media': 'Windows',
+                'audio_recognition': 'Shazam',
+                'shazam': 'Shazam'
+            };
+            const displaySource = sourceMap[currentTrackSource] || 'Spotify';
+            elements.sourceName.textContent = displaySource;
         }
     }
 
@@ -374,8 +396,12 @@ async function handleStart() {
         enabled: true
     };
 
-    if (mode === 'backend' && deviceId) {
+    // Only set device_id for specific device selection, not for 'auto'
+    if (mode === 'backend' && deviceId && deviceId !== 'auto') {
         configUpdate.device_id = parseInt(deviceId, 10);
+    } else if (mode === 'backend' && deviceId === 'auto') {
+        // Auto mode - explicitly set to null so backend uses auto-detection
+        configUpdate.device_id = null;
     }
 
     // Apply advanced settings

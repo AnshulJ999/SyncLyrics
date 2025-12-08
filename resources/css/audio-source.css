@@ -5,77 +5,62 @@
 
 /* =============================================================================
    Source Indicator Button (top-right, left of settings gear)
+   Matches .provider-badge styling for consistency
    ============================================================================= */
 
 .source-toggle {
     position: fixed;
     top: 15px;
-    right: 60px; /* Position left of settings gear (which is at right: 15px) */
+    right: 55px;
+    /* Position left of settings gear */
     z-index: 1000;
-    
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.85rem;
+
+    /* Match provider-badge styling exactly */
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
     font-weight: 500;
-    padding: 8px 12px;
-    
+    letter-spacing: 0.3px;
+    padding: 4px 12px;
+
     cursor: pointer;
-    transition: all 0.2s ease;
-    
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
 .source-toggle:hover {
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.2);
-    transform: translateY(-1px);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .source-toggle:active {
-    transform: translateY(0);
+    transform: scale(0.95);
 }
 
-/* Status indicator dot */
-.source-toggle .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    transition: background 0.3s ease;
-}
-
-.source-toggle .status-dot.active {
-    background: #1DB954; /* Spotify green */
-    box-shadow: 0 0 6px rgba(29, 185, 84, 0.5);
-}
-
-.source-toggle .status-dot.listening {
-    background: #f39c12; /* Orange for listening */
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5); }
-    50% { opacity: 0.6; box-shadow: 0 0 12px rgba(243, 156, 18, 0.8); }
-}
-
+/* Source name - just the text, no extras */
 .source-toggle .source-name {
-    max-width: 100px;
+    max-width: 80px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+/* Hide status dot and arrow by default - minimal design */
+.source-toggle .status-dot,
 .source-toggle .dropdown-arrow {
-    font-size: 0.7rem;
-    opacity: 0.7;
+    display: none;
 }
 
 
@@ -90,15 +75,15 @@
     right: 0;
     bottom: 0;
     z-index: 2000;
-    
+
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
-    
+
     display: flex;
     align-items: center;
     justify-content: center;
-    
+
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.2s ease, visibility 0.2s ease;
@@ -113,17 +98,18 @@
     background: linear-gradient(180deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
-    
+
     width: 90%;
-    max-width: 420px;
+    max-width: 600px;
+    /* Increased for tablets/desktop */
     max-height: 80vh;
-    
+
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    
+
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    
+
     transform: translateY(20px) scale(0.95);
     transition: transform 0.2s ease;
 }
@@ -317,7 +303,8 @@
     width: 0%;
     background: linear-gradient(90deg, #1DB954, #1ed760);
     border-radius: 4px;
-    transition: width 0.1s ease; /* Smooth per R8 */
+    transition: width 0.1s ease;
+    /* Smooth per R8 */
 }
 
 /* Advanced Settings (Collapsible) */
@@ -465,19 +452,32 @@
    Responsive Adjustments
    ============================================================================= */
 
+/* Mobile - smaller screens */
 @media (max-width: 480px) {
     .source-toggle {
-        right: 50px;
-        padding: 6px 10px;
-        font-size: 0.8rem;
+        top: 0.5rem;
+        right: calc(0.5rem + 40px + 8px);
+        /* Match provider-info mobile position */
+        padding: 4px 10px;
+        font-size: 0.7rem;
     }
-    
+
     .audio-source-modal-content {
         width: 95%;
+        max-width: 100%;
         max-height: 85vh;
     }
-    
+
     .audio-source-body {
         padding: 16px;
+    }
+}
+
+/* Tablet+ responsive positioning */
+@media (min-width: 481px) and (max-width: 768px) {
+    .source-toggle {
+        top: 24px;
+        right: calc(20px + 40px + 8px);
+        /* Match provider-info tablet position */
     }
 }

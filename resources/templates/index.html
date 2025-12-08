@@ -17,7 +17,8 @@
         <p>To use Spotify features, please authorize this application.</p>
         <a href="{{ spotify_auth_url }}" class="spotify-login-button">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
-                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.56.3z"/>
+                <path
+                    d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.56.3z" />
             </svg>
             Login with Spotify
         </a>
@@ -28,9 +29,7 @@
 
 <!-- Audio Source Toggle Button (left of settings gear) -->
 <button id="source-toggle" class="source-toggle" title="Audio Source Settings">
-    <span class="status-dot" id="source-status-dot"></span>
-    <span class="source-name" id="source-name">Select Source</span>
-    <span class="dropdown-arrow">▼</span>
+    <span class="source-name" id="source-name">Spotify</span>
 </button>
 
 <!-- Settings Toggle Button -->
@@ -43,7 +42,7 @@
             <h3>🎤 Audio Source</h3>
             <button id="audio-source-close" class="audio-source-close">×</button>
         </div>
-        
+
         <div class="audio-source-body">
             <!-- Status Section -->
             <div class="audio-source-status">
@@ -60,14 +59,14 @@
                     <span class="status-value" id="last-recognition-time">—</span>
                 </div>
             </div>
-            
+
             <!-- HTTPS Warning (shown when mic selected on non-secure) -->
             <div class="https-warning" id="https-warning">
                 <span class="https-warning-text">
                     ⚠️ Browser microphone requires HTTPS. Enable HTTPS in settings or use a backend device.
                 </span>
             </div>
-            
+
             <!-- Device Selection -->
             <div class="audio-source-section">
                 <h4>Capture Device</h4>
@@ -80,7 +79,7 @@
                     </optgroup>
                 </select>
             </div>
-            
+
             <!-- Audio Level Meter (for frontend mic) -->
             <div class="audio-level-container" id="audio-level-container" style="display: none;">
                 <h4>Audio Level</h4>
@@ -88,7 +87,7 @@
                     <div class="audio-level-fill" id="audio-level-fill"></div>
                 </div>
             </div>
-            
+
             <!-- Control Buttons -->
             <div class="audio-source-controls">
                 <button id="recognition-start" class="control-btn-audio start">
@@ -98,14 +97,14 @@
                     ◼ Stop Recognition
                 </button>
             </div>
-            
+
             <!-- Current Song (when active) -->
             <div class="current-song-info" id="current-song-info" style="display: none;">
                 <div class="current-song-label">Currently Recognized</div>
                 <div class="current-song-title" id="current-song-title">—</div>
                 <div class="current-song-artist" id="current-song-artist">—</div>
             </div>
-            
+
             <!-- Advanced Settings (Collapsible) -->
             <button class="advanced-toggle" id="advanced-toggle">
                 <span>Advanced Settings</span>
@@ -118,26 +117,26 @@
                         <input type="checkbox" id="reaper-auto-detect">
                         <label class="checkbox-label" for="reaper-auto-detect">Auto-detect Reaper DAW</label>
                     </div>
-                    
+
                     <!-- Recognition Interval -->
                     <div class="setting-row">
                         <span class="setting-label">Recognition Interval (s)</span>
-                        <input type="number" class="setting-input" id="recognition-interval" 
-                               value="5" min="3" max="30" step="1">
+                        <input type="number" class="setting-input" id="recognition-interval" value="5" min="3" max="30"
+                            step="1">
                     </div>
-                    
+
                     <!-- Capture Duration -->
                     <div class="setting-row">
                         <span class="setting-label">Capture Duration (s)</span>
-                        <input type="number" class="setting-input" id="capture-duration" 
-                               value="4" min="3" max="10" step="0.5">
+                        <input type="number" class="setting-input" id="capture-duration" value="4" min="3" max="10"
+                            step="0.5">
                     </div>
-                    
+
                     <!-- Latency Offset -->
                     <div class="setting-row">
                         <span class="setting-label">Latency Offset (s)</span>
-                        <input type="number" class="setting-input" id="latency-offset" 
-                               value="0" min="-5" max="5" step="0.1">
+                        <input type="number" class="setting-input" id="latency-offset" value="0" min="-5" max="5"
+                            step="0.1">
                     </div>
                 </div>
             </div>
@@ -186,7 +185,7 @@
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
     <!-- Music Note Icon (♪) -->
     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
     </svg>
 </button>
 
@@ -202,7 +201,7 @@
             <button class="provider-tab" data-tab="album-art">Album Art & Images</button>
             <!-- REMOVED: Separate Artist Images Tab -->
         </div>
-        
+
         <!-- WRAPPER FOR DESKTOP GRID -->
         <div class="provider-content-wrapper">
             <!-- Added data-title for CSS pseudo-element header -->
@@ -211,12 +210,14 @@
                     <!-- Populated dynamically -->
                 </div>
                 <div class="provider-modal-footer">
-                    <button id="mark-instrumental-btn" class="btn-instrumental" title="Click to mark/unmark as instrumental">🎵 Instrumental</button>
+                    <button id="mark-instrumental-btn" class="btn-instrumental"
+                        title="Click to mark/unmark as instrumental">🎵 Instrumental</button>
                     <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
-                    <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+                    <button id="lyrics-delete-cache" class="btn-danger"
+                        title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
                 </div>
             </div>
-            
+
             <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
                 <!-- Background Style Controls (Static - JS duplication removed) -->
                 <div class="style-controls-section">
@@ -228,15 +229,17 @@
                         <button class="style-btn" data-style="blur">Blur</button>
                     </div>
                 </div>
-                
+
                 <div id="album-art-grid" class="art-grid">
                     <!-- Populated dynamically -->
                 </div>
                 <div class="provider-modal-footer">
-                    <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
+                    <div
+                        style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
                         Select an image to use
                     </div>
-                    <button id="album-art-clear-preference" class="btn-secondary" style="margin-top: 10px; width: 100%;">Reset to Default Art</button>
+                    <button id="album-art-clear-preference" class="btn-secondary"
+                        style="margin-top: 10px; width: 100%;">Reset to Default Art</button>
                 </div>
             </div>
 
