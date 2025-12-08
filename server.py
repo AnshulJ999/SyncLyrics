@@ -1627,21 +1627,25 @@ async def audio_stream_websocket():
         The engine's _run_loop pulls from this queue when in frontend mode,
         keeping the state machine consistent for both backend and frontend modes.
     """
+    frontend_queue = None
+    
     try:
         from system_utils.reaper import get_reaper_source
         from system_utils.session_config import get_effective_value
         
         source = get_reaper_source()
         
-        # Check if recognition is active and in frontend mode
+        # Check if recognition is active
         if not source:
             await websocket.close(1008, "Audio recognition source not available")
             return
         
-        mode = get_effective_value("mode", "backend")
-        if mode != "frontend":
-            await websocket.close(1008, "Audio recognition not in frontend mode")
+        if not source._engine:
+            await websocket.close(1008, "Recognition engine not initialized")
             return
+        
+        # Enable frontend mode and get the queue
+        frontend_queue = source._engine.enable_frontend_mode()
         
         # Get capture duration for client info
         capture_duration = get_effective_value("capture_duration", 4.0)
@@ -1661,22 +1665,8 @@ async def audio_stream_websocket():
                 data = await websocket.receive()
                 
                 if isinstance(data, bytes):
-                    # Check if engine has input queue (will be added in Phase 5)
-                    if source._engine and hasattr(source._engine, '_frontend_queue'):
-                        # Non-blocking push to engine's input queue
-                        try:
-                            source._engine._frontend_queue.put_nowait(data)
-                        except asyncio.QueueFull:
-                            # Queue full, drop oldest data
-                            try:
-                                source._engine._frontend_queue.get_nowait()
-                                source._engine._frontend_queue.put_nowait(data)
-                            except asyncio.QueueEmpty:
-                                pass
-                    else:
-                        # Engine not ready or doesn't have queue yet
-                        # This will be handled properly in Phase 5
-                        pass
+                    # Push to frontend queue (async method)
+                    await frontend_queue.push(data)
                 else:
                     # Text message - check for commands
                     if isinstance(data, str):
@@ -1701,6 +1691,15 @@ async def audio_stream_websocket():
         except:
             pass
     finally:
+        # Disable frontend mode when WebSocket disconnects
+        if frontend_queue:
+            try:
+                from system_utils.reaper import get_reaper_source
+                source = get_reaper_source()
+                if source and source._engine:
+                    source._engine.disable_frontend_mode()
+            except Exception:
+                pass
         logger.info("Frontend audio WebSocket disconnected")
 
 

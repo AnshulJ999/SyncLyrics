@@ -14,6 +14,8 @@ import {
     getAudioRecognitionStatus
 } from './api.js';
 
+import audioCapture from './audioCapture.js';
+
 // =============================================================================
 // State
 // =============================================================================
@@ -22,6 +24,7 @@ let isModalOpen = false;
 let pollInterval = null;
 let currentConfig = null;
 let isActive = false;
+let isFrontendCapture = false; // True if currently using frontend mic capture
 
 // DOM Elements (cached on init)
 let elements = {};
@@ -390,15 +393,38 @@ async function handleStart() {
     }
 
     try {
-        // Apply config
+        // Apply config to backend
         await setAudioRecognitionConfig(configUpdate);
 
-        // Start recognition
-        const result = await startAudioRecognition();
+        if (mode === 'frontend') {
+            // FRONTEND MODE: Start browser mic capture
+            isFrontendCapture = true;
 
-        if (result.error) {
-            console.error('Failed to start:', result.error);
-            return;
+            // Show audio level container
+            if (elements.audioLevelContainer) {
+                elements.audioLevelContainer.style.display = 'block';
+            }
+
+            // Start capture with callbacks
+            await audioCapture.startCapture(deviceId, {
+                onLevel: (level) => updateAudioLevel(level),
+                onStatus: (status) => console.log('[AudioSource] Capture status:', status),
+                onRecognition: (result) => {
+                    console.log('[AudioSource] Recognition:', result);
+                    // Status will be updated via polling
+                }
+            });
+
+            console.log('[AudioSource] Frontend capture started');
+        } else {
+            // BACKEND MODE: Use backend audio capture
+            isFrontendCapture = false;
+
+            const result = await startAudioRecognition();
+            if (result.error) {
+                console.error('Failed to start backend recognition:', result.error);
+                return;
+            }
         }
 
         // Refresh status
@@ -406,16 +432,34 @@ async function handleStart() {
 
     } catch (error) {
         console.error('Error starting recognition:', error);
+        // Stop any partial capture
+        if (isFrontendCapture) {
+            await audioCapture.stopCapture();
+            isFrontendCapture = false;
+        }
     }
 }
 
 async function handleStop() {
     try {
+        // Stop frontend capture if active
+        if (isFrontendCapture) {
+            await audioCapture.stopCapture();
+            isFrontendCapture = false;
+
+            // Hide audio level container
+            if (elements.audioLevelContainer) {
+                elements.audioLevelContainer.style.display = 'none';
+            }
+
+            console.log('[AudioSource] Frontend capture stopped');
+        }
+
+        // Always notify backend to stop
         const result = await stopAudioRecognition();
 
         if (result.error) {
-            console.error('Failed to stop:', result.error);
-            return;
+            console.error('Failed to stop backend recognition:', result.error);
         }
 
         await refreshStatus();

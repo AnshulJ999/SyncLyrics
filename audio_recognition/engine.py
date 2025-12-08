@@ -16,6 +16,7 @@ from typing import Optional, Callable, Dict, Any
 from logging_config import get_logger
 from .capture import AudioCaptureManager
 from .shazam import ShazamRecognizer, RecognitionResult
+from .buffer import FrontendAudioQueue
 
 logger = get_logger(__name__)
 
@@ -107,6 +108,10 @@ class RecognitionEngine:
         # Spotify enrichment cache (populated by metadata_enricher)
         self._enriched_metadata: Optional[Dict[str, Any]] = None
         self._enrichment_attempted = False  # Prevents retry spam for songs not on Spotify
+        
+        # Frontend audio queue (R11: queue-based ingestion for frontend mode)
+        self._frontend_queue: Optional[FrontendAudioQueue] = None
+        self._frontend_mode = False
         
     @property
     def state(self) -> EngineState:
@@ -247,6 +252,7 @@ class RecognitionEngine:
             "consecutive_failures": self._consecutive_failures,
             "device_id": self.capture.device_id,
             "interval": self.interval,
+            "frontend_mode": self._frontend_mode,
         }
     
     async def start(self):
@@ -389,14 +395,33 @@ class RecognitionEngine:
         """
         Perform one recognition cycle (capture + recognize).
         
+        In frontend mode (R11), pulls audio from frontend queue instead of capturing.
+        
         Returns:
             RecognitionResult or None
         """
         # Update state
         self._set_state(EngineState.LISTENING)
         
-        # Capture audio
-        audio = await self.capture.capture(self.capture_duration)
+        # Get audio - either from frontend queue or backend capture
+        if self._frontend_mode and self._frontend_queue and self._frontend_queue.enabled:
+            # Frontend mode: get audio from queue
+            audio_data = await self._frontend_queue.get_recognition_audio(self.capture_duration)
+            
+            if audio_data is None or len(audio_data) == 0:
+                logger.debug("Not enough frontend audio data yet")
+                return None
+            
+            # Create AudioChunk from frontend data
+            from .capture import AudioChunk
+            audio = AudioChunk(
+                data=audio_data,
+                sample_rate=44100,  # Frontend always sends 44100 Hz
+                channels=1
+            )
+        else:
+            # Backend mode: capture from audio device
+            audio = await self.capture.capture(self.capture_duration)
         
         if audio is None:
             logger.warning("Audio capture failed")
@@ -416,6 +441,40 @@ class RecognitionEngine:
             return None
         
         return result
+    
+    def enable_frontend_mode(self) -> 'FrontendAudioQueue':
+        """
+        Enable frontend audio mode.
+        
+        Creates and returns the frontend audio queue for WebSocket handler to use.
+        Disables backend capture to prevent conflicts (R4).
+        
+        Returns:
+            FrontendAudioQueue instance
+        """
+        if self._frontend_queue is None:
+            self._frontend_queue = FrontendAudioQueue()
+        
+        self._frontend_queue.enable()
+        self._frontend_mode = True
+        
+        # Abort any ongoing backend capture (R4: mutual exclusion)
+        self.capture.abort()
+        
+        logger.info("Frontend audio mode enabled")
+        return self._frontend_queue
+    
+    def disable_frontend_mode(self) -> None:
+        """
+        Disable frontend audio mode.
+        
+        Returns to backend capture mode.
+        """
+        if self._frontend_queue:
+            self._frontend_queue.disable()
+        
+        self._frontend_mode = False
+        logger.info("Frontend audio mode disabled, returning to backend capture")
     
     async def _handle_successful_recognition(self, result: RecognitionResult):
         """
