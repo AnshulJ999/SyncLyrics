@@ -205,6 +205,13 @@ class SettingsManager:
             "audio_recognition.capture_duration": Setting("Capture Duration", float, 5.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=10.0),
             "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 5.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=3.0, max_val=30.0),
             "audio_recognition.latency_offset": Setting("Latency Offset", float, 0.0, False, "Audio Recognition", "Manual latency adjustment (s)", "slider", min_val=-5.0, max_val=5.0),
+
+            # HTTPS Settings (for browser microphone access)
+            "server.https.enabled": Setting("HTTPS Enabled", bool, False, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),
+            "server.https.port": Setting("HTTPS Port", int, 0, True, "HTTPS", "HTTPS port (0 = same as HTTP, >0 = dual-stack)", "number"),
+            "server.https.auto_generate": Setting("Auto Generate Cert", bool, True, False, "HTTPS", "Auto-generate self-signed certificate", "switch"),
+            "server.https.cert_file": Setting("Cert File", str, "certs/server.crt", True, "HTTPS", "SSL certificate file path"),
+            "server.https.key_file": Setting("Key File", str, "certs/server.key", True, "HTTPS", "SSL private key file path"),
         }
         
         self.load_settings()

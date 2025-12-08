@@ -78,6 +78,13 @@ SERVER = {
     "host": conf("server.host", "0.0.0.0"),
     "secret_key": os.getenv("QUART_SECRET_KEY", "change-me-in-env"),
     "debug": conf("server.debug", False),
+    "https": {
+        "enabled": conf("server.https.enabled", False),
+        "port": conf("server.https.port", 0),  # 0 = same as HTTP, >0 = dual-stack
+        "auto_generate": conf("server.https.auto_generate", True),
+        "cert_file": conf("server.https.cert_file", "certs/server.crt"),
+        "key_file": conf("server.https.key_file", "certs/server.key"),
+    },
 }
 
 UI = {

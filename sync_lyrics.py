@@ -209,25 +209,121 @@ def run_tray() -> NoReturn:
 
 async def run_server() -> NoReturn:
     """
-    Run the Quart server using Hypercorn with minimal logging
+    Run the Quart server using Hypercorn with optional HTTPS support.
+    
+    Modes:
+    - HTTP only: Default mode, no SSL
+    - HTTPS only: When https.enabled=True and https.port=0 (same port)
+    - Dual-stack: When https.enabled=True and https.port>0 (different ports)
+      - Runs HTTP on PORT for local access (no cert warnings)
+      - Runs HTTPS on https.port for tablet/mobile (mic access)
+    
     Returns:
         NoReturn: This function never returns
     """
-    config = Config()
-    config.bind = [f"0.0.0.0:{PORT}"]
-    config.use_reloader = False
-    config.ignore_keyboard_interrupt = True
-#    config.worker_class = "asyncio"
-    config.graceful_timeout = 2  # Seconds allowed for graceful shutdown
-    config.shutdown_timeout = 2  # Limit time allowed for shutdown
-    config.debug = False
+    from pathlib import Path
+    from config import SERVER
+    
+    host = SERVER.get("host", "0.0.0.0")
+    http_port = SERVER.get("port", 9012)
+    
+    https_config = SERVER.get("https", {})
+    https_enabled = https_config.get("enabled", False)
+    https_port = https_config.get("port", 0)  # 0 = same port, >0 = dual-stack
+    auto_generate = https_config.get("auto_generate", True)
+    
+    # Common config for both servers
+    base_config = Config()
+    base_config.use_reloader = False
+    base_config.ignore_keyboard_interrupt = True
+    base_config.graceful_timeout = 2
+    base_config.shutdown_timeout = 2
+    base_config.debug = False
     
     # Mute unnecessary logging
     logging.getLogger('hypercorn.error').setLevel(logging.ERROR)
     logging.getLogger('hypercorn.access').setLevel(logging.ERROR)
     
+    tasks = []
+    
+    if https_enabled:
+        # Get certificate paths
+        cert_file = Path(https_config.get("cert_file", "certs/server.crt"))
+        key_file = Path(https_config.get("key_file", "certs/server.key"))
+        
+        # Make paths absolute if relative
+        from config import ROOT_DIR
+        if not cert_file.is_absolute():
+            cert_file = ROOT_DIR / cert_file
+        if not key_file.is_absolute():
+            key_file = ROOT_DIR / key_file
+        
+        # Auto-generate certificates if enabled and missing
+        if auto_generate and (not cert_file.exists() or not key_file.exists()):
+            try:
+                from ssl_utils import ensure_ssl_certs
+                result = ensure_ssl_certs(cert_file.parent)
+                if result[0]:
+                    logger.info(f"SSL certificates generated at {cert_file.parent}")
+                else:
+                    logger.warning("Failed to generate SSL certificates")
+            except ImportError as e:
+                logger.error(f"SSL utils not available: {e}")
+            except Exception as e:
+                logger.error(f"Failed to generate SSL certificates: {e}")
+        
+        if cert_file.exists() and key_file.exists():
+            if https_port and https_port != http_port:
+                # DUAL-STACK MODE: Run HTTP on http_port AND HTTPS on https_port
+                
+                # Task A: HTTP server (no SSL) - for local PC access
+                http_config = Config()
+                http_config.bind = [f"{host}:{http_port}"]
+                http_config.use_reloader = False
+                http_config.ignore_keyboard_interrupt = True
+                http_config.graceful_timeout = 2
+                http_config.shutdown_timeout = 2
+                http_config.debug = False
+                tasks.append(serve(app, http_config))
+                logger.info(f"HTTP server starting on {host}:{http_port}")
+                
+                # Task B: HTTPS server (with SSL) - for tablet/mobile mic access
+                https_server_config = Config()
+                https_server_config.bind = [f"{host}:{https_port}"]
+                https_server_config.certfile = str(cert_file)
+                https_server_config.keyfile = str(key_file)
+                https_server_config.use_reloader = False
+                https_server_config.ignore_keyboard_interrupt = True
+                https_server_config.graceful_timeout = 2
+                https_server_config.shutdown_timeout = 2
+                https_server_config.debug = False
+                tasks.append(serve(app, https_server_config))
+                logger.info(f"HTTPS server starting on {host}:{https_port}")
+            else:
+                # HTTPS-ONLY MODE: Same port, HTTPS replaces HTTP
+                base_config.bind = [f"{host}:{http_port}"]
+                base_config.certfile = str(cert_file)
+                base_config.keyfile = str(key_file)
+                tasks.append(serve(app, base_config))
+                logger.info(f"HTTPS-only server starting on {host}:{http_port}")
+        else:
+            # Certificates not found, fall back to HTTP only
+            logger.warning(
+                f"HTTPS enabled but certificates not found at {cert_file} and {key_file}. "
+                f"Falling back to HTTP only. Install 'cryptography' package: pip install cryptography"
+            )
+            base_config.bind = [f"{host}:{http_port}"]
+            tasks.append(serve(app, base_config))
+            logger.info(f"HTTP server starting on {host}:{http_port}")
+    else:
+        # HTTP-only mode (default)
+        base_config.bind = [f"{host}:{http_port}"]
+        tasks.append(serve(app, base_config))
+        logger.info(f"HTTP server starting on {host}:{http_port}")
+    
     try:
-        await serve(app, config)
+        # Run all server tasks concurrently
+        await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
 

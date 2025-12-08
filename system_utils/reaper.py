@@ -234,6 +234,35 @@ class ReaperAudioSource:
             self._engine.capture_duration = capture_duration
             self._engine.latency_offset = latency_offset
     
+    def refresh_config_from_session(self) -> None:
+        """
+        Refresh configuration from session_config.
+        
+        Reads the current effective config (session overrides + settings.json)
+        and applies it to this source. Call this after changing session overrides
+        to apply them immediately.
+        """
+        from system_utils.session_config import get_audio_config_with_overrides
+        
+        config = get_audio_config_with_overrides()
+        
+        # Update internal settings
+        self._device_id = config.get("device_id")
+        self._device_name = config.get("device_name", "")
+        self._recognition_interval = config.get("recognition_interval", 5.0)
+        self._capture_duration = config.get("capture_duration", 4.0)
+        self._latency_offset = config.get("latency_offset", 0.0)
+        self._auto_detect = config.get("reaper_auto_detect", False)
+        self._enabled = config.get("enabled", False)
+        
+        # If engine exists, update its settings
+        if self._engine:
+            self._engine.interval = self._recognition_interval
+            self._engine.capture_duration = self._capture_duration
+            self._engine.latency_offset = self._latency_offset
+        
+        logger.debug(f"Config refreshed from session: enabled={self._enabled}, mode={config.get('mode')}")
+    
     async def check_reaper_status(self) -> bool:
         """
         Check if Reaper is running and update internal state.
@@ -527,15 +556,23 @@ class ReaperAudioSource:
         Get comprehensive status for API endpoint.
         
         Returns:
-            Status dict
+            Status dict including session config state
         """
         engine_status = self._engine.get_status() if self._engine else {}
+        
+        # Get capture mode from session config
+        try:
+            from system_utils.session_config import get_effective_value
+            capture_mode = get_effective_value("mode", "backend")
+        except ImportError:
+            capture_mode = "backend"
         
         return {
             "available": _check_audio_rec_available(),
             "enabled": self._enabled,
             "active": self.is_active,
             "mode": self.mode,
+            "capture_mode": capture_mode,  # "backend" or "frontend"
             "reaper_detected": self._reaper_running,
             "auto_detect": self._auto_detect,
             "manual_mode": self._manual_mode,
