@@ -132,7 +132,7 @@
     "audio_recognition.device_id": null,
     "audio_recognition.device_name": "",
     "audio_recognition.capture_duration": 5.0,
-    "audio_recognition.recognition_interval": 4.0,
+    "audio_recognition.recognition_interval": 5.0,
     "audio_recognition.latency_offset": 0.0,
     "server.https.enabled": true,
     "server.https.port": 9013,

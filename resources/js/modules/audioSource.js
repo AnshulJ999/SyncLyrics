@@ -204,7 +204,11 @@ async function loadDevices() {
         select.appendChild(backendOptgroup);
         select.appendChild(frontendOptgroup);
 
-        // Select current device or Auto by default
+        // Detect if running on mobile/tablet (no backend devices available)
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent);
+        const hasBackendDevices = devices.length > 0;
+
+        // Select current device based on config, or smart default
         if (currentConfig) {
             const mode = currentConfig.mode || 'backend';
             const deviceId = currentConfig.device_id;
@@ -218,8 +222,12 @@ async function loadDevices() {
                 select.value = 'backend:auto';
             }
         } else {
-            // Default to Auto
-            select.value = 'backend:auto';
+            // Smart default: frontend mic on mobile, backend auto on desktop
+            if (isMobile || !hasBackendDevices) {
+                select.value = 'frontend:default';
+            } else {
+                select.value = 'backend:auto';
+            }
         }
 
     } catch (error) {
@@ -293,6 +301,20 @@ async function refreshStatus() {
         updateStatusDisplay(result);
         updateButtonState();
 
+        // Update audio level from backend if not in frontend capture mode
+        // Frontend mode calculates its own level via AudioWorklet
+        if (!isFrontendCapture && result.audio_level !== undefined) {
+            if (isActive && elements.audioLevelContainer) {
+                elements.audioLevelContainer.style.display = 'block';
+                updateAudioLevel(result.audio_level);
+            }
+        }
+
+        // Hide level meter when not active
+        if (!isActive && !isFrontendCapture && elements.audioLevelContainer) {
+            elements.audioLevelContainer.style.display = 'none';
+        }
+
     } catch (error) {
         console.error('Error refreshing status:', error);
     }
@@ -364,6 +386,15 @@ function updateButtonState() {
         } else {
             elements.startBtn.style.display = 'flex';
             elements.stopBtn.style.display = 'none';
+        }
+    }
+
+    // Toggle recording indicator on source button
+    if (elements.sourceToggle) {
+        if (isActive) {
+            elements.sourceToggle.classList.add('recording');
+        } else {
+            elements.sourceToggle.classList.remove('recording');
         }
     }
 }

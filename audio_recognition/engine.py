@@ -113,6 +113,9 @@ class RecognitionEngine:
         self._frontend_queue: Optional[FrontendAudioQueue] = None
         self._frontend_mode = False
         
+        # Audio level tracking for UI meter (0.0 - 1.0)
+        self._last_audio_level: float = 0.0
+        
     @property
     def state(self) -> EngineState:
         """Current engine state."""
@@ -253,6 +256,7 @@ class RecognitionEngine:
             "device_id": self.capture.device_id,
             "interval": self.interval,
             "frontend_mode": self._frontend_mode,
+            "audio_level": self._last_audio_level,
         }
     
     async def start(self):
@@ -381,10 +385,10 @@ class RecognitionEngine:
             if not self._stop_requested:
                 if not self._first_detection:
                     # State 1: Scanning for song - rapid polls
-                    interval = 1.0
+                    interval = 1.5
                 elif not self._verified_detection:
                     # State 2: Verification - quick re-check
-                    interval = 0.5
+                    interval = 0.75
                 else:
                     # State 3: Normal tracking - use configured interval
                     interval = self.interval
@@ -435,7 +439,16 @@ class RecognitionEngine:
         
         if audio is None:
             logger.warning("Audio capture failed")
+            self._last_audio_level = 0.0
             return None
+        
+        # Update audio level for UI meter (normalize int16 amplitude to 0.0-1.0)
+        try:
+            max_amp = audio.get_max_amplitude()
+            # Max amplitude for int16 is 32768, amplify slightly for visibility
+            self._last_audio_level = min(1.0, (max_amp / 32768.0) * 2.0)
+        except Exception:
+            self._last_audio_level = 0.0
         
         if audio.is_silent():
             logger.debug("Audio is silent, skipping recognition")

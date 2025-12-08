@@ -57,7 +57,37 @@
     white-space: nowrap;
 }
 
-/* Hide status dot and arrow by default - minimal design */
+/* Recording dot - hidden by default, shown when audio recognition is active */
+.source-toggle .recording-dot {
+    display: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+    animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+/* Show recording dot when recording class is on button */
+.source-toggle.recording .recording-dot {
+    display: block;
+}
+
+@keyframes pulse-recording {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
+}
+
+/* Hide old status dot and arrow - minimal design */
 .source-toggle .status-dot,
 .source-toggle .dropdown-arrow {
     display: none;

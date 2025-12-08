@@ -1478,12 +1478,33 @@ async def audio_recognition_devices():
         
         # Use async methods to avoid blocking event loop with sd.query_devices()
         devices = await AudioCaptureManager.list_devices_async()
+        
+        # Post-processing filter to clean up the list for UI
+        # 1. Filter out devices with 0 input channels (handled in capture.py, but safe to double check)
+        # 2. Prefer MME (0) and WASAPI (typically 1 or 2) over weird ones
+        # 3. Sort Loopback to top
+        
+        # Valid host APIs: 0=MME, 1=DirectSound, 2=WASAPI
+        # We usually want to avoid WDM-KS (often duplicates) or ASIO (unless user wants it)
+        # For a "Clean" list, let's keep it simple: Just inputs > 0
+        
+        filtered_devices = []
+        for d in devices:
+            # Filter out "Modem", "Fax", and clearly non-audio devices if any
+            name = d.get('name', '').lower()
+            if 'modem' in name or 'fax' in name:
+                continue
+            filtered_devices.append(d)
+            
+        # Sort Loopback devices to the top, then by name
+        filtered_devices.sort(key=lambda x: (not x.get('is_loopback', False), x.get('name', '')))
+        
         recommended = await AudioCaptureManager.find_loopback_device_async()
         
         return jsonify({
-            "devices": devices,
+            "devices": filtered_devices,
             "recommended": recommended,
-            "count": len(devices)
+            "count": len(filtered_devices)
         })
         
     except ImportError as e:

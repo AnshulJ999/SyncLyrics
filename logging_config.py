@@ -134,6 +134,11 @@ def setup_logging(
     logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx DEBUG noise (if used)
     logging.getLogger('hpack').setLevel(logging.WARNING)  # Suppress HTTP/2 header compression noise
     
+    # NEW: Suppress ShazamIO and Retry spam
+    logging.getLogger('shazamio').setLevel(logging.WARNING)
+    logging.getLogger('shazamio_core').setLevel(logging.WARNING) 
+    logging.getLogger('aiohttp_retry').setLevel(logging.WARNING)
+    
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):
         sys.stdout.reconfigure(encoding='utf-8')

@@ -73,6 +73,13 @@ class AudioCaptureManager:
         "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
     ]
     
+    # Generic devices to exclude from listing (duplicates/mappers that clutter the list)
+    EXCLUDE_PATTERNS = [
+        "microsoft sound mapper",
+        "primary sound capture driver",
+        "communications",  # Usually just a role alias
+    ]
+    
     # Fix 2.1: Class-level cache for auto-detected loopback device
     _loopback_cache: Optional[Dict[str, Any]] = None
     _loopback_cache_time: float = 0
@@ -189,10 +196,12 @@ class AudioCaptureManager:
         """Check if audio capture is available (sounddevice installed)."""
         return sd is not None
     
-    @staticmethod
     def list_devices() -> List[Dict[str, Any]]:
         """
-        List all available audio input devices.
+        List available audio input devices.
+        
+        On Windows: Filters to WASAPI devices only (cleaner list, modern API)
+        On other OS: Shows all devices
         
         Returns:
             List of device info dicts with:
@@ -209,27 +218,51 @@ class AudioCaptureManager:
         devices = []
         try:
             all_devices = sd.query_devices()
+            host_apis = sd.query_hostapis()
+            
+            # On Windows, filter to WASAPI only (cleaner list)
+            import platform
+            wasapi_index = None
+            if platform.system() == 'Windows':
+                for idx, api in enumerate(host_apis):
+                    if 'WASAPI' in api.get('name', ''):
+                        wasapi_index = idx
+                        break
             
             for i, device in enumerate(all_devices):
                 # Only include input devices (>0 input channels)
-                if device.get('max_input_channels', 0) > 0:
-                    name = device.get('name', f'Device {i}')
+                if device.get('max_input_channels', 0) <= 0:
+                    continue
+                
+                # On Windows, only include WASAPI devices
+                if wasapi_index is not None and device.get('hostapi') != wasapi_index:
+                    continue
                     
-                    # Detect if likely a loopback device
-                    name_lower = name.lower()
-                    is_loopback = any(
-                        pattern in name_lower 
-                        for pattern in AudioCaptureManager.LOOPBACK_PATTERNS
-                    )
-                    
-                    devices.append({
-                        'index': i,
-                        'name': name,
-                        'channels': device.get('max_input_channels', 0),
-                        'sample_rate': device.get('default_samplerate', 44100),
-                        'api': device.get('hostapi', 0),
-                        'is_loopback': is_loopback
-                    })
+                name = device.get('name', f'Device {i}')
+                name_lower = name.lower()
+                
+                # Skip generic/excluded devices
+                if any(p in name_lower for p in AudioCaptureManager.EXCLUDE_PATTERNS):
+                    continue
+                
+                # Detect if likely a loopback device
+                is_loopback = any(
+                    pattern in name_lower 
+                    for pattern in AudioCaptureManager.LOOPBACK_PATTERNS
+                )
+                
+                # Get API name for display
+                api_idx = device.get('hostapi', 0)
+                api_name = host_apis[api_idx].get('name', 'Unknown') if api_idx < len(host_apis) else 'Unknown'
+                
+                devices.append({
+                    'index': i,
+                    'name': name,
+                    'channels': device.get('max_input_channels', 0),
+                    'sample_rate': device.get('default_samplerate', 44100),
+                    'api': api_name,
+                    'is_loopback': is_loopback
+                })
                     
         except Exception as e:
             logger.error(f"Failed to list audio devices: {e}")
