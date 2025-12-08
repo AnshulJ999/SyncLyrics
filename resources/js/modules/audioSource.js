@@ -665,6 +665,20 @@ export function init() {
         elements.advancedToggle.addEventListener('click', toggleAdvanced);
     }
 
+    // Reaper auto-detect toggle - immediately update when changed
+    if (elements.reaperAutoDetect) {
+        elements.reaperAutoDetect.addEventListener('change', async () => {
+            try {
+                await setAudioRecognitionConfig({
+                    reaper_auto_detect: elements.reaperAutoDetect.checked
+                });
+                console.log(`[AudioSource] Reaper auto-detect: ${elements.reaperAutoDetect.checked}`);
+            } catch (error) {
+                console.error('Failed to update Reaper auto-detect:', error);
+            }
+        });
+    }
+
     // Start background polling (slower when modal closed)
     startPolling(5000);
 
