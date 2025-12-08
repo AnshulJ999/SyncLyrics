@@ -10,9 +10,9 @@
 
 .source-toggle {
     position: fixed;
-    top: 15px;
-    right: 55px;
-    /* Position left of settings gear */
+    top: 25px;
+    right: 65px;
+    /* Position left of settings gear (settings is at right:20px, 40px wide) */
     z-index: 1000;
 
     /* Match provider-badge styling exactly */

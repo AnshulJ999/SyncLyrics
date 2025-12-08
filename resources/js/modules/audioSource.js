@@ -435,12 +435,21 @@ async function handleStart() {
             // FRONTEND MODE: Start browser mic capture
             isFrontendCapture = true;
 
+            // CRITICAL: Start the recognition engine FIRST, before WebSocket connects
+            // The WebSocket handler checks if engine is running and disconnects if not
+            const startResult = await startAudioRecognition();
+            if (startResult.error) {
+                console.error('Failed to start recognition engine:', startResult.error);
+                isFrontendCapture = false;
+                return;
+            }
+
             // Show audio level container
             if (elements.audioLevelContainer) {
                 elements.audioLevelContainer.style.display = 'block';
             }
 
-            // Start capture with callbacks
+            // Now start capture - this connects WebSocket which switches engine to frontend mode
             await audioCapture.startCapture(deviceId, {
                 onLevel: (level) => updateAudioLevel(level),
                 onStatus: (status) => console.log('[AudioSource] Capture status:', status),
