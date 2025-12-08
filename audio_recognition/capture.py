@@ -83,7 +83,7 @@ class AudioCaptureManager:
     # Fix 2.1: Class-level cache for auto-detected loopback device
     _loopback_cache: Optional[Dict[str, Any]] = None
     _loopback_cache_time: float = 0
-    LOOPBACK_CACHE_TTL = 300  # 5 minutes
+    LOOPBACK_CACHE_TTL = 100  # 5 minutes
     
     def __init__(
         self, 
@@ -513,7 +513,9 @@ class AudioCaptureManager:
                     while frames_read < total_frames:
                         if self._abort_capture:
                             logger.debug("Capture aborted via flag")
-                            # Breaking exits 'with' block, which safely closes stream in same thread
+                            # Explicit close for PortAudio safety on Windows
+                            # (context manager would do this, but explicit is safer for drivers)
+                            stream.close()
                             return None
                         
                         # Calculate frames to read in this iteration

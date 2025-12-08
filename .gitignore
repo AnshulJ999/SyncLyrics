@@ -118,3 +118,4 @@ certs/server.key
 certs/server.crt
 device_test_output.txt
 test_device_enumeration.py
+check_devices.py

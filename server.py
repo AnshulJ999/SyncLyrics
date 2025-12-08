@@ -1706,15 +1706,21 @@ async def audio_stream_websocket():
         except:
             pass
     finally:
-        # Disable frontend mode when WebSocket disconnects
+        # Stop the engine when WebSocket disconnects in frontend mode
+        # Don't just disable_frontend_mode() because that falls back to backend capture,
+        # which may initialize PortAudio on devices that don't need it (e.g., phones)
         if frontend_queue:
             try:
                 from system_utils.reaper import get_reaper_source
                 source = get_reaper_source()
                 if source and source._engine:
+                    # First disable frontend mode
                     source._engine.disable_frontend_mode()
-            except Exception:
-                pass
+                    # Then stop the engine entirely to prevent backend fallback
+                    await source.stop()
+                    logger.info("Stopped audio recognition engine (frontend WebSocket disconnected)")
+            except Exception as e:
+                logger.debug(f"Error stopping engine on WebSocket disconnect: {e}")
         logger.info("Frontend audio WebSocket disconnected")
 
 
