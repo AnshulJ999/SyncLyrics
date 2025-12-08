@@ -18,65 +18,27 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
-# Daemon Executor for Blocking Operations
+# Thread Executor for Blocking Operations
 # =============================================================================
-# Uses TRUE daemon threads that are automatically killed when Python exits.
-# This prevents "zombie" Python processes when audio driver or psutil hangs.
-# Standard ThreadPoolExecutor creates non-daemon threads, so we subclass it.
+# Uses ThreadPoolExecutor for running blocking I/O (audio capture, device queries).
+# Previously used custom DaemonThreadPoolExecutor but it broke on different Python
+# versions due to reliance on private _worker attribute.
+# Standard executor with shutdown(wait=False) is stable and sufficient.
 
-import threading
-import weakref
 from concurrent.futures import ThreadPoolExecutor
 
-
-class DaemonThreadPoolExecutor(ThreadPoolExecutor):
-    """
-    ThreadPoolExecutor that creates daemon threads.
-    
-    Daemon threads are automatically terminated when the main program exits,
-    even if they are blocked in C-level calls (like PortAudio or psutil).
-    This ensures Python can always exit cleanly.
-    """
-    
-    def _adjust_thread_count(self):
-        """Override to create daemon threads instead of regular threads."""
-        # This is copied from the parent class but with daemon=True
-        if len(self._threads) < self._max_workers:
-            # When the executor gets lost, the weakref callback will wake up
-            # the worker threads.
-            def weakref_cb(_, q=self._work_queue):
-                q.put(None)
-            
-            num_threads = len(self._threads)
-            thread_name = f'{self._thread_name_prefix or self}_{num_threads}'
-            t = threading.Thread(
-                name=thread_name,
-                target=self._worker,
-                args=(
-                    weakref.ref(self, weakref_cb),
-                    self._work_queue,
-                    self._initializer,
-                    self._initargs,
-                ),
-                daemon=True  # THIS IS THE KEY CHANGE - daemon threads auto-terminate
-            )
-            t.start()
-            self._threads.add(t)
-            self._adjust_thread_count()  # Tail recursion to add more if needed
+_thread_executor: Optional[ThreadPoolExecutor] = None
 
 
-_daemon_executor: Optional[DaemonThreadPoolExecutor] = None
-
-
-def _get_daemon_executor() -> DaemonThreadPoolExecutor:
-    """Get or create the daemon thread executor with true daemon threads."""
-    global _daemon_executor
-    if _daemon_executor is None:
-        _daemon_executor = DaemonThreadPoolExecutor(
-            max_workers=16,  # Fix C4: Increased from 4 to prevent thread pool exhaustion
-            thread_name_prefix="SyncLyrics_Daemon"
+def _get_daemon_executor() -> ThreadPoolExecutor:
+    """Get or create the thread executor for blocking operations."""
+    global _thread_executor
+    if _thread_executor is None:
+        _thread_executor = ThreadPoolExecutor(
+            max_workers=16,
+            thread_name_prefix="SyncLyrics_Worker"
         )
-    return _daemon_executor
+    return _thread_executor
 
 
 async def run_in_daemon_executor(func: Callable, *args: Any) -> Any:
@@ -100,14 +62,16 @@ async def run_in_daemon_executor(func: Callable, *args: Any) -> Any:
 
 
 def shutdown_daemon_executor():
-    """Shutdown the daemon executor. Call during app cleanup."""
-    global _daemon_executor
-    if _daemon_executor is not None:
+    """Shutdown the thread executor. Call during app cleanup."""
+    global _thread_executor
+    if _thread_executor is not None:
         try:
-            _daemon_executor.shutdown(wait=False, cancel_futures=True)
+            # wait=False ensures we don't block if threads are hung
+            # cancel_futures=True cancels pending work
+            _thread_executor.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
-        _daemon_executor = None
+        _thread_executor = None
 
 
 def create_tracked_task(coro):
@@ -296,11 +260,11 @@ def _log_app_state() -> None:
             except Exception as e:
                 logger.error(f"Failed to log Spotify stats: {e}")
         
-        # Log daemon executor health (for audio recognition stability monitoring)
-        if _daemon_executor is not None:
+        # Log thread executor health (for audio recognition stability monitoring)
+        if _thread_executor is not None:
             try:
-                active_threads = len([t for t in _daemon_executor._threads if t.is_alive()])
-                total_threads = len(_daemon_executor._threads)
-                logger.info(f"Daemon Executor: {active_threads}/{total_threads} threads active")
+                # Standard ThreadPoolExecutor doesn't expose thread count easily
+                # Just log that executor is active
+                logger.info("Thread Executor: active")
             except Exception:
-                pass  # Executor internals may not be accessible
+                pass
