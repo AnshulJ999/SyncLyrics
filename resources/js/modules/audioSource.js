@@ -145,9 +145,10 @@ async function loadDevices() {
         if (recommended !== null && recommended !== undefined) {
             const recommendedDevice = devices.find(d => d.id === recommended);
             const deviceName = recommendedDevice ? recommendedDevice.name : `Device ${recommended}`;
+            const apiLabel = recommendedDevice?.api ? ` [${recommendedDevice.api}]` : '';
             const autoOpt = document.createElement('option');
             autoOpt.value = 'backend:auto';
-            autoOpt.textContent = `Auto (${deviceName})`;
+            autoOpt.textContent = `Auto (${deviceName})${apiLabel}`;
             backendOptgroup.appendChild(autoOpt);
         }
 
@@ -161,8 +162,9 @@ async function loadDevices() {
             devices.forEach(device => {
                 const opt = document.createElement('option');
                 opt.value = `backend:${device.id}`;
-                opt.textContent = device.name;
-                // Don't add (Recommended) - the Auto option is the recommended one
+                // Show API name for clarity (e.g., "Loopback (MOTU M Series) [MME]")
+                const apiLabel = device.api ? ` [${device.api}]` : '';
+                opt.textContent = `${device.name}${apiLabel}`;
                 backendOptgroup.appendChild(opt);
             });
         }

@@ -195,6 +195,18 @@ class ShazamRecognizer:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(audio)
             
+            # DEBUG: Save audio to file for inspection (set to True to enable)
+            DEBUG_SAVE_AUDIO = True
+            if DEBUG_SAVE_AUDIO:
+                import time
+                from pathlib import Path
+                debug_dir = Path("cache/debug_audio")
+                debug_dir.mkdir(parents=True, exist_ok=True)
+                debug_path = debug_dir / f"capture_{int(time.time())}.wav"
+                with open(debug_path, 'wb') as f:
+                    f.write(wav_bytes)
+                logger.info(f"DEBUG: Saved audio to {debug_path}")
+            
             logger.debug(f"Sending to ShazamIO ({len(wav_bytes) / 1024:.1f} KB)...")
             
             # Call ShazamIO
@@ -300,6 +312,7 @@ class ShazamRecognizer:
         Convert AudioChunk to WAV bytes using stdlib wave module.
         
         This avoids the FFmpeg/pydub dependency entirely.
+        Resamples to 44100 Hz if needed (ShazamIO works better with 44.1kHz).
         
         Args:
             audio: AudioChunk to convert
@@ -307,13 +320,64 @@ class ShazamRecognizer:
         Returns:
             WAV file bytes
         """
+        TARGET_SAMPLE_RATE = 44100
+        
+        audio_data = audio.data
+        sample_rate = audio.sample_rate
+        channels = audio.channels
+        
+        # Resample to 44100 Hz if needed (WASAPI devices often return 48000 Hz)
+        if sample_rate != TARGET_SAMPLE_RATE:
+            try:
+                # Try scipy for high-quality resampling
+                from scipy import signal
+                
+                # Calculate new length
+                num_samples = len(audio_data) if audio_data.ndim == 1 else audio_data.shape[0]
+                new_num_samples = int(num_samples * TARGET_SAMPLE_RATE / sample_rate)
+                
+                # Resample (scipy returns float64)
+                if audio_data.ndim == 1:
+                    resampled = signal.resample(audio_data, new_num_samples)
+                    # Clip to int16 range to prevent overflow, then convert
+                    audio_data = np.clip(resampled, -32768, 32767).astype(np.int16)
+                else:
+                    # Stereo: resample each channel separately
+                    resampled = np.zeros((new_num_samples, channels), dtype=np.float64)
+                    for ch in range(channels):
+                        resampled[:, ch] = signal.resample(audio_data[:, ch], new_num_samples)
+                    # Clip to int16 range to prevent overflow, then convert
+                    audio_data = np.clip(resampled, -32768, 32767).astype(np.int16)
+                
+                logger.debug(f"Resampled {sample_rate}Hz → {TARGET_SAMPLE_RATE}Hz ({num_samples} → {new_num_samples} samples)")
+                sample_rate = TARGET_SAMPLE_RATE
+                
+            except ImportError:
+                # Fallback: simple linear interpolation (lower quality but no deps)
+                logger.warning("scipy not available, using simple resampling")
+                num_samples = len(audio_data) if audio_data.ndim == 1 else audio_data.shape[0]
+                new_num_samples = int(num_samples * TARGET_SAMPLE_RATE / sample_rate)
+                
+                old_indices = np.linspace(0, num_samples - 1, num_samples)
+                new_indices = np.linspace(0, num_samples - 1, new_num_samples)
+                
+                if audio_data.ndim == 1:
+                    audio_data = np.interp(new_indices, old_indices, audio_data).astype(np.int16)
+                else:
+                    resampled = np.zeros((new_num_samples, channels), dtype=np.int16)
+                    for ch in range(channels):
+                        resampled[:, ch] = np.interp(new_indices, old_indices, audio_data[:, ch]).astype(np.int16)
+                    audio_data = resampled
+                
+                sample_rate = TARGET_SAMPLE_RATE
+        
         buffer = io.BytesIO()
         
         with wave.open(buffer, 'wb') as wf:
-            wf.setnchannels(audio.channels)
+            wf.setnchannels(channels)
             wf.setsampwidth(2)  # int16 = 2 bytes per sample
-            wf.setframerate(audio.sample_rate)
-            wf.writeframes(audio.data.tobytes())
+            wf.setframerate(sample_rate)
+            wf.writeframes(audio_data.tobytes())
         
         return buffer.getvalue()
     

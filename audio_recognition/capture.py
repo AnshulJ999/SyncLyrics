@@ -220,22 +220,23 @@ class AudioCaptureManager:
             all_devices = sd.query_devices()
             host_apis = sd.query_hostapis()
             
-            # On Windows, filter to WASAPI only (cleaner list)
+            # On Windows, filter to MME + WASAPI only (cleaner list)
+            # Excludes: DirectSound (legacy), WDM-KS (too low-level)
             import platform
-            wasapi_index = None
+            allowed_api_indices = set()
             if platform.system() == 'Windows':
                 for idx, api in enumerate(host_apis):
-                    if 'WASAPI' in api.get('name', ''):
-                        wasapi_index = idx
-                        break
+                    api_name = api.get('name', '')
+                    if 'MME' in api_name or 'WASAPI' in api_name:
+                        allowed_api_indices.add(idx)
             
             for i, device in enumerate(all_devices):
                 # Only include input devices (>0 input channels)
                 if device.get('max_input_channels', 0) <= 0:
                     continue
                 
-                # On Windows, only include WASAPI devices
-                if wasapi_index is not None and device.get('hostapi') != wasapi_index:
+                # On Windows, only include MME + WASAPI devices
+                if allowed_api_indices and device.get('hostapi') not in allowed_api_indices:
                     continue
                     
                 name = device.get('name', f'Device {i}')
@@ -257,6 +258,7 @@ class AudioCaptureManager:
                 
                 devices.append({
                     'index': i,
+                    'id': i,  # Alias for frontend compatibility
                     'name': name,
                     'channels': device.get('max_input_channels', 0),
                     'sample_rate': device.get('default_samplerate', 44100),
@@ -306,13 +308,26 @@ class AudioCaptureManager:
             logger.debug("No loopback devices found")
             return None
             
-        # Sort by pattern priority (earlier patterns = higher priority)
+        # Sort by: 1) API preference (MME > WASAPI), 2) pattern priority
         def priority_key(device):
+            # API priority: MME=0, WASAPI=1, other=2
+            api = device.get('api', '').upper()
+            if 'MME' in api:
+                api_priority = 0
+            elif 'WASAPI' in api:
+                api_priority = 1
+            else:
+                api_priority = 2
+            
+            # Pattern priority (MOTU > VB-Cable > Voicemeeter > other)
             name_lower = device['name'].lower()
+            pattern_priority = len(cls.LOOPBACK_PATTERNS)
             for i, pattern in enumerate(cls.LOOPBACK_PATTERNS):
                 if pattern in name_lower:
-                    return i
-            return len(cls.LOOPBACK_PATTERNS)
+                    pattern_priority = i
+                    break
+            
+            return (api_priority, pattern_priority)
             
         loopback_devices.sort(key=priority_key)
         
