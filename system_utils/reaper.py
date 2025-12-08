@@ -394,10 +394,10 @@ class ReaperAudioSource:
     
     async def stop(self):
         """Stop audio recognition."""
-        global _shutting_down
+        # NOTE: We do NOT set _shutting_down here.
+        # That flag is only for actual app cleanup (set by sync_lyrics.py).
+        # Setting it here would block future auto-detection when Reaper reopens.
         
-        # Set shutdown flag to prevent auto-restart during cleanup
-        _shutting_down = True
         
         if self._engine:
             await self._engine.stop()

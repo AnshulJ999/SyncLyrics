@@ -100,6 +100,11 @@ async def cleanup() -> None:
     # Stop audio recognition engine FIRST (most likely to hang)
     try:
         from system_utils.reaper import get_reaper_source
+        import system_utils.reaper as reaper_module
+        
+        # Set shutdown flag to prevent auto-restart race condition during cleanup
+        reaper_module._shutting_down = True
+        
         logger.info("Stopping audio recognition...")
         source = get_reaper_source()
         if source and source.is_active:
