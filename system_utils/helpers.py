@@ -295,3 +295,12 @@ def _log_app_state() -> None:
                 
             except Exception as e:
                 logger.error(f"Failed to log Spotify stats: {e}")
+        
+        # Log daemon executor health (for audio recognition stability monitoring)
+        if _daemon_executor is not None:
+            try:
+                active_threads = len([t for t in _daemon_executor._threads if t.is_alive()])
+                total_threads = len(_daemon_executor._threads)
+                logger.info(f"Daemon Executor: {active_threads}/{total_threads} threads active")
+            except Exception:
+                pass  # Executor internals may not be accessible

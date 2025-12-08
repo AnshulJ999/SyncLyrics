@@ -330,6 +330,21 @@ async def main() -> NoReturn:
         await cleanup()
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='SyncLyrics - Real-time lyrics display')
+    parser.add_argument('--reaper', action='store_true', 
+                        help='Enable Reaper DAW audio recognition mode')
+    args = parser.parse_args()
+    
+    # Handle --reaper flag: Enable audio recognition and auto-detection
+    # These OVERRIDE any settings in settings.json
+    if args.reaper:
+        from config import AUDIO_RECOGNITION
+        AUDIO_RECOGNITION['enabled'] = True
+        AUDIO_RECOGNITION['reaper_auto_detect'] = True  # Override settings
+        print("🎵 Reaper mode enabled - audio recognition will start when Reaper is detected")
+    
     # Set up logging
     setup_logging(
         console_level=DEBUG.get("log_level", "INFO"),

@@ -85,87 +85,121 @@ class ReaperAudioSource:
     @staticmethod
     def is_reaper_running() -> bool:
         """
-        Check if Reaper.exe is running by checking the process list.
+        Check if Reaper is running.
         
-        Uses process matching (not window titles) for accurate detection.
-        Works on Windows and Unix systems.
+        Detection method:
+        - Windows: Fast window class detection (FindWindowW "REAPERwnd")
+        - Other platforms: Returns False (use --reaper flag instead)
         
         Returns:
-            True if Reaper process detected
+            True if Reaper detected (Windows only)
         """
-        try:
-            # Try psutil first (cross-platform, most reliable)
-            if PSUTIL_AVAILABLE:
-                process_name = "reaper.exe" if platform.system() == "Windows" else "reaper"
+        # Method 1: Fast window class detection (Windows only)
+        # Uses ctypes to find windows with class "REAPERwnd" - much faster than psutil
+        # Window class is a fixed identifier, more reliable than title matching
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                from ctypes import wintypes
                 
-                # Check all running processes
-                for proc in psutil.process_iter(['pid', 'name']):
-                    try:
-                        proc_name = proc.info['name'].lower()
-                        if proc_name == process_name.lower():
-                            logger.debug(f"Reaper process found: {proc_name} (PID: {proc.info['pid']})")
-                            return True
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        # Process may have terminated or we don't have permission
-                        continue
+                user32 = ctypes.windll.user32
                 
+                # FindWindowW is the fastest way - no enumeration needed
+                # Returns handle if found, NULL (0) if not
+                hwnd = user32.FindWindowW("REAPERwnd", None)
+                
+                if hwnd:
+                    # Optionally get the title for logging
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        logger.debug(f"Reaper detected via window class: '{buffer.value}'")
+                    else:
+                        logger.debug("Reaper detected via window class: REAPERwnd")
+                    return True
+                # If not found via window class, return False
+                # Window class detection is reliable - no need for fallback
                 return False
-            else:
-                # psutil not available, use platform-specific commands
-                logger.debug("psutil not available, using platform-specific process check")
                 
-                import subprocess
-                
-                if platform.system() == "Windows":
-                    # Windows: use tasklist command
-                    try:
-                        result = subprocess.run(
-                            ['tasklist', '/FI', 'IMAGENAME eq reaper.exe', '/FO', 'CSV'],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                        )
-                        # Check if reaper.exe appears in output (excluding header)
-                        output = result.stdout.lower()
-                        # CSV format: "Image Name","PID","Session Name",...
-                        # We want to find "reaper.exe" in the first column
-                        lines = output.strip().split('\n')
-                        for line in lines[1:]:  # Skip header
-                            if line.startswith('"reaper.exe"'):
-                                logger.debug("Reaper process found via tasklist")
+            except Exception as e:
+                logger.debug(f"Window class detection failed: {e}")
+                return False  # Don't fallback to psutil - too problematic
+        
+        # Non-Windows platforms: Return False (Reaper detection not supported)
+        # User can use --reaper flag to manually enable
+        return False
+        
+        # ========================================================================
+        # DISABLED: psutil process iteration - too slow and causes stability issues
+        # Kept for reference. Window class detection above is sufficient for Windows.
+        # For other platforms, use --reaper flag to manually enable.
+        # ========================================================================
+        if False:  # Dead code - disabled
+            try:
+                if PSUTIL_AVAILABLE:
+                    process_name = "reaper.exe" if platform.system() == "Windows" else "reaper"
+                    
+                    # Check all running processes
+                    for proc in psutil.process_iter(['pid', 'name']):
+                        try:
+                            proc_name = proc.info['name'].lower()
+                            if proc_name == process_name.lower():
+                                logger.debug(f"Reaper process found: {proc_name} (PID: {proc.info['pid']})")
                                 return True
-                        return False
-                    except Exception as e:
-                        logger.debug(f"Windows process check failed: {e}")
-                        return False
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    
+                    return False
                 else:
-                    # Unix/Linux/macOS: use ps command
-                    try:
-                        result = subprocess.run(
-                            ['ps', '-A'],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        # Check if "reaper" appears in process list
-                        output = result.stdout.lower()
-                        # Look for exact process name match (avoid false positives)
-                        lines = output.split('\n')
-                        for line in lines:
-                            # ps output format varies, but typically has process name
-                            # Look for standalone "reaper" word (not "reaperd" or "reaperize")
-                            if ' reaper ' in line or line.strip().endswith(' reaper'):
-                                logger.debug("Reaper process found via ps")
-                                return True
-                        return False
-                    except Exception as e:
-                        logger.debug(f"Unix process check failed: {e}")
-                        return False
-                        
-        except Exception as e:
-            logger.debug(f"Reaper detection failed: {e}")
-            return False
+                    # psutil not available, use platform-specific commands
+                    logger.debug("psutil not available, using platform-specific process check")
+                    
+                    import subprocess
+                    
+                    if platform.system() == "Windows":
+                        # Windows: use tasklist command
+                        try:
+                            result = subprocess.run(
+                                ['tasklist', '/FI', 'IMAGENAME eq reaper.exe', '/FO', 'CSV'],
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                            )
+                            output = result.stdout.lower()
+                            lines = output.strip().split('\n')
+                            for line in lines[1:]:
+                                if line.startswith('"reaper.exe"'):
+                                    logger.debug("Reaper process found via tasklist")
+                                    return True
+                            return False
+                        except Exception as e:
+                            logger.debug(f"Windows process check failed: {e}")
+                            return False
+                    else:
+                        # Unix/Linux/macOS: use ps command
+                        try:
+                            result = subprocess.run(
+                                ['ps', '-A'],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            output = result.stdout.lower()
+                            lines = output.split('\n')
+                            for line in lines:
+                                if ' reaper ' in line or line.strip().endswith(' reaper'):
+                                    logger.debug("Reaper process found via ps")
+                                    return True
+                            return False
+                        except Exception as e:
+                            logger.debug(f"Unix process check failed: {e}")
+                            return False
+                            
+            except Exception as e:
+                logger.debug(f"Reaper detection failed: {e}")
+                return False
     
     def configure(
         self,

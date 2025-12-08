@@ -32,6 +32,35 @@ from providers.spotify_api import get_shared_spotify_client
 # Fix H2: Configure-once flag - prevents calling configure() on every metadata poll
 _reaper_configured = False
 
+# Performance: Lazy-cached config values with 10-second refresh
+# - First call reads config (after --reaper flag has been processed)
+# - Subsequent calls return cached value
+# - Every 10 seconds, re-read config for hot-swap support
+_audio_rec_config_cache = {
+    'enabled': None,
+    'auto_detect': None,
+    'last_read': 0
+}
+_CONFIG_CACHE_TTL = 6.0  # Seconds before re-reading config
+
+def _get_audio_rec_enabled() -> bool:
+    """Get audio_rec_enabled with 10-second cache for hot-swap support."""
+    now = time.time()
+    if _audio_rec_config_cache['enabled'] is None or (now - _audio_rec_config_cache['last_read']) > _CONFIG_CACHE_TTL:
+        _audio_rec_config_cache['enabled'] = config.AUDIO_RECOGNITION.get("enabled", False)
+        _audio_rec_config_cache['auto_detect'] = config.AUDIO_RECOGNITION.get("reaper_auto_detect", False)
+        _audio_rec_config_cache['last_read'] = now
+    return _audio_rec_config_cache['enabled']
+
+def _get_reaper_auto_detect() -> bool:
+    """Get reaper_auto_detect with 10-second cache for hot-swap support."""
+    now = time.time()
+    if _audio_rec_config_cache['auto_detect'] is None or (now - _audio_rec_config_cache['last_read']) > _CONFIG_CACHE_TTL:
+        _audio_rec_config_cache['enabled'] = config.AUDIO_RECOGNITION.get("enabled", False)
+        _audio_rec_config_cache['auto_detect'] = config.AUDIO_RECOGNITION.get("reaper_auto_detect", False)
+        _audio_rec_config_cache['last_read'] = now
+    return _audio_rec_config_cache['auto_detect']
+
 logger = get_logger(__name__)
 
 # Platform detection (module-level constant)
@@ -154,9 +183,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # This prevents Reaper detection from blocking all metadata requests
     # FIX: Added throttle to prevent task spam (~10 tasks/second → 1 task/5 seconds)
     # ========================================================================
-    try:
-        audio_rec_config = config.AUDIO_RECOGNITION
-        if audio_rec_config.get("enabled", False) and audio_rec_config.get("reaper_auto_detect", True):
+    # Use lazy-cached getter functions (first call reads config, after --reaper flag)
+    if _get_audio_rec_enabled() and _get_reaper_auto_detect():
+        try:
             # Throttle task creation to match internal throttle (5 seconds)
             last_schedule = getattr(get_current_song_meta_data, '_last_auto_manage', 0)
             now = time.time()
@@ -166,8 +195,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 reaper_source = get_reaper_source()
                 # Fire-and-forget: don't await, just schedule it as background task
                 create_tracked_task(reaper_source.auto_manage())
-    except Exception as e:
-        logger.debug(f"Auto-manage scheduling failed: {e}")
+        except Exception as e:
+            logger.debug(f"Auto-manage scheduling failed: {e}")
     # ========================================================================
     
     # CRITICAL FIX: Lock the entire fetching process
@@ -182,14 +211,16 @@ async def get_current_song_meta_data() -> Optional[dict]:
         global _reaper_configured
         reaper_source = None  # Initialize for use outside try block
         try:
-            audio_rec_config = config.AUDIO_RECOGNITION
-            if audio_rec_config.get("enabled", False):
+            # Use lazy-cached getter function (reads config after --reaper flag)
+            if _get_audio_rec_enabled():
                 # Fix H4: Lazy import - only load reaper module when feature is enabled
                 from .reaper import get_reaper_source
                 reaper_source = get_reaper_source()
                 
                 # Fix H2: Configure only once at first use, not every poll
                 if not _reaper_configured:
+                    # Need full config dict for configure() - only accessed once per app lifetime
+                    audio_rec_config = config.AUDIO_RECOGNITION
                     reaper_source.configure(
                         device_id=audio_rec_config.get("device_id"),  # None = auto-detect
                         device_name=audio_rec_config.get("device_name", ""),
