@@ -420,11 +420,14 @@ class RecognitionEngine:
                 return None
             
             # Create AudioChunk from frontend data
+            import time
             from .capture import AudioChunk
             audio = AudioChunk(
                 data=audio_data,
                 sample_rate=44100,  # Frontend always sends 44100 Hz
-                channels=1
+                channels=1,
+                duration=self.capture_duration,
+                capture_start_time=time.time() - self.capture_duration
             )
         else:
             # Backend mode: capture from audio device

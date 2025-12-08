@@ -132,6 +132,7 @@ def setup_logging(
     logging.getLogger('asyncio').setLevel(logging.WARNING)  # Suppress asyncio DEBUG noise
     logging.getLogger('hypercorn').setLevel(logging.INFO)  # Only show INFO+ from hypercorn
     logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx DEBUG noise (if used)
+    logging.getLogger('hpack').setLevel(logging.WARNING)  # Suppress HTTP/2 header compression noise
     
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):
