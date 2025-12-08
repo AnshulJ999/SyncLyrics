@@ -134,11 +134,34 @@ def get_effective_value(key: str, default: Any = None) -> Any:
     Returns:
         The effective value (session override > settings > default)
     """
-    # Check session override first
+    # Check session override first (in-memory, instant)
     override = _audio_session_override.get(key)
     if override is not None:
         return override
     
-    # Fall back to settings.json
-    from config import AUDIO_RECOGNITION
-    return AUDIO_RECOGNITION.get(key, default)
+    # Fall back to settings.json with caching (avoid frequent file reads)
+    return _get_cached_config_value(key, default)
+
+
+# =============================================================================
+# Config File Caching (for when session override is not set)
+# =============================================================================
+
+_config_cache: Dict[str, Any] = {}
+_config_cache_time: float = 0
+_CONFIG_CACHE_TTL: float = 3.0  # Re-read config every 3 seconds
+
+def _get_cached_config_value(key: str, default: Any = None) -> Any:
+    """Get config value with 3-second cache to avoid frequent file reads."""
+    global _config_cache, _config_cache_time
+    
+    import time
+    now = time.time()
+    
+    # Refresh cache if expired
+    if now - _config_cache_time > _CONFIG_CACHE_TTL:
+        from config import AUDIO_RECOGNITION
+        _config_cache = dict(AUDIO_RECOGNITION)  # Copy to avoid reference issues
+        _config_cache_time = now
+    
+    return _config_cache.get(key, default)

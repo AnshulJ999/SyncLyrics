@@ -44,22 +44,20 @@ _audio_rec_config_cache = {
 _CONFIG_CACHE_TTL = 6.0  # Seconds before re-reading config
 
 def _get_audio_rec_enabled() -> bool:
-    """Get audio_rec_enabled with 10-second cache for hot-swap support."""
-    now = time.time()
-    if _audio_rec_config_cache['enabled'] is None or (now - _audio_rec_config_cache['last_read']) > _CONFIG_CACHE_TTL:
-        _audio_rec_config_cache['enabled'] = config.AUDIO_RECOGNITION.get("enabled", False)
-        _audio_rec_config_cache['auto_detect'] = config.AUDIO_RECOGNITION.get("reaper_auto_detect", False)
-        _audio_rec_config_cache['last_read'] = now
-    return _audio_rec_config_cache['enabled']
+    """
+    Get audio_rec_enabled with session override support.
+    
+    CRITICAL FIX: Must check session overrides FIRST (set by frontend),
+    then fall back to config file. Without this, frontend audio recognition
+    data never reaches the main loop.
+    """
+    from .session_config import get_effective_value
+    return get_effective_value("enabled", False)
 
 def _get_reaper_auto_detect() -> bool:
-    """Get reaper_auto_detect with 10-second cache for hot-swap support."""
-    now = time.time()
-    if _audio_rec_config_cache['auto_detect'] is None or (now - _audio_rec_config_cache['last_read']) > _CONFIG_CACHE_TTL:
-        _audio_rec_config_cache['enabled'] = config.AUDIO_RECOGNITION.get("enabled", False)
-        _audio_rec_config_cache['auto_detect'] = config.AUDIO_RECOGNITION.get("reaper_auto_detect", False)
-        _audio_rec_config_cache['last_read'] = now
-    return _audio_rec_config_cache['auto_detect']
+    """Get reaper_auto_detect with session override support."""
+    from .session_config import get_effective_value
+    return get_effective_value("reaper_auto_detect", False)
 
 logger = get_logger(__name__)
 

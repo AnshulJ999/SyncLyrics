@@ -116,3 +116,5 @@ test_spotify_isrc.py
 run - Reaper.bat
 certs/server.key
 certs/server.crt
+device_test_output.txt
+test_device_enumeration.py
