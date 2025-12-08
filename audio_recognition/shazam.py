@@ -196,7 +196,7 @@ class ShazamRecognizer:
             wav_bytes = self._convert_to_wav(audio)
             
             # DEBUG: Save audio to file for inspection (set to True to enable)
-            DEBUG_SAVE_AUDIO = True
+            DEBUG_SAVE_AUDIO = False
             if DEBUG_SAVE_AUDIO:
                 import time
                 from pathlib import Path
