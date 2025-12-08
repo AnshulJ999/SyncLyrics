@@ -109,8 +109,8 @@ async def cleanup() -> None:
         source = get_reaper_source()
         if source and source.is_active:
             try:
-                # Reduced timeout - we have force cleanup as backup
-                await asyncio.wait_for(source.stop(), timeout=3.0)
+                # Fix 1.1b: Increased timeout to 5s (engine has 3s, this gives buffer)
+                await asyncio.wait_for(source.stop(), timeout=5.0)
                 logger.info("Audio recognition stopped")
             except asyncio.TimeoutError:
                 logger.warning("Audio recognition stop timeout - forcing cleanup")

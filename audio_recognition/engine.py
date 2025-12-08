@@ -307,16 +307,18 @@ class RecognitionEngine:
             return
             
         logger.info("Stopping recognition engine...")
-        self._set_state(EngineState.STOPPING)
-        self._stop_requested = True
         
-        # Abort any ongoing capture to prevent blocking
+        # Fix 1.2: Abort capture FIRST to unblock any pending reads
         self.capture.abort()
+        
+        # Then signal the loop to stop
+        self._stop_requested = True
+        self._set_state(EngineState.STOPPING)
         
         if self._task:
             try:
-                # Wait for task to complete
-                await asyncio.wait_for(self._task, timeout=10.0)
+                # Fix 1.1: Reduced timeout from 10s to 3s for snappy shutdown
+                await asyncio.wait_for(self._task, timeout=3.0)
             except asyncio.TimeoutError:
                 logger.warning("Engine stop timeout, cancelling task")
                 self._task.cancel()
@@ -387,7 +389,12 @@ class RecognitionEngine:
                     # State 3: Normal tracking - use configured interval
                     interval = self.interval
                 
-                await asyncio.sleep(interval)
+                # Fix 1.3: Sleep in small chunks to allow faster stop response
+                sleep_chunk = 0.2  # Check every 200ms
+                elapsed = 0.0
+                while elapsed < interval and not self._stop_requested:
+                    await asyncio.sleep(min(sleep_chunk, interval - elapsed))
+                    elapsed += sleep_chunk
         
         logger.info("Recognition loop ended")
     

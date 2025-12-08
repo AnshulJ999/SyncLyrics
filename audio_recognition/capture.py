@@ -73,6 +73,11 @@ class AudioCaptureManager:
         "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
     ]
     
+    # Fix 2.1: Class-level cache for auto-detected loopback device
+    _loopback_cache: Optional[Dict[str, Any]] = None
+    _loopback_cache_time: float = 0
+    LOOPBACK_CACHE_TTL = 300  # 5 minutes
+    
     def __init__(
         self, 
         device_id: Optional[int] = None,
@@ -236,10 +241,31 @@ class AudioCaptureManager:
         """
         Auto-detect a loopback device (MOTU, VB-Cable, etc.).
         
+        Fix 2.1: Uses class-level cache with 5-minute TTL to avoid
+        repeated expensive sd.query_devices() calls.
+        
         Returns:
             Device index or None if not found.
             Priority: MOTU > VB-Cable > Voicemeeter > any loopback
         """
+        import time
+        
+        # Check if cache is valid
+        if cls._loopback_cache and (time.time() - cls._loopback_cache_time < cls.LOOPBACK_CACHE_TTL):
+            # Quick verify device still exists at cached index
+            try:
+                idx = cls._loopback_cache['index']
+                if sd:
+                    info = sd.query_devices(idx, 'input')
+                    if info['name'] == cls._loopback_cache['name']:
+                        logger.debug(f"Using cached loopback device: {cls._loopback_cache['name']} (ID: {idx})")
+                        return idx
+            except Exception:
+                pass
+            # Cache invalid, clear it
+            cls._loopback_cache = None
+        
+        # Expensive detection
         devices = cls.list_devices()
         loopback_devices = [d for d in devices if d['is_loopback']]
         
@@ -258,6 +284,14 @@ class AudioCaptureManager:
         loopback_devices.sort(key=priority_key)
         
         best_device = loopback_devices[0]
+        
+        # Cache the result
+        cls._loopback_cache = {
+            'index': best_device['index'],
+            'name': best_device['name']
+        }
+        cls._loopback_cache_time = time.time()
+        
         logger.info(f"Auto-detected loopback device: {best_device['name']} (ID: {best_device['index']})")
         return best_device['index']
     

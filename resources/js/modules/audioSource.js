@@ -141,10 +141,13 @@ async function loadDevices() {
         const recommended = result.recommended;
 
         // Add "Auto" option first if there's a recommended device
-        if (recommended) {
+        // Fix 3.2: recommended is an integer (device ID), not an object
+        if (recommended !== null && recommended !== undefined) {
+            const recommendedDevice = devices.find(d => d.id === recommended);
+            const deviceName = recommendedDevice ? recommendedDevice.name : `Device ${recommended}`;
             const autoOpt = document.createElement('option');
             autoOpt.value = 'backend:auto';
-            autoOpt.textContent = `Auto (${recommended.name})`;
+            autoOpt.textContent = `Auto (${deviceName})`;
             backendOptgroup.appendChild(autoOpt);
         }
 
@@ -274,9 +277,10 @@ async function refreshStatus() {
         isActive = result.active || false;
 
         // Also fetch current track to get the actual source if audio rec is inactive
+        // Fix 3.1: Correct endpoint is /current-track, not /api/track/current
         if (!isActive) {
             try {
-                const response = await fetch('/api/track/current');
+                const response = await fetch('/current-track');
                 const trackData = await response.json();
                 if (trackData && trackData.source) {
                     currentTrackSource = trackData.source;
@@ -316,13 +320,18 @@ function updateStatusDisplay(status) {
             elements.sourceName.textContent = sourceName;
         } else {
             // Audio recognition not active - show current track source
+            // Fix 3.3: Complete source mapping with all variations
             const sourceMap = {
                 'spotify': 'Spotify',
                 'spotify_hybrid': 'Hybrid',
+                'spotifyhybrid': 'Hybrid',
                 'windows': 'Windows',
                 'windows_media': 'Windows',
+                'windowsmedia': 'Windows',
                 'audio_recognition': 'Shazam',
-                'shazam': 'Shazam'
+                'audiorecognition': 'Shazam',
+                'shazam': 'Shazam',
+                'reaper': 'Reaper'
             };
             const displaySource = sourceMap[currentTrackSource] || 'Spotify';
             elements.sourceName.textContent = displaySource;

@@ -119,6 +119,23 @@ async function updateLoop() {
 
         setLastCheckTime(Date.now());
 
+        // Fix 4.1: Update audio source button with current track source
+        if (trackInfo && trackInfo.source) {
+            const sourceBtn = document.getElementById('source-name');
+            if (sourceBtn) {
+                const sourceMap = {
+                    'spotify': 'Spotify',
+                    'spotify_hybrid': 'Hybrid',
+                    'windows': 'Windows',
+                    'windows_media': 'Windows',
+                    'audio_recognition': 'Shazam',
+                    'shazam': 'Shazam',
+                    'reaper': 'Reaper'
+                };
+                sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
+            }
+        }
+
         // Handle track info errors
         if (trackInfo.error || !trackInfo.title) {
             if (!isIdleState) {

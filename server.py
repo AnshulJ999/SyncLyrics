@@ -1399,15 +1399,9 @@ async def audio_recognition_status():
         source = get_reaper_source()
         status = source.get_status()
         
-        # Add device availability info with proper null checks
-        # Use async method to avoid blocking event loop with sd.query_devices()
-        try:
-            if source._engine and hasattr(source._engine, 'capture') and source._engine.capture:
-                status["device_available"] = await source._engine.capture.is_device_available_async()
-            else:
-                status["device_available"] = False
-        except Exception:
-            status["device_available"] = False
+        # Fix 1.4: Removed device_available check - it's expensive (runs sd.query_devices)
+        # and was causing main loop blocking. Device availability should only be checked
+        # when the modal opens (in /api/audio-recognition/devices endpoint).
         
         return jsonify(status)
         

@@ -114,3 +114,5 @@ test_results
 test_shazam_metadata.py
 test_spotify_isrc.py
 run - Reaper.bat
+certs/server.key
+certs/server.crt
