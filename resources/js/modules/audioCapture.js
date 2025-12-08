@@ -190,7 +190,7 @@ async function initAudioContext() {
 
     // Load audio worklet processor
     try {
-        await audioContext.audioWorklet.addModule('/js/audio-processor.js');
+        await audioContext.audioWorklet.addModule('/resources/js/audio-processor.js');
         console.log('[AudioCapture] AudioWorklet loaded');
     } catch (error) {
         console.error('[AudioCapture] Failed to load AudioWorklet:', error);
