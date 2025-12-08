@@ -279,6 +279,15 @@ class RecognitionEngine:
         
         self._set_state(EngineState.STARTING)
         
+        # FIX H1: Resolve device asynchronously before starting capture
+        # This runs blocking sd.query_devices() in daemon executor
+        device_id = await self.capture.resolve_device_async()
+        if device_id is None:
+            logger.error("No audio device found - cannot start recognition")
+            self._set_state(EngineState.ERROR)
+            return
+        logger.info(f"Using audio device ID: {device_id}")
+        
         # Start the background loop
         self._task = asyncio.create_task(self._run_loop())
         

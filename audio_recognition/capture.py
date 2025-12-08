@@ -109,26 +109,64 @@ class AudioCaptureManager:
             
     @property
     def device_id(self) -> Optional[int]:
-        """Get current device ID, resolving by name if needed. Cached to avoid repeated lookups."""
-        # Return cached value if available
+        """
+        Get current device ID.
+        
+        FIX H1: This property is now NON-BLOCKING.
+        It only returns cached values. If device hasn't been resolved yet,
+        returns None. Call resolve_device_async() before first use.
+        """
+        return self._resolved_device_id
+    
+    async def resolve_device_async(self) -> Optional[int]:
+        """
+        Resolve device ID asynchronously (runs blocking calls in executor).
+        
+        Call this during initialization, not during capture.
+        Result is cached in self._resolved_device_id.
+        
+        Returns:
+            Device ID or None if no device found.
+        """
+        # Already resolved?
         if self._resolved_device_id is not None:
             return self._resolved_device_id
         
-        # Resolve device ID (priority: name > explicit ID > auto-detect)
+        # Import here to avoid circular import
+        from system_utils.helpers import run_in_daemon_executor
+        
+        try:
+            # Run blocking device resolution in daemon executor
+            self._resolved_device_id = await run_in_daemon_executor(
+                self._resolve_device_sync
+            )
+            return self._resolved_device_id
+        except Exception as e:
+            logger.error(f"Failed to resolve audio device: {e}")
+            return None
+    
+    def _resolve_device_sync(self) -> Optional[int]:
+        """
+        Synchronous device resolution (runs in executor thread).
+        
+        Priority: device_name > explicit device_id > auto-detect loopback
+        """
+        # Try name first
         if self._device_name:
-            self._resolved_device_id = self.find_device_by_name(self._device_name)
-            if self._resolved_device_id is not None:
-                logger.info(f"Resolved device by name '{self._device_name}': ID {self._resolved_device_id}")
-                return self._resolved_device_id
+            device_id = self.find_device_by_name(self._device_name)
+            if device_id is not None:
+                logger.info(f"Resolved device by name '{self._device_name}': ID {device_id}")
+                return device_id
         
+        # Use explicit ID if provided
         if self._device_id is not None:
-            self._resolved_device_id = self._device_id
-        else:
-            self._resolved_device_id = self.find_loopback_device()
-            if self._resolved_device_id is not None:
-                logger.info(f"Auto-detected loopback device: ID {self._resolved_device_id}")
+            return self._device_id
         
-        return self._resolved_device_id
+        # Auto-detect loopback device
+        device_id = self.find_loopback_device()
+        if device_id is not None:
+            logger.info(f"Auto-detected loopback device: ID {device_id}")
+        return device_id
     
     def _get_device_sample_rate(self, device_id: int) -> int:
         """Get the native sample rate of a device."""

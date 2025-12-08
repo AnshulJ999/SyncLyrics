@@ -73,7 +73,7 @@ def _get_daemon_executor() -> DaemonThreadPoolExecutor:
     global _daemon_executor
     if _daemon_executor is None:
         _daemon_executor = DaemonThreadPoolExecutor(
-            max_workers=4,
+            max_workers=16,  # Fix C4: Increased from 4 to prevent thread pool exhaustion
             thread_name_prefix="SyncLyrics_Daemon"
         )
     return _daemon_executor

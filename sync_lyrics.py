@@ -115,13 +115,11 @@ async def cleanup() -> None:
     except Exception as e:
         logger.error(f"Failed to stop audio recognition: {e}")
     
-    # Cleanup PortAudio/sounddevice state (Fix 3)
-    try:
-        import sounddevice as sd
-        sd.stop()  # Stop all active streams
-        logger.debug("PortAudio streams stopped")
-    except Exception:
-        pass  # sounddevice may not be installed or stream not active
+    # Fix C2: REMOVED sd.stop() call
+    # Calling sd.stop() while an InputStream is blocked in a C-level call (in the daemon thread)
+    # can cause PortAudio deadlock on Windows, hanging the entire cleanup process.
+    # The daemon threads will auto-terminate when Python exits, and capture.abort() above
+    # handles proper stream cleanup without risking deadlock.
 
     # Cancel server task
     if _server_task:
@@ -145,9 +143,11 @@ async def cleanup() -> None:
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
 
-    # Cancel all remaining async tasks (Fix 4) - prevents orphaned HTTP requests
-    for task in asyncio.all_tasks():
-        if task is not asyncio.current_task():
+    # Fix H3: Cancel only tracked background tasks, not all asyncio tasks
+    # Cancelling all_tasks() kills library internals (aiohttp sessions, etc.) and causes issues
+    from system_utils import state as app_state
+    for task in list(app_state._background_tasks):
+        if task is not asyncio.current_task() and not task.done():
             task.cancel()
             try:
                 await asyncio.wait_for(task, timeout=0.5)

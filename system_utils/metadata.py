@@ -26,8 +26,11 @@ from logging_config import get_logger
 from providers.album_art import get_album_art_provider
 from providers.spotify_api import get_shared_spotify_client
 
-# Audio recognition (Reaper integration)
-from .reaper import get_reaper_source
+# Fix H4: Lazy import of reaper module - moved inside function to avoid loading heavy
+# audio dependencies (sounddevice, shazamio, numpy) when audio recognition is disabled
+
+# Fix H2: Configure-once flag - prevents calling configure() on every metadata poll
+_reaper_configured = False
 
 logger = get_logger(__name__)
 
@@ -146,6 +149,27 @@ async def get_current_song_meta_data() -> Optional[dict]:
     from .spotify import _get_current_song_meta_data_spotify
     from .gnome import _get_current_song_meta_data_gnome
     
+    # ========================================================================
+    # FIX C1: Run auto_manage BEFORE acquiring lock (fire-and-forget)
+    # This prevents Reaper detection from blocking all metadata requests
+    # FIX: Added throttle to prevent task spam (~10 tasks/second → 1 task/5 seconds)
+    # ========================================================================
+    try:
+        audio_rec_config = config.AUDIO_RECOGNITION
+        if audio_rec_config.get("enabled", False) and audio_rec_config.get("reaper_auto_detect", True):
+            # Throttle task creation to match internal throttle (5 seconds)
+            last_schedule = getattr(get_current_song_meta_data, '_last_auto_manage', 0)
+            now = time.time()
+            if now - last_schedule > 5.0:
+                get_current_song_meta_data._last_auto_manage = now
+                from .reaper import get_reaper_source
+                reaper_source = get_reaper_source()
+                # Fire-and-forget: don't await, just schedule it as background task
+                create_tracked_task(reaper_source.auto_manage())
+    except Exception as e:
+        logger.debug(f"Auto-manage scheduling failed: {e}")
+    # ========================================================================
+    
     # CRITICAL FIX: Lock the entire fetching process
     # This prevents the race condition where Task B reads cache while Task A is still updating it
     async with state._meta_data_lock:
@@ -155,24 +179,29 @@ async def get_current_song_meta_data() -> Optional[dict]:
         # AUDIO RECOGNITION CHECK (Highest Priority)
         # If audio recognition is active (Reaper mode or manual), use it first
         # ========================================================================
+        global _reaper_configured
+        reaper_source = None  # Initialize for use outside try block
         try:
             audio_rec_config = config.AUDIO_RECOGNITION
             if audio_rec_config.get("enabled", False):
+                # Fix H4: Lazy import - only load reaper module when feature is enabled
+                from .reaper import get_reaper_source
                 reaper_source = get_reaper_source()
                 
-                # Configure with settings from config
-                reaper_source.configure(
-                    device_id=audio_rec_config.get("device_id"),  # None = auto-detect
-                    device_name=audio_rec_config.get("device_name", ""),
-                    recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
-                    capture_duration=audio_rec_config.get("capture_duration", 4.0),
-                    latency_offset=audio_rec_config.get("latency_offset", 0.0),
-                    auto_detect=audio_rec_config.get("reaper_auto_detect", True)
-                )
+                # Fix H2: Configure only once at first use, not every poll
+                if not _reaper_configured:
+                    reaper_source.configure(
+                        device_id=audio_rec_config.get("device_id"),  # None = auto-detect
+                        device_name=audio_rec_config.get("device_name", ""),
+                        recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
+                        capture_duration=audio_rec_config.get("capture_duration", 4.0),
+                        latency_offset=audio_rec_config.get("latency_offset", 0.0),
+                        auto_detect=audio_rec_config.get("reaper_auto_detect", True)
+                    )
+                    _reaper_configured = True
+                    logger.debug("Reaper audio source configured")
                 
-                # Auto-manage: start/stop based on Reaper detection
-                if audio_rec_config.get("reaper_auto_detect", True):
-                    await reaper_source.auto_manage()
+                # Fix C1: REMOVED auto_manage() from inside lock - moved to outside (see below)
                 
                 # If audio recognition is active, use it (highest priority)
                 if reaper_source.is_active:
@@ -193,8 +222,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 cached_result['is_playing'] = result.get('is_playing', False)
                                 return cached_result
                         
-                        # New song or not yet cached - only proceed to enrichment if playing
-                        # When paused, fall through to Spotify/Windows (allows fallback)
+                        # Fix C5: When paused, clear result to allow fallback to Spotify/Windows
                         if result.get('is_playing', False):
                             # New song or not yet enriched - store and proceed to enrichment
                             get_current_song_meta_data._last_result = result
@@ -204,6 +232,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             get_current_song_meta_data._is_active = True
                             get_current_song_meta_data._last_active_time = time.time()
                             # Continue to enrichment (album art DB, color extraction)
+                        else:
+                            # Paused - don't use stale audio_rec result, allow fallback
+                            result = None
                         
         except Exception as e:
             logger.error(f"Audio recognition check failed: {e}")

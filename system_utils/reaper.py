@@ -24,16 +24,24 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 
-# Import audio recognition components
-try:
-    from audio_recognition import RecognitionEngine, EngineState, RecognitionResult
-    AUDIO_REC_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Audio recognition not available: {e}")
-    AUDIO_REC_AVAILABLE = False
-    RecognitionEngine = None
-    EngineState = None
-    RecognitionResult = None
+# LAZY IMPORT: audio_recognition is NOT imported at module level to prevent
+# PortAudio/sounddevice initialization when audio recognition is disabled.
+# Import happens inside functions that actually need it.
+# Use _check_audio_rec_available() to check availability without triggering import.
+
+_audio_rec_available: Optional[bool] = None  # Cached availability check
+
+def _check_audio_rec_available() -> bool:
+    """Check if audio recognition is available (lazy check, caches result)."""
+    global _audio_rec_available
+    if _audio_rec_available is None:
+        try:
+            from audio_recognition import RecognitionEngine
+            _audio_rec_available = True
+        except ImportError:
+            _audio_rec_available = False
+            logger.warning("Audio recognition not available")
+    return _audio_rec_available
 
 # Shutdown guard - prevents auto-restart during app cleanup
 _shutting_down = False
@@ -54,12 +62,13 @@ class ReaperAudioSource:
     
     def __init__(self):
         """Initialize Reaper audio source."""
-        self._engine: Optional[RecognitionEngine] = None
+        self._engine = None  # Type: Optional[RecognitionEngine] - lazy import
         self._enabled = True
         self._manual_mode = False  # True = user triggered, False = auto (Reaper)
         self._auto_detect = True
         self._reaper_running = False
         self._last_reaper_check = 0
+        self._check_in_progress = False  # Fix H5: Guard flag to prevent pile-up
         
         # Settings (will be populated from config)
         self._device_id: Optional[int] = None
@@ -70,8 +79,8 @@ class ReaperAudioSource:
         
     @staticmethod
     def is_available() -> bool:
-        """Check if audio recognition is available."""
-        return AUDIO_REC_AVAILABLE
+        """Check if audio recognition is available (lazy check)."""
+        return _check_audio_rec_available()
     
     @staticmethod
     def is_reaper_running() -> bool:
@@ -196,6 +205,7 @@ class ReaperAudioSource:
         Check if Reaper is running and update internal state.
         
         Throttled to avoid excessive checks.
+        Uses guard flag to prevent pile-up if previous check is hanging.
         
         Returns:
             True if Reaper is running
@@ -206,30 +216,39 @@ class ReaperAudioSource:
         if now - self._last_reaper_check < self.REAPER_CHECK_INTERVAL:
             return self._reaper_running
         
+        # Fix H5: Prevent pile-up of checks if previous one is still running
+        if self._check_in_progress:
+            logger.debug("Reaper check already in progress, skipping")
+            return self._reaper_running
+        
+        self._check_in_progress = True
         self._last_reaper_check = now
         was_running = self._reaper_running
         
-        # CRITICAL FIX: Run blocking psutil.process_iter() call in daemon executor
-        # to prevent freezing the event loop for seconds during process iteration
-        # AND add timeout to prevent indefinite hang if psutil blocks (common on Windows)
-        # Daemon threads are killed on app exit, preventing zombie processes
-        from system_utils.helpers import run_in_daemon_executor
         try:
-            self._reaper_running = await asyncio.wait_for(
-                run_in_daemon_executor(self.is_reaper_running),
-                timeout=2.0
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Reaper process detection timed out - keeping previous state")
-            # Keep previous state to avoid disrupting playback if it was just a hiccup
-        except Exception as e:
-            logger.debug(f"Reaper detection error: {e}")
-        
-        # Log state changes
-        if self._reaper_running and not was_running:
-            logger.info("Reaper detected")
-        elif not self._reaper_running and was_running:
-            logger.info("Reaper no longer detected")
+            # CRITICAL FIX: Run blocking psutil.process_iter() call in daemon executor
+            # to prevent freezing the event loop for seconds during process iteration
+            # AND add timeout to prevent indefinite hang if psutil blocks (common on Windows)
+            # Daemon threads are killed on app exit, preventing zombie processes
+            from system_utils.helpers import run_in_daemon_executor
+            try:
+                self._reaper_running = await asyncio.wait_for(
+                    run_in_daemon_executor(self.is_reaper_running),
+                    timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Reaper process detection timed out - keeping previous state")
+                # Keep previous state to avoid disrupting playback if it was just a hiccup
+            except Exception as e:
+                logger.debug(f"Reaper detection error: {e}")
+            
+            # Log state changes
+            if self._reaper_running and not was_running:
+                logger.info("Reaper detected")
+            elif not self._reaper_running and was_running:
+                logger.info("Reaper no longer detected")
+        finally:
+            self._check_in_progress = False
         
         return self._reaper_running
     
@@ -277,11 +296,18 @@ class ReaperAudioSource:
         """
         global _shutting_down
         
-        # Reset shutdown guard - allows restart after manual stop
-        # This flag is only meant to prevent restart during app cleanup
-        _shutting_down = False
+        # Fix M2: Check shutdown flag AGAIN right before starting
+        # This prevents race where: check passes -> cleanup starts -> we start engine
+        if _shutting_down:
+            logger.debug("Ignoring start request - shutdown in progress")
+            return
         
-        if not AUDIO_REC_AVAILABLE:
+        # Fix M2: Only reset shutdown guard on MANUAL start (user-triggered)
+        # Auto-starts should NOT reset this flag to prevent race condition during cleanup
+        if manual:
+            _shutting_down = False
+        
+        if not _check_audio_rec_available():
             logger.error("Audio recognition not available")
             return
         
@@ -315,6 +341,9 @@ class ReaperAudioSource:
                 logger.debug("Spotify not available for metadata enrichment")
         except Exception as e:
             logger.debug(f"Could not set up Spotify enricher: {e}")
+        
+        # LAZY IMPORT: Only import RecognitionEngine when actually starting
+        from audio_recognition import RecognitionEngine
         
         # Create engine with current settings
         self._engine = RecognitionEngine(
@@ -356,11 +385,12 @@ class ReaperAudioSource:
         
         logger.info("Audio recognition stopped")
     
-    def _on_song_change(self, result: RecognitionResult):
+    def _on_song_change(self, result: Any):
         """
         Callback when song changes.
         
-        Can be used to trigger lyrics refresh.
+        Args:
+            result: RecognitionResult from audio_recognition module
         """
         logger.info(f"Song changed: {result.artist} - {result.title}")
     
@@ -468,7 +498,7 @@ class ReaperAudioSource:
         engine_status = self._engine.get_status() if self._engine else {}
         
         return {
-            "available": AUDIO_REC_AVAILABLE,
+            "available": _check_audio_rec_available(),
             "enabled": self._enabled,
             "active": self.is_active,
             "mode": self.mode,
