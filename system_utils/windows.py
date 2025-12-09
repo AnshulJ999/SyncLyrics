@@ -184,7 +184,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         background_image_path = None
         
         # 1. Always load album art for top left display (independent of artist image preference)
-        db_result = load_album_art_from_db(artist, album, title)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        loop = asyncio.get_running_loop()
+        db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
         if db_result:
             found_in_db = True
             album_art_found_in_db = True  # CRITICAL: Only set when actual album art is found
@@ -211,7 +213,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
-        artist_image_result = load_artist_image_from_db(artist)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
@@ -409,7 +412,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      
                      if task in done:
                          # Task completed within timeout - check DB for high-res art
-                         db_result = load_album_art_from_db(artist, album, title)
+                         # FIX: Run in executor to avoid blocking event loop during file I/O
+                         db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
                          if db_result:
                              # Found it! Update variables to use High-Res immediately
                              found_in_db = True

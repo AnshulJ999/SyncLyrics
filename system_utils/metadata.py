@@ -32,32 +32,29 @@ from providers.spotify_api import get_shared_spotify_client
 # Fix H2: Configure-once flag - prevents calling configure() on every metadata poll
 _reaper_configured = False
 
-# Performance: Lazy-cached config values with 10-second refresh
-# - First call reads config (after --reaper flag has been processed)
-# - Subsequent calls return cached value
-# - Every 10 seconds, re-read config for hot-swap support
-_audio_rec_config_cache = {
-    'enabled': None,
-    'auto_detect': None,
-    'last_read': 0
-}
-_CONFIG_CACHE_TTL = 6.0  # Seconds before re-reading config
+# Runtime flags for audio recognition (set by API endpoints, not polled)
+# This avoids the performance cost of importing/checking session_config on every metadata poll
+_audio_rec_runtime_enabled = False
+_reaper_auto_detect_runtime = False
 
 def _get_audio_rec_enabled() -> bool:
-    """
-    Get audio_rec_enabled with session override support.
-    
-    CRITICAL FIX: Must check session overrides FIRST (set by frontend),
-    then fall back to config file. Without this, frontend audio recognition
-    data never reaches the main loop.
-    """
-    from .session_config import get_effective_value
-    return get_effective_value("enabled", False)
+    """Check if audio recognition is enabled (instant boolean lookup)."""
+    return _audio_rec_runtime_enabled
 
 def _get_reaper_auto_detect() -> bool:
-    """Get reaper_auto_detect with session override support."""
-    from .session_config import get_effective_value
-    return get_effective_value("reaper_auto_detect", False)
+    """Check if Reaper auto-detect is enabled (instant boolean lookup)."""
+    return _reaper_auto_detect_runtime
+
+def set_audio_rec_runtime_enabled(enabled: bool, auto_detect: bool = False):
+    """
+    Set audio recognition runtime state.
+    Called by API endpoints when user enables/disables from frontend.
+    This is the event-driven approach - no polling required.
+    """
+    global _audio_rec_runtime_enabled, _reaper_auto_detect_runtime
+    _audio_rec_runtime_enabled = enabled
+    _reaper_auto_detect_runtime = auto_detect
+    logger.debug(f"Audio rec runtime state: enabled={enabled}, auto_detect={auto_detect}")
 
 logger = get_logger(__name__)
 
@@ -225,7 +222,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
                         capture_duration=audio_rec_config.get("capture_duration", 4.0),
                         latency_offset=audio_rec_config.get("latency_offset", 0.0),
-                        auto_detect=audio_rec_config.get("reaper_auto_detect", True)
+                        auto_detect=audio_rec_config.get("reaper_auto_detect", False)
                     )
                     _reaper_configured = True
                     logger.debug("Reaper audio source configured")
@@ -557,8 +554,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 )
                 
                 # Also load from DB to get background_style (ensure_album_art_db doesn't return it)
+                # FIX: Run in executor to avoid blocking the event loop during file I/O
                 from .album_art import load_album_art_from_db
-                album_art_db = load_album_art_from_db(artist, album, title)
+                loop = asyncio.get_running_loop()
+                album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
                 if album_art_db:
                     saved_background_style = album_art_db.get("background_style")
                     if saved_background_style:
@@ -580,8 +579,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 
                 # B. Check for Artist Image Preference (like Windows/Spotify sources)
                 # If user selected an artist image for background, use it instead of album art
+                # FIX: Run in executor to avoid blocking the event loop during file I/O
                 from .artist_image import load_artist_image_from_db
-                artist_image_result = load_artist_image_from_db(artist)
+                artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
                 if artist_image_result:
                     artist_image_path = artist_image_result["path"]
                     if artist_image_path.exists():

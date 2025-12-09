@@ -423,6 +423,13 @@ class ReaperAudioSource:
     
     async def stop(self):
         """Stop audio recognition."""
+        # Clear runtime flag so main loop stops checking for audio rec immediately
+        try:
+            from system_utils.metadata import set_audio_rec_runtime_enabled
+            set_audio_rec_runtime_enabled(False, False)
+        except ImportError:
+            pass
+        
         # NOTE: We do NOT set _shutting_down here.
         # That flag is only for actual app cleanup (set by sync_lyrics.py).
         # Setting it here would block future auto-detection when Reaper reopens.

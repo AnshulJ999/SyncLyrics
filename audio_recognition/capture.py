@@ -58,7 +58,7 @@ class AudioCaptureManager:
     DEFAULT_SAMPLE_RATE = 44100
     DEFAULT_CHANNELS = 2
     DEFAULT_DURATION = 4.0
-    MIN_AMPLITUDE = 50  # Minimum amplitude to consider valid audio
+    MIN_AMPLITUDE = 100  # Minimum amplitude to consider valid audio
     
     # Known loopback device name patterns (PRIORITY ORDER - most specific first!)
     # CRITICAL: "loopback" must come BEFORE generic "motu" to avoid matching physical inputs
@@ -83,7 +83,7 @@ class AudioCaptureManager:
     # Fix 2.1: Class-level cache for auto-detected loopback device
     _loopback_cache: Optional[Dict[str, Any]] = None
     _loopback_cache_time: float = 0
-    LOOPBACK_CACHE_TTL = 100  # 5 minutes
+    LOOPBACK_CACHE_TTL = 120  # 2 minutes
     
     def __init__(
         self, 

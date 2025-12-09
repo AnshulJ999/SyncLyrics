@@ -35,7 +35,7 @@ def _get_daemon_executor() -> ThreadPoolExecutor:
     global _thread_executor
     if _thread_executor is None:
         _thread_executor = ThreadPoolExecutor(
-            max_workers=16,
+            max_workers=32,
             thread_name_prefix="SyncLyrics_Worker"
         )
     return _thread_executor

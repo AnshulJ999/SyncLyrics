@@ -98,27 +98,29 @@ async def cleanup() -> None:
             logger.error(f"Error unregistering mDNS: {e}")
 
     # Stop audio recognition engine FIRST (most likely to hang)
-    try:
-        from system_utils.reaper import get_reaper_source
-        import system_utils.reaper as reaper_module
-        
-        # Set shutdown flag to prevent auto-restart race condition during cleanup
-        reaper_module._shutting_down = True
-        
-        logger.info("Stopping audio recognition...")
-        source = get_reaper_source()
-        if source and source.is_active:
-            try:
-                # Fix 1.1b: Increased timeout to 5s (engine has 3s, this gives buffer)
-                await asyncio.wait_for(source.stop(), timeout=5.0)
-                logger.info("Audio recognition stopped")
-            except asyncio.TimeoutError:
-                logger.warning("Audio recognition stop timeout - forcing cleanup")
-                # Force cleanup of audio resources
+    # FIX: Only attempt to stop if the module was ever imported (i.e., audio rec was used)
+    # This prevents PortAudio initialization on shutdown when audio rec was never enabled
+    if 'system_utils.reaper' in sys.modules:
+        try:
+            from system_utils.reaper import get_reaper_source
+            import system_utils.reaper as reaper_module
+            
+            # Set shutdown flag to prevent auto-restart race condition during cleanup
+            reaper_module._shutting_down = True
+            
+            source = get_reaper_source()
+            if source and source.is_active:
+                logger.info("Stopping audio recognition...")
+                # Abort capture first to unblock any pending reads
                 if source._engine and source._engine.capture:
                     source._engine.capture.abort()
-    except Exception as e:
-        logger.error(f"Failed to stop audio recognition: {e}")
+                try:
+                    await asyncio.wait_for(source.stop(), timeout=3.0)
+                    logger.info("Audio recognition stopped")
+                except asyncio.TimeoutError:
+                    logger.warning("Audio recognition stop timeout - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Failed to stop audio recognition: {e}")
     
     # Fix C2: REMOVED sd.stop() call
     # Calling sd.stop() while an InputStream is blocked in a C-level call (in the daemon thread)
@@ -444,6 +446,9 @@ if __name__ == "__main__":
         from config import AUDIO_RECOGNITION
         AUDIO_RECOGNITION['enabled'] = True
         AUDIO_RECOGNITION['reaper_auto_detect'] = True  # Override settings
+        # Also set runtime flags for event-driven approach
+        from system_utils.metadata import set_audio_rec_runtime_enabled
+        set_audio_rec_runtime_enabled(True, True)
         print("🎵 Reaper mode enabled - audio recognition will start when Reaper is detected")
     
     # Set up logging
@@ -454,6 +459,17 @@ if __name__ == "__main__":
         log_file=DEBUG.get("log_file", "synclyrics.log"),
         log_providers=DEBUG.get("log_providers", True)
     )
+    
+    # Initialize runtime flags from config (if --reaper wasn't used)
+    # This ensures settings.json values are respected for audio recognition
+    if not args.reaper:
+        from config import AUDIO_RECOGNITION
+        from system_utils.metadata import set_audio_rec_runtime_enabled
+        enabled = AUDIO_RECOGNITION.get("enabled", False)
+        auto_detect = AUDIO_RECOGNITION.get("reaper_auto_detect", False)
+        if enabled or auto_detect:
+            set_audio_rec_runtime_enabled(enabled, auto_detect)
+            logger.debug(f"Audio rec runtime flags from config: enabled={enabled}, auto_detect={auto_detect}")
     
     def handle_interrupt(signum, frame):
         """Handle keyboard interrupt"""

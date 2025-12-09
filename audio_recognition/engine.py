@@ -392,11 +392,11 @@ class RecognitionEngine:
                     interval = self.interval
                 
                 # Fix 1.3: Sleep in small chunks to allow faster stop response
-                sleep_chunk = 0.2  # Check every 200ms
-                elapsed = 0.0
-                while elapsed < interval and not self._stop_requested:
-                    await asyncio.sleep(min(sleep_chunk, interval - elapsed))
-                    elapsed += sleep_chunk
+                # Fix: Use time.time() to avoid float accumulation errors that cause lyrics drift
+                end_time = time.time() + interval
+                while time.time() < end_time and not self._stop_requested:
+                    remaining = max(0, end_time - time.time())
+                    await asyncio.sleep(min(0.2, remaining))
         
         logger.info("Recognition loop ended")
     

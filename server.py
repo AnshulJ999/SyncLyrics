@@ -1391,10 +1391,36 @@ async def audio_recognition_status():
     """
     Get audio recognition status.
     Returns current state, mode, song info, and device configuration.
+    
+    CRITICAL FIX: Only import reaper/audio_recognition if:
+    1. The module was already imported (audio rec was used), OR
+    2. Audio recognition is explicitly enabled in config
+    
+    This prevents PortAudio initialization from frontend polling when audio rec is disabled.
     """
+    import sys
+    
+    # Check if reaper module was ever imported (meaning audio rec was actually used)
+    if 'system_utils.reaper' not in sys.modules:
+        # Module not imported - check if we should import it
+        from config import AUDIO_RECOGNITION
+        if not AUDIO_RECOGNITION.get("enabled", False):
+            # Not enabled in config - return stub status without importing
+            return jsonify({
+                "available": True,
+                "enabled": False,
+                "active": False,
+                "mode": "idle",
+                "reaper_detected": False,
+                "auto_detect": False,
+                "manual_mode": False,
+                "capture_mode": None,
+                "current_song": None
+            })
+    
+    # Either module was imported or audio rec is enabled - proceed normally
     try:
-        from system_utils.reaper import get_reaper_source, ReaperAudioSource
-        from audio_recognition import AudioCaptureManager
+        from system_utils.reaper import get_reaper_source
         
         source = get_reaper_source()
         status = source.get_status()
@@ -1528,6 +1554,25 @@ async def audio_recognition_get_config():
         status: Current recognition status
         session_overrides_active: Whether any session overrides are in effect
     """
+    import sys
+    
+    # Guard: Don't import reaper unless necessary
+    if 'system_utils.reaper' not in sys.modules:
+        from config import AUDIO_RECOGNITION
+        if not AUDIO_RECOGNITION.get("enabled", False):
+            # Return config without importing reaper
+            from system_utils.session_config import (
+                get_audio_config_with_overrides, 
+                has_session_overrides,
+                get_active_overrides
+            )
+            return jsonify({
+                "config": get_audio_config_with_overrides(),
+                "status": {"active": False},
+                "session_overrides_active": has_session_overrides(),
+                "active_overrides": get_active_overrides()
+            })
+    
     try:
         from system_utils.session_config import (
             get_audio_config_with_overrides, 
@@ -1598,19 +1643,33 @@ async def audio_recognition_configure():
             if key in data:
                 set_session_override(key, data[key])
         
+        # EVENT-DRIVEN: Set runtime flag for immediate effect in main loop
+        # This replaces polling session_config on every metadata fetch
+        if 'enabled' in data or 'reaper_auto_detect' in data:
+            from system_utils.metadata import set_audio_rec_runtime_enabled
+            enabled = data.get('enabled', False)
+            auto_detect = data.get('reaper_auto_detect', False)
+            set_audio_rec_runtime_enabled(enabled, auto_detect)
+            
+            # Start/stop engine based on new state
+            if enabled:
+                source = get_reaper_source()
+                if not source.is_active:
+                    await source.start(manual=True)
+            else:
+                import sys
+                if 'system_utils.reaper' in sys.modules:
+                    source = get_reaper_source()
+                    if source.is_active:
+                        await source.stop()
+        
         # Get the new effective config
         effective_config = get_audio_config_with_overrides()
-        
-        # If engine is running, it will pick up new config on next iteration
-        # For immediate effect on device/mode changes, may need to restart
-        source = get_reaper_source()
-        needs_restart = "device_id" in data or "mode" in data
         
         return jsonify({
             "status": "configured",
             "config": effective_config,
-            "active_overrides": get_active_overrides(),
-            "needs_restart": needs_restart
+            "active_overrides": get_active_overrides()
         })
         
     except ImportError as e:
