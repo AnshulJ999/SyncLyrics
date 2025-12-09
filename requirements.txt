@@ -45,3 +45,4 @@ spotipy>=2.23.0
 shazamio>=0.8.1            # Audio fingerprinting via Shazam
 sounddevice>=0.5.0         # Cross-platform audio capture
 psutil>=5.9.0              # Process detection for Reaper (optional, has fallbacks)
+cryptography>=41.0.0  # Required for HTTPS support

@@ -1008,7 +1008,14 @@ class SpotifyAPI:
             # Try to enhance each image URL to 1400px if available (falls back to 640px if not)
             # Use asyncio.gather to verify all images in parallel (much faster than sequential)
             enhancement_tasks = [enhance_spotify_image_url_async(img['url']) for img in images_sorted]
-            image_urls = await asyncio.gather(*enhancement_tasks)
+            try:
+                image_urls = await asyncio.wait_for(
+                    asyncio.gather(*enhancement_tasks),
+                    timeout=15.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Spotify image enhancement timed out for artist {artist_id}")
+                image_urls = [img['url'] for img in images_sorted]  # Use original URLs
             
             # Log enhanced URLs for artist images (similar to album art logging)
             enhanced_count = sum(1 for orig, enhanced in zip([img['url'] for img in images_sorted], image_urls) if orig != enhanced)

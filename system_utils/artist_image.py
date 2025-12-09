@@ -524,9 +524,9 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                     # Continue if check fails (defensive)
                 
                 # OPTIMIZATION: Process images in parallel batches to significantly speed up downloads
-                # Process 8 images at a time to balance speed with resource usage
-                # This reduces total time from ~3 minutes (90 images x 2s each) to ~23 seconds (12 batches x ~2s each)
-                PARALLEL_BATCH_SIZE = 8
+                # Process 12 images at a time to balance speed with resource usage
+                # This reduces total time from ~3 minutes (90 images x 2s each) to ~15 seconds (8 batches x ~2s each)
+                PARALLEL_BATCH_SIZE = 12
                 
                 # Helper function to process a single image (extracted from loop for parallelization)
                 async def _process_single_image(img_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -618,8 +618,15 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 for batch_start in range(0, len(images_to_process), PARALLEL_BATCH_SIZE):
                     batch = images_to_process[batch_start:batch_start + PARALLEL_BATCH_SIZE]
                     
-                    # Process entire batch in parallel
-                    batch_results = await asyncio.gather(*[_process_single_image(img_dict) for img_dict in batch], return_exceptions=True)
+                    # Process entire batch in parallel with timeout
+                    try:
+                        batch_results = await asyncio.wait_for(
+                            asyncio.gather(*[_process_single_image(img_dict) for img_dict in batch], return_exceptions=True),
+                            timeout=30.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Artist image batch processing timed out for {artist}")
+                        batch_results = []
                     
                     # Process results sequentially to update saved_images and avoid race conditions
                     for result in batch_results:

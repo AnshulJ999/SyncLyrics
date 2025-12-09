@@ -65,6 +65,7 @@ class ReaperAudioSource:
         self._engine = None  # Type: Optional[RecognitionEngine] - lazy import
         self._enabled = True
         self._manual_mode = False  # True = user triggered, False = auto (Reaper)
+        self._frontend_started = False  # True = engine started by frontend WebSocket
         self._auto_detect = True
         self._reaper_running = False
         self._last_reaper_check = 0

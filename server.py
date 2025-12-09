@@ -1584,11 +1584,19 @@ async def audio_recognition_get_config():
         config = get_audio_config_with_overrides()
         source = get_reaper_source()
         
+        # Check if HTTPS is actually available (certs exist)
+        from pathlib import Path
+        from config import HTTPS
+        https_enabled = HTTPS.get("enabled", False)
+        cert_file = Path(HTTPS.get("cert_file", "certs/server.crt"))
+        https_available = https_enabled and cert_file.exists()
+        
         return jsonify({
             "config": config,
             "status": source.get_status() if source else {},
             "session_overrides_active": has_session_overrides(),
-            "active_overrides": get_active_overrides()
+            "active_overrides": get_active_overrides(),
+            "https_available": https_available  # Frontend can check this for mic mode
         })
         
     except ImportError as e:
@@ -1654,8 +1662,12 @@ async def audio_recognition_configure():
             # Start/stop engine based on new state
             if enabled:
                 source = get_reaper_source()
+                # Track if this is a frontend-initiated start
+                is_frontend_mode = data.get('mode') == 'frontend'
                 if not source.is_active:
                     await source.start(manual=True)
+                    # Mark as frontend-started so WebSocket disconnect knows to stop
+                    source._frontend_started = is_frontend_mode
             else:
                 import sys
                 if 'system_utils.reaper' in sys.modules:
@@ -1765,9 +1777,8 @@ async def audio_stream_websocket():
         except:
             pass
     finally:
-        # Stop the engine when WebSocket disconnects in frontend mode
-        # Don't just disable_frontend_mode() because that falls back to backend capture,
-        # which may initialize PortAudio on devices that don't need it (e.g., phones)
+        # Only stop if engine was started FOR this frontend session
+        # This preserves backend recognition when browser tab is closed
         if frontend_queue:
             try:
                 from system_utils.reaper import get_reaper_source
@@ -1775,11 +1786,15 @@ async def audio_stream_websocket():
                 if source and source._engine:
                     # First disable frontend mode
                     source._engine.disable_frontend_mode()
-                    # Then stop the engine entirely to prevent backend fallback
-                    await source.stop()
-                    logger.info("Stopped audio recognition engine (frontend WebSocket disconnected)")
+                    # Only stop if this frontend session started the engine
+                    if source._frontend_started:
+                        await source.stop()
+                        source._frontend_started = False
+                        logger.info("Stopped audio recognition engine (frontend WebSocket disconnected)")
+                    else:
+                        logger.debug("Frontend disconnected but backend engine preserved")
             except Exception as e:
-                logger.debug(f"Error stopping engine on WebSocket disconnect: {e}")
+                logger.debug(f"Error handling WebSocket disconnect: {e}")
         logger.info("Frontend audio WebSocket disconnected")
 
 
