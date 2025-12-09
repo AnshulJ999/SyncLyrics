@@ -363,6 +363,13 @@ async def run_server() -> NoReturn:
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
+    except OSError as e:
+        # Port binding errors (e.g., HTTPS port 9013 already in use)
+        if "address already in use" in str(e).lower() or e.errno == 10048:  # 10048 = Windows EADDRINUSE
+            logger.error(f"Port binding failed: {e}. Check if another instance is running.")
+        else:
+            logger.error(f"Server error: {e}")
+        raise  # Re-raise to trigger cleanup
 
 async def main() -> NoReturn:
     """

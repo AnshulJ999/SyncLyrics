@@ -546,21 +546,39 @@ class RecognitionEngine:
         
         if should_enrich:
             self._enrichment_attempted = True  # Prevent retry on failure
-            try:
-                logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
-                enriched = await self.metadata_enricher(result.isrc)
+            # Fire-and-forget: Don't block recognition loop waiting for Spotify API
+            asyncio.create_task(self._enrich_metadata_async(result))
+        
+        self._last_result = result
+        self._set_state(EngineState.ACTIVE)
+    
+    async def _enrich_metadata_async(self, result: 'RecognitionResult'):
+        """
+        Background task to enrich metadata with Spotify.
+        
+        Runs in background via create_task to avoid blocking recognition loop.
+        Checks if result is still current before applying to avoid race conditions.
+        """
+        try:
+            logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
+            enriched = await self.metadata_enricher(result.isrc)
+            
+            # Race guard: Check if this result is still the current song
+            # If song changed while enriching, discard this stale result
+            if self._last_result and self._last_result.isrc == result.isrc:
                 if enriched:
                     self._enriched_metadata = enriched
                     logger.info(f"Spotify enrichment: {result.artist} → {enriched['artist']}")
                 else:
                     self._enriched_metadata = None
                     logger.debug("Spotify enrichment failed, using Shazam metadata")
-            except Exception as e:
-                logger.debug(f"Metadata enrichment error: {e}")
+            else:
+                logger.debug(f"Enrichment completed but song changed (was {result.isrc}, now {self._last_result.isrc if self._last_result else 'None'}), discarding")
+        except Exception as e:
+            logger.debug(f"Metadata enrichment error: {e}")
+            # Only clear if still current song
+            if self._last_result and self._last_result.isrc == result.isrc:
                 self._enriched_metadata = None
-        
-        self._last_result = result
-        self._set_state(EngineState.ACTIVE)
     
     def _handle_failed_recognition(self):
         """Handle a failed recognition attempt."""
@@ -572,6 +590,10 @@ class RecognitionEngine:
                 # Transition to paused state
                 logger.info(f"No music detected after {self._consecutive_failures} attempts, pausing")
                 self._is_playing = False
+                
+                # Reset verification for fast re-detection when music resumes
+                self._verified_detection = False
+                self._first_detection = False
                 
                 # Freeze position at last known position
                 if self._last_result:
