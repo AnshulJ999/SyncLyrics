@@ -116,6 +116,11 @@ class RecognitionEngine:
         # Audio level tracking for UI meter (0.0 - 1.0)
         self._last_audio_level: float = 0.0
         
+        # Recognition attempt tracking for frontend visibility
+        self._consecutive_no_match: int = 0  # Separate from failure counter
+        self._last_attempt_result: str = "idle"  # "matched" | "no_match" | "silent" | "error" | "idle"
+        self._last_attempt_time: float = 0.0
+        
     @property
     def state(self) -> EngineState:
         """Current engine state."""
@@ -253,6 +258,9 @@ class RecognitionEngine:
             "position": self.get_current_position(),
             "last_recognition_age": self._last_result.get_age() if self._last_result else None,
             "consecutive_failures": self._consecutive_failures,
+            "consecutive_no_match": self._consecutive_no_match,
+            "last_attempt_result": self._last_attempt_result,
+            "last_attempt_time": self._last_attempt_time,
             "device_id": self.capture.device_id,
             "interval": self.interval,
             "frontend_mode": self._frontend_mode,
@@ -509,6 +517,9 @@ class RecognitionEngine:
         Enriches metadata with Spotify if enricher is available.
         """
         self._consecutive_failures = 0
+        self._consecutive_no_match = 0  # Reset no-match counter on success
+        self._last_attempt_result = "matched"
+        self._last_attempt_time = time.time()
         self._is_playing = True
         self._frozen_position = None  # Unfreeze position
         
@@ -583,6 +594,9 @@ class RecognitionEngine:
     def _handle_failed_recognition(self):
         """Handle a failed recognition attempt."""
         self._consecutive_failures += 1
+        self._consecutive_no_match += 1
+        self._last_attempt_result = "no_match"
+        self._last_attempt_time = time.time()
         
         if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
             # Too many failures - likely paused or no music

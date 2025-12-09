@@ -147,6 +147,8 @@ class ShazamRecognizer:
     
     def __init__(self):
         """Initialize Shazam client."""
+        self._no_match_count = 0  # For throttled logging
+        
         if Shazam is None:
             logger.error("shazamio not installed. Song recognition unavailable.")
             self._shazam = None
@@ -198,7 +200,6 @@ class ShazamRecognizer:
             # DEBUG: Save audio to file for inspection (set to True to enable)
             DEBUG_SAVE_AUDIO = False
             if DEBUG_SAVE_AUDIO:
-                import time
                 from pathlib import Path
                 debug_dir = Path("cache/debug_audio")
                 debug_dir.mkdir(parents=True, exist_ok=True)
@@ -215,12 +216,20 @@ class ShazamRecognizer:
             
             # Check for matches
             if not result.get('matches'):
-                logger.debug("No matches found")
+                self._no_match_count += 1
+                # Throttled INFO logging: 1st and every 4th
+                if self._no_match_count == 1 or self._no_match_count % 4 == 0:
+                    logger.info(f"No matches found (attempt #{self._no_match_count})")
+                else:
+                    logger.debug(f"No matches found (attempt #{self._no_match_count})")
                 return None
             
             # Extract track info
             track = result.get('track', {})
             match = result['matches'][0]
+            
+            # Reset no-match counter on successful match
+            self._no_match_count = 0
             
             # Extract core fields - keep artist name as-is from Shazam
             title = track.get('title', 'Unknown')
