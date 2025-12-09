@@ -24,35 +24,41 @@ logger = get_logger(__name__)
 # Timeout wrapper for sd.query_devices() - prevents hangs when audio driver is stuck
 # Uses caching to avoid repeated expensive calls
 _devices_cache: Optional[list] = None
+_hostapis_cache: Optional[list] = None  # Cache hostapis too (also blocking)
 _devices_cache_time: float = 0
-DEVICES_CACHE_TTL = 40  # Seconds
+DEVICES_CACHE_TTL = 30  # Seconds (balanced between UX and stability)
 QUERY_DEVICES_TIMEOUT = 4  # Seconds before giving up
 
-def _query_devices_sync() -> list:
+def _query_devices_sync() -> tuple:
     """
-    Query audio devices with caching.
+    Query audio devices and host APIs with caching.
     
     This is a synchronous function that should be called from an executor.
     Results are cached to avoid repeated expensive calls.
+    
+    Returns:
+        Tuple of (devices_list, hostapis_list)
     """
-    global _devices_cache, _devices_cache_time
+    global _devices_cache, _hostapis_cache, _devices_cache_time
     
     now = time.time()
     if _devices_cache is not None and (now - _devices_cache_time) < DEVICES_CACHE_TTL:
-        return _devices_cache
+        return (_devices_cache, _hostapis_cache or [])
     
     if sd is None:
-        return []
+        return ([], [])
     
     try:
         devices = sd.query_devices()
+        hostapis = sd.query_hostapis()  # Also cache this blocking call
         # Convert to list if it's a DeviceList
         _devices_cache = list(devices) if devices else []
+        _hostapis_cache = list(hostapis) if hostapis else []
         _devices_cache_time = now
-        return _devices_cache
+        return (_devices_cache, _hostapis_cache)
     except Exception as e:
         logger.warning(f"Failed to query audio devices: {e}")
-        return _devices_cache if _devices_cache else []
+        return (_devices_cache or [], _hostapis_cache or [])
 
 async def safe_query_devices(timeout: float = QUERY_DEVICES_TIMEOUT) -> list:
     """
@@ -63,10 +69,11 @@ async def safe_query_devices(timeout: float = QUERY_DEVICES_TIMEOUT) -> list:
     """
     loop = asyncio.get_running_loop()
     try:
-        return await asyncio.wait_for(
+        devices, _ = await asyncio.wait_for(
             loop.run_in_executor(None, _query_devices_sync),
             timeout=timeout
         )
+        return devices
     except asyncio.TimeoutError:
         logger.warning(f"Device query timeout ({timeout}s) - audio driver may be hung")
         return _devices_cache if _devices_cache else []
@@ -202,36 +209,19 @@ class AudioCaptureManager:
         
         try:
             # Run blocking device resolution in daemon executor
-            self._resolved_device_id = await run_in_daemon_executor(
-                self._resolve_device_sync
-            )
+            # _resolve_device_sync returns (device_id, sample_rate) tuple
+            result = await run_in_daemon_executor(self._resolve_device_sync)
+            if result and isinstance(result, tuple):
+                self._resolved_device_id, self._resolved_sample_rate = result
+            else:
+                self._resolved_device_id = None
             return self._resolved_device_id
         except Exception as e:
             logger.error(f"Failed to resolve audio device: {e}")
             return None
     
-    def _resolve_device_sync(self) -> Optional[int]:
-        """
-        Synchronous device resolution (runs in executor thread).
-        
-        Priority: device_name > explicit device_id > auto-detect loopback
-        """
-        # Try name first
-        if self._device_name:
-            device_id = self.find_device_by_name(self._device_name)
-            if device_id is not None:
-                logger.info(f"Resolved device by name '{self._device_name}': ID {device_id}")
-                return device_id
-        
-        # Use explicit ID if provided
-        if self._device_id is not None:
-            return self._device_id
-        
-        # Auto-detect loopback device
-        device_id = self.find_loopback_device()
-        if device_id is not None:
-            logger.info(f"Auto-detected loopback device: ID {device_id}")
-        return device_id
+    # NOTE: _resolve_device_sync is defined later (line ~485) with tuple return
+    # This comment replaces a duplicate definition that was dead code
     
     def _get_device_sample_rate(self, device_id: int) -> int:
         """Get the native sample rate of a device."""
@@ -249,6 +239,7 @@ class AudioCaptureManager:
         """Check if audio capture is available (sounddevice installed)."""
         return sd is not None
     
+    @staticmethod
     def list_devices() -> List[Dict[str, Any]]:
         """
         List available audio input devices.
@@ -270,8 +261,7 @@ class AudioCaptureManager:
             
         devices = []
         try:
-            all_devices = _query_devices_sync()  # Uses cached version with timeout protection
-            host_apis = sd.query_hostapis()
+            all_devices, host_apis = _query_devices_sync()  # Uses cached version (devices + hostapis)
             
             # On Windows, filter to MME + WASAPI only (cleaner list)
             # Excludes: DirectSound (legacy), WDM-KS (too low-level)
@@ -447,7 +437,7 @@ class AudioCaptureManager:
             return False
             
         try:
-            devices = _query_devices_sync()  # Cached version
+            devices, _ = _query_devices_sync()  # Cached version (returns tuple)
             return 0 <= device_id < len(devices)
         except Exception:
             return False

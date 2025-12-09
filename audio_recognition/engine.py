@@ -365,7 +365,10 @@ class RecognitionEngine:
                 # Do recognition
                 result = await self._do_recognition()
                 
-                if result:
+                if result == "BUFFERING":
+                    # Frontend buffer not ready yet - skip failure handling
+                    pass
+                elif result:
                     # Success - enrich with Spotify (async)
                     await self._handle_successful_recognition(result)
                 else:
@@ -419,7 +422,9 @@ class RecognitionEngine:
             
             if audio_data is None or len(audio_data) == 0:
                 logger.debug("Not enough frontend audio data yet")
-                return None
+                # Don't count as failure - just waiting for buffer to fill
+                # Return early without calling _handle_failed_recognition
+                return "BUFFERING"  # Special sentinel
             
             # Create AudioChunk from frontend data
             import time

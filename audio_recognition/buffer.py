@@ -66,7 +66,7 @@ class AudioStreamBuffer:
             # R10: Enforce memory limit by removing oldest data
             if len(self._buffer) > self._max_bytes:
                 excess = len(self._buffer) - self._max_bytes
-                self._buffer = self._buffer[excess:]
+                del self._buffer[:excess]  # In-place deletion, avoids full copy
                 # logger.debug(f"Buffer limit reached, discarded {excess} bytes")
     
     async def get_audio_for_recognition(self, duration_seconds: float) -> Optional[np.ndarray]:
