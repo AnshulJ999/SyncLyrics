@@ -58,6 +58,34 @@ _shutdown_event = asyncio.Event()
 _server_task = None  # Global to track server task
 _mdns_service = None # Global mDNS service
 
+# Watchdog for emergency exit - prevents zombie processes when PortAudio hangs
+import threading
+_cleanup_watchdog_event = threading.Event()  # Thread-safe flag
+_cleanup_complete_event = threading.Event()  # Signal successful cleanup
+WATCHDOG_TIMEOUT = 6  # Seconds before force exit
+
+def _watchdog_thread():
+    """
+    Kill process if cleanup takes too long.
+    
+    This runs in a separate thread so it can execute even if the main thread
+    is stuck in a C-level blocking call (like PortAudio).
+    """
+    while True:
+        # Wait for cleanup to start
+        if _cleanup_watchdog_event.wait(timeout=1):
+            # Cleanup started, wait for it to complete or timeout
+            if not _cleanup_complete_event.wait(timeout=WATCHDOG_TIMEOUT):
+                # Timeout expired, cleanup didn't finish
+                print(f"WATCHDOG: Cleanup stuck for {WATCHDOG_TIMEOUT}s - force killing process")
+                os._exit(1)
+            else:
+                # Cleanup completed successfully
+                return
+
+# Start watchdog thread (daemon so it dies with main process)
+threading.Thread(target=_watchdog_thread, daemon=True, name="CleanupWatchdog").start()
+
 def force_exit():
     """Force exit the application"""
     import os, signal
@@ -88,6 +116,10 @@ def restart():
 async def cleanup() -> None:
     """Cleanup resources before exit"""
     global _tray_icon, _tray_thread, _server_task, _mdns_service
+    
+    # Signal watchdog that cleanup has started (starts timeout countdown)
+    _cleanup_watchdog_event.set()
+    
     logger.info("Cleaning up resources...")
 
     # Unregister mDNS
@@ -171,6 +203,9 @@ async def cleanup() -> None:
 
     queue.put("exit")
     await asyncio.sleep(0.5)
+    
+    # Signal watchdog that cleanup completed successfully
+    _cleanup_complete_event.set()
 
 def run_tray() -> NoReturn:
     """
@@ -355,6 +390,22 @@ async def main() -> NoReturn:
         _tray_thread.start()
     else:
         logger.info("System tray disabled (headless mode or missing dependency).")
+    
+    # Start audio recognition if --reaper flag was used
+    # Check runtime flag (set by --reaper or config) to avoid importing audio_recognition unnecessarily
+    from system_utils.metadata import _audio_rec_runtime_enabled
+    if _audio_rec_runtime_enabled:
+        try:
+            from system_utils.reaper import get_reaper_source
+            source = get_reaper_source()
+            await source.start(manual=True)
+            logger.info("Audio recognition started (--reaper mode)")
+        except Exception as e:
+            logger.error(f"Failed to start audio recognition: {e}")
+            # Disable audio rec for this session to prevent further attempts
+            from system_utils.metadata import set_audio_rec_runtime_enabled
+            set_audio_rec_runtime_enabled(False, False)
+            logger.info("Audio recognition disabled for this session")
 
     # Get active display methods
     # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key
@@ -440,16 +491,16 @@ if __name__ == "__main__":
                         help='Enable Reaper DAW audio recognition mode')
     args = parser.parse_args()
     
-    # Handle --reaper flag: Enable audio recognition and auto-detection
-    # These OVERRIDE any settings in settings.json
+    # Handle --reaper flag: Enable audio recognition and start immediately
+    # The engine starts NOW, not when Reaper is detected
     if args.reaper:
         from config import AUDIO_RECOGNITION
         AUDIO_RECOGNITION['enabled'] = True
-        AUDIO_RECOGNITION['reaper_auto_detect'] = True  # Override settings
-        # Also set runtime flags for event-driven approach
+        AUDIO_RECOGNITION['reaper_auto_detect'] = False  # Not needed - we start immediately
+        # Set runtime flags for event-driven approach
         from system_utils.metadata import set_audio_rec_runtime_enabled
-        set_audio_rec_runtime_enabled(True, True)
-        print("🎵 Reaper mode enabled - audio recognition will start when Reaper is detected")
+        set_audio_rec_runtime_enabled(True, False)
+        print("🎵 Reaper mode: Audio recognition will start after server launch")
     
     # Set up logging
     setup_logging(

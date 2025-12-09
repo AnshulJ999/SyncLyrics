@@ -178,20 +178,18 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # This prevents Reaper detection from blocking all metadata requests
     # FIX: Added throttle to prevent task spam (~10 tasks/second → 1 task/5 seconds)
     # ========================================================================
-    # Use lazy-cached getter functions (first call reads config, after --reaper flag)
-    if _get_audio_rec_enabled() and _get_reaper_auto_detect():
-        try:
-            # Throttle task creation to match internal throttle (5 seconds)
-            last_schedule = getattr(get_current_song_meta_data, '_last_auto_manage', 0)
-            now = time.time()
-            if now - last_schedule > 5.0:
-                get_current_song_meta_data._last_auto_manage = now
-                from .reaper import get_reaper_source
-                reaper_source = get_reaper_source()
-                # Fire-and-forget: don't await, just schedule it as background task
-                create_tracked_task(reaper_source.auto_manage())
-        except Exception as e:
-            logger.debug(f"Auto-manage scheduling failed: {e}")
+    # REMOVED: auto_manage() call was here but caused stability issues
+    # 
+    # Previously, if reaper_auto_detect=true, this would:
+    # 1. Import audio_recognition module (triggers PortAudio init)
+    # 2. Create singleton on every metadata poll
+    # 3. Poll for Reaper.exe process
+    #
+    # This caused main loop blocking when PortAudio had driver issues.
+    # 
+    # Now audio recognition only starts when:
+    # 1. User explicitly uses --reaper CLI flag
+    # 2. User clicks "Start Recognition" in UI
     # ========================================================================
     
     # CRITICAL FIX: Lock the entire fetching process

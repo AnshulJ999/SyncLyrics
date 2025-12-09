@@ -21,6 +21,59 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Timeout wrapper for sd.query_devices() - prevents hangs when audio driver is stuck
+# Uses caching to avoid repeated expensive calls
+_devices_cache: Optional[list] = None
+_devices_cache_time: float = 0
+DEVICES_CACHE_TTL = 40  # Seconds
+QUERY_DEVICES_TIMEOUT = 4  # Seconds before giving up
+
+def _query_devices_sync() -> list:
+    """
+    Query audio devices with caching.
+    
+    This is a synchronous function that should be called from an executor.
+    Results are cached to avoid repeated expensive calls.
+    """
+    global _devices_cache, _devices_cache_time
+    
+    now = time.time()
+    if _devices_cache is not None and (now - _devices_cache_time) < DEVICES_CACHE_TTL:
+        return _devices_cache
+    
+    if sd is None:
+        return []
+    
+    try:
+        devices = sd.query_devices()
+        # Convert to list if it's a DeviceList
+        _devices_cache = list(devices) if devices else []
+        _devices_cache_time = now
+        return _devices_cache
+    except Exception as e:
+        logger.warning(f"Failed to query audio devices: {e}")
+        return _devices_cache if _devices_cache else []
+
+async def safe_query_devices(timeout: float = QUERY_DEVICES_TIMEOUT) -> list:
+    """
+    Query audio devices with timeout protection.
+    
+    If the query takes longer than timeout seconds, returns cached/empty results.
+    This prevents the main loop from hanging when Windows audio service is unresponsive.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, _query_devices_sync),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Device query timeout ({timeout}s) - audio driver may be hung")
+        return _devices_cache if _devices_cache else []
+    except Exception as e:
+        logger.warning(f"Device query failed: {e}")
+        return _devices_cache if _devices_cache else []
+
 
 @dataclass
 class AudioChunk:
@@ -217,7 +270,7 @@ class AudioCaptureManager:
             
         devices = []
         try:
-            all_devices = sd.query_devices()
+            all_devices = _query_devices_sync()  # Uses cached version with timeout protection
             host_apis = sd.query_hostapis()
             
             # On Windows, filter to MME + WASAPI only (cleaner list)
@@ -394,7 +447,7 @@ class AudioCaptureManager:
             return False
             
         try:
-            devices = sd.query_devices()
+            devices = _query_devices_sync()  # Cached version
             return 0 <= device_id < len(devices)
         except Exception:
             return False
