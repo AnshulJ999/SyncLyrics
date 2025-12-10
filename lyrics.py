@@ -1034,15 +1034,18 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
     # Adaptive latency compensation: Use separate compensation for Spotify-only mode
     # This helps lyrics sync correctly when using Spotify API as primary source (e.g., HAOS)
     source = current_song_data.get("source", "")
-    is_spotify_only = (source == "spotify")  # Spotify-only mode (not hybrid, not windows_media)
     
-    if is_spotify_only:
+    if source == "spotify":
         # Spotify-only mode: Use configurable spotify_latency_compensation
         # Default -0.5s means lyrics appear 500ms later to compensate for API polling latency
         # Users on HAOS or with fast connections may want to adjust this
         adaptive_delta = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
+    elif source == "audio_recognition":
+        # Audio recognition has its own latency_offset setting in the engine
+        # Don't apply general latency_compensation on top of it
+        adaptive_delta = 0.0
     else:
-        # Normal mode (Windows Media, hybrid, audio recognition): Use base delta
+        # Normal mode (Windows Media, hybrid): Use base delta
         adaptive_delta = base_delta
     
     position = current_song_data.get("position", 0)
