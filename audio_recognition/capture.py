@@ -474,6 +474,27 @@ class AudioCaptureManager:
         Returns:
             Tuple of (device_id, sample_rate) or (None, None) on error
         """
+        # Read current device settings from session_config (allows runtime changes)
+        try:
+            from system_utils.session_config import get_effective_value
+            current_device_id = get_effective_value("device_id", self._device_id)
+            current_device_name = get_effective_value("device_name", self._device_name)
+        except ImportError:
+            current_device_id = self._device_id
+            current_device_name = self._device_name
+        
+        # Normalize -1 to None
+        if current_device_id == -1:
+            current_device_id = None
+        
+        # Check if device settings changed - if so, invalidate cache
+        if (current_device_id != self._device_id or current_device_name != self._device_name):
+            logger.debug(f"Device settings changed: id={current_device_id}, name={current_device_name}")
+            self._device_id = current_device_id
+            self._device_name = current_device_name
+            self._resolved_device_id = None
+            self._resolved_sample_rate = None
+        
         # Return cached values if available
         if self._resolved_device_id is not None and self._resolved_sample_rate is not None:
             return (self._resolved_device_id, self._resolved_sample_rate)
@@ -488,6 +509,7 @@ class AudioCaptureManager:
         
         if device_id is None and self._device_id is not None:
             device_id = self._device_id
+            logger.debug(f"Using explicit device ID: {device_id}")
         
         if device_id is None:
             device_id = self.find_loopback_device()
