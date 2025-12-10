@@ -277,6 +277,7 @@ AUDIO_RECOGNITION = {
     "capture_duration": conf("audio_recognition.capture_duration", 5.0),
     "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
     "latency_offset": conf("audio_recognition.latency_offset", 0.0),
+    "silence_threshold": conf("audio_recognition.silence_threshold", 100),
 }
 
 # Helper functions

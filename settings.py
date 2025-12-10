@@ -205,6 +205,7 @@ class SettingsManager:
             "audio_recognition.capture_duration": Setting("Capture Duration", float, 5.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=10.0),
             "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 5.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=3.0, max_val=30.0),
             "audio_recognition.latency_offset": Setting("Latency Offset", float, 0.0, False, "Audio Recognition", "Manual latency adjustment (s)", "slider", min_val=-5.0, max_val=5.0),
+            "audio_recognition.silence_threshold": Setting("Silence Threshold", int, 100, False, "Audio Recognition", "Min amplitude to detect audio", "slider", min_val=50, max_val=2000),
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, False, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),

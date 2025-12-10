@@ -762,11 +762,14 @@ export function init() {
     setupSlider('latencyOffset', 's', 'latency_offset');
     setupSlider('silenceThreshold', '', 'silence_threshold');
 
-    // Reset button handlers
+    // Reset button handlers - use loaded config values from settings.json
     document.querySelectorAll('.reset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const targetId = btn.dataset.target;
-            const defaultValue = btn.dataset.default;
+            // Convert kebab-case ID to snake_case config key
+            const configKey = targetId.replace(/-/g, '_');
+            // Use loaded config value, fallback to HTML default if config not loaded
+            const defaultValue = currentConfig?.[configKey] ?? btn.dataset.default;
             const input = document.getElementById(targetId);
             if (input) {
                 input.value = defaultValue;
