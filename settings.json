@@ -47,7 +47,7 @@
     "lyrics.display.idle_interval": 2.0,
     "lyrics.display.latency_compensation": -0.1,
     "lyrics.display.spotify_latency_compensation": -0.5,
-    "lyrics.display.audio_recognition_latency_compensation": 0.1,
+    "lyrics.display.audio_recognition_latency_compensation": 0.3,
     "lyrics.display.idle_wait_time": 3.0,
     "lyrics.display.smart_race_timeout": 3.0,
     "providers.lrclib.enabled": true,

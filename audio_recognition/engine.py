@@ -476,7 +476,11 @@ class RecognitionEngine:
             audio = await self.capture.capture(self.capture_duration)
         
         if audio is None:
-            logger.warning("Audio capture failed")
+            # Distinguish between intentional abort (frontend took over) vs real failure
+            if self._frontend_mode:
+                logger.info("Backend capture cancelled (frontend reconnected)")
+            else:
+                logger.warning("Audio capture failed")
             self._last_audio_level = 0.0
             return None
         
