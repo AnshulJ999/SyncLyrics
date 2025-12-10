@@ -272,10 +272,7 @@ async function loadConfig() {
 
         currentConfig = result.config || {};
 
-        // Update advanced settings
-        if (elements.reaperAutoDetect) {
-            elements.reaperAutoDetect.checked = currentConfig.reaper_auto_detect || false;
-        }
+        // Update slider values from backend config
         if (elements.recognitionInterval) {
             elements.recognitionInterval.value = currentConfig.recognition_interval || 5;
         }
@@ -285,6 +282,15 @@ async function loadConfig() {
         if (elements.latencyOffset) {
             elements.latencyOffset.value = currentConfig.latency_offset || 0;
         }
+        if (elements.silenceThreshold) {
+            elements.silenceThreshold.value = currentConfig.silence_threshold || 100;
+        }
+
+        // Update slider value displays by dispatching input events
+        elements.recognitionInterval?.dispatchEvent(new Event('input'));
+        elements.captureDuration?.dispatchEvent(new Event('input'));
+        elements.latencyOffset?.dispatchEvent(new Event('input'));
+        elements.silenceThreshold?.dispatchEvent(new Event('input'));
 
     } catch (error) {
         console.error('Error loading config:', error);

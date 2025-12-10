@@ -229,11 +229,8 @@ class ReaperAudioSource:
         self._latency_offset = latency_offset
         self._auto_detect = auto_detect
         
-        # If engine exists, update its settings
-        if self._engine:
-            self._engine.interval = recognition_interval
-            self._engine.capture_duration = capture_duration
-            self._engine.latency_offset = latency_offset
+        # If engine exists, it will read updated config via properties
+        # (No direct setter needed - engine reads from session_config dynamically)
     
     def refresh_config_from_session(self) -> None:
         """
@@ -256,11 +253,8 @@ class ReaperAudioSource:
         self._auto_detect = config.get("reaper_auto_detect", False)
         self._enabled = config.get("enabled", False)
         
-        # If engine exists, update its settings
-        if self._engine:
-            self._engine.interval = self._recognition_interval
-            self._engine.capture_duration = self._capture_duration
-            self._engine.latency_offset = self._latency_offset
+        # If engine exists, it will read updated config via properties
+        # (No direct setter needed - engine reads from session_config dynamically)
         
         logger.debug(f"Config refreshed from session: enabled={self._enabled}, mode={config.get('mode')}")
     

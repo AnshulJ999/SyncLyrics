@@ -81,10 +81,10 @@ class RecognitionEngine:
         """
         self.capture = AudioCaptureManager(device_id, device_name)
         self.recognizer = ShazamRecognizer()
-        
-        self.interval = recognition_interval
-        self.capture_duration = capture_duration
-        self.latency_offset = latency_offset
+        # Default values (actual values read dynamically via properties from session_config)
+        self._default_interval = recognition_interval
+        self._default_capture_duration = capture_duration
+        self._default_latency_offset = latency_offset
         
         self.on_song_change = on_song_change
         self.on_state_change = on_state_change
@@ -146,6 +146,33 @@ class RecognitionEngine:
     def last_result(self) -> Optional[RecognitionResult]:
         """Last successful recognition result."""
         return self._last_result
+    
+    @property
+    def interval(self) -> float:
+        """Recognition interval - reads from session config dynamically."""
+        try:
+            from system_utils.session_config import get_effective_value
+            return get_effective_value("recognition_interval", self._default_interval)
+        except ImportError:
+            return self._default_interval
+    
+    @property
+    def capture_duration(self) -> float:
+        """Capture duration - reads from session config dynamically."""
+        try:
+            from system_utils.session_config import get_effective_value
+            return get_effective_value("capture_duration", self._default_capture_duration)
+        except ImportError:
+            return self._default_capture_duration
+    
+    @property
+    def latency_offset(self) -> float:
+        """Latency offset - reads from session config dynamically."""
+        try:
+            from system_utils.session_config import get_effective_value
+            return get_effective_value("latency_offset", self._default_latency_offset)
+        except ImportError:
+            return self._default_latency_offset
     
     def get_current_position(self) -> Optional[float]:
         """
