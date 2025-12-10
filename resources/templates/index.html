@@ -45,7 +45,7 @@
         </div>
 
         <div class="audio-source-body">
-            <!-- Status Section -->
+            <!-- Enhanced Status Section -->
             <div class="audio-source-status">
                 <div class="status-row">
                     <span class="status-label">Status</span>
@@ -55,9 +55,25 @@
                     <span class="status-label">Mode</span>
                     <span class="status-value" id="recognition-mode">—</span>
                 </div>
-                <div class="status-row" id="last-recognition-row" style="display: none;">
-                    <span class="status-label">Last Recognition</span>
-                    <span class="status-value" id="last-recognition-time">—</span>
+                <div class="status-row" id="attempt-row" style="display: none;">
+                    <span class="status-label">Attempts</span>
+                    <span class="status-value" id="recognition-attempts">—</span>
+                </div>
+                <!-- Audio Level Meter (inline) - COMMENTED OUT, using large meter instead
+                <div class="status-row" id="audio-level-row" style="display: none;">
+                    <span class="status-label">Audio Level</span>
+                    <div class="audio-level-meter-inline">
+                        <div class="audio-level-fill-inline" id="audio-level-fill-inline"></div>
+                    </div>
+                </div>
+                -->
+                <div class="status-row" id="last-match-row" style="display: none;">
+                    <span class="status-label">Last Match</span>
+                    <span class="status-value" id="last-match-info">—</span>
+                </div>
+                <div class="status-row" id="enrichment-row" style="display: none;">
+                    <span class="status-label">Enrichment</span>
+                    <span class="status-value enriched" id="enrichment-status">☑ Spotify</span>
                 </div>
             </div>
 
@@ -68,9 +84,32 @@
                 </span>
             </div>
 
-            <!-- Device Selection -->
+            <!-- Quick Start Buttons -->
+            <div class="quick-start-section">
+                <h4>Quick Start</h4>
+                <div class="quick-start-buttons">
+                    <div class="quick-start-card" id="quick-start-backend">
+                        <div class="quick-start-icon">🔊</div>
+                        <div class="quick-start-info">
+                            <div class="quick-start-title">System Audio</div>
+                            <div class="quick-start-subtitle" id="backend-device-name">Auto (Loopback)</div>
+                        </div>
+                        <button class="quick-start-btn" id="quick-start-backend-btn">▶ Start</button>
+                    </div>
+                    <div class="quick-start-card" id="quick-start-frontend">
+                        <div class="quick-start-icon">🎤</div>
+                        <div class="quick-start-info">
+                            <div class="quick-start-title">Browser Mic</div>
+                            <div class="quick-start-subtitle">Default Microphone</div>
+                        </div>
+                        <button class="quick-start-btn" id="quick-start-frontend-btn">▶ Start</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Device Selection -->
             <div class="audio-source-section">
-                <h4>Capture Device</h4>
+                <h4>Custom Device</h4>
                 <select id="device-select" class="device-select">
                     <optgroup label="System Audio (Backend)">
                         <option value="">Loading devices...</option>
@@ -79,23 +118,24 @@
                         <option value="frontend:default">Default Microphone</option>
                     </optgroup>
                 </select>
+                <div class="sample-rate-info" id="sample-rate-info"></div>
             </div>
 
-            <!-- Audio Level Meter (for frontend mic) -->
+            <!-- Audio Level Meter (large, for calibration) -->
             <div class="audio-level-container" id="audio-level-container" style="display: none;">
-                <h4>Audio Level</h4>
+                <div class="audio-level-header">
+                    <h4>Audio Level</h4>
+                    <span class="audio-level-value" id="audio-level-value">Amp: 0</span>
+                </div>
                 <div class="audio-level-meter">
                     <div class="audio-level-fill" id="audio-level-fill"></div>
                 </div>
             </div>
 
-            <!-- Control Buttons -->
+            <!-- Control Button (toggles between Start/Stop) -->
             <div class="audio-source-controls">
-                <button id="recognition-start" class="control-btn-audio start">
+                <button id="recognition-toggle" class="control-btn-audio start">
                     ▶ Start Recognition
-                </button>
-                <button id="recognition-stop" class="control-btn-audio stop" style="display: none;">
-                    ◼ Stop Recognition
                 </button>
             </div>
 
@@ -113,31 +153,60 @@
             </button>
             <div class="advanced-content" id="advanced-content">
                 <div class="advanced-content-inner">
-                    <!-- Reaper Auto-Detect -->
-                    <div class="checkbox-row">
-                        <input type="checkbox" id="reaper-auto-detect">
-                        <label class="checkbox-label" for="reaper-auto-detect">Auto-detect Reaper DAW</label>
+                    <!-- Recognition Interval Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Recognition Interval</span>
+                            <button class="reset-btn" data-target="recognition-interval" data-default="5"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="recognition-interval" value="5" min="1"
+                                max="15" step="1">
+                            <span class="slider-value" id="recognition-interval-value">5s</span>
+                        </div>
                     </div>
 
-                    <!-- Recognition Interval -->
-                    <div class="setting-row">
-                        <span class="setting-label">Recognition Interval (s)</span>
-                        <input type="number" class="setting-input" id="recognition-interval" value="5" min="3" max="30"
-                            step="1">
+                    <!-- Capture Duration Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Capture Duration</span>
+                            <button class="reset-btn" data-target="capture-duration" data-default="4"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="capture-duration" value="4" min="2" max="10"
+                                step="0.5">
+                            <span class="slider-value" id="capture-duration-value">4s</span>
+                        </div>
                     </div>
 
-                    <!-- Capture Duration -->
-                    <div class="setting-row">
-                        <span class="setting-label">Capture Duration (s)</span>
-                        <input type="number" class="setting-input" id="capture-duration" value="4" min="3" max="10"
-                            step="0.5">
+                    <!-- Latency Offset Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Latency Offset</span>
+                            <button class="reset-btn" data-target="latency-offset" data-default="0"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="latency-offset" value="0" min="-2" max="2"
+                                step="0.1">
+                            <span class="slider-value" id="latency-offset-value">0s</span>
+                        </div>
                     </div>
 
-                    <!-- Latency Offset -->
-                    <div class="setting-row">
-                        <span class="setting-label">Latency Offset (s)</span>
-                        <input type="number" class="setting-input" id="latency-offset" value="0" min="-5" max="5"
-                            step="0.1">
+                    <!-- Silence Threshold Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Silence Threshold</span>
+                            <button class="reset-btn" data-target="silence-threshold" data-default="100"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="silence-threshold" value="100" min="50"
+                                max="1000" step="10">
+                            <span class="slider-value" id="silence-threshold-value">100</span>
+                        </div>
                     </div>
                 </div>
             </div>

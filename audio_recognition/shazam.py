@@ -187,10 +187,18 @@ class ShazamRecognizer:
         if not self._shazam:
             logger.error("ShazamIO not available")
             return None
+        
+        # Get silence threshold from session config (allows runtime adjustment)
+        try:
+            from system_utils.session_config import get_effective_value
+            silence_threshold = get_effective_value("silence_threshold", self.MIN_AUDIO_LEVEL)
+        except ImportError:
+            silence_threshold = self.MIN_AUDIO_LEVEL
             
         # Check for silence
-        if audio.is_silent(self.MIN_AUDIO_LEVEL):
-            logger.debug(f"Audio is silent (max amplitude: {audio.get_max_amplitude()})")
+        max_amp = audio.get_max_amplitude()
+        if max_amp < silence_threshold:
+            logger.debug(f"Audio is silent (max amplitude: {max_amp}, threshold: {silence_threshold})")
             return None
         
         try:

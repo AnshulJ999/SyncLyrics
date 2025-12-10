@@ -39,7 +39,6 @@ function cacheElements() {
         // Button
         sourceToggle: document.getElementById('source-toggle'),
         sourceName: document.getElementById('source-name'),
-        // statusDot removed - using minimal design
 
         // Modal
         modal: document.getElementById('audio-source-modal'),
@@ -48,20 +47,32 @@ function cacheElements() {
         // Status
         recognitionStatus: document.getElementById('recognition-status'),
         recognitionMode: document.getElementById('recognition-mode'),
-        lastRecognitionRow: document.getElementById('last-recognition-row'),
-        lastRecognitionTime: document.getElementById('last-recognition-time'),
+        attemptRow: document.getElementById('attempt-row'),
+        recognitionAttempts: document.getElementById('recognition-attempts'),
+        lastMatchRow: document.getElementById('last-match-row'),
+        lastMatchInfo: document.getElementById('last-match-info'),
+        enrichmentRow: document.getElementById('enrichment-row'),
+        enrichmentStatus: document.getElementById('enrichment-status'),
+
+        // Quick start
+        quickStartBackend: document.getElementById('quick-start-backend'),
+        quickStartBackendBtn: document.getElementById('quick-start-backend-btn'),
+        backendDeviceName: document.getElementById('backend-device-name'),
+        quickStartFrontend: document.getElementById('quick-start-frontend'),
+        quickStartFrontendBtn: document.getElementById('quick-start-frontend-btn'),
 
         // Device selection
         deviceSelect: document.getElementById('device-select'),
+        sampleRateInfo: document.getElementById('sample-rate-info'),
         httpsWarning: document.getElementById('https-warning'),
 
-        // Controls
-        startBtn: document.getElementById('recognition-start'),
-        stopBtn: document.getElementById('recognition-stop'),
-
-        // Audio level
+        // Audio level meter (large)
         audioLevelContainer: document.getElementById('audio-level-container'),
         audioLevelFill: document.getElementById('audio-level-fill'),
+        audioLevelValue: document.getElementById('audio-level-value'),
+
+        // Control button (single toggle)
+        toggleBtn: document.getElementById('recognition-toggle'),
 
         // Current song
         currentSongInfo: document.getElementById('current-song-info'),
@@ -71,10 +82,14 @@ function cacheElements() {
         // Advanced settings
         advancedToggle: document.getElementById('advanced-toggle'),
         advancedContent: document.getElementById('advanced-content'),
-        reaperAutoDetect: document.getElementById('reaper-auto-detect'),
         recognitionInterval: document.getElementById('recognition-interval'),
+        recognitionIntervalValue: document.getElementById('recognition-interval-value'),
         captureDuration: document.getElementById('capture-duration'),
+        captureDurationValue: document.getElementById('capture-duration-value'),
         latencyOffset: document.getElementById('latency-offset'),
+        latencyOffsetValue: document.getElementById('latency-offset-value'),
+        silenceThreshold: document.getElementById('silence-threshold'),
+        silenceThresholdValue: document.getElementById('silence-threshold-value'),
     };
 }
 
@@ -150,6 +165,11 @@ async function loadDevices() {
             autoOpt.value = 'backend:auto';
             autoOpt.textContent = `Auto (${deviceName})${apiLabel}`;
             backendOptgroup.appendChild(autoOpt);
+
+            // Update quick-start backend device name
+            if (elements.backendDeviceName) {
+                elements.backendDeviceName.textContent = `Auto (${deviceName})`;
+            }
         }
 
         if (devices.length === 0) {
@@ -303,19 +323,7 @@ async function refreshStatus() {
         updateStatusDisplay(result);
         updateButtonState();
 
-        // Update audio level from backend if not in frontend capture mode
-        // Frontend mode calculates its own level via AudioWorklet
-        if (!isFrontendCapture && result.audio_level !== undefined) {
-            if (isActive && elements.audioLevelContainer) {
-                elements.audioLevelContainer.style.display = 'block';
-                updateAudioLevel(result.audio_level);
-            }
-        }
-
-        // Hide level meter when not active
-        if (!isActive && !isFrontendCapture && elements.audioLevelContainer) {
-            elements.audioLevelContainer.style.display = 'none';
-        }
+        // Audio level is now updated inline in updateStatusDisplay via audioLevelRow
 
     } catch (error) {
         console.error('Error refreshing status:', error);
@@ -326,7 +334,14 @@ function updateStatusDisplay(status) {
     // Update status text
     if (elements.recognitionStatus) {
         const state = status.state || (status.active ? 'active' : 'idle');
-        elements.recognitionStatus.textContent = capitalizeFirst(state);
+        let displayState = capitalizeFirst(state);
+
+        // Add attempt count if searching
+        if (status.consecutive_no_match > 0 && state !== 'idle') {
+            displayState = `Searching (${status.consecutive_no_match})`;
+        }
+
+        elements.recognitionStatus.textContent = displayState;
         elements.recognitionStatus.className = 'status-value ' + state;
     }
 
@@ -334,6 +349,57 @@ function updateStatusDisplay(status) {
     if (elements.recognitionMode) {
         const mode = status.mode || '—';
         elements.recognitionMode.textContent = capitalizeFirst(mode);
+    }
+
+    // Update attempt count row
+    if (elements.attemptRow && elements.recognitionAttempts) {
+        if (status.active && status.consecutive_no_match !== undefined) {
+            elements.attemptRow.style.display = 'flex';
+            const result = status.last_attempt_result || 'idle';
+            if (result === 'matched') {
+                elements.recognitionAttempts.textContent = '✓ Matched';
+                elements.recognitionAttempts.className = 'status-value enriched';
+            } else if (result === 'no_match') {
+                elements.recognitionAttempts.textContent = `No match (${status.consecutive_no_match})`;
+                elements.recognitionAttempts.className = 'status-value no-match';
+            } else {
+                elements.recognitionAttempts.textContent = capitalizeFirst(result);
+                elements.recognitionAttempts.className = 'status-value';
+            }
+        } else {
+            elements.attemptRow.style.display = 'none';
+        }
+    }
+
+    // Audio level is now handled by large meter in updateButtonState
+    // Update amplitude display if active
+    if (status.active && status.audio_level !== undefined) {
+        updateAudioLevel(status.audio_level);
+    }
+
+    // Update last match info
+    if (elements.lastMatchRow && elements.lastMatchInfo) {
+        if (status.current_song && status.current_song.title) {
+            elements.lastMatchRow.style.display = 'flex';
+            const song = status.current_song;
+            elements.lastMatchInfo.textContent = `${song.artist} - ${song.title}`;
+        } else {
+            elements.lastMatchRow.style.display = 'none';
+        }
+    }
+
+    // Update enrichment status
+    if (elements.enrichmentRow && elements.enrichmentStatus) {
+        if (status.current_song && status.current_song.album_art_url) {
+            elements.enrichmentRow.style.display = 'flex';
+            // Check if enriched (has Spotify URL or proper album art)
+            const isEnriched = status.current_song.album_art_url.includes('scdn.co') ||
+                status.current_song.spotify_url;
+            elements.enrichmentStatus.textContent = isEnriched ? '☑ Spotify' : '☐ Shazam only';
+            elements.enrichmentStatus.className = isEnriched ? 'status-value enriched' : 'status-value';
+        } else {
+            elements.enrichmentRow.style.display = 'none';
+        }
     }
 
     // Update button text - show current source
@@ -344,7 +410,6 @@ function updateStatusDisplay(status) {
             elements.sourceName.textContent = sourceName;
         } else {
             // Audio recognition not active - show current track source
-            // Fix 3.3: Complete source mapping with all variations
             const sourceMap = {
                 'spotify': 'Spotify',
                 'spotify_hybrid': 'Hybrid',
@@ -381,14 +446,32 @@ function updateStatusDisplay(status) {
 }
 
 function updateButtonState() {
-    if (elements.startBtn && elements.stopBtn) {
+    // Update toggle button text and style
+    if (elements.toggleBtn) {
         if (isActive) {
-            elements.startBtn.style.display = 'none';
-            elements.stopBtn.style.display = 'flex';
+            elements.toggleBtn.textContent = '⏹ Stop Recognition';
+            elements.toggleBtn.classList.remove('start');
+            elements.toggleBtn.classList.add('stop');
         } else {
-            elements.startBtn.style.display = 'flex';
-            elements.stopBtn.style.display = 'none';
+            elements.toggleBtn.textContent = '▶ Start Recognition';
+            elements.toggleBtn.classList.remove('stop');
+            elements.toggleBtn.classList.add('start');
         }
+    }
+
+    // Show/hide audio level container
+    if (elements.audioLevelContainer) {
+        elements.audioLevelContainer.style.display = isActive ? 'block' : 'none';
+    }
+
+    // Disable quick-start buttons when active
+    if (elements.quickStartBackendBtn) {
+        elements.quickStartBackendBtn.disabled = isActive;
+        elements.quickStartBackendBtn.textContent = isActive ? 'Running' : '▶ Start';
+    }
+    if (elements.quickStartFrontendBtn) {
+        elements.quickStartFrontendBtn.disabled = isActive;
+        elements.quickStartFrontendBtn.textContent = isActive ? 'Running' : '▶ Start';
     }
 
     // Toggle recording indicator on source button
@@ -447,9 +530,6 @@ async function handleStart() {
     }
 
     // Apply advanced settings
-    if (elements.reaperAutoDetect) {
-        configUpdate.reaper_auto_detect = elements.reaperAutoDetect.checked;
-    }
     if (elements.recognitionInterval) {
         configUpdate.recognition_interval = parseFloat(elements.recognitionInterval.value);
     }
@@ -458,6 +538,9 @@ async function handleStart() {
     }
     if (elements.latencyOffset) {
         configUpdate.latency_offset = parseFloat(elements.latencyOffset.value);
+    }
+    if (elements.silenceThreshold) {
+        configUpdate.silence_threshold = parseInt(elements.silenceThreshold.value, 10);
     }
 
     try {
@@ -475,11 +558,6 @@ async function handleStart() {
                 console.error('Failed to start recognition engine:', startResult.error);
                 isFrontendCapture = false;
                 return;
-            }
-
-            // Show audio level container
-            if (elements.audioLevelContainer) {
-                elements.audioLevelContainer.style.display = 'block';
             }
 
             // Now start capture - this connects WebSocket which switches engine to frontend mode
@@ -524,11 +602,6 @@ async function handleStop() {
             await audioCapture.stopCapture();
             isFrontendCapture = false;
 
-            // Hide audio level container
-            if (elements.audioLevelContainer) {
-                elements.audioLevelContainer.style.display = 'none';
-            }
-
             console.log('[AudioSource] Frontend capture stopped');
         }
 
@@ -556,12 +629,6 @@ function handleDeviceChange() {
 
     const value = select.value;
     const [mode] = value.split(':');
-
-    // Show/hide audio level meter
-    if (elements.audioLevelContainer) {
-        elements.audioLevelContainer.style.display =
-            mode === 'frontend' ? 'block' : 'none';
-    }
 
     // Show HTTPS warning if needed
     if (mode === 'frontend' && !isSecureContext()) {
@@ -604,10 +671,17 @@ function capitalizeFirst(str) {
 // =============================================================================
 
 export function updateAudioLevel(level) {
-    // Level should be 0-1
+    // Level is normalized 0-1, update fill bar
     if (elements.audioLevelFill) {
         const percent = Math.min(100, Math.max(0, level * 100));
         elements.audioLevelFill.style.width = `${percent}%`;
+    }
+
+    // Show raw amplitude value (reverse the normalization: level * 32768 / 2)
+    // This matches what silence threshold expects (50-500 range typical)
+    if (elements.audioLevelValue) {
+        const rawAmplitude = Math.round(level * 32768 / 2);
+        elements.audioLevelValue.textContent = `Amp: ${rawAmplitude}`;
     }
 }
 
@@ -647,12 +721,15 @@ export function init() {
         }
     });
 
-    // Control buttons
-    if (elements.startBtn) {
-        elements.startBtn.addEventListener('click', handleStart);
-    }
-    if (elements.stopBtn) {
-        elements.stopBtn.addEventListener('click', handleStop);
+    // Toggle button (Start/Stop)
+    if (elements.toggleBtn) {
+        elements.toggleBtn.addEventListener('click', () => {
+            if (isActive) {
+                handleStop();
+            } else {
+                handleStart();
+            }
+        });
     }
 
     // Device selection change
@@ -665,19 +742,32 @@ export function init() {
         elements.advancedToggle.addEventListener('click', toggleAdvanced);
     }
 
-    // Reaper auto-detect toggle - immediately update when changed
-    if (elements.reaperAutoDetect) {
-        elements.reaperAutoDetect.addEventListener('change', async () => {
-            try {
-                await setAudioRecognitionConfig({
-                    reaper_auto_detect: elements.reaperAutoDetect.checked
-                });
-                console.log(`[AudioSource] Reaper auto-detect: ${elements.reaperAutoDetect.checked}`);
-            } catch (error) {
-                console.error('Failed to update Reaper auto-detect:', error);
+    // Quick-start buttons
+    if (elements.quickStartBackendBtn) {
+        elements.quickStartBackendBtn.addEventListener('click', () => handleQuickStart('backend'));
+    }
+    if (elements.quickStartFrontendBtn) {
+        elements.quickStartFrontendBtn.addEventListener('click', () => handleQuickStart('frontend'));
+    }
+
+    // Slider change handlers - update value display + immediate apply when active
+    setupSlider('recognitionInterval', 's', 'recognition_interval');
+    setupSlider('captureDuration', 's', 'capture_duration');
+    setupSlider('latencyOffset', 's', 'latency_offset');
+    setupSlider('silenceThreshold', '', 'silence_threshold');
+
+    // Reset button handlers
+    document.querySelectorAll('.reset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.target;
+            const defaultValue = btn.dataset.default;
+            const input = document.getElementById(targetId);
+            if (input) {
+                input.value = defaultValue;
+                input.dispatchEvent(new Event('input'));
             }
         });
-    }
+    });
 
     // Start background polling (slower when modal closed)
     startPolling(5000);
@@ -686,6 +776,51 @@ export function init() {
     refreshStatus();
 
     console.log('Audio source module initialized');
+}
+
+// Quick-start handler
+async function handleQuickStart(mode) {
+    // Set device select to appropriate value
+    if (elements.deviceSelect) {
+        if (mode === 'backend') {
+            elements.deviceSelect.value = 'backend:auto';
+        } else {
+            elements.deviceSelect.value = 'frontend:default';
+        }
+    }
+    // Trigger start
+    await handleStart();
+}
+
+// Setup slider with value display and immediate apply
+function setupSlider(baseName, suffix, configKey) {
+    const slider = elements[baseName];
+    const valueDisplay = elements[baseName + 'Value'];
+
+    if (slider && valueDisplay) {
+        // Update display on input
+        slider.addEventListener('input', () => {
+            valueDisplay.textContent = slider.value + suffix;
+        });
+
+        // Apply to backend on change (when user releases slider)
+        slider.addEventListener('change', async () => {
+            if (isActive && configKey) {
+                const value = configKey === 'silence_threshold'
+                    ? parseInt(slider.value, 10)
+                    : parseFloat(slider.value);
+                try {
+                    await setAudioRecognitionConfig({ [configKey]: value });
+                    console.log(`[AudioSource] Applied ${configKey}: ${value}`);
+                } catch (error) {
+                    console.error(`Failed to apply ${configKey}:`, error);
+                }
+            }
+        });
+
+        // Initial value
+        valueDisplay.textContent = slider.value + suffix;
+    }
 }
 
 export default {

@@ -1640,11 +1640,14 @@ async def audio_recognition_configure():
         
         data = await request.get_json() or {}
         
+        # Log received config for debugging
+        logger.info(f"Audio recognition config received: {data}")
+        
         # Apply session overrides for all provided keys
         valid_keys = [
             "enabled", "device_id", "device_name", "mode",
             "reaper_auto_detect", "recognition_interval",
-            "capture_duration", "latency_offset"
+            "capture_duration", "latency_offset", "silence_threshold"
         ]
         
         for key in valid_keys:
