@@ -31,7 +31,7 @@ providers = [
     QQMusicProvider()      # Priority 4
 ]
 
-LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", 0.1)
+# LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", -0.1)
 current_song_data = None
 current_song_lyrics = None
 current_song_provider: Optional[str] = None  # Tracks which provider is currently serving lyrics
@@ -1013,10 +1013,23 @@ async def _get_lyrics(artist: str, title: str):
 # Helper Functions (Unchanged)
 # ==========================================
 
-def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
-    """Returns index of current lyric line based on song position."""
+def _find_current_lyric_index(delta: Optional[float] = None) -> int:
+    """
+    Returns index of current lyric line based on song position.
+    
+    Args:
+        delta: Optional manual override for latency compensation.
+               If None, reads from settings dynamically.
+    """
     if current_song_lyrics is None or current_song_data is None:
         return -1
+    
+    # Read latency compensation dynamically from settings (allows hot-reload)
+    # FIX: Previously used static LATENCY_COMPENSATION which didn't update on settings change
+    general_latency = LYRICS.get("display", {}).get("latency_compensation", 0.0)
+    
+    # Use delta if provided (manual override), otherwise use setting
+    base_delta = delta if delta is not None else general_latency
     
     # Adaptive latency compensation: Use separate compensation for Spotify-only mode
     # This helps lyrics sync correctly when using Spotify API as primary source (e.g., HAOS)
@@ -1029,8 +1042,8 @@ def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
         # Users on HAOS or with fast connections may want to adjust this
         adaptive_delta = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
     else:
-        # Normal mode (Windows Media or hybrid): Use default compensation
-        adaptive_delta = delta if delta != LATENCY_COMPENSATION else LATENCY_COMPENSATION
+        # Normal mode (Windows Media, hybrid, audio recognition): Use base delta
+        adaptive_delta = base_delta
     
     position = current_song_data.get("position", 0)
     
@@ -1054,7 +1067,7 @@ def _find_current_lyric_index(delta: float = LATENCY_COMPENSATION) -> int:
 
     return -1
 
-async def get_timed_lyrics(delta: int = 0) -> str:
+async def get_timed_lyrics(delta: Optional[float] = None) -> str:
     """Returns just the current line text."""
     await _update_song()
     lyric_index = _find_current_lyric_index(delta)
