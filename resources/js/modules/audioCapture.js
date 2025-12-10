@@ -37,6 +37,7 @@ let websocket = null;
 let isCapturing = false;
 let reconnectAttempts = 0;
 let reconnectTimeout = null;
+let pingInterval = null;  // Keepalive ping interval
 
 // Callbacks
 let onLevelUpdate = null;
@@ -69,6 +70,18 @@ async function connectWebSocket() {
             console.log('[AudioCapture] WebSocket connected');
             reconnectAttempts = 0;
             if (onStatusChange) onStatusChange('connected');
+
+            // Start keepalive ping interval (prevents timeout disconnects)
+            if (pingInterval) clearInterval(pingInterval);
+            pingInterval = setInterval(() => {
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    try {
+                        websocket.send(JSON.stringify({ type: 'ping' }));
+                    } catch (e) {
+                        console.warn('[AudioCapture] Failed to send ping:', e);
+                    }
+                }
+            }, 15000);  // Ping every 15 seconds
         };
 
         websocket.onmessage = (event) => {
@@ -87,6 +100,13 @@ async function connectWebSocket() {
 
         websocket.onclose = (event) => {
             console.log(`[AudioCapture] WebSocket closed: ${event.code} ${event.reason}`);
+
+            // Clear ping interval
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
+
             websocket = null;
 
             if (isCapturing) {
@@ -166,6 +186,12 @@ function handleWebSocketMessage(data) {
 }
 
 function disconnectWebSocket() {
+    // Clear keepalive ping interval
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+
     if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;

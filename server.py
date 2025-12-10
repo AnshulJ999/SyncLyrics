@@ -1733,6 +1733,12 @@ async def audio_stream_websocket():
             await websocket.close(1008, "Recognition engine not initialized")
             return
         
+        # Cancel any pending grace period task - frontend reconnected
+        if source._grace_task and not source._grace_task.done():
+            source._grace_task.cancel()
+            source._grace_task = None
+            logger.debug("Grace period cancelled - frontend reconnected")
+        
         # Enable frontend mode and get the queue
         frontend_queue = source._engine.enable_frontend_mode()
         
@@ -1780,20 +1786,48 @@ async def audio_stream_websocket():
         except:
             pass
     finally:
-        # Only stop if engine was started FOR this frontend session
-        # This preserves backend recognition when browser tab is closed
+        # Grace period before stopping engine on WebSocket disconnect
+        # This handles temporary disconnects (browser refresh, tab switch, network blip)
+        # and allows the frontend to reconnect without losing the recognition session
+        GRACE_PERIOD_SECONDS = 10
+        
         if frontend_queue:
             try:
                 from system_utils.reaper import get_reaper_source
+                from system_utils import create_tracked_task
+                
                 source = get_reaper_source()
                 if source and source._engine:
-                    # First disable frontend mode
+                    # First disable frontend mode (switches to backend capture if available)
                     source._engine.disable_frontend_mode()
-                    # Only stop if this frontend session started the engine
+                    
+                    # Only apply grace period if this frontend session started the engine
                     if source._frontend_started:
-                        await source.stop()
-                        source._frontend_started = False
-                        logger.info("Stopped audio recognition engine (frontend WebSocket disconnected)")
+                        # Cancel any existing grace period task (handles rapid disconnects)
+                        if source._grace_task and not source._grace_task.done():
+                            source._grace_task.cancel()
+                            logger.debug("Cancelled previous grace period task")
+                        
+                        logger.info(f"Frontend disconnected, waiting {GRACE_PERIOD_SECONDS}s for reconnection...")
+                        
+                        # Schedule delayed cleanup - gives frontend time to reconnect
+                        async def delayed_engine_cleanup():
+                            await asyncio.sleep(GRACE_PERIOD_SECONDS)
+                            
+                            # Check if frontend reconnected during grace period
+                            if source._engine and source._engine._frontend_mode:
+                                logger.info("Frontend reconnected during grace period, engine continues")
+                                source._grace_task = None
+                                return
+                            
+                            # No reconnection - stop the engine
+                            if source._frontend_started:
+                                await source.stop()
+                                source._frontend_started = False
+                                logger.info(f"Stopped audio recognition engine (no reconnection after {GRACE_PERIOD_SECONDS}s)")
+                            source._grace_task = None
+                        
+                        source._grace_task = create_tracked_task(delayed_engine_cleanup())
                     else:
                         logger.debug("Frontend disconnected but backend engine preserved")
             except Exception as e:

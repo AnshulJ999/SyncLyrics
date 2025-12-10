@@ -70,6 +70,7 @@ class ReaperAudioSource:
         self._reaper_running = False
         self._last_reaper_check = 0
         self._check_in_progress = False  # Fix H5: Guard flag to prevent pile-up
+        self._grace_task = None  # Track grace period task for cancellation on reconnect
         
         # Settings (will be populated from config)
         self._device_id: Optional[int] = None
