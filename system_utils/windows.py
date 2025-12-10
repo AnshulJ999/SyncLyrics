@@ -331,28 +331,51 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 
                 # Only extract if we haven't already for this track OR if file doesn't exist
                 if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    stream = await thumbnail_ref.open_read_async()
+                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
+                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
+                    try:
+                        stream = await asyncio.wait_for(
+                            thumbnail_ref.open_read_async(),
+                            timeout=3.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("TRACE: Windows thumbnail open_read_async timed out")
+                        stream = None
+                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
+                        # We won't retry thumbnail extraction for this track until it changes
+                        state._last_windows_track_id = current_track_id
+                    
                     if stream:
                         reader = DataReader(stream)
-                        await reader.load_async(stream.size)
-                        byte_data = bytearray(stream.size)
-                        reader.read_bytes(byte_data)
-                        
-                        # Save directly to unique file (no race condition possible)
-                        loop = asyncio.get_running_loop()
-                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
-                        
-                        if save_ok:
+                        try:
+                            await asyncio.wait_for(
+                                reader.load_async(stream.size),
+                                timeout=3.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("TRACE: Windows thumbnail load_async timed out")
+                            stream = None
+                            # Also mark as processed on load timeout
                             state._last_windows_track_id = current_track_id
+                        else:
+                            byte_data = bytearray(stream.size)
+                            reader.read_bytes(byte_data)
                             
-                            # Cleanup: Delete OLD thumbnails to keep cache small
-                            # We only keep the current one
-                            for f in CACHE_DIR.glob("thumb_*.jpg"):
-                                if f.name != thumb_filename:
-                                    try:
-                                        os.remove(f)
-                                    except:
-                                        pass
+                            # Save directly to unique file (no race condition possible)
+                            loop = asyncio.get_running_loop()
+                            save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
+                            
+                            if save_ok:
+                                state._last_windows_track_id = current_track_id
+                                
+                                # Cleanup: Delete OLD thumbnails to keep cache small
+                                # We only keep the current one
+                                for f in CACHE_DIR.glob("thumb_*.jpg"):
+                                    if f.name != thumb_filename:
+                                        try:
+                                            os.remove(f)
+                                        except:
+                                            pass
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():

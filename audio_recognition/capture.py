@@ -26,8 +26,18 @@ logger = get_logger(__name__)
 _devices_cache: Optional[list] = None
 _hostapis_cache: Optional[list] = None  # Cache hostapis too (also blocking)
 _devices_cache_time: float = 0
-DEVICES_CACHE_TTL = 30  # Seconds (balanced between UX and stability)
+DEVICES_CACHE_TTL = 60  # Seconds (balanced between UX and stability - reduced from 30s to prevent frequent blocking calls)
 QUERY_DEVICES_TIMEOUT = 4  # Seconds before giving up
+
+# Lock to prevent concurrent device queries (can cause PortAudio mutex contention)
+_device_query_lock: Optional[asyncio.Lock] = None
+
+def _get_device_query_lock() -> asyncio.Lock:
+    """Get or create the device query lock (must be created in async context)."""
+    global _device_query_lock
+    if _device_query_lock is None:
+        _device_query_lock = asyncio.Lock()
+    return _device_query_lock
 
 def _query_devices_sync() -> tuple:
     """
@@ -62,24 +72,29 @@ def _query_devices_sync() -> tuple:
 
 async def safe_query_devices(timeout: float = QUERY_DEVICES_TIMEOUT) -> list:
     """
-    Query audio devices with timeout protection.
+    Query audio devices with timeout protection and concurrency guard.
     
     If the query takes longer than timeout seconds, returns cached/empty results.
     This prevents the main loop from hanging when Windows audio service is unresponsive.
+    
+    Uses a lock to prevent multiple coroutines from hitting PortAudio simultaneously
+    when cache expires (can cause mutex contention on Windows).
     """
-    loop = asyncio.get_running_loop()
-    try:
-        devices, _ = await asyncio.wait_for(
-            loop.run_in_executor(None, _query_devices_sync),
-            timeout=timeout
-        )
-        return devices
-    except asyncio.TimeoutError:
-        logger.warning(f"Device query timeout ({timeout}s) - audio driver may be hung")
-        return _devices_cache if _devices_cache else []
-    except Exception as e:
-        logger.warning(f"Device query failed: {e}")
-        return _devices_cache if _devices_cache else []
+    # Acquire lock to prevent concurrent queries (only one caller queries at a time)
+    async with _get_device_query_lock():
+        loop = asyncio.get_running_loop()
+        try:
+            devices, _ = await asyncio.wait_for(
+                loop.run_in_executor(None, _query_devices_sync),
+                timeout=timeout
+            )
+            return devices
+        except asyncio.TimeoutError:
+            logger.warning(f"Device query timeout ({timeout}s) - audio driver may be hung")
+            return _devices_cache if _devices_cache else []
+        except Exception as e:
+            logger.warning(f"Device query failed: {e}")
+            return _devices_cache if _devices_cache else []
 
 
 @dataclass

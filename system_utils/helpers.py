@@ -56,6 +56,9 @@ async def run_in_daemon_executor(func: Callable, *args: Any) -> Any:
     Returns:
         Result of the function
     """
+    func_name = getattr(func, '__name__', str(func))
+    # TRACE log commented out - enable for debugging executor issues
+    # logger.debug(f"TRACE: Submitting to executor: {func_name}")
     loop = asyncio.get_running_loop()
     executor = _get_daemon_executor()
     return await loop.run_in_executor(executor, func, *args)

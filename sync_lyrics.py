@@ -27,7 +27,7 @@ from config import DEBUG, RESOURCES_DIR
 from lyrics import get_timed_lyrics
 from state_manager import get_state, reset_state
 from server import app
-from logging_config import setup_logging, get_logger
+from logging_config import setup_logging, get_logger, LOGS_DIR
 # NOTE: SpotifyAPI is accessed via get_shared_spotify_client() singleton throughout the app
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -60,9 +60,73 @@ _mdns_service = None # Global mDNS service
 
 # Watchdog for emergency exit - prevents zombie processes when PortAudio hangs
 import threading
+import faulthandler
+from pathlib import Path
+
 _cleanup_watchdog_event = threading.Event()  # Thread-safe flag
 _cleanup_complete_event = threading.Event()  # Signal successful cleanup
 WATCHDOG_TIMEOUT = 6  # Seconds before force exit
+
+# Enable faulthandler for automatic crash dumps (segfaults, etc.)
+faulthandler.enable()
+
+def _dump_thread_stacks():
+    """
+    Dump all thread stack traces to a file for debugging hangs.
+    Called by watchdog before force-killing when cleanup is stuck.
+    
+    Uses rotation: appends with timestamp, keeps file under 100KB by trimming old entries.
+    """
+    import datetime
+    
+    try:
+        # Create logs directory if it doesn't exist
+        # logs_dir = Path("logs")
+        logs_dir = Path(LOGS_DIR)  # from logging_config
+        logs_dir.mkdir(exist_ok=True)
+        
+        crash_file = logs_dir / "crash_stacks.txt"
+        
+        # Read existing content (for rotation)
+        existing_content = ""
+        if crash_file.exists():
+            try:
+                existing_content = crash_file.read_text(encoding='utf-8')
+                # Limit to ~80KB to leave room for new dump (~20KB)
+                if len(existing_content) > 80000:
+                    # Keep only the last ~60KB (approximately last 3 dumps)
+                    existing_content = existing_content[-60000:]
+                    # Find the start of the next complete dump marker
+                    marker_pos = existing_content.find("\n=== WATCHDOG TRIGGERED")
+                    if marker_pos > 0:
+                        existing_content = existing_content[marker_pos:]
+            except Exception:
+                existing_content = ""
+        
+        # Generate new crash dump
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_dump = f"\n{'='*60}\n=== WATCHDOG TRIGGERED - {timestamp} ===\n=== Cleanup hung for {WATCHDOG_TIMEOUT}s ===\n{'='*60}\n\n"
+        new_dump += "Thread stack traces at time of hang:\n\n"
+        
+        # Capture stack traces to string
+        import io
+        stack_buffer = io.StringIO()
+        faulthandler.dump_traceback(file=stack_buffer, all_threads=True)
+        new_dump += stack_buffer.getvalue()
+        new_dump += "\n"
+        
+        # Write combined content (append mode effectively)
+        with open(crash_file, "w", encoding='utf-8') as f:
+            f.write(existing_content + new_dump)
+        
+        print(f"WATCHDOG: Stack traces appended to {crash_file}")
+    except Exception as e:
+        print(f"WATCHDOG: Failed to dump stacks: {e}")
+        # Still try to print to stderr as fallback
+        try:
+            faulthandler.dump_traceback(all_threads=True)
+        except:
+            pass
 
 def _watchdog_thread():
     """
@@ -70,6 +134,9 @@ def _watchdog_thread():
     
     This runs in a separate thread so it can execute even if the main thread
     is stuck in a C-level blocking call (like PortAudio).
+    
+    Before force-killing, dumps all thread stacks to logs/crash_stacks.txt
+    for debugging.
     """
     while True:
         # Wait for cleanup to start
@@ -77,7 +144,9 @@ def _watchdog_thread():
             # Cleanup started, wait for it to complete or timeout
             if not _cleanup_complete_event.wait(timeout=WATCHDOG_TIMEOUT):
                 # Timeout expired, cleanup didn't finish
-                print(f"WATCHDOG: Cleanup stuck for {WATCHDOG_TIMEOUT}s - force killing process")
+                # Dump thread stacks BEFORE force-killing for debugging
+                _dump_thread_stacks()
+                print(f"\nWATCHDOG: Cleanup stuck for {WATCHDOG_TIMEOUT}s - force killing process")
                 os._exit(1)
             else:
                 # Cleanup completed successfully
@@ -123,15 +192,20 @@ async def cleanup() -> None:
     logger.info("Cleaning up resources...")
 
     # Unregister mDNS
+    logger.debug("CLEANUP: Unregistering mDNS...")
     if _mdns_service:
         try:
-            await asyncio.to_thread(_mdns_service.unregister)
+            await asyncio.wait_for(asyncio.to_thread(_mdns_service.unregister), timeout=2.0)
+            logger.debug("CLEANUP: mDNS unregistered")
+        except asyncio.TimeoutError:
+            logger.warning("CLEANUP: mDNS unregister timed out")
         except Exception as e:
             logger.error(f"Error unregistering mDNS: {e}")
 
     # Stop audio recognition engine FIRST (most likely to hang)
     # FIX: Only attempt to stop if the module was ever imported (i.e., audio rec was used)
     # This prevents PortAudio initialization on shutdown when audio rec was never enabled
+    logger.debug("CLEANUP: Stopping audio recognition...")
     if 'system_utils.reaper' in sys.modules:
         try:
             from system_utils.reaper import get_reaper_source
@@ -160,18 +234,24 @@ async def cleanup() -> None:
     # The daemon threads will auto-terminate when Python exits, and capture.abort() above
     # handles proper stream cleanup without risking deadlock.
 
-    # Cancel server task
+    # Cancel server task (Hypercorn)
+    logger.debug("CLEANUP: Cancelling server task (Hypercorn)...")
     if _server_task:
         _server_task.cancel()
         try:
-            await _server_task
+            await asyncio.wait_for(_server_task, timeout=3.0)
+            logger.debug("CLEANUP: Server task cancelled successfully")
+        except asyncio.TimeoutError:
+            logger.warning("CLEANUP: Server task cancellation timed out")
         except asyncio.CancelledError:
-            logger.info("Server task cancelled")
+            logger.debug("CLEANUP: Server task cancelled")
 
     # Stop the tray icon
+    logger.debug("CLEANUP: Stopping tray icon...")
     if _tray_icon:
         try:
             _tray_icon.stop()
+            logger.debug("CLEANUP: Tray icon stopped")
         except Exception as e:
             logger.error(f"Error stopping tray icon: {e}")
 
@@ -184,7 +264,10 @@ async def cleanup() -> None:
 
     # Fix H3: Cancel only tracked background tasks, not all asyncio tasks
     # Cancelling all_tasks() kills library internals (aiohttp sessions, etc.) and causes issues
+    logger.debug("CLEANUP: Cancelling background tasks...")
     from system_utils import state as app_state
+    task_count = len(app_state._background_tasks)
+    logger.debug(f"CLEANUP: {task_count} tracked background tasks to cancel")
     for task in list(app_state._background_tasks):
         if task is not asyncio.current_task() and not task.done():
             task.cancel()
@@ -460,7 +543,13 @@ async def main() -> NoReturn:
         state_file_path = os.getenv('SYNCLYRICS_STATE_FILE', 'state.json')
         logger.debug(f"State file path: {state_file_path}")
         logger.debug(f"State file exists: {path.exists(state_file_path)}")
+        loop_iteration = 0
         while True:
+            loop_iteration += 1
+            
+            # Heartbeat logging every 60 seconds (600 iterations at 0.1s interval)
+            if loop_iteration % 600 == 0:
+                logger.info(f"Main loop heartbeat - iteration {loop_iteration}")
             if "terminal" in methods:
                 lyric = await get_timed_lyrics()
                 if lyric is not None and lyric != last_printed_lyric_per_method["terminal"]:

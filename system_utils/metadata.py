@@ -152,10 +152,15 @@ async def _update_debug_art(result: Dict[str, Any]):
             _update_debug_art.last_source = current_source
             
             # Acquire lock before calling executor to prevent concurrent writes (prevents flickering)
-            async with state._art_update_lock:
-                # Don't block the main thread
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, _perform_debug_art_update, result)
+            # CRITICAL FIX: Add timeout to prevent hanging if lock is held by stuck task
+            try:
+                async with asyncio.timeout(2.0):
+                    async with state._art_update_lock:
+                        # Don't block the main thread
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(None, _perform_debug_art_update, result)
+            except asyncio.TimeoutError:
+                logger.warning("TRACE: Debug art update skipped due to lock timeout")
             
     except Exception as e:
         logger.debug(f"Failed to schedule debug art update: {e}")
@@ -194,7 +199,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
     
     # CRITICAL FIX: Lock the entire fetching process
     # This prevents the race condition where Task B reads cache while Task A is still updating it
+    # TRACE logs commented out - enable for debugging lock contention issues
+    # logger.debug("TRACE: Acquiring metadata lock...")
     async with state._meta_data_lock:
+        # logger.debug("TRACE: Metadata lock acquired")
         result = None  # Initialize before audio recognition block to prevent NameError
         
         # ========================================================================
