@@ -1041,9 +1041,9 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
         # Users on HAOS or with fast connections may want to adjust this
         adaptive_delta = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
     elif source == "audio_recognition":
-        # Audio recognition has its own latency_offset setting in the engine
-        # Don't apply general latency_compensation on top of it
-        adaptive_delta = 0.0
+        # Audio recognition: Use configurable audio_recognition_latency_compensation
+        # Positive = lyrics earlier, Negative = lyrics later
+        adaptive_delta = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
     else:
         # Normal mode (Windows Media, hybrid): Use base delta
         adaptive_delta = base_delta

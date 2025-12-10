@@ -120,6 +120,7 @@ LYRICS = {
         "idle_interval": conf("lyrics.display.idle_interval", 5.0),
         "latency_compensation": conf("lyrics.display.latency_compensation", 0.0),
         "spotify_latency_compensation": conf("lyrics.display.spotify_latency_compensation", -0.5),
+        "audio_recognition_latency_compensation": conf("lyrics.display.audio_recognition_latency_compensation", 0.0),
         "idle_wait_time": conf("lyrics.display.idle_wait_time", 3.0),
         "smart_race_timeout": conf("lyrics.display.smart_race_timeout", 3.0),
     },
