@@ -30,6 +30,9 @@ logger = get_logger(__name__)
 class SpotifyLyrics(LyricsProvider):
     """Spotify lyrics provider using hosted API"""
     
+    # FIX: Class-level flag to log Spotify unavailable only once
+    _spotify_unavailable_logged = False
+    
     def __init__(self) -> None:
         """Initialize Spotify lyrics provider with config settings"""
         super().__init__(provider_name="spotify")
@@ -60,7 +63,10 @@ class SpotifyLyrics(LyricsProvider):
             spotify_client = get_shared_spotify_client()
             
             if spotify_client is None or not spotify_client.initialized:
-                logger.error("Spotify client not initialized")
+                # FIX: Log only once at DEBUG level - expected when Spotify not configured
+                if not SpotifyLyrics._spotify_unavailable_logged:
+                    logger.warning("Spotify client not initialized - Spotify lyrics unavailable")
+                    SpotifyLyrics._spotify_unavailable_logged = True
                 return None
                 
             # First try to get currently playing track

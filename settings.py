@@ -6,8 +6,9 @@ Handles dynamic configuration management using settings.json
 import json
 import shutil
 import os
-import sys  # Added sys
-import uuid  # Add this import
+import sys
+import uuid
+import ast  # FIX: For safe list parsing
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -44,24 +45,32 @@ class Setting:
             if self.type == bool and isinstance(value, str):
                 return value.lower() in ('true', '1', 'yes', 'on')
             
-            # FIX: Handle list type properly - don't use list(string) which splits chars
+            # FIX: Robust list handling using ast.literal_eval
             if self.type == list:
                 if isinstance(value, list):
-                    return value  # Already a list, return as-is
+                    return value  # Already a list
                 if isinstance(value, str):
                     value = value.strip()
-                    # Try to parse as JSON array first
-                    if value.startswith('['):
-                        try:
-                            parsed = json.loads(value)
-                            if isinstance(parsed, list):
-                                return parsed
-                        except json.JSONDecodeError:
-                            pass
-                    # Fallback: comma-separated values (e.g., "chrome, msedge, firefox")
-                    if value:
-                        return [v.strip() for v in value.split(',') if v.strip()]
-                return self.default  # Invalid type, use default
+                    # Method 1: Try ast.literal_eval (handles ['a'] and ["a"])
+                    try:
+                        parsed = ast.literal_eval(value)
+                        if isinstance(parsed, list):
+                            return parsed
+                    except (ValueError, SyntaxError):
+                        pass
+                    # Method 2: JSON fallback (handles ["a", "b"])
+                    try:
+                        parsed = json.loads(value)
+                        if isinstance(parsed, list):
+                            return parsed
+                    except json.JSONDecodeError:
+                        pass
+                    # Method 3: Comma separation (strip brackets first!)
+                    clean_value = value.strip("[]")
+                    if clean_value:
+                        return [v.strip().strip("'").strip('"') for v in clean_value.split(',') if v.strip()]
+                    return []  # Empty list
+                return self.default  # Invalid type
             
             return self.type(value)
         except (ValueError, TypeError):
@@ -262,7 +271,20 @@ class SettingsManager:
                             # Store as-is if unknown
                             self._settings[key] = val
             except Exception as e:
-                logger.error(f"Failed to load settings.json: {e}")
+                logger.error(f"Failed to load settings.json: {e} - resetting to defaults")
+                # FIX: Backup corrupted file and reset
+                if SETTINGS_FILE.exists():
+                    backup_path = SETTINGS_FILE.with_suffix('.json.corrupted')
+                    try:
+                        shutil.copy2(SETTINGS_FILE, backup_path)
+                        logger.info(f"Backed up corrupted settings to {backup_path}")
+                    except Exception:
+                        pass
+                self.save_to_config()  # Save defaults
+        else:
+            # FIX: Create default settings file on first run
+            logger.info(f"Creating default settings file at {SETTINGS_FILE}")
+            self.save_to_config()
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -298,7 +320,19 @@ class SettingsManager:
             temp_path = SETTINGS_FILE.parent / temp_filename
             
             with open(temp_path, 'w') as f:
-                json.dump(self._settings, f, indent=4, sort_keys=True)
+                # FIX: Sanitize lists before saving to prevent corruption
+                sanitized = {}
+                for key, val in self._settings.items():
+                    defin = self._definitions.get(key)
+                    if defin and defin.type == list:
+                        if isinstance(val, str):
+                            logger.warning(f"List setting '{key}' was string, restoring default")
+                            val = defin.default
+                        elif not isinstance(val, list):
+                            logger.warning(f"List setting '{key}' invalid type, restoring default")
+                            val = defin.default
+                    sanitized[key] = val
+                json.dump(sanitized, f, indent=4, sort_keys=True)
             
             # Atomic replace (works on both Windows and Unix)
             if SETTINGS_FILE.exists():

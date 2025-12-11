@@ -97,7 +97,7 @@ def build(debug_mode=False):
         if src_env.exists():
             shutil.copy2(src_env, dst_env)
             print(f"Copied .env.example to {dst_env}")
-            print("NOTE: Users should rename .env.example to .env and configure it!")
+            print("OPTIONAL: For Spotify integration, rename .env.example to .env and add credentials")
         else:
             print("WARNING: .env.example not found!")
 
@@ -122,9 +122,9 @@ def build(debug_mode=False):
         print(f"  - Double-click: build_final/SyncLyrics/SyncLyrics.exe")
         if debug_mode:
             print(f"  - Console window will appear with logs")
-        print(f"\nIMPORTANT: Configure .env file before first run!")
-        print(f"  1. Copy .env.example to .env in build_final/SyncLyrics/")
-        print(f"  2. Edit .env with your Spotify API credentials")
+        print(f"\nOptional: Spotify Integration")
+        print(f"  - App works without .env (Windows Media + LRCLib/NetEase/QQ lyrics)")
+        print(f"  - For Spotify: Copy .env.example to .env and add credentials")
         print("="*60)
     except subprocess.CalledProcessError as e:
         # Clean up temporary spec file on error

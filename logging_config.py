@@ -13,7 +13,7 @@ from datetime import datetime
 import sys
 
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
-    ROOT_DIR = Path(sys.argv[0]).parent
+    ROOT_DIR = Path(sys.executable).parent  # FIX: use sys.executable instead of sys.argv[0]
 else:
     ROOT_DIR = Path(__file__).parent
 

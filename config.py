@@ -26,7 +26,10 @@ if "__compiled__" in globals() or getattr(sys, 'frozen', False):
 else:
     ROOT_DIR = Path(__file__).parent
 
-load_dotenv(ROOT_DIR / '.env')
+# FIX: Only load .env if it exists (optimization)
+env_file = ROOT_DIR / '.env'
+if env_file.exists():
+    load_dotenv(env_file)
 
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
@@ -55,16 +58,23 @@ DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_dat
 CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
 ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
 
+# FIX: Wrap directory creation in try-except for permission errors
 for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError) as e:
+        # Can't use logger here (not configured yet), so use print
+        print(f"Warning: Failed to create directory {d}: {e}")
 
 DEBUG = {
     "enabled": conf("debug.enabled", False),
     "log_file": conf("debug.log_file", "synclyrics.log"),
-    "log_level": conf("debug.log_level", "INFO"),
+    # FIX: Default to WARNING for frozen builds (less log noise in production)
+    "log_level": conf("debug.log_level", "WARNING" if getattr(sys, 'frozen', False) else "INFO"),
     "log_providers": conf("debug.log_providers", True),
     "log_polling": conf("debug.log_polling", True),
-    "log_to_console": conf("debug.log_to_console", True),
+    # FIX: Default False for frozen EXE (no console window)
+    "log_to_console": conf("debug.log_to_console", not getattr(sys, 'frozen', False)),
     "log_detailed": conf("debug.log_detailed", False),
     "performance_logging": conf("debug.performance_logging", False),
     "log_rotation": {
@@ -73,10 +83,13 @@ DEBUG = {
     }
 }
 
+import secrets
+
 SERVER = {
     "port": conf("server.port", 9012),
     "host": conf("server.host", "0.0.0.0"),
-    "secret_key": os.getenv("QUART_SECRET_KEY", "change-me-in-env"),
+    # FIX: Generate secure random key if not provided (required for session security)
+    "secret_key": os.getenv("QUART_SECRET_KEY") or secrets.token_hex(32),
     "debug": conf("server.debug", False),
     "https": {
         "enabled": conf("server.https.enabled", False),
@@ -127,8 +140,9 @@ LYRICS = {
 }
 
 SPOTIFY = {
-    "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
-    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
+    # FIX: Use empty string instead of None for null safety with spotipy
+    "client_id": os.getenv("SPOTIFY_CLIENT_ID", ""),
+    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET", ""),
     "redirect_uri": conf("spotify.redirect_uri", "http://127.0.0.1:9012/callback"),
     "scope": [
         "user-read-playback-state", 

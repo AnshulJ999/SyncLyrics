@@ -108,7 +108,7 @@
                                             <div class="d-flex align-items-center gap-3">
                                                 <input type="range" class="form-range" 
                                                        id="{{ key }}" name="{{ key }}"
-                                                       min="{{ setting.min }}" max="{{ setting.max }}" step="0.1"
+                                                       min="{{ setting.min_val }}" max="{{ setting.max_val }}" step="0.1"
                                                        value="{{ setting.value }}"
                                                        oninput="document.getElementById('val-{{ key }}').textContent = this.value">
                                                 <span class="badge bg-secondary" id="val-{{ key }}">{{ setting.value }}</span>
@@ -124,8 +124,8 @@
                                             <input type="number" class="form-control" 
                                                    id="{{ key }}" name="{{ key }}"
                                                    value="{{ setting.value }}"
-                                                   {% if setting.min is not none %}min="{{ setting.min }}"{% endif %}
-                                                   {% if setting.max is not none %}max="{{ setting.max }}"{% endif %}>
+                                                   {% if setting.min_val is not none %}min="{{ setting.min_val }}"{% endif %}
+                                                   {% if setting.max_val is not none %}max="{{ setting.max_val }}"{% endif %}>
                                         {% else %}
                                             <input type="text" class="form-control" 
                                                    id="{{ key }}" name="{{ key }}"

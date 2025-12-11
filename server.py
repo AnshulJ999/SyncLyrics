@@ -1854,13 +1854,29 @@ async def settings_page():
         for key, value in form_data.items():
             if key in ['theme', 'terminal-method']: continue
             try:
-                # Simple type conversion logic
-                if value.lower() in ['true', 'on']: val = True
-                elif value.lower() in ['false', 'off']: val = False
-                elif value.isdigit(): val = int(value)
-                else: val = value
+                # FIX: Use settings definitions for proper type conversion
+                definition = settings._definitions.get(key)
+                if definition:
+                    if definition.type == bool:
+                        val = value.lower() in ['true', 'on', '1', 'yes']
+                    elif definition.type == int:
+                        val = int(value) if value else definition.default
+                    elif definition.type == float:
+                        val = float(value) if value else definition.default
+                    elif definition.type == list:
+                        # Let validate_and_convert handle JSON/comma parsing
+                        val = value  # Pass raw, settings.set will convert
+                    else:
+                        val = value
+                else:
+                    # Fallback for unknown keys
+                    if value.lower() in ['true', 'on']: val = True
+                    elif value.lower() in ['false', 'off']: val = False
+                    elif value.isdigit(): val = int(value)
+                    else: val = value
                 settings.set(key, val)
-            except: pass
+            except Exception as e:
+                logger.warning(f"Failed to set setting {key}: {e}")
         
         settings.save_to_config()
         return redirect(url_for('settings_page'))
