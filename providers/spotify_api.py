@@ -368,6 +368,9 @@ class SpotifyAPI:
         # Key: artist_id, Value: list of image URLs
         self._artist_image_cache = {}
         
+        # FIX: Throttle for credential/auth errors to prevent log spam
+        self._credentials_error_logged = False
+        
         # Request tracking
         # Tracks ALL Spotify API calls for rate limit monitoring
         # Spotify's rate limit is typically ~180 requests/minute for most endpoints
@@ -393,7 +396,9 @@ class SpotifyAPI:
         try:
             # Initialize Spotify client
             if not all([SPOTIFY["client_id"], SPOTIFY["client_secret"], SPOTIFY["redirect_uri"]]):
-                logger.error("Missing Spotify credentials in config")
+                if not self._credentials_error_logged:
+                    logger.warning("Missing Spotify credentials - Spotify features disabled (set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env)")
+                    self._credentials_error_logged = True
                 return
             
             # Determine cache path for token persistence
@@ -1040,7 +1045,8 @@ class SpotifyAPI:
         Returns the URL that users should visit to authorize the application.
         """
         if not hasattr(self, 'auth_manager') or not self.auth_manager:
-            logger.error("Auth manager not initialized")
+            # FIX: Throttled to debug level - this is expected when credentials are missing
+            logger.debug("Auth manager not initialized - Spotify auth unavailable")
             return None
         
         try:
@@ -1064,7 +1070,7 @@ class SpotifyAPI:
             True if authentication was successful, False otherwise
         """
         if not hasattr(self, 'auth_manager') or not self.auth_manager:
-            logger.error("Auth manager not initialized")
+            logger.debug("Auth manager not initialized - cannot complete auth")
             return False
         
         try:

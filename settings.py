@@ -43,6 +43,26 @@ class Setting:
         try:
             if self.type == bool and isinstance(value, str):
                 return value.lower() in ('true', '1', 'yes', 'on')
+            
+            # FIX: Handle list type properly - don't use list(string) which splits chars
+            if self.type == list:
+                if isinstance(value, list):
+                    return value  # Already a list, return as-is
+                if isinstance(value, str):
+                    value = value.strip()
+                    # Try to parse as JSON array first
+                    if value.startswith('['):
+                        try:
+                            parsed = json.loads(value)
+                            if isinstance(parsed, list):
+                                return parsed
+                        except json.JSONDecodeError:
+                            pass
+                    # Fallback: comma-separated values (e.g., "chrome, msedge, firefox")
+                    if value:
+                        return [v.strip() for v in value.split(',') if v.strip()]
+                return self.default  # Invalid type, use default
+            
             return self.type(value)
         except (ValueError, TypeError):
             return self.default

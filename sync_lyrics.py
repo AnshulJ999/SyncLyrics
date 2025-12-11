@@ -178,9 +178,23 @@ def restart():
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
 
-    # Replace current process with new one
-    python = sys.executable
-    os.execl(python, python, *sys.argv)
+    # FIX: Use subprocess for Windows/PyInstaller compatibility
+    # os.execl doesn't work reliably on Windows with frozen executables
+    import subprocess
+    
+    if getattr(sys, 'frozen', False):
+        # PyInstaller frozen executable
+        # Add delay to allow log file handles to close before new instance starts
+        logger.info("Spawning new instance...")
+        # Use CREATE_NEW_CONSOLE on Windows to detach from parent
+        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=creationflags)
+        time.sleep(0.5)  # Brief delay to ensure new process starts
+        os._exit(0)  # Force exit without cleanup (cleanup already done)
+    else:
+        # Development mode - use Python interpreter with execl
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
 
 async def cleanup() -> None:
     """Cleanup resources before exit"""

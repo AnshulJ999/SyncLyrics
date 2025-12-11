@@ -1871,8 +1871,16 @@ async def settings_page():
         cat = setting.category or "Misc"
         if cat not in settings_by_category: settings_by_category[cat] = {}
         settings_by_category[cat][key] = {
-            'name': setting.name, 'type': setting.type.__name__,
-            'value': settings.get(key), 'description': setting.description
+            'name': setting.name, 
+            'type': setting.type.__name__,
+            'value': settings.get(key), 
+            'description': setting.description,
+            # FIX: Add widget metadata for proper form rendering
+            'widget_type': setting.widget_type,
+            'requires_restart': setting.requires_restart,
+            'min_val': getattr(setting, 'min_val', None),
+            'max_val': getattr(setting, 'max_val', None),
+            'options': getattr(setting, 'options', None)
         }
     
     return await render_template('settings.html', settings=settings_by_category, theme=get_attribute_js_notation(get_state(), 'theme'))
