@@ -1247,6 +1247,21 @@ async def get_cover_art():
 
 @app.route("/api/playback/play-pause", methods=['POST'])
 async def toggle_playback():
+    """Toggle play/pause - routes to Windows or Spotify based on current source."""
+    # Get current source to determine which control method to use
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    # Windows source uses Windows playback controls
+    if source == 'windows_media':
+        from system_utils.windows import windows_toggle_playback
+        success = await windows_toggle_playback()
+        if success:
+            return jsonify({"status": "success", "message": "Toggled (Windows)"})
+        else:
+            return jsonify({"error": "Windows playback control failed"}), 500
+    
+    # Spotify and Hybrid sources use Spotify API
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1277,6 +1292,18 @@ async def toggle_playback():
 
 @app.route("/api/playback/next", methods=['POST'])
 async def next_track():
+    """Skip to next track - routes to Windows or Spotify based on current source."""
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'windows_media':
+        from system_utils.windows import windows_next
+        success = await windows_next()
+        if success:
+            return jsonify({"status": "success", "message": "Skipped (Windows)"})
+        else:
+            return jsonify({"error": "Windows playback control failed"}), 500
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1285,6 +1312,18 @@ async def next_track():
 
 @app.route("/api/playback/previous", methods=['POST'])
 async def previous_track():
+    """Skip to previous track - routes to Windows or Spotify based on current source."""
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'windows_media':
+        from system_utils.windows import windows_previous
+        success = await windows_previous()
+        if success:
+            return jsonify({"status": "success", "message": "Previous (Windows)"})
+        else:
+            return jsonify({"error": "Windows playback control failed"}), 500
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     

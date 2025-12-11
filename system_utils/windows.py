@@ -73,6 +73,115 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
         return False
 
 
+# ==========================================
+# WINDOWS PLAYBACK CONTROLS
+# ==========================================
+
+async def _get_current_session():
+    """Get the current Windows media session for playback control."""
+    global _win_media_manager
+    if not MediaManager:
+        return None
+    
+    try:
+        if _win_media_manager is None:
+            _win_media_manager = await MediaManager.request_async()
+        
+        if _win_media_manager:
+            return _win_media_manager.get_current_session()
+    except Exception as e:
+        logger.debug(f"Failed to get Windows media session: {e}")
+    return None
+
+
+async def windows_play() -> bool:
+    """Resume playback on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_play_async()
+            logger.debug("Windows playback: play")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows play failed: {e}")
+    return False
+
+
+async def windows_pause() -> bool:
+    """Pause playback on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_pause_async()
+            logger.debug("Windows playback: pause")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows pause failed: {e}")
+    return False
+
+
+async def windows_toggle_playback() -> bool:
+    """Toggle play/pause on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_toggle_play_pause_async()
+            logger.debug("Windows playback: toggle")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows toggle failed: {e}")
+    return False
+
+
+async def windows_next() -> bool:
+    """Skip to next track on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_skip_next_async()
+            logger.debug("Windows playback: next")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows next failed: {e}")
+    return False
+
+
+async def windows_previous() -> bool:
+    """Skip to previous track on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_skip_previous_async()
+            logger.debug("Windows playback: previous")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows previous failed: {e}")
+    return False
+
+
+# DISABLED: Seek functionality - backend ready, frontend not implemented yet
+# async def windows_seek(position_ms: int) -> bool:
+#     """Seek to position in current Windows media session.
+#     
+#     Args:
+#         position_ms: Position in milliseconds
+#         
+#     Returns:
+#         True if successful, False otherwise
+#     """
+#     session = await _get_current_session()
+#     if session:
+#         try:
+#             # Windows uses 100-nanosecond units (10,000 per millisecond)
+#             position_100ns = position_ms * 10000
+#             await session.try_change_playback_position_async(position_100ns)
+#             logger.debug(f"Windows playback: seek to {position_ms}ms")
+#             return True
+#         except Exception as e:
+#             logger.warning(f"Windows seek failed: {e}")
+#     return False
+
+
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
     global _win_media_manager

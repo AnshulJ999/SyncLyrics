@@ -115,11 +115,12 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify or Spotify Hybrid
+    // Enable controls for Spotify, Spotify Hybrid, or Windows Media
+    // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
         trackInfo.source === 'spotify_hybrid' ||
-        (trackInfo.source === 'windows_media' && trackInfo.app_id && trackInfo.app_id.toLowerCase().includes('spotify'));
+        trackInfo.source === 'windows_media';
 
     if (prevBtn) prevBtn.disabled = !canControl;
     if (nextBtn) nextBtn.disabled = !canControl;
