@@ -24,7 +24,7 @@ from logging_config import get_logger
 from config import SPOTIFY, ALBUM_ART
 
 # Load environment variables
-load_dotenv()
+# load_dotenv() # Environment variables are already loaded by config.py
 
 logger = get_logger(__name__)
 
