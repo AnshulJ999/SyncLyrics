@@ -1,0 +1,794 @@
+/**
+ * Audio Source Button and Modal Styles
+ * For the unified audio source selection UI
+ */
+
+/* =============================================================================
+   Source Indicator Button (top-right, left of settings gear)
+   Matches .provider-badge styling for consistency
+   ============================================================================= */
+
+.source-toggle {
+    position: fixed;
+    top: 25px;
+    right: 65px;
+    /* Position left of settings gear (settings is at right:20px, 40px wide) */
+    z-index: 1000;
+
+    /* Match provider-badge styling exactly */
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    padding: 4px 12px;
+
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.source-toggle:active {
+    transform: scale(0.95);
+}
+
+/* Source name - just the text, no extras */
+.source-toggle .source-name {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Recording dot - hidden by default, shown when audio recognition is active */
+.source-toggle .recording-dot {
+    display: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+    animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+/* Show recording dot when recording class is on button */
+.source-toggle.recording .recording-dot {
+    display: block;
+}
+
+@keyframes pulse-recording {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
+}
+
+/* Hide old status dot and arrow - minimal design */
+.source-toggle .status-dot,
+.source-toggle .dropdown-arrow {
+    display: none;
+}
+
+
+/* =============================================================================
+   Audio Source Modal
+   ============================================================================= */
+
+.audio-source-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.audio-source-modal.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.audio-source-modal-content {
+    background: linear-gradient(180deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+    transform: translateY(20px) scale(0.95);
+    transition: transform 0.2s ease;
+}
+
+.audio-source-modal.visible .audio-source-modal-content {
+    transform: translateY(0) scale(1);
+}
+
+/* Modal Header */
+.audio-source-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.audio-source-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.audio-source-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    transition: color 0.2s ease;
+}
+
+.audio-source-close:hover {
+    color: #fff;
+}
+
+/* Modal Body */
+.audio-source-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Status Section */
+.audio-source-status {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.status-row:last-child {
+    margin-bottom: 0;
+}
+
+.status-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+}
+
+.status-value {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.status-value.active {
+    color: #1DB954;
+}
+
+.status-value.listening {
+    color: #f39c12;
+}
+
+.status-value.idle {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Device Selection Section */
+.audio-source-section {
+    margin-bottom: 20px;
+}
+
+.audio-source-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.device-select {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.device-select:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.device-select:focus {
+    outline: none;
+    border-color: #1DB954;
+}
+
+.device-select option {
+    background: #1e1e23;
+    color: #fff;
+}
+
+.device-select optgroup {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: normal;
+}
+
+/* Control Buttons */
+.audio-source-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.control-btn-audio {
+    flex: 1;
+    padding: 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.control-btn-audio.start {
+    background: #1DB954;
+    color: #fff;
+}
+
+.control-btn-audio.start:hover {
+    background: #1ed760;
+}
+
+.control-btn-audio.start:disabled {
+    background: rgba(29, 185, 84, 0.5);
+    cursor: not-allowed;
+}
+
+.control-btn-audio.stop {
+    background: rgba(255, 59, 48, 0.8);
+    color: #fff;
+}
+
+.control-btn-audio.stop:hover {
+    background: rgba(255, 59, 48, 1);
+}
+
+/* Audio Level Meter */
+.audio-level-container {
+    margin-bottom: 20px;
+}
+
+.audio-level-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.audio-level-header h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.audio-level-value {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: monospace;
+}
+
+.audio-level-meter {
+    height: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.audio-level-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1DB954, #1ed760);
+    border-radius: 6px;
+    transition: width 0.1s ease;
+}
+
+/* Advanced Settings (Collapsible) */
+.advanced-toggle {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: none;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s ease;
+}
+
+.advanced-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.advanced-toggle .arrow {
+    transition: transform 0.2s ease;
+}
+
+.advanced-toggle.open .arrow {
+    transform: rotate(180deg);
+}
+
+.advanced-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.advanced-content.open {
+    max-height: 500px;
+}
+
+.advanced-content-inner {
+    padding: 16px 0;
+}
+
+/* Setting Row */
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.setting-row:last-child {
+    margin-bottom: 0;
+}
+
+.setting-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.setting-input {
+    width: 80px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.setting-input:focus {
+    outline: none;
+    border-color: #1DB954;
+}
+
+/* Checkbox Row */
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #1DB954;
+}
+
+.checkbox-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+/* HTTPS Warning */
+.https-warning {
+    background: rgba(243, 156, 18, 0.15);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    display: none;
+}
+
+.https-warning.visible {
+    display: block;
+}
+
+.https-warning-text {
+    color: #f39c12;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+/* Current Song Display */
+.current-song-info {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 16px;
+}
+
+.current-song-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.current-song-title {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.current-song-artist {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+}
+
+/* =============================================================================
+   Responsive Adjustments
+   ============================================================================= */
+
+/* Mobile - smaller screens */
+@media (max-width: 480px) {
+    .source-toggle {
+        top: 0.5rem;
+        right: calc(0.5rem + 40px + 8px);
+        /* Match provider-info mobile position */
+        padding: 4px 10px;
+        font-size: 0.7rem;
+    }
+
+    .audio-source-modal-content {
+        width: 95%;
+        max-width: 100%;
+        max-height: 85vh;
+    }
+
+    .audio-source-body {
+        padding: 16px;
+    }
+}
+
+/* Tablet+ responsive positioning */
+@media (min-width: 481px) and (max-width: 768px) {
+    .source-toggle {
+        top: 24px;
+        right: calc(20px + 40px + 8px);
+        /* Match provider-info tablet position */
+    }
+}
+
+/* =============================================================================
+   Quick Start Buttons
+   ============================================================================= */
+
+.quick-start-section {
+    margin-bottom: 20px;
+}
+
+.quick-start-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.quick-start-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.quick-start-card {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.quick-start-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.quick-start-icon {
+    font-size: 1.5rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.quick-start-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.quick-start-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #fff;
+    margin-bottom: 2px;
+}
+
+.quick-start-subtitle {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.quick-start-btn {
+    background: #1DB954;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.quick-start-btn:hover {
+    background: #1ed760;
+    transform: scale(1.05);
+}
+
+.quick-start-btn:active {
+    transform: scale(0.95);
+}
+
+.quick-start-btn:disabled {
+    background: rgba(29, 185, 84, 0.4);
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* =============================================================================
+   Device Row (Dropdown + Button)
+   ============================================================================= */
+
+.device-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.device-row .device-select {
+    flex: 1;
+}
+
+.control-btn-audio.start-small {
+    background: #1DB954;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.control-btn-audio.start-small:hover {
+    background: #1ed760;
+}
+
+.sample-rate-info {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 6px;
+    padding-left: 4px;
+}
+
+/* =============================================================================
+   Inline Audio Level Meter
+   ============================================================================= */
+
+.audio-level-meter-inline {
+    flex: 1;
+    max-width: 120px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.audio-level-fill-inline {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1DB954, #1ed760);
+    border-radius: 4px;
+    transition: width 0.1s ease;
+}
+
+/* =============================================================================
+   Slider Controls
+   ============================================================================= */
+
+.slider-row {
+    margin-bottom: 20px;
+}
+
+.slider-row:last-child {
+    margin-bottom: 0;
+}
+
+.slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.slider-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.reset-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.reset-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.slider-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.slider-input {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.slider-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #1DB954;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.slider-input::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #1DB954;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.slider-value {
+    min-width: 45px;
+    text-align: right;
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* Hide any datalist or output elements */
+.slider-control output,
+.slider-control datalist {
+    display: none;
+}
+
+/* =============================================================================
+   Status Enrichment
+   ============================================================================= */
+
+.status-value.enriched {
+    color: #1DB954;
+}
+
+.status-value.no-match {
+    color: #f39c12;
+}

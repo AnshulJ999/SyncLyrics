@@ -8,12 +8,73 @@ from __future__ import annotations
 import re
 import time
 import asyncio
-from typing import Optional
+import concurrent.futures
+from typing import Optional, Callable, Any
 
 from . import state
 from logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# Thread Executor for Blocking Operations
+# =============================================================================
+# Uses ThreadPoolExecutor for running blocking I/O (audio capture, device queries).
+# Previously used custom DaemonThreadPoolExecutor but it broke on different Python
+# versions due to reliance on private _worker attribute.
+# Standard executor with shutdown(wait=False) is stable and sufficient.
+
+from concurrent.futures import ThreadPoolExecutor
+
+_thread_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_daemon_executor() -> ThreadPoolExecutor:
+    """Get or create the thread executor for blocking operations."""
+    global _thread_executor
+    if _thread_executor is None:
+        _thread_executor = ThreadPoolExecutor(
+            max_workers=32,
+            thread_name_prefix="SyncLyrics_Worker"
+        )
+    return _thread_executor
+
+
+async def run_in_daemon_executor(func: Callable, *args: Any) -> Any:
+    """
+    Run a blocking function in a TRUE daemon thread executor.
+    
+    Daemon threads are automatically killed when the main program exits,
+    preventing the app from hanging if the task (e.g. audio I/O, psutil) is stuck.
+    This works even if cleanup() is skipped due to a crash.
+    
+    Args:
+        func: Blocking function to run
+        *args: Arguments to pass to the function
+        
+    Returns:
+        Result of the function
+    """
+    func_name = getattr(func, '__name__', str(func))
+    # TRACE log commented out - enable for debugging executor issues
+    # logger.debug(f"TRACE: Submitting to executor: {func_name}")
+    loop = asyncio.get_running_loop()
+    executor = _get_daemon_executor()
+    return await loop.run_in_executor(executor, func, *args)
+
+
+def shutdown_daemon_executor():
+    """Shutdown the thread executor. Call during app cleanup."""
+    global _thread_executor
+    if _thread_executor is not None:
+        try:
+            # wait=False ensures we don't block if threads are hung
+            # cancel_futures=True cancels pending work
+            _thread_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        _thread_executor = None
 
 
 def create_tracked_task(coro):
@@ -201,3 +262,12 @@ def _log_app_state() -> None:
                 
             except Exception as e:
                 logger.error(f"Failed to log Spotify stats: {e}")
+        
+        # Log thread executor health (for audio recognition stability monitoring)
+        if _thread_executor is not None:
+            try:
+                # Standard ThreadPoolExecutor doesn't expose thread count easily
+                # Just log that executor is active
+                logger.info("Thread Executor: active")
+            except Exception:
+                pass

@@ -26,6 +26,36 @@ from logging_config import get_logger
 from providers.album_art import get_album_art_provider
 from providers.spotify_api import get_shared_spotify_client
 
+# Fix H4: Lazy import of reaper module - moved inside function to avoid loading heavy
+# audio dependencies (sounddevice, shazamio, numpy) when audio recognition is disabled
+
+# Fix H2: Configure-once flag - prevents calling configure() on every metadata poll
+_reaper_configured = False
+
+# Runtime flags for audio recognition (set by API endpoints, not polled)
+# This avoids the performance cost of importing/checking session_config on every metadata poll
+_audio_rec_runtime_enabled = False
+_reaper_auto_detect_runtime = False
+
+def _get_audio_rec_enabled() -> bool:
+    """Check if audio recognition is enabled (instant boolean lookup)."""
+    return _audio_rec_runtime_enabled
+
+def _get_reaper_auto_detect() -> bool:
+    """Check if Reaper auto-detect is enabled (instant boolean lookup)."""
+    return _reaper_auto_detect_runtime
+
+def set_audio_rec_runtime_enabled(enabled: bool, auto_detect: bool = False):
+    """
+    Set audio recognition runtime state.
+    Called by API endpoints when user enables/disables from frontend.
+    This is the event-driven approach - no polling required.
+    """
+    global _audio_rec_runtime_enabled, _reaper_auto_detect_runtime
+    _audio_rec_runtime_enabled = enabled
+    _reaper_auto_detect_runtime = auto_detect
+    logger.debug(f"Audio rec runtime state: enabled={enabled}, auto_detect={auto_detect}")
+
 logger = get_logger(__name__)
 
 # Platform detection (module-level constant)
@@ -122,10 +152,15 @@ async def _update_debug_art(result: Dict[str, Any]):
             _update_debug_art.last_source = current_source
             
             # Acquire lock before calling executor to prevent concurrent writes (prevents flickering)
-            async with state._art_update_lock:
-                # Don't block the main thread
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, _perform_debug_art_update, result)
+            # CRITICAL FIX: Add timeout to prevent hanging if lock is held by stuck task
+            try:
+                async with asyncio.timeout(2.0):
+                    async with state._art_update_lock:
+                        # Don't block the main thread
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(None, _perform_debug_art_update, result)
+            except asyncio.TimeoutError:
+                logger.warning("TRACE: Debug art update skipped due to lock timeout")
             
     except Exception as e:
         logger.debug(f"Failed to schedule debug art update: {e}")
@@ -143,9 +178,104 @@ async def get_current_song_meta_data() -> Optional[dict]:
     from .spotify import _get_current_song_meta_data_spotify
     from .gnome import _get_current_song_meta_data_gnome
     
+    # ========================================================================
+    # FIX C1: Run auto_manage BEFORE acquiring lock (fire-and-forget)
+    # This prevents Reaper detection from blocking all metadata requests
+    # FIX: Added throttle to prevent task spam (~10 tasks/second → 1 task/5 seconds)
+    # ========================================================================
+    # REMOVED: auto_manage() call was here but caused stability issues
+    # 
+    # Previously, if reaper_auto_detect=true, this would:
+    # 1. Import audio_recognition module (triggers PortAudio init)
+    # 2. Create singleton on every metadata poll
+    # 3. Poll for Reaper.exe process
+    #
+    # This caused main loop blocking when PortAudio had driver issues.
+    # 
+    # Now audio recognition only starts when:
+    # 1. User explicitly uses --reaper CLI flag
+    # 2. User clicks "Start Recognition" in UI
+    # ========================================================================
+    
     # CRITICAL FIX: Lock the entire fetching process
     # This prevents the race condition where Task B reads cache while Task A is still updating it
+    # TRACE logs commented out - enable for debugging lock contention issues
+    # logger.debug("TRACE: Acquiring metadata lock...")
     async with state._meta_data_lock:
+        # logger.debug("TRACE: Metadata lock acquired")
+        result = None  # Initialize before audio recognition block to prevent NameError
+        
+        # ========================================================================
+        # AUDIO RECOGNITION CHECK (Highest Priority)
+        # If audio recognition is active (Reaper mode or manual), use it first
+        # ========================================================================
+        global _reaper_configured
+        reaper_source = None  # Initialize for use outside try block
+        try:
+            # Use lazy-cached getter function (reads config after --reaper flag)
+            if _get_audio_rec_enabled():
+                # Fix H4: Lazy import - only load reaper module when feature is enabled
+                from .reaper import get_reaper_source
+                reaper_source = get_reaper_source()
+                
+                # Fix H2: Configure only once at first use, not every poll
+                if not _reaper_configured:
+                    # Need full config dict for configure() - only accessed once per app lifetime
+                    audio_rec_config = config.AUDIO_RECOGNITION
+                    reaper_source.configure(
+                        device_id=audio_rec_config.get("device_id"),  # None = auto-detect
+                        device_name=audio_rec_config.get("device_name", ""),
+                        recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
+                        capture_duration=audio_rec_config.get("capture_duration", 4.0),
+                        latency_offset=audio_rec_config.get("latency_offset", 0.0),
+                        auto_detect=audio_rec_config.get("reaper_auto_detect", False)
+                    )
+                    _reaper_configured = True
+                    logger.debug("Reaper audio source configured")
+                
+                # Fix C1: REMOVED auto_manage() from inside lock - moved to outside (see below)
+                
+                # If audio recognition is active, use it (highest priority)
+                if reaper_source.is_active:
+                    result = await reaper_source.get_metadata()
+                    
+                    if result:
+                        # CRITICAL FIX: Cache check must run for BOTH playing AND paused states
+                        # Otherwise paused state triggers ensure_album_art_db spam (26+ calls/10s)
+                        cached_result = getattr(get_current_song_meta_data, '_last_result', None)
+                        if cached_result and cached_result.get('source') == 'audio_recognition':
+                            cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
+                            current_song = f"{result.get('artist', '')} - {result.get('title', '')}"
+                            
+                            # If same song, return cached result (works for both playing and paused)
+                            if cached_song == current_song:
+                                # Update position and playing state from fresh result
+                                cached_result['position'] = result.get('position', 0)
+                                cached_result['is_playing'] = result.get('is_playing', False)
+                                return cached_result
+                        
+                        # Fix C5: When paused, clear result to allow fallback to Spotify/Windows
+                        if result.get('is_playing', False):
+                            # New song or not yet enriched - store and proceed to enrichment
+                            get_current_song_meta_data._last_result = result
+                            get_current_song_meta_data._last_check_time = time.time()
+                            song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
+                            get_current_song_meta_data._last_song = song_name
+                            get_current_song_meta_data._is_active = True
+                            get_current_song_meta_data._last_active_time = time.time()
+                            # Continue to enrichment (album art DB, color extraction)
+                        else:
+                            # Paused - don't use stale audio_rec result, allow fallback
+                            result = None
+                        
+        except Exception as e:
+            logger.error(f"Audio recognition check failed: {e}")
+        # ========================================================================
+        
+        # Check if audio recognition already provided a valid result
+        # If so, skip Windows/Spotify source polling but still respect normal cache interval
+        audio_rec_success = result is not None and result.get('source') == 'audio_recognition'
+        
         current_time = time.time()
         last_check = getattr(get_current_song_meta_data, '_last_check_time', 0)
         is_active = getattr(get_current_song_meta_data, '_is_active', True)
@@ -156,8 +286,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
         last_song = getattr(get_current_song_meta_data, '_last_song', None)
         last_track_id = getattr(get_current_song_meta_data, '_last_track_id', None)
         
-        # Only use cache if within interval AND song hasn't changed
-        if (current_time - last_check) < required_interval:
+        # Standard cache check for non-audio-rec sources
+        # Audio rec handles its own caching above with the early return
+        if not audio_rec_success and (current_time - last_check) < required_interval:
             cached_result = getattr(get_current_song_meta_data, '_last_result', None)
             if cached_result:
                 # IMPROVED: Check both song name AND track_id for more reliable change detection
@@ -211,28 +342,30 @@ async def get_current_song_meta_data() -> Optional[dict]:
         sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
                         if s.get("enabled", False)]
 
-        result = None
+        # Initialize BEFORE conditional to avoid NameError when audio recognition is used
         windows_media_checked = False
         windows_media_result = None
         
-        # 1. Fetch Primary Data from sorted sources
-        for source in sorted_sources:
-            try:
-                if source["name"] == "windows_media" and DESKTOP == "Windows":
-                    windows_media_checked = True
-                    windows_media_result = await _get_current_song_meta_data_windows()
-                    if windows_media_result:
-                        result = windows_media_result
-                elif source["name"] == "spotify":
-                    result = await _get_current_song_meta_data_spotify()
-                elif source["name"] == "gnome" and DESKTOP == "Linux":
-                    result = _get_current_song_meta_data_gnome()
-                    
-                if result:
-                    # Source is already set in the function
-                    break
-            except Exception:
-                continue
+        # Use result from audio recognition if available, otherwise fetch from other sources
+        if not result:
+            # 1. Fetch Primary Data from sorted sources
+            for source in sorted_sources:
+                try:
+                    if source["name"] == "windows_media" and DESKTOP == "Windows":
+                        windows_media_checked = True
+                        windows_media_result = await _get_current_song_meta_data_windows()
+                        if windows_media_result:
+                            result = windows_media_result
+                    elif source["name"] == "spotify":
+                        result = await _get_current_song_meta_data_spotify()
+                    elif source["name"] == "gnome" and DESKTOP == "Linux":
+                        result = _get_current_song_meta_data_gnome()
+                        
+                    if result:
+                        # Source is already set in the function
+                        break
+                except Exception:
+                    continue
         
         # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
         is_spotify_only = (result and 
@@ -404,6 +537,76 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         #    logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
             except Exception as e:
                 logger.error(f"Hybrid enrichment failed: {e}")
+
+        # 3. AUDIO RECOGNITION ENRICHMENT
+        # Similar to Hybrid/Windows, we need to check the Album Art DB and extract colors
+        if result and result.get("source") == "audio_recognition":
+            try:
+                # A. Album Art DB Check (User Preferences & Caching)
+                art_url = result.get("album_art_url")
+                artist = result.get("artist", "")
+                title = result.get("title", "")
+                album = result.get("album", "")
+                
+                # Generate track_id for consistent URL generation
+                audio_rec_track_id = _normalize_track_id(artist, title)
+                
+                # Check DB/Cache - this also gives us saved preferences like background_style
+                db_result = await ensure_album_art_db(
+                    artist, 
+                    album, 
+                    title, 
+                    art_url
+                )
+                
+                # Also load from DB to get background_style (ensure_album_art_db doesn't return it)
+                # FIX: Run in executor to avoid blocking the event loop during file I/O
+                from .album_art import load_album_art_from_db
+                loop = asyncio.get_running_loop()
+                album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
+                if album_art_db:
+                    saved_background_style = album_art_db.get("background_style")
+                    if saved_background_style:
+                        result["background_style"] = saved_background_style
+                
+                if db_result:
+                    cached_url, cached_path = db_result
+                    
+                    # If DB has a different URL (user override), use it
+                    # Or if it's the same but now we have a local path
+                    if cached_url:
+                        result["album_art_url"] = cached_url
+                        # Default background to album art (may be overridden by artist image below)
+                        result["background_image_url"] = cached_url
+                    if cached_path:
+                        result["album_art_path"] = str(cached_path)
+                        # Also set background_image_path for local serving
+                        result["background_image_path"] = str(cached_path)
+                
+                # B. Check for Artist Image Preference (like Windows/Spotify sources)
+                # If user selected an artist image for background, use it instead of album art
+                # FIX: Run in executor to avoid blocking the event loop during file I/O
+                from .artist_image import load_artist_image_from_db
+                artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+                if artist_image_result:
+                    artist_image_path = artist_image_result["path"]
+                    if artist_image_path.exists():
+                        mtime = int(artist_image_path.stat().st_mtime)
+                        # Use artist image for background (keep album art for top-left display)
+                        result["background_image_url"] = f"/cover-art?id={audio_rec_track_id}&t={mtime}&type=background"
+                        result["background_image_path"] = str(artist_image_path)
+                        logger.debug(f"Audio rec: Using preferred artist image for background: {artist}")
+                
+                # C. Color Extraction
+                # If we have a local path now (from DB/Cache), we can extract colors
+                if result.get("album_art_path"):
+                     local_art_path = Path(result["album_art_path"])
+                     if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
+                          # Only extract if we have default colors
+                          result["colors"] = await extract_dominant_colors(local_art_path)
+                          
+            except Exception as e:
+                logger.error(f"Audio recognition enrichment failed: {e}")
         
         # 4. If we still don't have colors (e.g. local file), extract them
         if result and result.get("source") == "windows_media":

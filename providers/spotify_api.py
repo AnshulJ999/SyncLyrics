@@ -431,13 +431,11 @@ class SpotifyAPI:
             # Instead, we mark as not initialized and let the web-based OAuth flow handle it
             cached_token = self.auth_manager.get_cached_token()
             if cached_token:
-                # We have tokens from cache - test if they're valid
-                if self._test_connection():
-                    self.initialized = True
-                    logger.info("Spotify API initialized successfully with cached tokens")
-                else:
-                    self.initialized = False
-                    logger.warning("Cached tokens invalid - re-authentication required")
+                # OPTIMIZATION: Don't test connection synchronously in __init__
+                # This blocks the event loop for seconds/minutes if network is slow
+                # Assume initialized if tokens exist, let the first async request handle auth errors
+                self.initialized = True
+                logger.info("Spotify API initialized with cached tokens (connection verification deferred)")
             else:
                 # No cached tokens - don't test connection, wait for web auth
                 self.initialized = False
@@ -773,6 +771,84 @@ class SpotifyAPI:
             logger.error(f"Error searching track: {e}")
             return None
 
+    def search_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for a track on Spotify using ISRC code.
+        
+        ISRC (International Standard Recording Code) uniquely identifies recordings.
+        This provides exact matching, unlike text search which can be ambiguous.
+        
+        Used by audio recognition to get canonical Spotify metadata
+        (proper capitalization, Spotify track ID) from Shazam's ISRC codes.
+        
+        Args:
+            isrc: ISRC code (e.g., "USHR10622153")
+            
+        Returns:
+            Dict with Spotify metadata or None if not found:
+            {
+                'artist': str,      # Canonical artist name
+                'title': str,       # Canonical track title  
+                'album': str,       # Album name
+                'track_id': str,    # Spotify track ID
+                'duration_ms': int, # Track duration
+                'album_art_url': str,  # High-res album art
+            }
+        """
+        if not self.initialized:
+            logger.debug("Spotify not initialized, skipping ISRC search")
+            return None
+            
+        if not isrc:
+            return None
+            
+        try:
+            # Track API call
+            self.request_stats['total_requests'] += 1
+            self.request_stats['api_calls']['search'] += 1
+            
+            # Search by ISRC - returns exact match
+            results = self.sp.search(q=f"isrc:{isrc}", type='track', limit=1)
+            
+            if not results or not results.get('tracks') or not results['tracks'].get('items'):
+                logger.debug(f"No Spotify match for ISRC: {isrc}")
+                return None
+                
+            track = results['tracks']['items'][0]
+            
+            # Get highest quality album art
+            album_images = track['album'].get('images', [])
+            album_art_url = None
+            if album_images:
+                largest_image = max(album_images,
+                                   key=lambda img: (img.get('width', 0) or 0) * (img.get('height', 0) or 0),
+                                   default=album_images[0] if album_images else None)
+                if largest_image:
+                    album_art_url = largest_image['url']
+                    # Enhance to 1400px if available
+                    album_art_url = enhance_spotify_image_url_sync(album_art_url)
+            
+            result = {
+                'artist': track['artists'][0]['name'],
+                'title': track['name'],
+                'album': track['album']['name'],
+                'track_id': track['id'],
+                'duration_ms': track['duration_ms'],
+                'album_art_url': album_art_url,
+            }
+            
+            logger.info(f"ISRC lookup success: {isrc} → {result['artist']} - {result['title']}")
+            return result
+            
+        except ReadTimeout:
+            self.request_stats['errors']['timeout'] += 1
+            logger.debug(f"ISRC search timed out: {isrc}")
+            return None
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.debug(f"ISRC search error for {isrc}: {e}")
+            return None
+
     def get_request_stats(self) -> Dict[str, Any]:
         """
         Get current API request statistics for monitoring rate limits.
@@ -932,7 +1008,14 @@ class SpotifyAPI:
             # Try to enhance each image URL to 1400px if available (falls back to 640px if not)
             # Use asyncio.gather to verify all images in parallel (much faster than sequential)
             enhancement_tasks = [enhance_spotify_image_url_async(img['url']) for img in images_sorted]
-            image_urls = await asyncio.gather(*enhancement_tasks)
+            try:
+                image_urls = await asyncio.wait_for(
+                    asyncio.gather(*enhancement_tasks),
+                    timeout=15.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Spotify image enhancement timed out for artist {artist_id}")
+                image_urls = [img['url'] for img in images_sorted]  # Use original URLs
             
             # Log enhanced URLs for artist images (similar to album art logging)
             enhanced_count = sum(1 for orig, enhanced in zip([img['url'] for img in images_sorted], image_urls) if orig != enhanced)

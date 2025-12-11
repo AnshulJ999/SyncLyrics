@@ -27,7 +27,7 @@ from config import DEBUG, RESOURCES_DIR
 from lyrics import get_timed_lyrics
 from state_manager import get_state, reset_state
 from server import app
-from logging_config import setup_logging, get_logger
+from logging_config import setup_logging, get_logger, LOGS_DIR
 # NOTE: SpotifyAPI is accessed via get_shared_spotify_client() singleton throughout the app
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -57,6 +57,103 @@ _tray_thread = None
 _shutdown_event = asyncio.Event()
 _server_task = None  # Global to track server task
 _mdns_service = None # Global mDNS service
+
+# Watchdog for emergency exit - prevents zombie processes when PortAudio hangs
+import threading
+import faulthandler
+from pathlib import Path
+
+_cleanup_watchdog_event = threading.Event()  # Thread-safe flag
+_cleanup_complete_event = threading.Event()  # Signal successful cleanup
+WATCHDOG_TIMEOUT = 6  # Seconds before force exit
+
+# Enable faulthandler for automatic crash dumps (segfaults, etc.)
+faulthandler.enable()
+
+def _dump_thread_stacks():
+    """
+    Dump all thread stack traces to a file for debugging hangs.
+    Called by watchdog before force-killing when cleanup is stuck.
+    
+    Uses rotation: appends with timestamp, keeps file under 100KB by trimming old entries.
+    """
+    import datetime
+    
+    try:
+        # Create logs directory if it doesn't exist
+        # logs_dir = Path("logs")
+        logs_dir = Path(LOGS_DIR)  # from logging_config
+        logs_dir.mkdir(exist_ok=True)
+        
+        crash_file = logs_dir / "crash_stacks.txt"
+        
+        # Read existing content (for rotation)
+        existing_content = ""
+        if crash_file.exists():
+            try:
+                existing_content = crash_file.read_text(encoding='utf-8')
+                # Limit to ~80KB to leave room for new dump (~20KB)
+                if len(existing_content) > 80000:
+                    # Keep only the last ~60KB (approximately last 3 dumps)
+                    existing_content = existing_content[-60000:]
+                    # Find the start of the next complete dump marker
+                    marker_pos = existing_content.find("\n=== WATCHDOG TRIGGERED")
+                    if marker_pos > 0:
+                        existing_content = existing_content[marker_pos:]
+            except Exception:
+                existing_content = ""
+        
+        # Generate new crash dump
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_dump = f"\n{'='*60}\n=== WATCHDOG TRIGGERED - {timestamp} ===\n=== Cleanup hung for {WATCHDOG_TIMEOUT}s ===\n{'='*60}\n\n"
+        new_dump += "Thread stack traces at time of hang:\n\n"
+        
+        # Capture stack traces to string
+        import io
+        stack_buffer = io.StringIO()
+        faulthandler.dump_traceback(file=stack_buffer, all_threads=True)
+        new_dump += stack_buffer.getvalue()
+        new_dump += "\n"
+        
+        # Write combined content (append mode effectively)
+        with open(crash_file, "w", encoding='utf-8') as f:
+            f.write(existing_content + new_dump)
+        
+        print(f"WATCHDOG: Stack traces appended to {crash_file}")
+    except Exception as e:
+        print(f"WATCHDOG: Failed to dump stacks: {e}")
+        # Still try to print to stderr as fallback
+        try:
+            faulthandler.dump_traceback(all_threads=True)
+        except:
+            pass
+
+def _watchdog_thread():
+    """
+    Kill process if cleanup takes too long.
+    
+    This runs in a separate thread so it can execute even if the main thread
+    is stuck in a C-level blocking call (like PortAudio).
+    
+    Before force-killing, dumps all thread stacks to logs/crash_stacks.txt
+    for debugging.
+    """
+    while True:
+        # Wait for cleanup to start
+        if _cleanup_watchdog_event.wait(timeout=1):
+            # Cleanup started, wait for it to complete or timeout
+            if not _cleanup_complete_event.wait(timeout=WATCHDOG_TIMEOUT):
+                # Timeout expired, cleanup didn't finish
+                # Dump thread stacks BEFORE force-killing for debugging
+                _dump_thread_stacks()
+                print(f"\nWATCHDOG: Cleanup stuck for {WATCHDOG_TIMEOUT}s - force killing process")
+                os._exit(1)
+            else:
+                # Cleanup completed successfully
+                return
+
+# Start watchdog thread (daemon so it dies with main process)
+threading.Thread(target=_watchdog_thread, daemon=True, name="CleanupWatchdog").start()
 
 def force_exit():
     """Force exit the application"""
@@ -88,27 +185,73 @@ def restart():
 async def cleanup() -> None:
     """Cleanup resources before exit"""
     global _tray_icon, _tray_thread, _server_task, _mdns_service
+    
+    # Signal watchdog that cleanup has started (starts timeout countdown)
+    _cleanup_watchdog_event.set()
+    
     logger.info("Cleaning up resources...")
 
     # Unregister mDNS
+    logger.debug("CLEANUP: Unregistering mDNS...")
     if _mdns_service:
         try:
-            await asyncio.to_thread(_mdns_service.unregister)
+            await asyncio.wait_for(asyncio.to_thread(_mdns_service.unregister), timeout=2.0)
+            logger.debug("CLEANUP: mDNS unregistered")
+        except asyncio.TimeoutError:
+            logger.warning("CLEANUP: mDNS unregister timed out")
         except Exception as e:
             logger.error(f"Error unregistering mDNS: {e}")
 
-    # Cancel server task first
+    # Stop audio recognition engine FIRST (most likely to hang)
+    # FIX: Only attempt to stop if the module was ever imported (i.e., audio rec was used)
+    # This prevents PortAudio initialization on shutdown when audio rec was never enabled
+    logger.debug("CLEANUP: Stopping audio recognition...")
+    if 'system_utils.reaper' in sys.modules:
+        try:
+            from system_utils.reaper import get_reaper_source
+            import system_utils.reaper as reaper_module
+            
+            # Set shutdown flag to prevent auto-restart race condition during cleanup
+            reaper_module._shutting_down = True
+            
+            source = get_reaper_source()
+            if source and source.is_active:
+                logger.info("Stopping audio recognition...")
+                # Abort capture first to unblock any pending reads
+                if source._engine and source._engine.capture:
+                    source._engine.capture.abort()
+                try:
+                    await asyncio.wait_for(source.stop(), timeout=3.0)
+                    logger.info("Audio recognition stopped")
+                except asyncio.TimeoutError:
+                    logger.warning("Audio recognition stop timeout - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Failed to stop audio recognition: {e}")
+    
+    # Fix C2: REMOVED sd.stop() call
+    # Calling sd.stop() while an InputStream is blocked in a C-level call (in the daemon thread)
+    # can cause PortAudio deadlock on Windows, hanging the entire cleanup process.
+    # The daemon threads will auto-terminate when Python exits, and capture.abort() above
+    # handles proper stream cleanup without risking deadlock.
+
+    # Cancel server task (Hypercorn)
+    logger.debug("CLEANUP: Cancelling server task (Hypercorn)...")
     if _server_task:
         _server_task.cancel()
         try:
-            await _server_task
+            await asyncio.wait_for(_server_task, timeout=3.0)
+            logger.debug("CLEANUP: Server task cancelled successfully")
+        except asyncio.TimeoutError:
+            logger.warning("CLEANUP: Server task cancellation timed out")
         except asyncio.CancelledError:
-            logger.info("Server task cancelled")
+            logger.debug("CLEANUP: Server task cancelled")
 
     # Stop the tray icon
+    logger.debug("CLEANUP: Stopping tray icon...")
     if _tray_icon:
         try:
             _tray_icon.stop()
+            logger.debug("CLEANUP: Tray icon stopped")
         except Exception as e:
             logger.error(f"Error stopping tray icon: {e}")
 
@@ -119,8 +262,33 @@ async def cleanup() -> None:
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
 
+    # Fix H3: Cancel only tracked background tasks, not all asyncio tasks
+    # Cancelling all_tasks() kills library internals (aiohttp sessions, etc.) and causes issues
+    logger.debug("CLEANUP: Cancelling background tasks...")
+    from system_utils import state as app_state
+    task_count = len(app_state._background_tasks)
+    logger.debug(f"CLEANUP: {task_count} tracked background tasks to cancel")
+    for task in list(app_state._background_tasks):
+        if task is not asyncio.current_task() and not task.done():
+            task.cancel()
+            try:
+                await asyncio.wait_for(task, timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+    # Shutdown daemon executor (Fix 5) - ensures all daemon threads are stopped
+    try:
+        from system_utils.helpers import shutdown_daemon_executor
+        shutdown_daemon_executor()
+        logger.debug("Daemon executor shutdown")
+    except Exception:
+        pass
+
     queue.put("exit")
     await asyncio.sleep(0.5)
+    
+    # Signal watchdog that cleanup completed successfully
+    _cleanup_complete_event.set()
 
 def run_tray() -> NoReturn:
     """
@@ -161,27 +329,130 @@ def run_tray() -> NoReturn:
 
 async def run_server() -> NoReturn:
     """
-    Run the Quart server using Hypercorn with minimal logging
+    Run the Quart server using Hypercorn with optional HTTPS support.
+    
+    Modes:
+    - HTTP only: Default mode, no SSL
+    - HTTPS only: When https.enabled=True and https.port=0 (same port)
+    - Dual-stack: When https.enabled=True and https.port>0 (different ports)
+      - Runs HTTP on PORT for local access (no cert warnings)
+      - Runs HTTPS on https.port for tablet/mobile (mic access)
+    
     Returns:
         NoReturn: This function never returns
     """
-    config = Config()
-    config.bind = [f"0.0.0.0:{PORT}"]
-    config.use_reloader = False
-    config.ignore_keyboard_interrupt = True
-#    config.worker_class = "asyncio"
-    config.graceful_timeout = 2  # Seconds allowed for graceful shutdown
-    config.shutdown_timeout = 2  # Limit time allowed for shutdown
-    config.debug = False
+    from pathlib import Path
+    from config import SERVER
+    
+    host = SERVER.get("host", "0.0.0.0")
+    http_port = SERVER.get("port", 9012)
+    
+    https_config = SERVER.get("https", {})
+    https_enabled = https_config.get("enabled", False)
+    https_port = https_config.get("port", 0)  # 0 = same port, >0 = dual-stack
+    auto_generate = https_config.get("auto_generate", True)
+    
+    # Common config for both servers
+    base_config = Config()
+    base_config.use_reloader = False
+    base_config.ignore_keyboard_interrupt = True
+    base_config.graceful_timeout = 2
+    base_config.shutdown_timeout = 2
+    base_config.debug = False
     
     # Mute unnecessary logging
     logging.getLogger('hypercorn.error').setLevel(logging.ERROR)
     logging.getLogger('hypercorn.access').setLevel(logging.ERROR)
     
+    tasks = []
+    
+    if https_enabled:
+        # Get certificate paths
+        cert_file = Path(https_config.get("cert_file", "certs/server.crt"))
+        key_file = Path(https_config.get("key_file", "certs/server.key"))
+        
+        # Make paths absolute if relative
+        from config import ROOT_DIR
+        if not cert_file.is_absolute():
+            cert_file = ROOT_DIR / cert_file
+        if not key_file.is_absolute():
+            key_file = ROOT_DIR / key_file
+        
+        # Auto-generate certificates if enabled and missing
+        if auto_generate and (not cert_file.exists() or not key_file.exists()):
+            try:
+                from ssl_utils import ensure_ssl_certs
+                result = ensure_ssl_certs(cert_file.parent)
+                if result[0]:
+                    logger.info(f"SSL certificates generated at {cert_file.parent}")
+                else:
+                    logger.warning("Failed to generate SSL certificates")
+            except ImportError as e:
+                logger.error(f"SSL utils not available: {e}")
+            except Exception as e:
+                logger.error(f"Failed to generate SSL certificates: {e}")
+        
+        if cert_file.exists() and key_file.exists():
+            if https_port and https_port != http_port:
+                # DUAL-STACK MODE: Run HTTP on http_port AND HTTPS on https_port
+                
+                # Task A: HTTP server (no SSL) - for local PC access
+                http_config = Config()
+                http_config.bind = [f"{host}:{http_port}"]
+                http_config.use_reloader = False
+                http_config.ignore_keyboard_interrupt = True
+                http_config.graceful_timeout = 2
+                http_config.shutdown_timeout = 2
+                http_config.debug = False
+                tasks.append(serve(app, http_config))
+                logger.info(f"HTTP server starting on {host}:{http_port}")
+                
+                # Task B: HTTPS server (with SSL) - for tablet/mobile mic access
+                https_server_config = Config()
+                https_server_config.bind = [f"{host}:{https_port}"]
+                https_server_config.certfile = str(cert_file)
+                https_server_config.keyfile = str(key_file)
+                https_server_config.use_reloader = False
+                https_server_config.ignore_keyboard_interrupt = True
+                https_server_config.graceful_timeout = 2
+                https_server_config.shutdown_timeout = 2
+                https_server_config.debug = False
+                tasks.append(serve(app, https_server_config))
+                logger.info(f"HTTPS server starting on {host}:{https_port}")
+            else:
+                # HTTPS-ONLY MODE: Same port, HTTPS replaces HTTP
+                base_config.bind = [f"{host}:{http_port}"]
+                base_config.certfile = str(cert_file)
+                base_config.keyfile = str(key_file)
+                tasks.append(serve(app, base_config))
+                logger.info(f"HTTPS-only server starting on {host}:{http_port}")
+        else:
+            # Certificates not found, fall back to HTTP only
+            logger.warning(
+                f"HTTPS enabled but certificates not found at {cert_file} and {key_file}. "
+                f"Falling back to HTTP only. Install 'cryptography' package: pip install cryptography"
+            )
+            base_config.bind = [f"{host}:{http_port}"]
+            tasks.append(serve(app, base_config))
+            logger.info(f"HTTP server starting on {host}:{http_port}")
+    else:
+        # HTTP-only mode (default)
+        base_config.bind = [f"{host}:{http_port}"]
+        tasks.append(serve(app, base_config))
+        logger.info(f"HTTP server starting on {host}:{http_port}")
+    
     try:
-        await serve(app, config)
+        # Run all server tasks concurrently
+        await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
+    except OSError as e:
+        # Port binding errors (e.g., HTTPS port 9013 already in use)
+        if "address already in use" in str(e).lower() or e.errno == 10048:  # 10048 = Windows EADDRINUSE
+            logger.error(f"Port binding failed: {e}. Check if another instance is running.")
+        else:
+            logger.error(f"Server error: {e}")
+        raise  # Re-raise to trigger cleanup
 
 async def main() -> NoReturn:
     """
@@ -209,6 +480,22 @@ async def main() -> NoReturn:
         _tray_thread.start()
     else:
         logger.info("System tray disabled (headless mode or missing dependency).")
+    
+    # Start audio recognition if --reaper flag was used
+    # Check runtime flag (set by --reaper or config) to avoid importing audio_recognition unnecessarily
+    from system_utils.metadata import _audio_rec_runtime_enabled
+    if _audio_rec_runtime_enabled:
+        try:
+            from system_utils.reaper import get_reaper_source
+            source = get_reaper_source()
+            await source.start(manual=True)
+            logger.info("Audio recognition started (--reaper mode)")
+        except Exception as e:
+            logger.error(f"Failed to start audio recognition: {e}")
+            # Disable audio rec for this session to prevent further attempts
+            from system_utils.metadata import set_audio_rec_runtime_enabled
+            set_audio_rec_runtime_enabled(False, False)
+            logger.info("Audio recognition disabled for this session")
 
     # Get active display methods
     # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key
@@ -256,7 +543,13 @@ async def main() -> NoReturn:
         state_file_path = os.getenv('SYNCLYRICS_STATE_FILE', 'state.json')
         logger.debug(f"State file path: {state_file_path}")
         logger.debug(f"State file exists: {path.exists(state_file_path)}")
+        loop_iteration = 0
         while True:
+            loop_iteration += 1
+            
+            # Heartbeat logging every 60 seconds (600 iterations at 0.1s interval)
+            if loop_iteration % 600 == 0:
+                logger.info(f"Main loop heartbeat - iteration {loop_iteration}")
             if "terminal" in methods:
                 lyric = await get_timed_lyrics()
                 if lyric is not None and lyric != last_printed_lyric_per_method["terminal"]:
@@ -287,6 +580,24 @@ async def main() -> NoReturn:
         await cleanup()
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='SyncLyrics - Real-time lyrics display')
+    parser.add_argument('--reaper', action='store_true', 
+                        help='Enable Reaper DAW audio recognition mode')
+    args = parser.parse_args()
+    
+    # Handle --reaper flag: Enable audio recognition and start immediately
+    # The engine starts NOW, not when Reaper is detected
+    if args.reaper:
+        from config import AUDIO_RECOGNITION
+        AUDIO_RECOGNITION['enabled'] = True
+        AUDIO_RECOGNITION['reaper_auto_detect'] = False  # Not needed - we start immediately
+        # Set runtime flags for event-driven approach
+        from system_utils.metadata import set_audio_rec_runtime_enabled
+        set_audio_rec_runtime_enabled(True, False)
+        print("🎵 Reaper mode: Audio recognition will start after server launch")
+    
     # Set up logging
     setup_logging(
         console_level=DEBUG.get("log_level", "INFO"),
@@ -295,6 +606,17 @@ if __name__ == "__main__":
         log_file=DEBUG.get("log_file", "synclyrics.log"),
         log_providers=DEBUG.get("log_providers", True)
     )
+    
+    # Initialize runtime flags from config (if --reaper wasn't used)
+    # This ensures settings.json values are respected for audio recognition
+    if not args.reaper:
+        from config import AUDIO_RECOGNITION
+        from system_utils.metadata import set_audio_rec_runtime_enabled
+        enabled = AUDIO_RECOGNITION.get("enabled", False)
+        auto_detect = AUDIO_RECOGNITION.get("reaper_auto_detect", False)
+        if enabled or auto_detect:
+            set_audio_rec_runtime_enabled(enabled, auto_detect)
+            logger.debug(f"Audio rec runtime flags from config: enabled={enabled}, auto_detect={auto_detect}")
     
     def handle_interrupt(signum, frame):
         """Handle keyboard interrupt"""

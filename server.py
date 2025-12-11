@@ -5,7 +5,7 @@ import time
 import random  # ADD THIS IMPORT
 from functools import wraps
 
-from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory
+from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory, websocket
 from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, set_manual_instrumental
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art, clear_artist_image_cache
@@ -1380,6 +1380,460 @@ async def toggle_liked_status():
         success = await client.unlike_track(track_id)
         
     return jsonify({"success": success})
+
+
+# ============================================================================
+# Audio Recognition API (Reaper Integration)
+# ============================================================================
+
+@app.route('/api/audio-recognition/status', methods=['GET'])
+async def audio_recognition_status():
+    """
+    Get audio recognition status.
+    Returns current state, mode, song info, and device configuration.
+    
+    CRITICAL FIX: Only import reaper/audio_recognition if:
+    1. The module was already imported (audio rec was used), OR
+    2. Audio recognition is explicitly enabled in config
+    
+    This prevents PortAudio initialization from frontend polling when audio rec is disabled.
+    """
+    import sys
+    
+    # Check if reaper module was ever imported (meaning audio rec was actually used)
+    if 'system_utils.reaper' not in sys.modules:
+        # Module not imported - check if we should import it
+        from config import AUDIO_RECOGNITION
+        if not AUDIO_RECOGNITION.get("enabled", False):
+            # Not enabled in config - return stub status without importing
+            return jsonify({
+                "available": True,
+                "enabled": False,
+                "active": False,
+                "mode": "idle",
+                "reaper_detected": False,
+                "auto_detect": False,
+                "manual_mode": False,
+                "capture_mode": None,
+                "current_song": None
+            })
+    
+    # Either module was imported or audio rec is enabled - proceed normally
+    try:
+        from system_utils.reaper import get_reaper_source
+        
+        source = get_reaper_source()
+        status = source.get_status()
+        
+        # Fix 1.4: Removed device_available check - it's expensive (runs sd.query_devices)
+        # and was causing main loop blocking. Device availability should only be checked
+        # when the modal opens (in /api/audio-recognition/devices endpoint).
+        
+        return jsonify(status)
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e),
+            "available": False
+        })
+    except Exception as e:
+        logger.error(f"Audio recognition status error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/start', methods=['POST'])
+async def audio_recognition_start():
+    """
+    Start audio recognition manually.
+    Body: {"manual": true} (optional, defaults to true for manual trigger)
+    """
+    try:
+        from system_utils.reaper import get_reaper_source
+        
+        data = await request.get_json() or {}
+        manual = data.get("manual", True)
+        
+        source = get_reaper_source()
+        await source.start(manual=manual)
+        
+        return jsonify({
+            "status": "started",
+            "mode": "manual" if manual else "reaper"
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition start error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/stop', methods=['POST'])
+async def audio_recognition_stop():
+    """Stop audio recognition."""
+    try:
+        from system_utils.reaper import get_reaper_source
+        
+        source = get_reaper_source()
+        await source.stop()
+        
+        return jsonify({"status": "stopped"})
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition stop error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/devices', methods=['GET'])
+async def audio_recognition_devices():
+    """
+    List available audio capture devices.
+    Returns device list with auto-detected loopback recommendation.
+    """
+    try:
+        from audio_recognition import AudioCaptureManager
+        
+        # Use async methods to avoid blocking event loop with sd.query_devices()
+        devices = await AudioCaptureManager.list_devices_async()
+        
+        # Post-processing filter to clean up the list for UI
+        # 1. Filter out devices with 0 input channels (handled in capture.py, but safe to double check)
+        # 2. Prefer MME (0) and WASAPI (typically 1 or 2) over weird ones
+        # 3. Sort Loopback to top
+        
+        # Valid host APIs: 0=MME, 1=DirectSound, 2=WASAPI
+        # We usually want to avoid WDM-KS (often duplicates) or ASIO (unless user wants it)
+        # For a "Clean" list, let's keep it simple: Just inputs > 0
+        
+        filtered_devices = []
+        for d in devices:
+            # Filter out "Modem", "Fax", and clearly non-audio devices if any
+            name = d.get('name', '').lower()
+            if 'modem' in name or 'fax' in name:
+                continue
+            filtered_devices.append(d)
+            
+        # Sort Loopback devices to the top, then by name
+        filtered_devices.sort(key=lambda x: (not x.get('is_loopback', False), x.get('name', '')))
+        
+        recommended = await AudioCaptureManager.find_loopback_device_async()
+        
+        return jsonify({
+            "devices": filtered_devices,
+            "recommended": recommended,
+            "count": len(filtered_devices)
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e),
+            "devices": []
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition devices error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/config', methods=['GET'])
+async def audio_recognition_get_config():
+    """
+    Get current audio recognition config with session overrides applied.
+    
+    Returns:
+        config: Merged configuration (session overrides > settings.json > defaults)
+        status: Current recognition status
+        session_overrides_active: Whether any session overrides are in effect
+    """
+    import sys
+    
+    # Guard: Don't import reaper unless necessary
+    if 'system_utils.reaper' not in sys.modules:
+        from config import AUDIO_RECOGNITION
+        if not AUDIO_RECOGNITION.get("enabled", False):
+            # Return config without importing reaper
+            from system_utils.session_config import (
+                get_audio_config_with_overrides, 
+                has_session_overrides,
+                get_active_overrides
+            )
+            return jsonify({
+                "config": get_audio_config_with_overrides(),
+                "status": {"active": False},
+                "session_overrides_active": has_session_overrides(),
+                "active_overrides": get_active_overrides()
+            })
+    
+    try:
+        from system_utils.session_config import (
+            get_audio_config_with_overrides, 
+            has_session_overrides,
+            get_active_overrides
+        )
+        from system_utils.reaper import get_reaper_source
+        
+        config = get_audio_config_with_overrides()
+        source = get_reaper_source()
+        
+        # Check if HTTPS is actually available (certs exist)
+        from pathlib import Path
+        from config import HTTPS
+        https_enabled = HTTPS.get("enabled", False)
+        cert_file = Path(HTTPS.get("cert_file", "certs/server.crt"))
+        https_available = https_enabled and cert_file.exists()
+        
+        return jsonify({
+            "config": config,
+            "status": source.get_status() if source else {},
+            "session_overrides_active": has_session_overrides(),
+            "active_overrides": get_active_overrides(),
+            "https_available": https_available  # Frontend can check this for mic mode
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition config error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio-recognition/configure', methods=['POST'])
+async def audio_recognition_configure():
+    """
+    Set session-level config overrides (not persisted to settings.json).
+    
+    Body: {
+        "enabled": bool,           // Enable/disable recognition
+        "device_id": int | null,   // Backend device ID
+        "device_name": str | null, // Backend device name
+        "mode": "backend" | "frontend", // Capture mode
+        "reaper_auto_detect": bool,     // Auto-start when Reaper detected
+        "recognition_interval": float,  // Seconds between recognitions
+        "capture_duration": float,      // Audio capture duration
+        "latency_offset": float         // Position offset
+    }
+    
+    Returns:
+        status: "configured"
+        config: New effective configuration
+        active_overrides: Which overrides are now active
+    """
+    try:
+        from system_utils.session_config import (
+            set_session_override,
+            get_audio_config_with_overrides,
+            get_active_overrides
+        )
+        from system_utils.reaper import get_reaper_source
+        
+        data = await request.get_json() or {}
+        
+        # Log received config for debugging
+        logger.info(f"Audio recognition config received: {data}")
+        
+        # Apply session overrides for all provided keys
+        valid_keys = [
+            "enabled", "device_id", "device_name", "mode",
+            "reaper_auto_detect", "recognition_interval",
+            "capture_duration", "latency_offset", "silence_threshold"
+        ]
+        
+        for key in valid_keys:
+            if key in data:
+                set_session_override(key, data[key])
+        
+        # EVENT-DRIVEN: Set runtime flag for immediate effect in main loop
+        # This replaces polling session_config on every metadata fetch
+        if 'enabled' in data or 'reaper_auto_detect' in data:
+            from system_utils.metadata import set_audio_rec_runtime_enabled
+            enabled = data.get('enabled', False)
+            auto_detect = data.get('reaper_auto_detect', False)
+            set_audio_rec_runtime_enabled(enabled, auto_detect)
+            
+            # Start/stop engine based on new state
+            if enabled:
+                source = get_reaper_source()
+                # Track if this is a frontend-initiated start
+                is_frontend_mode = data.get('mode') == 'frontend'
+                if not source.is_active:
+                    await source.start(manual=True)
+                    # Mark as frontend-started so WebSocket disconnect knows to stop
+                    source._frontend_started = is_frontend_mode
+            else:
+                import sys
+                if 'system_utils.reaper' in sys.modules:
+                    source = get_reaper_source()
+                    if source.is_active:
+                        await source.stop()
+        
+        # Get the new effective config
+        effective_config = get_audio_config_with_overrides()
+        
+        return jsonify({
+            "status": "configured",
+            "config": effective_config,
+            "active_overrides": get_active_overrides()
+        })
+        
+    except ImportError as e:
+        return jsonify({
+            "error": "Audio recognition not available",
+            "details": str(e)
+        }), 500
+    except Exception as e:
+        logger.error(f"Audio recognition configure error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.websocket('/ws/audio-stream')
+async def audio_stream_websocket():
+    """
+    WebSocket endpoint for frontend microphone audio streaming.
+    
+    Protocol:
+        - Client sends binary Int16 PCM chunks (44100 Hz, mono, little-endian)
+        - Server responds with JSON messages:
+            - {"type": "connected", "capture_duration": float}
+            - {"type": "recognition", "artist": str, "title": str, "position": float}
+            - {"type": "no_match"}
+            - {"type": "error", "message": str}
+    
+    Design Note (R11):
+        The WebSocket handler does NOT trigger recognition directly.
+        Instead, it pushes audio data to the engine's input queue.
+        The engine's _run_loop pulls from this queue when in frontend mode,
+        keeping the state machine consistent for both backend and frontend modes.
+    """
+    frontend_queue = None
+    
+    try:
+        from system_utils.reaper import get_reaper_source
+        from system_utils.session_config import get_effective_value
+        
+        source = get_reaper_source()
+        
+        # Check if recognition is active
+        if not source:
+            await websocket.close(1008, "Audio recognition source not available")
+            return
+        
+        if not source._engine:
+            await websocket.close(1008, "Recognition engine not initialized")
+            return
+        
+        # Cancel any pending grace period task - frontend reconnected
+        if source._grace_task and not source._grace_task.done():
+            source._grace_task.cancel()
+            source._grace_task = None
+            logger.debug("Grace period cancelled - frontend reconnected")
+        
+        # Enable frontend mode and get the queue
+        frontend_queue = source._engine.enable_frontend_mode()
+        
+        # Get capture duration for client info
+        capture_duration = get_effective_value("capture_duration", 4.0)
+        
+        # Send connection confirmation
+        await websocket.send_json({
+            "type": "connected",
+            "capture_duration": capture_duration
+        })
+        
+        logger.info("Frontend audio WebSocket connected")
+        
+        # Main receive loop
+        while True:
+            try:
+                # Receive binary audio data from client
+                data = await websocket.receive()
+                
+                if isinstance(data, bytes):
+                    # Push to frontend queue (async method)
+                    await frontend_queue.push(data)
+                else:
+                    # Text message - check for commands
+                    if isinstance(data, str):
+                        try:
+                            cmd = json.loads(data)
+                            if cmd.get("type") == "ping":
+                                await websocket.send_json({"type": "pong"})
+                        except json.JSONDecodeError:
+                            pass
+                            
+            except asyncio.CancelledError:
+                logger.info("Frontend audio WebSocket cancelled")
+                break
+                
+    except Exception as e:
+        logger.error(f"Frontend audio WebSocket error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
+    finally:
+        # Grace period before stopping engine on WebSocket disconnect
+        # This handles temporary disconnects (browser refresh, tab switch, network blip)
+        # and allows the frontend to reconnect without losing the recognition session
+        GRACE_PERIOD_SECONDS = 10
+        
+        if frontend_queue:
+            try:
+                from system_utils.reaper import get_reaper_source
+                from system_utils import create_tracked_task
+                
+                source = get_reaper_source()
+                if source and source._engine:
+                    # First disable frontend mode (switches to backend capture if available)
+                    source._engine.disable_frontend_mode()
+                    
+                    # Only apply grace period if this frontend session started the engine
+                    if source._frontend_started:
+                        # Cancel any existing grace period task (handles rapid disconnects)
+                        if source._grace_task and not source._grace_task.done():
+                            source._grace_task.cancel()
+                            logger.debug("Cancelled previous grace period task")
+                        
+                        logger.info(f"Frontend disconnected, waiting {GRACE_PERIOD_SECONDS}s for reconnection...")
+                        
+                        # Schedule delayed cleanup - gives frontend time to reconnect
+                        async def delayed_engine_cleanup():
+                            await asyncio.sleep(GRACE_PERIOD_SECONDS)
+                            
+                            # Check if frontend reconnected during grace period
+                            if source._engine and source._engine._frontend_mode:
+                                logger.info("Frontend reconnected during grace period, engine continues")
+                                source._grace_task = None
+                                return
+                            
+                            # No reconnection - stop the engine
+                            if source._frontend_started:
+                                await source.stop()
+                                source._frontend_started = False
+                                logger.info(f"Stopped audio recognition engine (no reconnection after {GRACE_PERIOD_SECONDS}s)")
+                            source._grace_task = None
+                        
+                        source._grace_task = create_tracked_task(delayed_engine_cleanup())
+                    else:
+                        logger.debug("Frontend disconnected but backend engine preserved")
+            except Exception as e:
+                logger.debug(f"Error handling WebSocket disconnect: {e}")
+        logger.info("Frontend audio WebSocket disconnected")
+
 
 # --- System Routes ---
 

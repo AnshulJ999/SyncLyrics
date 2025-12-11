@@ -110,6 +110,15 @@ system_utils old.py
 .agent/workflows/codebase-guide.md
 resources/js/lyrics.js.bak
 resources/js/lyrics OLD.js
+test_results
+test_shazam_metadata.py
+test_spotify_isrc.py
+run - Reaper.bat
+certs/server.key
+certs/server.crt
+device_test_output.txt
+test_device_enumeration.py
+check_devices.py
 run - Reaper.bat
 certs/server.crt
 certs/server.key

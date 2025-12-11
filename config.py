@@ -78,6 +78,13 @@ SERVER = {
     "host": conf("server.host", "0.0.0.0"),
     "secret_key": os.getenv("QUART_SECRET_KEY", "change-me-in-env"),
     "debug": conf("server.debug", False),
+    "https": {
+        "enabled": conf("server.https.enabled", False),
+        "port": conf("server.https.port", 0),  # 0 = same as HTTP, >0 = dual-stack
+        "auto_generate": conf("server.https.auto_generate", True),
+        "cert_file": conf("server.https.cert_file", "certs/server.crt"),
+        "key_file": conf("server.https.key_file", "certs/server.key"),
+    },
 }
 
 UI = {
@@ -111,7 +118,9 @@ LYRICS = {
         "buffer_size": conf("lyrics.display.buffer_size", 6),
         "update_interval": conf("lyrics.display.update_interval", 0.1),
         "idle_interval": conf("lyrics.display.idle_interval", 5.0),
-        "latency_compensation": conf("lyrics.display.latency_compensation", 0.1),
+        "latency_compensation": conf("lyrics.display.latency_compensation", 0.0),
+        "spotify_latency_compensation": conf("lyrics.display.spotify_latency_compensation", -0.5),
+        "audio_recognition_latency_compensation": conf("lyrics.display.audio_recognition_latency_compensation", 0.0),
         "idle_wait_time": conf("lyrics.display.idle_wait_time", 3.0),
         "smart_race_timeout": conf("lyrics.display.smart_race_timeout", 3.0),
     },
@@ -258,6 +267,19 @@ ARTIST_IMAGE = {
     "enable_wikipedia": conf("artist_image.enable_wikipedia", False),
     # Enable FanArt.tv album covers (fetches album artwork, can be disabled if too many duplicates)
     "enable_fanart_albumcover": conf("artist_image.enable_fanart_albumcover", True)
+}
+
+# Audio Recognition (Reaper Integration)
+# Uses ShazamIO for song identification with latency-compensated position tracking
+AUDIO_RECOGNITION = {
+    "enabled": conf("audio_recognition.enabled", False),
+    "reaper_auto_detect": conf("audio_recognition.reaper_auto_detect", False),
+    "device_id": conf("audio_recognition.device_id"),  # None = auto-detect
+    "device_name": conf("audio_recognition.device_name", ""),
+    "capture_duration": conf("audio_recognition.capture_duration", 5.0),
+    "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
+    "latency_offset": conf("audio_recognition.latency_offset", 0.0),
+    "silence_threshold": conf("audio_recognition.silence_threshold", 100),
 }
 
 # Helper functions

@@ -272,8 +272,33 @@ class ArtistImageProvider:
         if self.enable_audiodb:
             tasks.append(loop.run_in_executor(None, self._fetch_theaudiodb, artist_name))
             
-        # Run all in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Run all in parallel with timeout - use asyncio.wait for partial results
+        # If some providers timeout, we still keep results from providers that succeeded
+        try:
+            done, pending = await asyncio.wait(tasks, timeout=15.0)
+            
+            # Cancel any still-pending tasks
+            for task in pending:
+                task.cancel()
+                try:
+                    await task  # Allow cancellation to complete
+                except asyncio.CancelledError:
+                    pass
+            
+            # Collect results from completed tasks
+            results = []
+            for task in done:
+                try:
+                    results.append(task.result())
+                except Exception as e:
+                    logger.debug(f"Artist image task failed: {e}")
+                    results.append(e)  # Match return_exceptions=True behavior
+            
+            if pending:
+                logger.warning(f"Artist image fetch: {len(pending)} provider(s) timed out, kept {len(done)} result(s)")
+        except Exception as e:
+            logger.warning(f"Artist image fetch failed: {e}")
+            results = []
         
         all_images = []
         mbid = None

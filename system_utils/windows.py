@@ -184,7 +184,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         background_image_path = None
         
         # 1. Always load album art for top left display (independent of artist image preference)
-        db_result = load_album_art_from_db(artist, album, title)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        loop = asyncio.get_running_loop()
+        db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
         if db_result:
             found_in_db = True
             album_art_found_in_db = True  # CRITICAL: Only set when actual album art is found
@@ -211,7 +213,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
-        artist_image_result = load_artist_image_from_db(artist)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
@@ -328,28 +331,51 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 
                 # Only extract if we haven't already for this track OR if file doesn't exist
                 if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    stream = await thumbnail_ref.open_read_async()
+                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
+                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
+                    try:
+                        stream = await asyncio.wait_for(
+                            thumbnail_ref.open_read_async(),
+                            timeout=3.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("TRACE: Windows thumbnail open_read_async timed out")
+                        stream = None
+                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
+                        # We won't retry thumbnail extraction for this track until it changes
+                        state._last_windows_track_id = current_track_id
+                    
                     if stream:
                         reader = DataReader(stream)
-                        await reader.load_async(stream.size)
-                        byte_data = bytearray(stream.size)
-                        reader.read_bytes(byte_data)
-                        
-                        # Save directly to unique file (no race condition possible)
-                        loop = asyncio.get_running_loop()
-                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
-                        
-                        if save_ok:
+                        try:
+                            await asyncio.wait_for(
+                                reader.load_async(stream.size),
+                                timeout=3.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("TRACE: Windows thumbnail load_async timed out")
+                            stream = None
+                            # Also mark as processed on load timeout
                             state._last_windows_track_id = current_track_id
+                        else:
+                            byte_data = bytearray(stream.size)
+                            reader.read_bytes(byte_data)
                             
-                            # Cleanup: Delete OLD thumbnails to keep cache small
-                            # We only keep the current one
-                            for f in CACHE_DIR.glob("thumb_*.jpg"):
-                                if f.name != thumb_filename:
-                                    try:
-                                        os.remove(f)
-                                    except:
-                                        pass
+                            # Save directly to unique file (no race condition possible)
+                            loop = asyncio.get_running_loop()
+                            save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
+                            
+                            if save_ok:
+                                state._last_windows_track_id = current_track_id
+                                
+                                # Cleanup: Delete OLD thumbnails to keep cache small
+                                # We only keep the current one
+                                for f in CACHE_DIR.glob("thumb_*.jpg"):
+                                    if f.name != thumb_filename:
+                                        try:
+                                            os.remove(f)
+                                        except:
+                                            pass
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():
@@ -402,31 +428,36 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
                  # FIX: Wait for DB to avoid flicker
                  try:
-                     # Wait 300ms for high-res art
-                     await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
+                     # Refined Fix: Use asyncio.wait to avoid cancelling the background task on timeout
+                     # wait_for() would CANCEL the task on timeout, killing the download
+                     # wait() just returns - task stays in pending set and continues running
+                     done, pending = await asyncio.wait([task], timeout=0.3)
                      
-                     # Check DB again!
-                     db_result = load_album_art_from_db(artist, album, title)
-                     if db_result:
-                         # Found it! Update variables to use High-Res immediately
-                         found_in_db = True
-                         db_image_path = db_result["path"]
-                         
-                         # NEW: Use path directly instead of copying (eliminates race conditions)
-                         try:
-                             # FIX: Add timestamp for cache busting
-                             mtime = int(time.time())
+                     if task in done:
+                         # Task completed within timeout - check DB for high-res art
+                         # FIX: Run in executor to avoid blocking event loop during file I/O
+                         db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
+                         if db_result:
+                             # Found it! Update variables to use High-Res immediately
+                             found_in_db = True
+                             db_image_path = db_result["path"]
+                             
+                             # NEW: Use path directly instead of copying (eliminates race conditions)
                              try:
-                                 if db_image_path.exists():
-                                     mtime = int(db_image_path.stat().st_mtime)
-                             except: pass
-                             album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-                             result_extra_fields = {"album_art_path": str(db_image_path)}
-                         except Exception as e:
-                             logger.debug(f"Failed to set DB art path after wait: {e}")
-                             # If setting path fails, we fall back to the Windows thumbnail which is already set
-                 except asyncio.TimeoutError:
-                     pass # Fallback to Windows thumbnail
+                                 # FIX: Add timestamp for cache busting
+                                 mtime = int(time.time())
+                                 try:
+                                     if db_image_path.exists():
+                                         mtime = int(db_image_path.stat().st_mtime)
+                                 except: pass
+                                 album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                                 result_extra_fields = {"album_art_path": str(db_image_path)}
+                             except Exception as e:
+                                 logger.debug(f"Failed to set DB art path after wait: {e}")
+                     # If task in pending: timeout occurred, but task continues in background
+                     # Next poll cycle will see the result in DB
+                 except Exception:
+                     pass  # Fallback to Windows thumbnail
 
         # Re-fetch app_id safely for frontend control logic (optimistic enabling)
         # This allows frontend to enable controls immediately for Spotify app before enrichment completes
