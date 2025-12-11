@@ -192,9 +192,12 @@ def restart():
         time.sleep(0.5)  # Brief delay to ensure new process starts
         os._exit(0)  # Force exit without cleanup (cleanup already done)
     else:
-        # Development mode - use Python interpreter with execl
-        python = sys.executable
-        os.execl(python, python, *sys.argv)
+        # Development mode - FIX: Use subprocess instead of os.execl (fails on Windows)
+        logger.info("Spawning new Python instance...")
+        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        subprocess.Popen([sys.executable] + sys.argv, creationflags=creationflags)
+        time.sleep(0.5)
+        os._exit(0)
 
 async def cleanup() -> None:
     """Cleanup resources before exit"""
