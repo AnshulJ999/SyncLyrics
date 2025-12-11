@@ -1252,6 +1252,10 @@ async def toggle_playback():
     metadata = await get_current_song_meta_data()
     source = metadata.get('source') if metadata else None
     
+    # Debug logging for routing decisions
+    app_id = metadata.get('app_id', 'N/A') if metadata else 'N/A'
+    logger.debug(f"Playback toggle - source: {source}, app_id: {app_id}")
+    
     # Windows source uses Windows playback controls
     if source == 'windows_media':
         from system_utils.windows import windows_toggle_playback
@@ -1296,6 +1300,8 @@ async def next_track():
     metadata = await get_current_song_meta_data()
     source = metadata.get('source') if metadata else None
     
+    logger.debug(f"Playback next - source: {source}")
+    
     if source == 'windows_media':
         from system_utils.windows import windows_next
         success = await windows_next()
@@ -1315,6 +1321,8 @@ async def previous_track():
     """Skip to previous track - routes to Windows or Spotify based on current source."""
     metadata = await get_current_song_meta_data()
     source = metadata.get('source') if metadata else None
+    
+    logger.debug(f"Playback previous - source: {source}")
     
     if source == 'windows_media':
         from system_utils.windows import windows_previous

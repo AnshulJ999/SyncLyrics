@@ -235,7 +235,12 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # ---------------------------
             
         playback_info = current_session.get_playback_info()
-        if not playback_info or playback_info.playback_status != 4:
+        # FIX: Accept both Playing (4) and Paused (5) states
+        # Windows PlaybackStatus enum: Closed=0, Opened=1, Changing=2, Stopped=3, Playing=4, Paused=5
+        # Previously only accepted Playing (4), causing source to flip to Spotify when paused
+        # This broke playback controls (would control Spotify instead of Windows app)
+        playback_status = playback_info.playback_status if playback_info else None
+        if playback_status not in (4, 5):  # 4 = Playing, 5 = Paused
             return None
             
         info = await current_session.try_get_media_properties_async()
@@ -587,7 +592,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "colors": ("#24273a", "#363b54"),
             "album_art_url": album_art_url,  # ALWAYS album art (for top left display)
             "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
-            "is_playing": True,
+            "is_playing": playback_status == 4,  # True only if Playing (not Paused)
             "source": "windows_media",
             "app_id": app_id,  # ADDED: Pass app_id for optimistic control enabling (enables controls for spotify.exe before enrichment)
             "background_style": saved_background_style  # Return saved style preference

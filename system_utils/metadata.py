@@ -508,9 +508,14 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         if spotify_data.get("colors"):
                             result["colors"] = spotify_data.get("colors")
 
-                        # Enable Controls by marking as hybrid
-                        # Frontend will allow controls for this source type
-                        result["source"] = "spotify_hybrid"
+                        # FIX: Only upgrade to spotify_hybrid if the Windows source IS Spotify Desktop
+                        # This ensures MusicBee/VLC stay as windows_media (use Windows controls)
+                        # while Spotify Desktop becomes spotify_hybrid (use Spotify API for precise control)
+                        app_id = result.get("app_id", "").lower()
+                        if "spotify" in app_id:
+                            # Spotify Desktop detected via Windows → enable Spotify API controls
+                            result["source"] = "spotify_hybrid"
+                        # else: keep as windows_media (MusicBee, VLC, etc. use Windows controls)
                         
                         # CRITICAL FIX: Copy Spotify ID for Like button functionality
                         # This ensures the Like button works even when playing from Windows Media
