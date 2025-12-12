@@ -271,6 +271,18 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
         }
     }
 
+    // Set individual element visibility independently
+    // const albumArtLink = document.getElementById('album-art-link');
+    if (albumArtLink) {
+        albumArtLink.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+    }
+
+    const trackInfoEl = document.querySelector('.track-info');
+    if (trackInfoEl) {
+        trackInfoEl.style.display = displayConfig.showTrackInfo ? 'block' : 'none';
+    }
+
+    // Show header if either element is visible
     const hasContent = (trackInfo.album_art_url && displayConfig.showAlbumArt) || displayConfig.showTrackInfo;
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 }
