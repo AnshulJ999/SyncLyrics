@@ -274,6 +274,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             # When paused (status 5), the song isn't advancing, so don't add elapsed time
             if playback_status == 4:
                 elapsed = time.time() - timeline.last_updated_time.timestamp()
+                # Cap interpolation to 5 seconds to prevent runaway drift
+                # SMTC updates every 4-5s; this limits pause-detection lag
+                elapsed = min(elapsed, 5.0)
                 position = seconds + elapsed
             else:
                 # Paused - use raw position without interpolation
