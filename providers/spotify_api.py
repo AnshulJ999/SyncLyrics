@@ -28,6 +28,28 @@ from config import SPOTIFY, ALBUM_ART
 
 logger = get_logger(__name__)
 
+
+# ===========================================
+# Counting Session for Accurate API Tracking
+# ===========================================
+# Custom requests.Session that counts ALL HTTP requests made by spotipy,
+# including internal retries, token refreshes, and other hidden calls.
+# This gives accurate stats that match Spotify Developer Dashboard.
+
+class CountingSession(requests.Session):
+    """A requests.Session subclass that counts all HTTP requests (thread-safe)."""
+    
+    def __init__(self, stats_dict: dict):
+        super().__init__()
+        self._stats = stats_dict
+        self._lock = threading.Lock()  # Thread-safe counter
+    
+    def request(self, method, url, **kwargs):
+        """Override request() to count every HTTP call."""
+        with self._lock:
+            self._stats['total_requests'] += 1
+        return super().request(method, url, **kwargs)
+
 # ===========================================
 # Spotify Image URL Enhancement (Shared Utility)
 # ===========================================
@@ -429,6 +451,7 @@ class SpotifyAPI:
                 
             self.sp = spotipy.Spotify(
                 auth_manager=self.auth_manager,
+                requests_session=CountingSession(self.request_stats),  # Count ALL HTTP requests
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
@@ -481,8 +504,7 @@ class SpotifyAPI:
             if not self.initialized:
                 return False
                 
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific only, total is counted by CountingSession)
             self.request_stats['api_calls']['current_user'] += 1
             
             # Use spotipy to make the API call (handles auth automatically)
@@ -498,8 +520,7 @@ class SpotifyAPI:
         """Test API connection with retries. Tracks API calls for statistics."""
         for attempt in range(self.max_retries):
             try:
-                # Track this API call (current_user endpoint)
-                self.request_stats['total_requests'] += 1
+                # Track this API call (endpoint-specific only, total is counted by CountingSession)
                 self.request_stats['api_calls']['current_user'] += 1
                 
                 self.sp.current_user()  # Simple API call to test connection
@@ -632,8 +653,7 @@ class SpotifyAPI:
                 self.request_stats['cached_responses'] += 1
                 return self._calculate_progress(self._metadata_cache)
             
-            # 3. API Call
-            self.request_stats['total_requests'] += 1
+            # 3. API Call (endpoint-specific tracking, total is counted by CountingSession)
             self.request_stats['api_calls']['current_playback'] += 1
             
             loop = asyncio.get_event_loop()
@@ -731,8 +751,7 @@ class SpotifyAPI:
             return None
             
         try:
-            # Track API call
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['search'] += 1
             
             # Clean up search terms
@@ -811,8 +830,7 @@ class SpotifyAPI:
             return None
             
         try:
-            # Track API call
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['search'] += 1
             
             # Search by ISRC - returns exact match
@@ -900,8 +918,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Pausing playback")
@@ -920,8 +937,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Resuming playback")
@@ -940,8 +956,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Skipping to next track")
@@ -960,8 +975,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Going to previous track")
@@ -996,8 +1010,7 @@ class SpotifyAPI:
             return []
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             logger.debug(f"Fetching artist images for artist_id: {artist_id}")
@@ -1093,6 +1106,7 @@ class SpotifyAPI:
             # Re-initialize the Spotify client with the new auth manager (which now has tokens)
             self.sp = spotipy.Spotify(
                 auth_manager=self.auth_manager,
+                requests_session=CountingSession(self.request_stats),  # Track ALL requests
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
@@ -1118,7 +1132,7 @@ class SpotifyAPI:
             return None
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1135,7 +1149,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1152,7 +1166,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1168,7 +1182,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
