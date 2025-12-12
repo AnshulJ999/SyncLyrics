@@ -658,9 +658,10 @@ if __name__ == "__main__":
             return True  # Don't chain to the next handler
         return False
     
-    # Set up signal handler
+    # Set up signal handlers
     import signal
     signal.signal(signal.SIGINT, handle_interrupt)
+    signal.signal(signal.SIGTERM, handle_interrupt)  # Docker/HA graceful shutdown
     
     # Set up Windows-specific handler
     if win32api:
@@ -679,7 +680,8 @@ if __name__ == "__main__":
             pass
     
     try:
-        logger.info("Starting SyncLyrics...")
+        from config import VERSION
+        logger.info(f"Starting SyncLyrics v{VERSION}...")
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt caught in main...")

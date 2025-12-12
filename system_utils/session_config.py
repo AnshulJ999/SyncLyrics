@@ -111,10 +111,10 @@ def get_audio_config_with_overrides() -> Dict[str, Any]:
         "device_name": AUDIO_RECOGNITION.get("device_name", ""),
         "mode": AUDIO_RECOGNITION.get("mode", "backend"),
         "recognition_interval": AUDIO_RECOGNITION.get("recognition_interval", 5.0),
-        "capture_duration": AUDIO_RECOGNITION.get("capture_duration", 4.0),
+        "capture_duration": AUDIO_RECOGNITION.get("capture_duration", 5.0),
         "latency_offset": AUDIO_RECOGNITION.get("latency_offset", 0.0),
         "reaper_auto_detect": AUDIO_RECOGNITION.get("reaper_auto_detect", False),
-        "silence_threshold": AUDIO_RECOGNITION.get("silence_threshold", 100),
+        "silence_threshold": AUDIO_RECOGNITION.get("silence_threshold", 500),
     }
     
     # Apply session overrides (only non-None values)

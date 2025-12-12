@@ -125,10 +125,10 @@ class SettingsManager:
             # Lyrics
             "lyrics.display.buffer_size": Setting("Buffer Size", int, 6, False, "Lyrics", "Lines to buffer", "number", min_val=1, max_val=20),
             "lyrics.display.update_interval": Setting("Update Interval", float, 0.1, False, "Lyrics", "UI refresh rate (s)", "slider", min_val=0.05, max_val=1.0),
-            "lyrics.display.idle_interval": Setting("Idle Interval", float, 5.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
-            "lyrics.display.latency_compensation": Setting("Latency Comp", float, 0.0, False, "Lyrics", "Sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.idle_interval": Setting("Idle Interval", float, 3.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
+            "lyrics.display.latency_compensation": Setting("Latency Comp", float, -0.1, False, "Lyrics", "Sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.0, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.2, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 3.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=10.0),
             "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 3.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
 
@@ -159,7 +159,7 @@ class SettingsManager:
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
-            "providers.musicxmatch.priority": Setting("Musicxmatch Priority", int, 2, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.musicxmatch.priority": Setting("Musicxmatch Priority", int, 5, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
             "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
             "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
             "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
@@ -236,7 +236,7 @@ class SettingsManager:
             "visual_mode.enabled": Setting("Visual Mode", bool, True, False, "Visual Mode", "Enable visual mode for instrumentals", "switch"),
             "visual_mode.delay_seconds": Setting("Delay", int, 6, False, "Visual Mode", "Delay before hiding lyrics (s)", "slider", min_val=1, max_val=60),
             "visual_mode.auto_sharp": Setting("Auto Sharp", bool, True, False, "Visual Mode", "Auto-switch to sharp mode in visual mode", "switch"),
-            "visual_mode.slideshow.enabled": Setting("Slideshow", bool, True, False, "Visual Mode", "Enable slideshow when no music", "switch"),
+            "visual_mode.slideshow.enabled": Setting("Slideshow", bool, False, False, "Visual Mode", "Enable slideshow when no music", "switch"),
             "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
 
             # Audio Recognition (Reaper Integration)

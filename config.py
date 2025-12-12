@@ -26,6 +26,11 @@ if "__compiled__" in globals() or getattr(sys, 'frozen', False):
 else:
     ROOT_DIR = Path(__file__).parent
 
+# ==========================================
+# Version
+# ==========================================
+VERSION = "1.3.0"
+
 # FIX: Only load .env if it exists (optimization)
 env_file = ROOT_DIR / '.env'
 if env_file.exists():
