@@ -35,10 +35,11 @@ class Setting:
     requires_restart: bool = False
     category: Optional[str] = None
     description: Optional[str] = None
-    widget_type: str = "text"  # text, number, slider, switch, select, color
+    widget_type: str = "text"  # text, number, slider, switch, select, color, list
     options: Optional[list] = None  # For select
     min_val: Optional[float] = None  # For slider/number
     max_val: Optional[float] = None  # For slider/number
+    deprecated: bool = False  # Mark settings that are not actively used
 
     def validate_and_convert(self, value: Any) -> Any:
         try:
@@ -99,24 +100,26 @@ class SettingsManager:
             "server.host": Setting("Host", str, "0.0.0.0", True, "Server", "Bind address"),
             "server.debug": Setting("Server Debug", bool, False, True, "Server", "Quart debug mode", "switch"),
 
-            # UI
-            "ui.themes.default.bg_start": Setting("Default Start", str, "#24273a", False, "UI", "Default gradient start", "color"),
-            "ui.themes.default.bg_end": Setting("Default End", str, "#363b54", False, "UI", "Default gradient end", "color"),
-            "ui.themes.default.text": Setting("Default Text", str, "#ffffff", False, "UI", "Default text color", "color"),
-            "ui.themes.dark.bg_start": Setting("Dark Start", str, "#1c1c1c", False, "UI", "Dark mode gradient start", "color"),
-            "ui.themes.dark.bg_end": Setting("Dark End", str, "#2c2c2c", False, "UI", "Dark mode gradient end", "color"),
-            "ui.themes.dark.text": Setting("Dark Text", str, "#ffffff", False, "UI", "Dark mode text color", "color"),
-            "ui.themes.light.bg_start": Setting("Light Start", str, "#ffffff", False, "UI", "Light mode gradient start", "color"),
-            "ui.themes.light.bg_end": Setting("Light End", str, "#f0f0f0", False, "UI", "Light mode gradient end", "color"),
-            "ui.themes.light.text": Setting("Light Text", str, "#000000", False, "UI", "Light mode text color", "color"),
-            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade", "slide", "none"], False, "UI", "Enabled animations"),
-            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid", "albumart"], False, "UI", "Enabled backgrounds"),
-            "ui.minimal_mode.enabled": Setting("Minimal Mode", bool, False, False, "UI", "Hide extra UI elements", "switch"),
-            "ui.minimal_mode.hide_elements": Setting("Hidden Elements", list, ["bottom-nav"], False, "UI", "Elements to hide in minimal mode"),
+            # UI - Active settings
             "ui.blur_strength": Setting("Blur Strength", int, 10, False, "UI", "Background blur (px)", "slider", min_val=0, max_val=50),
             "ui.overlay_opacity": Setting("Overlay Opacity", float, 0.4, False, "UI", "Background overlay opacity", "slider", min_val=0.0, max_val=1.0),
             "ui.sharp_album_art": Setting("Sharp Album Art", bool, False, False, "UI", "Disable background blur & scaling", "switch"),
             "ui.soft_album_art": Setting("Soft Album Art", bool, False, False, "UI", "Medium blur album art background", "switch"),
+            
+            # UI - Deprecated (handled by frontend CSS/JS, not backend)
+            "ui.themes.default.bg_start": Setting("Default Start", str, "#24273a", False, "Deprecated", "Default gradient start", "color", deprecated=True),
+            "ui.themes.default.bg_end": Setting("Default End", str, "#363b54", False, "Deprecated", "Default gradient end", "color", deprecated=True),
+            "ui.themes.default.text": Setting("Default Text", str, "#ffffff", False, "Deprecated", "Default text color", "color", deprecated=True),
+            "ui.themes.dark.bg_start": Setting("Dark Start", str, "#1c1c1c", False, "Deprecated", "Dark mode gradient start", "color", deprecated=True),
+            "ui.themes.dark.bg_end": Setting("Dark End", str, "#2c2c2c", False, "Deprecated", "Dark mode gradient end", "color", deprecated=True),
+            "ui.themes.dark.text": Setting("Dark Text", str, "#ffffff", False, "Deprecated", "Dark mode text color", "color", deprecated=True),
+            "ui.themes.light.bg_start": Setting("Light Start", str, "#ffffff", False, "Deprecated", "Light mode gradient start", "color", deprecated=True),
+            "ui.themes.light.bg_end": Setting("Light End", str, "#f0f0f0", False, "Deprecated", "Light mode gradient end", "color", deprecated=True),
+            "ui.themes.light.text": Setting("Light Text", str, "#000000", False, "Deprecated", "Light mode text color", "color", deprecated=True),
+            "ui.animation_styles": Setting("Animation Styles", list, ["wave", "fade", "slide", "none"], False, "Deprecated", "Enabled animations", "list", deprecated=True),
+            "ui.background_styles": Setting("Bg Styles", list, ["gradient", "solid", "albumart"], False, "Deprecated", "Enabled backgrounds", "list", deprecated=True),
+            "ui.minimal_mode.enabled": Setting("Minimal Mode", bool, False, False, "Deprecated", "Hide extra UI elements", "switch", deprecated=True),
+            "ui.minimal_mode.hide_elements": Setting("Hidden Elements", list, ["bottom-nav"], False, "Deprecated", "Elements to hide in minimal mode", "list", deprecated=True),
 
             # Lyrics
             "lyrics.display.buffer_size": Setting("Buffer Size", int, 6, False, "Lyrics", "Lines to buffer", "number", min_val=1, max_val=20),
@@ -160,41 +163,44 @@ class SettingsManager:
             "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
             "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
 
-            # Storage
-            "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Storage", "Enable local DB", "switch"),
-            "storage.lyrics_db.max_size_mb": Setting("Max DB Size", int, 100, False, "Storage", "Max DB size (MB)", "number"),
-            "storage.lyrics_db.cleanup_threshold": Setting("Cleanup", float, 0.9, False, "Storage", "Cleanup threshold (0-1)", "slider", min_val=0.1, max_val=1.0),
-            "storage.lyrics_db.file_pattern": Setting("Pattern", str, "*.json", False, "Storage", "File pattern"),
-            "storage.cache.enabled": Setting("Cache Enabled", bool, True, False, "Storage", "Enable caching", "switch"),
-            "storage.cache.duration_days": Setting("Duration", int, 30, False, "Storage", "Cache duration (days)", "number"),
-            "storage.cache.max_size_mb": Setting("Max Cache", int, 50, False, "Storage", "Max cache size (MB)", "number"),
-            "storage.cache.memory_items": Setting("Mem Items", int, 100, False, "Storage", "Max memory items", "number"),
+            # Storage - Deprecated (not wired up to cleanup logic)
+            "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Deprecated", "Enable local DB", "switch", deprecated=True),
+            "storage.lyrics_db.max_size_mb": Setting("Max DB Size", int, 100, False, "Deprecated", "Max DB size (MB)", "number", deprecated=True),
+            "storage.lyrics_db.cleanup_threshold": Setting("Cleanup", float, 0.9, False, "Deprecated", "Cleanup threshold (0-1)", "slider", min_val=0.1, max_val=1.0, deprecated=True),
+            "storage.lyrics_db.file_pattern": Setting("Pattern", str, "*.json", False, "Deprecated", "File pattern", deprecated=True),
+            "storage.cache.enabled": Setting("Cache Enabled", bool, True, False, "Deprecated", "Enable caching", "switch", deprecated=True),
+            "storage.cache.duration_days": Setting("Duration", int, 30, False, "Deprecated", "Cache duration (days)", "number", deprecated=True),
+            "storage.cache.max_size_mb": Setting("Max Cache", int, 50, False, "Deprecated", "Max cache size (MB)", "number", deprecated=True),
+            "storage.cache.memory_items": Setting("Mem Items", int, 100, False, "Deprecated", "Max memory items", "number", deprecated=True),
 
-            # Notifications
-            "notifications.enabled": Setting("Notifications", bool, True, False, "Notifications", "Enable notifications", "switch"),
-            "notifications.duration": Setting("Duration", int, 3, False, "Notifications", "Notification duration (s)", "number"),
-            "notifications.icon_path": Setting("Icon", str, "resources/images/icon.ico", False, "Notifications", "Icon path"),
+            # Notifications - Deprecated (no notification system implemented)
+            "notifications.enabled": Setting("Notifications", bool, True, False, "Deprecated", "Enable notifications", "switch", deprecated=True),
+            "notifications.duration": Setting("Duration", int, 3, False, "Deprecated", "Notification duration (s)", "number", deprecated=True),
+            "notifications.icon_path": Setting("Icon", str, "resources/images/icon.ico", False, "Deprecated", "Icon path", deprecated=True),
 
             # System
             "system.windows.media_session.enabled": Setting("Win Media", bool, True, True, "System", "Enable Windows Media", "switch"),
             "system.windows.media_session.preferred": Setting("Prefer Win", bool, True, True, "System", "Prefer Windows Media", "switch"),
             "system.windows.media_session.timeout": Setting("Timeout", int, 5, False, "System", "SMTC timeout (s)", "number"),
-            "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "System", "Enable GSettings", "switch"),
-            "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "System", "Require Playerctl", "switch"),
+            # Linux - Deprecated (Linux not actively supported)
+            "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "Deprecated", "Enable GSettings", "switch", deprecated=True),
+            "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "Deprecated", "Require Playerctl", "switch", deprecated=True),
             
             # New Blocklist Setting
-            "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "text"),
+            "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "list"),
             "system.windows.paused_timeout": Setting("Paused Timeout", int, 600, False, "System", "Accept paused Windows media for N seconds (0=forever)", "number"),
 
-            # Features
-            "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Features", "Enable minimal mode", "switch"),
-            "features.save_lyrics_locally": Setting("Save Local", bool, True, False, "Features", "Save lyrics to disk", "switch"),
-            "features.show_lyrics_source": Setting("Show Source", bool, True, False, "Features", "Show provider name", "switch"),
-            "features.parallel_provider_fetch": Setting("Parallel", bool, True, False, "Features", "Fetch concurrently", "switch"),
-            "features.provider_stats": Setting("Stats", bool, False, False, "Features", "Track provider stats", "switch"),
-            "features.auto_theme": Setting("Auto Theme", bool, True, False, "Features", "Auto-switch theme", "switch"),
-            "features.album_art_colors": Setting("Art Colors", bool, True, False, "Features", "Use album art colors", "switch"),
-            "features.album_art_db": Setting("Album Art DB", bool, True, False, "Features", "Enable album art database", "switch"),
+            # Features - Active
+            "features.save_lyrics_locally": Setting("Save Lyrics Locally", bool, True, False, "Features", "Save lyrics to disk", "switch"),
+            "features.parallel_provider_fetch": Setting("Parallel Fetch", bool, True, False, "Features", "Fetch from providers concurrently", "switch"),
+            "features.album_art_db": Setting("Album Art Database", bool, True, False, "Features", "Enable album art database", "switch"),
+            
+            # Features - Deprecated (not wired up)
+            "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Deprecated", "Enable minimal mode", "switch", deprecated=True),
+            "features.show_lyrics_source": Setting("Show Source", bool, True, False, "Deprecated", "Show provider name", "switch", deprecated=True),
+            "features.provider_stats": Setting("Stats", bool, False, False, "Deprecated", "Track provider stats", "switch", deprecated=True),
+            "features.auto_theme": Setting("Auto Theme", bool, True, False, "Deprecated", "Auto-switch theme", "switch", deprecated=True),
+            "features.album_art_colors": Setting("Art Colors", bool, True, False, "Deprecated", "Use album art colors", "switch", deprecated=True),
 
             # Media Source
             "media_source.spotify.enabled": Setting("Spotify Source", bool, True, True, "Media", "Enable Spotify source", "switch"),
@@ -372,7 +378,8 @@ class SettingsManager:
                 "widget_type": defin.widget_type,
                 "options": defin.options,
                 "min": defin.min_val,
-                "max": defin.max_val
+                "max": defin.max_val,
+                "deprecated": defin.deprecated
             }
         return result
 

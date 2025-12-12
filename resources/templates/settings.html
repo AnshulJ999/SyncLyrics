@@ -7,18 +7,52 @@
         <div class="settings-sidebar">
             <h3 class="sidebar-title">Settings</h3>
             <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
-                <button class="nav-link active" id="v-pills-legacy-tab" data-bs-toggle="pill" data-bs-target="#v-pills-legacy" type="button" role="tab">
-                    <i class="bi bi-palette me-2"></i>Appearance
-                </button>
                 {% for category in settings.keys() %}
-                <button class="nav-link" id="v-pills-{{ category|lower|replace(' ', '-') }}-tab" data-bs-toggle="pill" data-bs-target="#v-pills-{{ category|lower|replace(' ', '-') }}" type="button" role="tab">
-                    <i class="bi bi-gear me-2"></i>{{ category }}
+                <button
+                    class="nav-link {% if loop.first %}active{% endif %} {% if category == 'Deprecated' %}deprecated-tab{% endif %}"
+                    id="v-pills-{{ category|lower|replace(' ', '-') }}-tab" data-bs-toggle="pill"
+                    data-bs-target="#v-pills-{{ category|lower|replace(' ', '-') }}" type="button" role="tab">
+                    {% if category == 'Deprecated' %}
+                    <i class="bi bi-archive me-2"></i>
+                    {% elif category == 'Debug' %}
+                    <i class="bi bi-bug me-2"></i>
+                    {% elif category == 'Server' %}
+                    <i class="bi bi-hdd-network me-2"></i>
+                    {% elif category == 'UI' %}
+                    <i class="bi bi-palette me-2"></i>
+                    {% elif category == 'Lyrics' %}
+                    <i class="bi bi-music-note-list me-2"></i>
+                    {% elif category == 'Providers' %}
+                    <i class="bi bi-cloud-download me-2"></i>
+                    {% elif category == 'System' %}
+                    <i class="bi bi-windows me-2"></i>
+                    {% elif category == 'Features' %}
+                    <i class="bi bi-toggles me-2"></i>
+                    {% elif category == 'Media' %}
+                    <i class="bi bi-disc me-2"></i>
+                    {% elif category == 'Spotify API' %}
+                    <i class="bi bi-spotify me-2"></i>
+                    {% elif category == 'Album Art' %}
+                    <i class="bi bi-image me-2"></i>
+                    {% elif category == 'Artist Image' %}
+                    <i class="bi bi-person-badge me-2"></i>
+                    {% elif category == 'Visual Mode' %}
+                    <i class="bi bi-eye me-2"></i>
+                    {% elif category == 'Audio Recognition' %}
+                    <i class="bi bi-soundwave me-2"></i>
+                    {% elif category == 'HTTPS' %}
+                    <i class="bi bi-shield-lock me-2"></i>
+                    {% else %}
+                    <i class="bi bi-gear me-2"></i>
+                    {% endif %}
+                    {{ category }}
                 </button>
                 {% endfor %}
             </div>
-            
+
             <div class="sidebar-footer">
-                <a href="{{ url_for('reset_defaults') }}" class="btn btn-outline-danger w-100 btn-sm">
+                <a href="{{ url_for('reset_defaults') }}" class="btn btn-outline-danger w-100 btn-sm"
+                    onclick="return confirm('Reset all settings to defaults?');">
                     <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Defaults
                 </a>
             </div>
@@ -27,112 +61,114 @@
         <!-- Content Area -->
         <div class="settings-content-area">
             <form action="{{ url_for('settings_page') }}" method="post" id="settingsForm">
-                
-                <!-- Messages -->
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        {% for category, message in messages %}
-                            <div class="alert alert-{{ category }} alert-dismissible fade show mb-4">
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            </div>
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
+                <!-- Flash messages are handled by base.html -->
 
                 <div class="tab-content" id="v-pills-tabContent">
-                    
-                    <!-- Legacy / Appearance Tab -->
-                    <div class="tab-pane fade show active" id="v-pills-legacy" role="tabpanel">
-                        <h4 class="section-title">Appearance</h4>
-                        <div class="settings-card">
-                            <div class="mb-4">
-                                <label class="form-label">Theme Preset</label>
-                                <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="theme" id="dark" value="dark" 
-                                           {% if theme == 'dark' %}checked{% endif %}>
-                                    <label class="btn btn-outline-primary" for="dark">Dark</label>
-
-                                    <input type="radio" class="btn-check" name="theme" id="light" value="light"
-                                           {% if theme == 'light' %}checked{% endif %}>
-                                    <label class="btn btn-outline-primary" for="light">Light</label>
-                                </div>
-                            </div>
-                            <div class="form-check form-switch mb-3">
-                                <input type="checkbox" class="form-check-input" id="terminal-method" 
-                                       name="terminal-method" {% if terminal_method %}checked{% endif %}>
-                                <label class="form-check-label" for="terminal-method">
-                                    Show lyrics in terminal
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Dynamic Categories -->
                     {% for category, category_settings in settings.items() %}
-                    <div class="tab-pane fade" id="v-pills-{{ category|lower|replace(' ', '-') }}" role="tabpanel">
-                        <h4 class="section-title">{{ category }}</h4>
+                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                        id="v-pills-{{ category|lower|replace(' ', '-') }}" role="tabpanel">
+                        <h4 class="section-title">
+                            {{ category }}
+                            {% if category == 'Deprecated' %}
+                            <span class="badge bg-secondary ms-2">Not actively used</span>
+                            {% endif %}
+                        </h4>
+
+                        {% if category == 'Deprecated' %}
+                        <div class="alert alert-warning mb-4">
+                            <i class="bi bi-info-circle me-2"></i>
+                            These settings are defined but not currently wired up to any functionality.
+                            They are kept for potential future use or backwards compatibility.
+                        </div>
+                        {% endif %}
+
                         <div class="settings-card">
                             {% for key, setting in category_settings.items() %}
-                                <div class="setting-item {% if setting.requires_restart %}needs-restart{% endif %}">
-                                    <div class="setting-header">
-                                        <label class="form-label" for="{{ key }}">
-                                            {{ setting.name }}
-                                            {% if setting.requires_restart %}
-                                                <span class="badge bg-warning text-dark ms-2" data-bs-toggle="tooltip" title="Requires Restart">
-                                                    <i class="bi bi-power"></i>
-                                                </span>
-                                            {% endif %}
-                                        </label>
-                                        {% if setting.description %}
-                                            <small class="text-muted d-block">{{ setting.description }}</small>
+                            <div
+                                class="setting-item {% if setting.requires_restart %}needs-restart{% endif %} {% if setting.deprecated %}deprecated{% endif %}">
+                                <div class="setting-header">
+                                    <label class="form-label" for="{{ key }}">
+                                        {{ setting.name }}
+                                        {% if setting.requires_restart %}
+                                        <span class="badge bg-warning text-dark ms-2" data-bs-toggle="tooltip"
+                                            title="Requires Restart">
+                                            <i class="bi bi-power"></i>
+                                        </span>
                                         {% endif %}
-                                    </div>
-
-                                    <div class="setting-control">
-                                        {% if setting.widget_type == "switch" %}
-                                            <div class="form-check form-switch">
-                                                <input type="checkbox" class="form-check-input" 
-                                                       id="{{ key }}" name="{{ key }}"
-                                                       {% if setting.value %}checked{% endif %}>
-                                            </div>
-                                        {% elif setting.widget_type == "select" %}
-                                            <select class="form-select" id="{{ key }}" name="{{ key }}">
-                                                {% for opt in setting.options %}
-                                                    <option value="{{ opt }}" {% if setting.value == opt %}selected{% endif %}>
-                                                        {{ opt }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
-                                        {% elif setting.widget_type == "slider" %}
-                                            <div class="d-flex align-items-center gap-3">
-                                                <input type="range" class="form-range" 
-                                                       id="{{ key }}" name="{{ key }}"
-                                                       min="{{ setting.min_val }}" max="{{ setting.max_val }}" step="0.1"
-                                                       value="{{ setting.value }}"
-                                                       oninput="document.getElementById('val-{{ key }}').textContent = this.value">
-                                                <span class="badge bg-secondary" id="val-{{ key }}">{{ setting.value }}</span>
-                                            </div>
-                                        {% elif setting.widget_type == "color" %}
-                                            <div class="input-group">
-                                                <input type="color" class="form-control form-control-color" 
-                                                       id="{{ key }}" name="{{ key }}"
-                                                       value="{{ setting.value }}" title="Choose your color">
-                                                <input type="text" class="form-control" value="{{ setting.value }}" readonly>
-                                            </div>
-                                        {% elif setting.widget_type == "number" %}
-                                            <input type="number" class="form-control" 
-                                                   id="{{ key }}" name="{{ key }}"
-                                                   value="{{ setting.value }}"
-                                                   {% if setting.min_val is not none %}min="{{ setting.min_val }}"{% endif %}
-                                                   {% if setting.max_val is not none %}max="{{ setting.max_val }}"{% endif %}>
-                                        {% else %}
-                                            <input type="text" class="form-control" 
-                                                   id="{{ key }}" name="{{ key }}"
-                                                   value="{{ setting.value }}">
-                                        {% endif %}
-                                    </div>
+                                    </label>
+                                    {% if setting.description %}
+                                    <small class="text-muted d-block">{{ setting.description }}</small>
+                                    {% endif %}
                                 </div>
+
+                                <div class="setting-control">
+                                    {% if setting.widget_type == "switch" %}
+                                    <div class="form-check form-switch">
+                                        <input type="checkbox" class="form-check-input" id="{{ key }}" name="{{ key }}"
+                                            {% if setting.value %}checked{% endif %}>
+                                    </div>
+                                    {% elif setting.widget_type == "select" %}
+                                    <select class="form-select" id="{{ key }}" name="{{ key }}">
+                                        {% for opt in setting.options %}
+                                        <option value="{{ opt }}" {% if setting.value==opt %}selected{% endif %}>
+                                            {{ opt }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    {% elif setting.widget_type == "slider" %}
+                                    <div class="d-flex align-items-center gap-3">
+                                        <input type="range" class="form-range" id="{{ key }}" name="{{ key }}"
+                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}"
+                                            step="{% if setting.type == 'float' %}0.1{% else %}1{% endif %}"
+                                            value="{{ setting.value }}"
+                                            oninput="document.getElementById('val-{{ key }}').textContent = this.value">
+                                        <span class="badge bg-secondary" id="val-{{ key }}">{{ setting.value }}</span>
+                                    </div>
+                                    {% elif setting.widget_type == "color" %}
+                                    <div class="input-group">
+                                        <input type="color" class="form-control form-control-color" id="{{ key }}"
+                                            name="{{ key }}" value="{{ setting.value }}" title="Choose your color">
+                                        <input type="text" class="form-control" value="{{ setting.value }}"
+                                            onchange="document.getElementById('{{ key }}').value = this.value" readonly>
+                                    </div>
+                                    {% elif setting.widget_type == "number" %}
+                                    <input type="number" class="form-control" id="{{ key }}" name="{{ key }}"
+                                        value="{{ setting.value if setting.value is not none else '' }}" {% if
+                                        setting.min_val is not none %}min="{{ setting.min_val }}" {% endif %} {% if
+                                        setting.max_val is not none %}max="{{ setting.max_val }}" {% endif %}>
+                                    {% elif setting.widget_type == "list" %}
+                                    <!-- List Widget -->
+                                    <div class="list-widget">
+                                        <div class="tag-container" id="tags-{{ key }}">
+                                            {% if setting.value is iterable and setting.value is not string %}
+                                            {% for item in setting.value %}
+                                            <span class="tag">
+                                                {{ item }}
+                                                <button type="button" class="tag-remove"
+                                                    onclick="removeTag(this)">&times;</button>
+                                            </span>
+                                            {% endfor %}
+                                            {% endif %}
+                                        </div>
+                                        <div class="input-group mt-2">
+                                            <input type="text" class="form-control list-input" placeholder="Add item..."
+                                                id="input-{{ key }}"
+                                                onkeypress="if(event.key==='Enter'){event.preventDefault();addTag('{{ key }}');}">
+                                            <button type="button" class="btn btn-outline-secondary"
+                                                onclick="addTag('{{ key }}')">
+                                                <i class="bi bi-plus"></i>
+                                            </button>
+                                        </div>
+                                        <input type="hidden" name="{{ key }}" id="hidden-{{ key }}"
+                                            value="{{ setting.value | tojson if setting.value else '[]' }}">
+                                    </div>
+                                    {% else %}
+                                    <input type="text" class="form-control" id="{{ key }}" name="{{ key }}"
+                                        value="{{ setting.value }}">
+                                    {% endif %}
+                                </div>
+                            </div>
                             {% endfor %}
                         </div>
                     </div>
@@ -143,7 +179,7 @@
                 <div class="save-bar">
                     <div class="d-flex align-items-center justify-content-between w-100">
                         <div id="restart-notice" class="text-warning" style="display: none;">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Restart required
+                            <i class="bi bi-exclamation-triangle me-2"></i>Some changes require restart
                         </div>
                         <button type="submit" class="btn btn-primary px-4 ms-auto">
                             <i class="bi bi-save me-2"></i>Save Changes
@@ -165,7 +201,7 @@
         bottom: 0;
         background: rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(10px);
-        z-index: 1000;
+        z-index: 1050;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -192,6 +228,7 @@
         display: flex;
         flex-direction: column;
         border-right: 1px solid rgba(255, 255, 255, 0.05);
+        overflow-y: auto;
     }
 
     .sidebar-title {
@@ -208,6 +245,7 @@
         margin-bottom: 0.2rem;
         border-radius: 8px;
         transition: all 0.2s;
+        font-size: 0.9rem;
     }
 
     .nav-pills .nav-link:hover {
@@ -219,6 +257,13 @@
         background: rgba(59, 130, 246, 0.2);
         color: #60a5fa;
         font-weight: 500;
+    }
+
+    .nav-pills .nav-link.deprecated-tab {
+        color: rgba(255, 255, 255, 0.4);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin-top: 1rem;
+        padding-top: 1rem;
     }
 
     .sidebar-footer {
@@ -242,6 +287,8 @@
         font-size: 1.8rem;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         padding-bottom: 1rem;
+        display: flex;
+        align-items: center;
     }
 
     .settings-card {
@@ -263,27 +310,38 @@
         border-bottom: none;
     }
 
+    .setting-item.deprecated {
+        opacity: 0.7;
+    }
+
     .setting-header {
         flex: 1;
         padding-right: 2rem;
     }
 
     .setting-control {
-        width: 250px;
+        width: 280px;
+        flex-shrink: 0;
     }
 
     /* Form Controls */
-    .form-control, .form-select {
+    .form-control,
+    .form-select {
         background: rgba(0, 0, 0, 0.3);
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: white;
     }
 
-    .form-control:focus, .form-select:focus {
+    .form-control:focus,
+    .form-select:focus {
         background: rgba(0, 0, 0, 0.4);
         border-color: #60a5fa;
         color: white;
         box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    }
+
+    .form-control::placeholder {
+        color: rgba(255, 255, 255, 0.4);
     }
 
     .form-switch .form-check-input {
@@ -296,10 +354,47 @@
         background: #60a5fa;
     }
 
+    /* List Widget */
+    .list-widget {
+        width: 100%;
+    }
+
+    .tag-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        min-height: 2rem;
+    }
+
+    .tag {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(96, 165, 250, 0.2);
+        color: #60a5fa;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.85rem;
+    }
+
+    .tag-remove {
+        background: none;
+        border: none;
+        color: #60a5fa;
+        padding: 0;
+        margin-left: 0.5rem;
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+    }
+
+    .tag-remove:hover {
+        color: #ef4444;
+    }
+
     /* Save Bar */
     .save-bar {
         position: sticky;
-        bottom: -2rem; /* Offset padding */
+        bottom: -2rem;
         margin: 2rem -2rem -2rem -2rem;
         padding: 1rem 2rem;
         background: rgba(20, 22, 35, 0.95);
@@ -309,14 +404,48 @@
         z-index: 10;
     }
 
+    /* Alerts */
+    .alert {
+        border-radius: 8px;
+    }
+
+    .alert-success {
+        background: rgba(34, 197, 94, 0.2);
+        border-color: rgba(34, 197, 94, 0.3);
+        color: #4ade80;
+    }
+
+    .alert-warning {
+        background: rgba(234, 179, 8, 0.2);
+        border-color: rgba(234, 179, 8, 0.3);
+        color: #facc15;
+    }
+
+    .alert-info {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: rgba(59, 130, 246, 0.3);
+        color: #60a5fa;
+    }
+
+    .alert-danger {
+        background: rgba(239, 68, 68, 0.2);
+        border-color: rgba(239, 68, 68, 0.3);
+        color: #f87171;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
+        .settings-wrapper {
+            padding: 0;
+        }
+
         .settings-container {
             flex-direction: column;
             height: 100%;
             border-radius: 0;
+            max-width: 100%;
         }
-        
+
         .settings-sidebar {
             width: 100%;
             height: auto;
@@ -324,12 +453,14 @@
             overflow-x: auto;
             padding: 1rem;
             align-items: center;
+            flex-wrap: nowrap;
         }
 
         .sidebar-title {
             margin-bottom: 0;
             margin-right: 1rem;
             font-size: 1.2rem;
+            white-space: nowrap;
         }
 
         .nav-pills {
@@ -339,6 +470,17 @@
 
         .nav-pills .nav-link {
             white-space: nowrap;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        .nav-pills .nav-link.deprecated-tab {
+            border-top: none;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 0;
+            margin-left: 1rem;
+            padding-top: 0.5rem;
+            padding-left: 0.75rem;
         }
 
         .sidebar-footer {
@@ -351,47 +493,103 @@
             gap: 1rem;
         }
 
+        .setting-header {
+            padding-right: 0;
+        }
+
         .setting-control {
             width: 100%;
+        }
+
+        .settings-content-area {
+            padding: 1rem;
+        }
+
+        .save-bar {
+            margin: 1rem -1rem -1rem -1rem;
+            padding: 1rem;
         }
     }
 </style>
 {% endblock %}
 
 {% block scripts %}
-    {{ super() }}
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Initialize tooltips
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+<script>
+    // List widget functions
+    function addTag(key) {
+        const input = document.getElementById('input-' + key);
+        const value = input.value.trim();
+        if (!value) return;
 
-            // Show restart notice if any setting that requires restart is changed
-            const restartInputs = document.querySelectorAll('.needs-restart input, .needs-restart select');
-            const restartNotice = document.getElementById('restart-notice');
-            
-            restartInputs.forEach(input => {
-                input.addEventListener('change', () => {
-                    restartNotice.style.display = 'block';
-                });
-            });
+        const container = document.getElementById('tags-' + key);
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.innerHTML = value + '<button type="button" class="tag-remove" onclick="removeTag(this)">&times;</button>';
+        container.appendChild(tag);
 
-            // Handle checkbox values properly
-            document.getElementById('settingsForm').addEventListener('submit', function(e) {
-                const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-                checkboxes.forEach(checkbox => {
-                    if (!checkbox.checked) {
-                        const hidden = document.createElement('input');
-                        hidden.type = 'hidden';
-                        hidden.name = checkbox.name;
-                        hidden.value = 'false';
-                        checkbox.parentNode.appendChild(hidden);
-                    }
-                });
+        input.value = '';
+        updateHiddenInput(key);
+    }
+
+    function removeTag(button) {
+        const tag = button.parentElement;
+        const container = tag.parentElement;
+        const key = container.id.replace('tags-', '');
+        tag.remove();
+        updateHiddenInput(key);
+    }
+
+    function updateHiddenInput(key) {
+        const container = document.getElementById('tags-' + key);
+        const tags = container.querySelectorAll('.tag');
+        const values = Array.from(tags).map(tag => {
+            // Get text content without the × button
+            return tag.childNodes[0].textContent.trim();
+        });
+        document.getElementById('hidden-' + key).value = JSON.stringify(values);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Show restart notice if any setting that requires restart is changed
+        const restartInputs = document.querySelectorAll('.needs-restart input, .needs-restart select');
+        const restartNotice = document.getElementById('restart-notice');
+
+        restartInputs.forEach(input => {
+            input.addEventListener('change', () => {
+                restartNotice.style.display = 'block';
             });
         });
-    </script>
+
+        // Handle checkbox values properly
+        document.getElementById('settingsForm').addEventListener('submit', function (e) {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                if (!checkbox.checked) {
+                    const hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = checkbox.name;
+                    hidden.value = 'false';
+                    checkbox.parentNode.appendChild(hidden);
+                }
+            });
+        });
+
+        // Auto-dismiss alerts after 5 seconds
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(alert => {
+            setTimeout(() => {
+                alert.classList.remove('show');
+                setTimeout(() => alert.remove(), 150);
+            }, 5000);
+        });
+    });
+</script>
 {% endblock %}

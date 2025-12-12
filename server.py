@@ -1888,6 +1888,9 @@ async def audio_stream_websocket():
 async def settings_page():
     if request.method == 'POST':
         form_data = await request.form
+        errors = []
+        changes_made = 0
+        requires_restart = False
         
         # Legacy support
         theme = form_data.get('theme', 'dark')
@@ -1921,14 +1924,28 @@ async def settings_page():
                     elif value.lower() in ['false', 'off']: val = False
                     elif value.isdigit(): val = int(value)
                     else: val = value
-                settings.set(key, val)
+                
+                setting_requires_restart = settings.set(key, val)
+                if setting_requires_restart:
+                    requires_restart = True
+                changes_made += 1
             except Exception as e:
                 logger.warning(f"Failed to set setting {key}: {e}")
+                errors.append(f"{key}: {str(e)}")
         
         settings.save_to_config()
+        
+        # Flash messages for feedback
+        if errors:
+            flash(f"Settings saved with {len(errors)} error(s): {', '.join(errors[:3])}", "warning")
+        elif requires_restart:
+            flash("Settings saved! Some changes require a restart to take effect.", "info")
+        else:
+            flash("Settings saved successfully!", "success")
+        
         return redirect(url_for('settings_page'))
 
-    # Render
+    # Render - organize settings with deprecated field
     settings_by_category = {}
     for key, setting in settings._definitions.items():
         cat = setting.category or "Misc"
@@ -1938,19 +1955,25 @@ async def settings_page():
             'type': setting.type.__name__,
             'value': settings.get(key), 
             'description': setting.description,
-            # FIX: Add widget metadata for proper form rendering
             'widget_type': setting.widget_type,
             'requires_restart': setting.requires_restart,
             'min_val': getattr(setting, 'min_val', None),
             'max_val': getattr(setting, 'max_val', None),
-            'options': getattr(setting, 'options', None)
+            'options': getattr(setting, 'options', None),
+            'deprecated': getattr(setting, 'deprecated', False)
         }
     
-    return await render_template('settings.html', settings=settings_by_category, theme=get_attribute_js_notation(get_state(), 'theme'))
+    # Ensure 'Deprecated' category appears last in ordering
+    ordered_settings = {}
+    for cat in sorted(settings_by_category.keys(), key=lambda x: (x == 'Deprecated', x)):
+        ordered_settings[cat] = settings_by_category[cat]
+    
+    return await render_template('settings.html', settings=ordered_settings, theme=get_attribute_js_notation(get_state(), 'theme'))
 
 @app.route('/reset-defaults')
 async def reset_defaults():
     settings.reset_to_defaults()
+    flash("All settings have been reset to defaults.", "info")
     return redirect(url_for('settings_page'))
 
 @app.route("/exit-application")
