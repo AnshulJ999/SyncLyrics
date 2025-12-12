@@ -333,6 +333,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
             else:
                 # If last result was None (Idle/Paused) and we are within interval,
                 # return None immediately. This prevents aggressive polling when nothing is playing.
+                _log_app_state()  # Still log state periodically when idle (HAOS fix)
                 return None
         
         # Update check time only when we are committed to fetching (inside the lock)

@@ -564,6 +564,12 @@ async def main() -> NoReturn:
         while True:
             loop_iteration += 1
             
+            # Periodic state logging every 5 minutes (3000 iterations at 0.1s interval)
+            # Independent of frontend polling - works even when headless on HAOS
+            if loop_iteration % 3000 == 0:
+                from system_utils.helpers import _log_app_state
+                _log_app_state()
+            
             # Heartbeat logging every 60 seconds (600 iterations at 0.1s interval)
             if loop_iteration % 600 == 0:
                 logger.info(f"Main loop heartbeat - iteration {loop_iteration}")

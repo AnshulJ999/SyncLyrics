@@ -16,6 +16,9 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Track app start time for uptime reporting
+_app_start_time = time.time()
+
 
 # =============================================================================
 # Thread Executor for Blocking Operations
@@ -213,10 +216,16 @@ def _log_app_state() -> None:
     if logger.isEnabledFor(logging.INFO):
         current_time_str = time.strftime("%I:%M %p - %b %d, %Y")
         
+        # Calculate uptime
+        uptime_seconds = current_time - _app_start_time
+        uptime_hours = int(uptime_seconds // 3600)
+        uptime_minutes = int((uptime_seconds % 3600) // 60)
+        
         # Base state summary
         state_summary = (
             f"\nApplication State Summary:\n"
             f"|- Time: {current_time_str}\n"
+            f"|- Uptime: {uptime_hours}h {uptime_minutes}m\n"
             f"|- Mode: {'Active' if is_active else 'Idle'}\n"
             f"|- Current Song: {last_song}\n"
             f"|- Active Source: {last_source}\n"
