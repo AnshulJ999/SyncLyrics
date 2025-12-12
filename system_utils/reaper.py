@@ -76,7 +76,7 @@ class ReaperAudioSource:
         self._device_id: Optional[int] = None
         self._device_name: Optional[str] = None
         self._recognition_interval = 5.0
-        self._capture_duration = 4.0
+        self._capture_duration = 5.0
         self._latency_offset = 0.0
         
     @staticmethod
@@ -208,7 +208,7 @@ class ReaperAudioSource:
         device_id: Optional[int] = None,
         device_name: Optional[str] = None,
         recognition_interval: float = 5.0,
-        capture_duration: float = 4.0,
+        capture_duration: float = 5.0,
         latency_offset: float = 0.0,
         auto_detect: bool = True
     ):
@@ -249,7 +249,7 @@ class ReaperAudioSource:
         self._device_id = config.get("device_id")
         self._device_name = config.get("device_name", "")
         self._recognition_interval = config.get("recognition_interval", 5.0)
-        self._capture_duration = config.get("capture_duration", 4.0)
+        self._capture_duration = config.get("capture_duration", 5.0)
         self._latency_offset = config.get("latency_offset", 0.0)
         self._auto_detect = config.get("reaper_auto_detect", False)
         self._enabled = config.get("enabled", False)
@@ -607,7 +607,7 @@ async def init_reaper_source(
     device_id: Optional[int] = None,
     device_name: Optional[str] = None,
     recognition_interval: float = 5.0,
-    capture_duration: float = 4.0,
+    capture_duration: float = 5.0,
     latency_offset: float = 0.0,
     auto_detect: bool = True
 ):

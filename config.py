@@ -62,9 +62,10 @@ RESOURCES_DIR = ROOT_DIR / "resources"
 DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
 CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
 ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
+CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(ROOT_DIR / "certs")))
 
 # FIX: Wrap directory creation in try-except for permission errors
-for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
+for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, CERTS_DIR]:
     try:
         d.mkdir(parents=True, exist_ok=True)
     except (OSError, PermissionError) as e:
@@ -307,7 +308,7 @@ AUDIO_RECOGNITION = {
     "capture_duration": conf("audio_recognition.capture_duration", 5.0),
     "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
     "latency_offset": conf("audio_recognition.latency_offset", 0.0),
-    "silence_threshold": conf("audio_recognition.silence_threshold", 100),
+    "silence_threshold": conf("audio_recognition.silence_threshold", 500),
 }
 
 # Helper functions

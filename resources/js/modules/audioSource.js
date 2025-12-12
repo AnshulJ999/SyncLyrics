@@ -277,13 +277,13 @@ async function loadConfig() {
             elements.recognitionInterval.value = currentConfig.recognition_interval || 5;
         }
         if (elements.captureDuration) {
-            elements.captureDuration.value = currentConfig.capture_duration || 4;
+            elements.captureDuration.value = currentConfig.capture_duration || 5;
         }
         if (elements.latencyOffset) {
             elements.latencyOffset.value = currentConfig.latency_offset || 0;
         }
         if (elements.silenceThreshold) {
-            elements.silenceThreshold.value = currentConfig.silence_threshold || 100;
+            elements.silenceThreshold.value = currentConfig.silence_threshold || 500;
         }
 
         // Update slider value displays by dispatching input events

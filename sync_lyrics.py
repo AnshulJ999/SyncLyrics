@@ -388,12 +388,12 @@ async def run_server() -> NoReturn:
         cert_file = Path(https_config.get("cert_file", "certs/server.crt"))
         key_file = Path(https_config.get("key_file", "certs/server.key"))
         
-        # Make paths absolute if relative
-        from config import ROOT_DIR
+        # Make paths absolute if relative - use CERTS_DIR for persistence in Docker
+        from config import CERTS_DIR
         if not cert_file.is_absolute():
-            cert_file = ROOT_DIR / cert_file
+            cert_file = CERTS_DIR / cert_file.name  # Just the filename, not the relative path
         if not key_file.is_absolute():
-            key_file = ROOT_DIR / key_file
+            key_file = CERTS_DIR / key_file.name
         
         # Auto-generate certificates if enabled and missing
         if auto_generate and (not cert_file.exists() or not key_file.exists()):
