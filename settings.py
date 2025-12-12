@@ -126,9 +126,9 @@ class SettingsManager:
             "lyrics.display.buffer_size": Setting("Buffer Size", int, 6, False, "Lyrics", "Lines to buffer", "number", min_val=1, max_val=20),
             "lyrics.display.update_interval": Setting("Update Interval", float, 0.1, False, "Lyrics", "UI refresh rate (s)", "slider", min_val=0.05, max_val=1.0),
             "lyrics.display.idle_interval": Setting("Idle Interval", float, 5.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
-            "lyrics.display.latency_compensation": Setting("Latency Comp", float, 0.0, False, "Lyrics", "Negative = earlier lyrics, Positive = later", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify offset (neg=earlier, pos=later)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.0, False, "Lyrics", "Audio rec offset (neg=earlier, pos=later)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.latency_compensation": Setting("Latency Comp", float, 0.0, False, "Lyrics", "Sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.0, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 3.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=10.0),
             "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 3.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
 

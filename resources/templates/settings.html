@@ -654,6 +654,13 @@
             return new bootstrap.Tooltip(tooltipTriggerEl);
         });
 
+        // Sync all list widget hidden inputs on page load
+        // This ensures the hidden inputs match the displayed tags, fixing save issues
+        document.querySelectorAll('.tag-container').forEach(container => {
+            const key = container.id.replace('tags-', '');
+            if (key) updateHiddenInput(key);
+        });
+
         // Show restart notice if any setting that requires restart is changed
         const restartInputs = document.querySelectorAll('.needs-restart input, .needs-restart select');
         const restartNotice = document.getElementById('restart-notice');
@@ -686,6 +693,13 @@
                 setTimeout(() => alert.remove(), 150);
             }, 5000);
         });
+        // Track if form has unsaved changes
+        let formDirty = false;
+        const settingsForm = document.getElementById('settingsForm');
+        if (settingsForm) {
+            settingsForm.addEventListener('input', () => { formDirty = true; });
+            settingsForm.addEventListener('change', () => { formDirty = true; });
+        }
 
         // Click outside settings container to close
         const settingsWrapper = document.querySelector('.settings-wrapper');
@@ -694,7 +708,13 @@
             settingsWrapper.addEventListener('click', function (e) {
                 // Only close if clicking directly on the wrapper (backdrop), not its children
                 if (e.target === settingsWrapper) {
-                    history.back();
+                    if (formDirty) {
+                        if (confirm('You have unsaved changes. Discard and close?')) {
+                            history.back();
+                        }
+                    } else {
+                        history.back();
+                    }
                 }
             });
         }

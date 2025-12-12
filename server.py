@@ -1937,11 +1937,11 @@ async def settings_page():
         
         # Flash messages for feedback
         if errors:
-            flash(f"Settings saved with {len(errors)} error(s): {', '.join(errors[:3])}", "warning")
+            await flash(f"Settings saved with {len(errors)} error(s): {', '.join(errors[:3])}", "warning")
         elif requires_restart:
-            flash("Settings saved! Some changes require a restart to take effect.", "info")
+            await flash("Settings saved! Some changes require a restart to take effect.", "info")
         else:
-            flash("Settings saved successfully!", "success")
+            await flash("Settings saved successfully!", "success")
         
         return redirect(url_for('settings_page'))
 
@@ -1974,7 +1974,7 @@ async def settings_page():
 @app.route('/reset-defaults')
 async def reset_defaults():
     settings.reset_to_defaults()
-    flash("All settings have been reset to defaults.", "info")
+    await flash("All settings have been reset to defaults.", "info")
     return redirect(url_for('settings_page'))
 
 @app.route("/exit-application")
