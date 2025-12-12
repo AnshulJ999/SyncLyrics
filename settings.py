@@ -40,6 +40,7 @@ class Setting:
     min_val: Optional[float] = None  # For slider/number
     max_val: Optional[float] = None  # For slider/number
     deprecated: bool = False  # Mark settings that are not actively used
+    advanced: bool = False  # Hide from main view, show under "Advanced" dropdown
 
     def validate_and_convert(self, value: Any) -> Any:
         try:
@@ -125,43 +126,43 @@ class SettingsManager:
             "lyrics.display.buffer_size": Setting("Buffer Size", int, 6, False, "Lyrics", "Lines to buffer", "number", min_val=1, max_val=20),
             "lyrics.display.update_interval": Setting("Update Interval", float, 0.1, False, "Lyrics", "UI refresh rate (s)", "slider", min_val=0.05, max_val=1.0),
             "lyrics.display.idle_interval": Setting("Idle Interval", float, 5.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
-            "lyrics.display.latency_compensation": Setting("Latency Comp", float, 0.0, False, "Lyrics", "Audio sync offset (s)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify-only sync offset (s)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.0, False, "Lyrics", "Audio recognition sync offset (s)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.latency_compensation": Setting("Latency Comp", float, 0.0, False, "Lyrics", "Negative = earlier lyrics, Positive = later", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify offset (neg=earlier, pos=later)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.0, False, "Lyrics", "Audio rec offset (neg=earlier, pos=later)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 3.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=10.0),
             "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 3.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),
-            "providers.lrclib.priority": Setting("LRCLib Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
-            "providers.lrclib.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
-            "providers.lrclib.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
-            "providers.lrclib.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
+            "providers.lrclib.priority": Setting("LRCLib Priority", int, 2, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.lrclib.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.lrclib.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.lrclib.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.spotify.enabled": Setting("Spotify", bool, True, True, "Providers", "Enable Spotify Lyrics", "switch"),
-            "providers.spotify.priority": Setting("Priority", int, 1, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
-            "providers.spotify.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
-            "providers.spotify.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
-            "providers.spotify.token_refresh_buffer": Setting("Buffer", int, 300, False, "Providers", "Token refresh buffer (s)", "number"),
-            "providers.spotify.cache_duration": Setting("Cache", int, 3600, False, "Providers", "Cache TTL (s)", "number"),
+            "providers.spotify.priority": Setting("Spotify Priority", int, 1, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.spotify.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.spotify.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.spotify.token_refresh_buffer": Setting("Buffer", int, 300, False, "Providers", "Token refresh buffer (s)", "number", advanced=True),
+            "providers.spotify.cache_duration": Setting("Cache", int, 3600, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.qq.enabled": Setting("QQ", bool, True, True, "Providers", "Enable QQ Music", "switch"),
-            "providers.qq.priority": Setting("Priority", int, 4, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
-            "providers.qq.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
-            "providers.qq.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
-            "providers.qq.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
+            "providers.qq.priority": Setting("QQ Priority", int, 4, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.qq.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.qq.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.qq.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.netease.enabled": Setting("NetEase", bool, True, True, "Providers", "Enable NetEase", "switch"),
-            "providers.netease.priority": Setting("Priority", int, 3, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
-            "providers.netease.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
-            "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
-            "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
+            "providers.netease.priority": Setting("NetEase Priority", int, 3, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.netease.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
-            "providers.musicxmatch.priority": Setting("Priority", int, 2, False, "Providers", "Fetch priority", "number", min_val=1, max_val=10),
-            "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number"),
-            "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number"),
-            "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number"),
+            "providers.musicxmatch.priority": Setting("Musicxmatch Priority", int, 2, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             # Storage - Deprecated (not wired up to cleanup logic)
             "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Deprecated", "Enable local DB", "switch", deprecated=True),

@@ -5,7 +5,12 @@
     <div class="settings-container">
         <!-- Sidebar -->
         <div class="settings-sidebar">
-            <h3 class="sidebar-title">Settings</h3>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="sidebar-title mb-0">Settings</h3>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="history.back()" title="Close">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
             <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
                 {% for category in settings.keys() %}
                 <button
@@ -85,6 +90,7 @@
 
                         <div class="settings-card">
                             {% for key, setting in category_settings.items() %}
+                            {% if not setting.advanced %}
                             <div
                                 class="setting-item {% if setting.requires_restart %}needs-restart{% endif %} {% if setting.deprecated %}deprecated{% endif %}">
                                 <div class="setting-header">
@@ -117,13 +123,12 @@
                                         {% endfor %}
                                     </select>
                                     {% elif setting.widget_type == "slider" %}
-                                    <div class="d-flex align-items-center gap-3">
+                                    <div class="slider-wrapper">
                                         <input type="range" class="form-range" id="{{ key }}" name="{{ key }}"
-                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}"
-                                            step="{% if setting.type == 'float' %}0.1{% else %}1{% endif %}"
+                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}" step="0.05"
                                             value="{{ setting.value }}"
-                                            oninput="document.getElementById('val-{{ key }}').textContent = this.value">
-                                        <span class="badge bg-secondary" id="val-{{ key }}">{{ setting.value }}</span>
+                                            oninput="updateSliderDisplay('{{ key }}', this.value)">
+                                        <span class="slider-value" id="val-{{ key }}">{{ setting.value }}s</span>
                                     </div>
                                     {% elif setting.widget_type == "color" %}
                                     <div class="input-group">
@@ -169,7 +174,48 @@
                                     {% endif %}
                                 </div>
                             </div>
+                            {% endif %}
                             {% endfor %}
+
+                            <!-- Advanced Settings (Collapsible) -->
+                            {% set has_advanced = category_settings.values() | selectattr('advanced') | list | length >
+                            0 %}
+                            {% if has_advanced %}
+                            <div class="advanced-settings-section mt-3">
+                                <button class="btn btn-sm btn-outline-secondary w-100" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#advanced-{{ category|lower|replace(' ', '-') }}"
+                                    aria-expanded="false">
+                                    <i class="bi bi-gear me-1"></i> Advanced Settings
+                                </button>
+                                <div class="collapse mt-3" id="advanced-{{ category|lower|replace(' ', '-') }}">
+                                    {% for key, setting in category_settings.items() %}
+                                    {% if setting.advanced %}
+                                    <div class="setting-item advanced-item">
+                                        <div class="setting-header">
+                                            <label class="form-label" for="{{ key }}">{{ setting.name }}</label>
+                                            {% if setting.description %}
+                                            <small class="text-muted d-block">{{ setting.description }}</small>
+                                            {% endif %}
+                                        </div>
+                                        <div class="setting-control">
+                                            {% if setting.widget_type == "number" %}
+                                            <input type="number" class="form-control" id="{{ key }}" name="{{ key }}"
+                                                value="{{ setting.value if setting.value is not none else '' }}" {% if
+                                                setting.min_val is not none %}min="{{ setting.min_val }}" {% endif %} {%
+                                                if setting.max_val is not none %}max="{{ setting.max_val }}" {% endif
+                                                %}>
+                                            {% else %}
+                                            <input type="text" class="form-control" id="{{ key }}" name="{{ key }}"
+                                                value="{{ setting.value }}">
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -354,6 +400,26 @@
         background: #60a5fa;
     }
 
+    /* Slider Wrapper */
+    .slider-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        width: 100%;
+    }
+
+    .slider-wrapper .form-range {
+        flex: 1;
+    }
+
+    .slider-value {
+        min-width: 60px;
+        text-align: right;
+        color: #60a5fa;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
     /* List Widget */
     .list-widget {
         width: 100%;
@@ -389,6 +455,30 @@
 
     .tag-remove:hover {
         color: #ef4444;
+    }
+
+    /* Advanced Settings Section */
+    .advanced-settings-section {
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: 1rem;
+    }
+
+    .advanced-settings-section .btn-outline-secondary {
+        color: rgba(255, 255, 255, 0.5);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .advanced-settings-section .btn-outline-secondary:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    .advanced-item {
+        opacity: 0.8;
+        background: rgba(0, 0, 0, 0.2);
+        margin: 0.5rem 0;
+        padding: 1rem;
+        border-radius: 8px;
     }
 
     /* Save Bar */
@@ -545,10 +635,16 @@
         const container = document.getElementById('tags-' + key);
         const tags = container.querySelectorAll('.tag');
         const values = Array.from(tags).map(tag => {
-            // Get text content without the × button
-            return tag.childNodes[0].textContent.trim();
+            // More robust: get all text content except the button
+            const button = tag.querySelector('.tag-remove');
+            const buttonText = button ? button.textContent : '';
+            return tag.textContent.replace(buttonText, '').trim();
         });
         document.getElementById('hidden-' + key).value = JSON.stringify(values);
+    }
+
+    function updateSliderDisplay(key, value) {
+        document.getElementById('val-' + key).textContent = value + 's';
     }
 
     document.addEventListener('DOMContentLoaded', function () {

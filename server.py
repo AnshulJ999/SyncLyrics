@@ -1960,7 +1960,8 @@ async def settings_page():
             'min_val': getattr(setting, 'min_val', None),
             'max_val': getattr(setting, 'max_val', None),
             'options': getattr(setting, 'options', None),
-            'deprecated': getattr(setting, 'deprecated', False)
+            'deprecated': getattr(setting, 'deprecated', False),
+            'advanced': getattr(setting, 'advanced', False)
         }
     
     # Ensure 'Deprecated' category appears last in ordering
