@@ -270,8 +270,14 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 return None
             position = seconds
         else:
-            elapsed = time.time() - timeline.last_updated_time.timestamp()
-            position = seconds + elapsed
+            # FIX: Only interpolate position when PLAYING (status 4)
+            # When paused (status 5), the song isn't advancing, so don't add elapsed time
+            if playback_status == 4:
+                elapsed = time.time() - timeline.last_updated_time.timestamp()
+                position = seconds + elapsed
+            else:
+                # Paused - use raw position without interpolation
+                position = seconds
         
         # Get duration if available
         duration_ms = None
