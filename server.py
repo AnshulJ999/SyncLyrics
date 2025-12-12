@@ -1790,7 +1790,7 @@ async def audio_stream_websocket():
         frontend_queue = source._engine.enable_frontend_mode()
         
         # Get capture duration for client info
-        capture_duration = get_effective_value("capture_duration", 4.0)
+        capture_duration = get_effective_value("capture_duration", 5.0)
         
         # Send connection confirmation
         await websocket.send_json({

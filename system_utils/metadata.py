@@ -226,7 +226,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         device_id=audio_rec_config.get("device_id"),  # None = auto-detect
                         device_name=audio_rec_config.get("device_name", ""),
                         recognition_interval=audio_rec_config.get("recognition_interval", 5.0),
-                        capture_duration=audio_rec_config.get("capture_duration", 4.0),
+                        capture_duration=audio_rec_config.get("capture_duration", 5.0),
                         latency_offset=audio_rec_config.get("latency_offset", 0.0),
                         auto_detect=audio_rec_config.get("reaper_auto_detect", False)
                     )
