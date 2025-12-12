@@ -238,6 +238,17 @@
 </div>
 
 <style>
+    /* Flash messages need higher z-index to appear above the modal */
+    .messages {
+        position: fixed;
+        top: 1rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1100;
+        width: auto;
+        max-width: 90%;
+    }
+
     /* Layout */
     .settings-wrapper {
         position: fixed;
