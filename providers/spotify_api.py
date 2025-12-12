@@ -351,12 +351,15 @@ class SpotifyAPI:
         self._cache_enabled = SPOTIFY["cache"]["enabled"]
         self._last_track_id = None  # Track the current track ID to detect track changes
         
-        # Smart caching settings
-        self.active_ttl = 6.0   # Default: Poll every 6s when playing (interpolate in between)
-        self.active_ttl_normal = 6.0   # Normal mode (when Windows Media is active)
-        self.active_ttl_fast = 2.0     # Fast mode (Spotify-only mode, reduced latency)
-        self.idle_ttl = 6.0     # Poll every 6s when paused (Safe: max ~17k req/day)
-        self.backoff_ttl = 30.0 # Circuit breaker timeout
+        # Smart caching settings - now configurable via config.py/environment variables
+        # These can be set via SPOTIFY_POLLING_FAST_INTERVAL and SPOTIFY_POLLING_SLOW_INTERVAL
+        polling_config = SPOTIFY.get("polling", {})
+        self.active_ttl_fast = float(polling_config.get("fast_interval", 2.0))   # Fast mode (Spotify-only)
+        self.active_ttl_normal = float(polling_config.get("slow_interval", 6.0)) # Normal mode (Windows Media hybrid)
+        self.idle_ttl = float(polling_config.get("slow_interval", 6.0))          # Poll rate when paused
+        self.active_ttl = self.active_ttl_normal  # Default: Start in normal mode
+        self.backoff_ttl = 30.0  # Circuit breaker timeout (not user-configurable)
+
         
         # Backoff state
         self._backoff_until = 0

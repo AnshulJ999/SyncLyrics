@@ -154,8 +154,16 @@ SPOTIFY = {
     "cache": {
         "metadata_ttl": conf("spotify.cache.metadata_ttl", 2.0),
         "enabled": conf("spotify.cache.enabled", True),
+    },
+    # Polling intervals for Spotify API (configurable for Home Assistant)
+    "polling": {
+        # Fast mode: Used when Spotify is the only source (no Windows Media)
+        "fast_interval": float(conf("spotify.polling.fast_interval", 2.0)),
+        # Slow mode: Used in hybrid mode (with Windows Media) and when paused
+        "slow_interval": float(conf("spotify.polling.slow_interval", 6.0)),
     }
 }
+
 
 PROVIDERS = {
     "lrclib": {

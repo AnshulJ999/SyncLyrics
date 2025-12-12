@@ -215,6 +215,9 @@ class SettingsManager:
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),
+            "spotify.polling.fast_interval": Setting("Fast Poll Interval", float, 2.0, False, "Spotify API", "Spotify-only mode polling (s)", "slider", min_val=0.5, max_val=10.0),
+            "spotify.polling.slow_interval": Setting("Slow Poll Interval", float, 6.0, False, "Spotify API", "Hybrid/idle mode polling (s)", "slider", min_val=1.0, max_val=30.0),
+
             
             # Album Art
             "album_art.timeout": Setting("Timeout", int, 5, False, "Album Art", "Request timeout (s)", "number", min_val=1, max_val=30),
