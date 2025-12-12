@@ -244,6 +244,38 @@ export function setupSettingsPanel() {
         }
     });
 
+    // Fullscreen toggle button
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    if (fullscreenBtn) {
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch((e) => {
+                    console.error(`Error attempting to enable fullscreen: ${e.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // Update button text based on state
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.textContent = 'Exit Fullscreen';
+            } else {
+                fullscreenBtn.textContent = 'Enter Fullscreen';
+            }
+        });
+
+        // Initial text set
+        if (document.fullscreenElement) {
+            fullscreenBtn.textContent = 'Exit Fullscreen';
+        } else {
+            fullscreenBtn.textContent = 'Enter Fullscreen';
+        }
+    }
+
     // Copy URL button
     if (copyUrlBtn) {
         copyUrlBtn.addEventListener('click', () => {
