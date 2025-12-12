@@ -184,6 +184,7 @@ class SettingsManager:
             
             # New Blocklist Setting
             "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "text"),
+            "system.windows.paused_timeout": Setting("Paused Timeout", int, 600, False, "System", "Accept paused Windows media for N seconds (0=forever)", "number"),
 
             # Features
             "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Features", "Enable minimal mode", "switch"),

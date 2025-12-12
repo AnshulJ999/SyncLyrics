@@ -97,6 +97,7 @@
         "brave",
         "comet"
     ],
+    "system.windows.paused_timeout": 600,
     "system.linux.gsettings_enabled": true,
     "system.linux.playerctl_required": true,
     "features.minimal_ui": true,

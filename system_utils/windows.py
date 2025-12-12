@@ -598,6 +598,13 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "background_style": saved_background_style  # Return saved style preference
         }
         
+        # Track last active time for paused timeout logic
+        if playback_status == 4:  # Playing
+            state._windows_last_active_time = time.time()
+        
+        # Include last_active_time in result for metadata.py timeout check
+        result["last_active_time"] = state._windows_last_active_time
+        
         # Add album_art_path if we have a direct path (DB file or unique thumbnail)
         if result_extra_fields.get("album_art_path"):
             result["album_art_path"] = result_extra_fields["album_art_path"]

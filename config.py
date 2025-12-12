@@ -245,6 +245,7 @@ SYSTEM = {
             "preferred": conf("system.windows.media_session.preferred", True),
             "timeout": conf("system.windows.media_session.timeout", 5)
         },
+        "paused_timeout": conf("system.windows.paused_timeout", 600),  # 10 min default
     },
     "linux": {
         "gsettings_enabled": conf("system.linux.gsettings_enabled", True),

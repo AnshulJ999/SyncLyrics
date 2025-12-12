@@ -345,27 +345,60 @@ async def get_current_song_meta_data() -> Optional[dict]:
         # Initialize BEFORE conditional to avoid NameError when audio recognition is used
         windows_media_checked = False
         windows_media_result = None
+        paused_fallback = None  # Store first paused source as fallback
         
         # Use result from audio recognition if available, otherwise fetch from other sources
         if not result:
             # 1. Fetch Primary Data from sorted sources
+            # NEW LOGIC: Prefer ACTIVE sources over PAUSED sources
+            # - If source is playing (is_playing=true) → use it immediately
+            # - If source is paused (is_playing=false) → save as fallback, continue checking
+            # - After all sources, use paused fallback if nothing is actively playing
             for source in sorted_sources:
                 try:
+                    source_result = None
+                    
                     if source["name"] == "windows_media" and DESKTOP == "Windows":
                         windows_media_checked = True
                         windows_media_result = await _get_current_song_meta_data_windows()
-                        if windows_media_result:
-                            result = windows_media_result
+                        source_result = windows_media_result
                     elif source["name"] == "spotify":
-                        result = await _get_current_song_meta_data_spotify()
+                        source_result = await _get_current_song_meta_data_spotify()
                     elif source["name"] == "gnome" and DESKTOP == "Linux":
-                        result = _get_current_song_meta_data_gnome()
+                        source_result = _get_current_song_meta_data_gnome()
+                    
+                    if source_result:
+                        is_playing = source_result.get("is_playing", False)
                         
-                    if result:
-                        # Source is already set in the function
-                        break
+                        if is_playing:
+                            # ACTIVE source - use immediately
+                            result = source_result
+                            break
+                        else:
+                            # PAUSED source - check timeout for Windows, save as fallback
+                            if source_result.get("source") == "windows_media":
+                                # Check if paused Windows source is within timeout
+                                paused_timeout = config.SYSTEM["windows"].get("paused_timeout", 600)
+                                last_active = source_result.get("last_active_time", 0)
+                                
+                                if paused_timeout == 0 or (time.time() - last_active) < paused_timeout:
+                                    # Within timeout (or timeout disabled) - save as fallback
+                                    if paused_fallback is None:
+                                        paused_fallback = source_result
+                                # else: expired, don't use as fallback
+                            else:
+                                # Non-Windows paused source - save as fallback
+                                if paused_fallback is None:
+                                    paused_fallback = source_result
+                            # Continue checking other sources for active playback
+                            continue
                 except Exception:
                     continue
+            
+            # If no active source found, use paused fallback
+            if not result and paused_fallback:
+                result = paused_fallback
+
         
         # Detect Spotify-only mode: Windows Media was checked but returned None, Spotify is primary source
         is_spotify_only = (result and 
