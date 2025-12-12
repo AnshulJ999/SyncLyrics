@@ -686,6 +686,18 @@
                 setTimeout(() => alert.remove(), 150);
             }, 5000);
         });
+
+        // Click outside settings container to close
+        const settingsWrapper = document.querySelector('.settings-wrapper');
+        const settingsContainer = document.querySelector('.settings-container');
+        if (settingsWrapper && settingsContainer) {
+            settingsWrapper.addEventListener('click', function (e) {
+                // Only close if clicking directly on the wrapper (backdrop), not its children
+                if (e.target === settingsWrapper) {
+                    history.back();
+                }
+            });
+        }
     });
 </script>
 {% endblock %}
