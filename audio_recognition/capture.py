@@ -14,7 +14,7 @@ import numpy as np
 
 try:
     import sounddevice as sd
-except ImportError:
+except (ImportError, OSError):  # OSError for missing PortAudio library
     sd = None
 
 from logging_config import get_logger
