@@ -244,7 +244,7 @@ export function setupSettingsPanel() {
         }
     });
 
-    // Fullscreen toggle button
+    // Fullscreen toggle button (icon-only, updates title for accessibility)
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     if (fullscreenBtn) {
         fullscreenBtn.addEventListener('click', () => {
@@ -259,36 +259,30 @@ export function setupSettingsPanel() {
             }
         });
 
-        // Update button text based on state
+        // Update button title based on state (icon-only, no text change)
         document.addEventListener('fullscreenchange', () => {
             if (document.fullscreenElement) {
-                fullscreenBtn.textContent = 'Exit Fullscreen';
+                fullscreenBtn.title = 'Exit Fullscreen';
             } else {
-                fullscreenBtn.textContent = 'Enter Fullscreen';
+                fullscreenBtn.title = 'Enter Fullscreen';
             }
         });
-
-        // Initial text set
-        if (document.fullscreenElement) {
-            fullscreenBtn.textContent = 'Exit Fullscreen';
-        } else {
-            fullscreenBtn.textContent = 'Enter Fullscreen';
-        }
     }
 
-    // Copy URL button
+    // Copy URL button (preserves SVG icon)
     if (copyUrlBtn) {
+        const originalHTML = copyUrlBtn.innerHTML;
         copyUrlBtn.addEventListener('click', () => {
             const url = generateCurrentUrl();
             copyToClipboard(url).then(() => {
-                copyUrlBtn.textContent = '✓ Copied!';
+                copyUrlBtn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
                 setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
+                    copyUrlBtn.innerHTML = originalHTML;
                 }, 2000);
             }).catch(() => {
-                copyUrlBtn.textContent = '✗ Failed';
+                copyUrlBtn.innerHTML = '<i class="bi bi-x-lg"></i> Failed';
                 setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
+                    copyUrlBtn.innerHTML = originalHTML;
                 }, 2000);
             });
         });

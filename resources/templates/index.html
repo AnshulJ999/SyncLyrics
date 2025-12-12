@@ -216,21 +216,36 @@
 
 <!-- Settings Panel -->
 <div id="settings-panel" class="settings-panel" style="display: none;">
-    <h3>Display Options</h3>
-    <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
-    <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
-    <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
-    <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
-    <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
-    <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
-    <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
-    <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Mode Toggle</label>
-    <label><input type="checkbox" id="opt-colors"> Use Album Colors</label>
-    <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
-    <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
-    <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
-    <button id="fullscreen-btn">Toggle Fullscreen</button>
-    <button id="copy-url-btn">Copy Current URL</button>
+    <div class="settings-header">
+        <h3>Display Options</h3>
+        <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+        </button>
+    </div>
+    <div class="settings-options">
+        <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
+        <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
+        <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
+        <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
+        <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
+        <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
+        <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
+        <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Mode Toggle</label>
+        <label><input type="checkbox" id="opt-colors"> Use Album Colors</label>
+        <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
+        <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
+        <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
+    </div>
+    <button id="copy-url-btn" class="settings-action-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        Copy URL
+    </button>
     <div id="url-display" class="url-display"></div>
 </div>
 
