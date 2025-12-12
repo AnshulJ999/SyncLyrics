@@ -50,6 +50,7 @@ SKIP_FILES = {
     'bootstrap.min.js.map',
     'bootstrap.min.css.map',
     'bootstrap.min.css.map',
+    'bootstrap-icons.css',
     'poetry.lock',
     'poetry.lock'
 }
