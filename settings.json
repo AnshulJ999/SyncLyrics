@@ -109,6 +109,7 @@
     "system.windows.media_session.preferred": true,
     "system.windows.media_session.timeout": 5,
     "system.windows.paused_timeout": 600,
+    "system.spotify.paused_timeout": 600,
     "ui.animation_styles": [
         "wave",
         "fade",

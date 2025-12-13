@@ -376,19 +376,29 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             result = source_result
                             break
                         else:
-                            # PAUSED source - check timeout for Windows, save as fallback
+                            # PAUSED source - check timeout for Windows and Spotify, save as fallback
                             if source_result.get("source") == "windows_media":
                                 # Check if paused Windows source is within timeout
                                 paused_timeout = config.SYSTEM["windows"].get("paused_timeout", 600)
                                 last_active = source_result.get("last_active_time", 0)
                                 
-                                if paused_timeout == 0 or (time.time() - last_active) < paused_timeout:
-                                    # Within timeout (or timeout disabled) - save as fallback
+                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                    # Within timeout (or timeout disabled or first run) - save as fallback
                                     if paused_fallback is None:
                                         paused_fallback = source_result
                                 # else: expired, don't use as fallback
+                            elif source_result.get("source") == "spotify":
+                                # Check if paused Spotify source is within timeout
+                                paused_timeout = config.SYSTEM.get("spotify", {}).get("paused_timeout", 600)
+                                last_active = source_result.get("last_active_time", 0)
+                                
+                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                    if paused_fallback is None:
+                                        paused_fallback = source_result
                             else:
-                                # Non-Windows paused source - save as fallback
+                                # Other paused source - save as fallback
                                 if paused_fallback is None:
                                     paused_fallback = source_result
                             # Continue checking other sources for active playback
@@ -435,6 +445,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     target_artist=result.get("artist"),
                     force_refresh=force_wake
                 )
+                
                 if spotify_data:
                     # Fuzzy match check: If title and artist are roughly the same
                     win_title = result.get("title", "").lower()

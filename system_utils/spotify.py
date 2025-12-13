@@ -199,8 +199,13 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         if track is None:
             track = await spotify_client.get_current_track(force_refresh=force_refresh)
             
-        if not track or not track.get("is_playing", False):
+        if not track:
             return None
+        
+        # Track last active time for paused timeout (similar to Windows)
+        is_playing = track.get("is_playing", False)
+        if is_playing:
+            state._spotify_last_active_time = time.time()
         
         # Extract colors from Spotify album art
         colors = ("#24273a", "#363b54")  # Default
@@ -668,12 +673,13 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "colors": colors,
             "album_art_url": album_art_url,  # ALWAYS album art (for top left display)
             "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
-            "is_playing": True,
+            "is_playing": is_playing,  # Use actual Spotify state (supports paused)
             "source": "spotify",
             "artist_id": track.get("artist_id"),  # For fetching artist images
             "artist_name": track.get("artist_name"),  # For display purposes
             "background_style": saved_background_style,  # Return saved style preference (Phase 2)
-            "url": track.get("url")  # Spotify Web URL for album art click functionality
+            "url": track.get("url"),  # Spotify Web URL for album art click functionality
+            "last_active_time": state._spotify_last_active_time  # For paused timeout
         }
         
         # Add album_art_path if we have a direct path (DB file)

@@ -261,6 +261,9 @@ SYSTEM = {
         },
         "paused_timeout": conf("system.windows.paused_timeout", 600),  # 10 min default
     },
+    "spotify": {
+        "paused_timeout": conf("system.spotify.paused_timeout", 600),  # 10 min default
+    },
     "linux": {
         "gsettings_enabled": conf("system.linux.gsettings_enabled", True),
         "playerctl_required": conf("system.linux.playerctl_required", True)
