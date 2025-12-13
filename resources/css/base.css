@@ -765,6 +765,10 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     cursor: not-allowed;
 }
 
+.control-btn:focus {
+    outline: none;
+}
+
 /* Like and Queue buttons - smaller icons */
 #btn-like i,
 #btn-queue i {
@@ -1250,9 +1254,11 @@ body.soft-mode .background-overlay {
 }
 
 /* Like Button Active State */
+
 #btn-like.liked {
-    color: #1DB954; /* Spotify Green */
-    text-shadow: 0 0 10px rgba(29, 185, 84, 0.4);
+    color: rgb(255, 255, 255);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    /* White glow */
 }
 
 /* Queue Drawer */
