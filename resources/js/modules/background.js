@@ -331,6 +331,15 @@ export function enterVisualMode() {
     setSavedBackgroundState(getCurrentBackgroundStyle());
 
     // Auto-switch to sharp mode if configured
+    // NOTE: This currently applies art BG even if user hasn't opted-in via URL.
+    // Visual mode is for instrumentals, so showing art may be desired behavior.
+    // 
+    // OPTIONAL FIX: Uncomment the hasArtBgEnabled check below to only auto-sharp
+    // when art BG is already enabled via URL params or settings:
+    // const hasArtBgEnabled = displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt;
+    // if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal && hasArtBgEnabled) {
+    //
+    // CURRENT BEHAVIOR: Always apply sharp in visual mode (ignores URL art params)
     if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal) {
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
