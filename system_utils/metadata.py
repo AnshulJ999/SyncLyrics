@@ -364,6 +364,12 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         windows_media_result = await _get_current_song_meta_data_windows()
                         source_result = windows_media_result
                     elif source["name"] == "spotify":
+                        # RACE CONDITION FIX: If Windows already returned data for Spotify Desktop,
+                        # skip checking Spotify source directly. Windows SMTC is authoritative for local playback,
+                        # and hybrid enrichment (later) will handle adding Spotify-specific features.
+                        # This prevents stale Spotify API cache ("playing") from overriding fresh Windows paused state.
+                        if windows_media_result and "spotify" in windows_media_result.get("app_id", "").lower():
+                            continue
                         source_result = await _get_current_song_meta_data_spotify()
                     elif source["name"] == "gnome" and DESKTOP == "Linux":
                         source_result = _get_current_song_meta_data_gnome()
