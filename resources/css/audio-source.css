@@ -9,11 +9,9 @@
    ============================================================================= */
 
 .source-toggle {
-    position: fixed;
-    top: 25px;
-    right: 65px;
-    /* Position left of settings gear (settings is at right:20px, 40px wide) */
-    z-index: 1000;
+    /* Now relative within the .top-right-controls flex container */
+    position: relative;
+    z-index: 1;  /* Stacking within container only */
 
     /* Match provider-badge styling exactly */
     background: rgba(0, 0, 0, 0.2);
@@ -503,9 +501,7 @@
 /* Mobile - smaller screens */
 @media (max-width: 480px) {
     .source-toggle {
-        top: 0.5rem;
-        right: calc(0.5rem + 40px + 8px);
-        /* Match provider-info mobile position */
+        /* Positioning handled by .top-right-controls container */
         padding: 4px 10px;
         font-size: 0.7rem;
     }
@@ -521,14 +517,7 @@
     }
 }
 
-/* Tablet+ responsive positioning */
-@media (min-width: 481px) and (max-width: 768px) {
-    .source-toggle {
-        top: 24px;
-        right: calc(20px + 40px + 8px);
-        /* Match provider-info tablet position */
-    }
-}
+/* Tablet responsive - .source-toggle positioning handled by .top-right-controls */
 
 /* =============================================================================
    Quick Start Buttons

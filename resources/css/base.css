@@ -356,12 +356,41 @@ body[data-minimal="true"] .background-overlay {
     display: none !important;
 }
 
-/* ========== SETTINGS TOGGLE ========== */
-.settings-toggle {
+/* ========== TOP RIGHT CONTROLS CONTAINER ========== */
+/* Container for audio source toggle and settings gear - ensures vertical alignment */
+.top-right-controls {
     position: fixed;
     top: 20px;
     right: 20px;
     z-index: 200;
+    display: flex;
+    align-items: center;  /* KEY: Vertical center alignment regardless of child heights */
+    gap: 10px;
+    pointer-events: none;  /* Allow clicks to pass through container gaps */
+}
+
+.top-right-controls > * {
+    pointer-events: auto;  /* But children (buttons) are clickable */
+}
+
+/* Responsive: Mobile */
+@media (max-width: 480px) {
+    .top-right-controls {
+        top: 0.5rem;
+        right: 0.5rem;
+    }
+}
+
+/* Hide container in minimal mode */
+body[data-minimal="true"] .top-right-controls {
+    display: none !important;
+}
+
+/* ========== SETTINGS TOGGLE ========== */
+.settings-toggle {
+    /* Now relative within the flex container, not fixed */
+    position: relative;
+    z-index: 1;  /* Stacking within container */
     width: 40px;
     height: 40px;
     border: none;
@@ -850,14 +879,6 @@ body[data-minimal="true"] .album-art {
     .track-header {
         top: 0.5rem;
         left: 0.5rem;
-    }
-
-    .settings-toggle {
-        top: 0.5rem;
-        right: 0.5rem;
-        width: 40px;
-        height: 40px;
-        font-size: 1.2rem;
     }
 }
 

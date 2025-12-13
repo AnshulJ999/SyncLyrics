@@ -27,14 +27,17 @@
 </div>
 {% endif %}
 
-<!-- Audio Source Toggle Button (left of settings gear) -->
-<button id="source-toggle" class="source-toggle" title="Audio Source Settings">
-    <span class="recording-dot" id="recording-dot"></span>
-    <span class="source-name" id="source-name">Spotify</span>
-</button>
+<!-- Top Right Controls Container (Audio Source + Settings) -->
+<div class="top-right-controls">
+    <!-- Audio Source Toggle Button -->
+    <button id="source-toggle" class="source-toggle" title="Audio Source Settings">
+        <span class="recording-dot" id="recording-dot"></span>
+        <span class="source-name" id="source-name">Spotify</span>
+    </button>
 
-<!-- Settings Toggle Button -->
-<button id="settings-toggle" class="settings-toggle" title="Display Settings"><i class="bi bi-gear"></i></button>
+    <!-- Settings Toggle Button -->
+    <button id="settings-toggle" class="settings-toggle" title="Display Settings"><i class="bi bi-gear"></i></button>
+</div>
 
 <!-- Audio Source Modal -->
 <div id="audio-source-modal" class="audio-source-modal">
