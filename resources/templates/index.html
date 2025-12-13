@@ -34,7 +34,7 @@
 </button>
 
 <!-- Settings Toggle Button -->
-<button id="settings-toggle" class="settings-toggle" title="Display Settings">⚙</button>
+<button id="settings-toggle" class="settings-toggle" title="Display Settings"><i class="bi bi-gear"></i></button>
 
 <!-- Audio Source Modal -->
 <div id="audio-source-modal" class="audio-source-modal">
@@ -219,10 +219,7 @@
     <div class="settings-header">
         <h3>Display Options</h3>
         <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path
-                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-            </svg>
+            <i class="bi bi-fullscreen"></i>
         </button>
     </div>
     <div class="settings-options">
@@ -271,10 +268,7 @@
 
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
-    <!-- Music Note Icon (♪) -->
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-    </svg>
+    <i class="bi bi-music-note"></i>
 </button>
 
 <!-- Provider Selection Modal (NEW) -->
@@ -363,19 +357,19 @@
     <div id="playback-controls" class="playback-controls">
         <!-- Left: Like Button -->
         <div class="controls-left">
-            <button id="btn-like" class="control-btn" title="Save to Liked Songs">♡</button>
+            <button id="btn-like" class="control-btn" title="Save to Liked Songs"><i class="bi bi-heart"></i></button>
         </div>
 
         <!-- Center: Main Playback -->
         <div class="controls-center">
-            <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
-            <button id="btn-play-pause" class="control-btn play-pause-btn paused" title="Play/Pause"></button>
-            <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+            <button id="btn-previous" class="control-btn" title="Previous Track"><i class="bi bi-rewind-fill"></i></button>
+            <button id="btn-play-pause" class="control-btn play-pause-btn" title="Play/Pause"><i class="bi bi-play-fill"></i></button>
+            <button id="btn-next" class="control-btn" title="Next Track"><i class="bi bi-fast-forward-fill"></i></button>
         </div>
 
         <!-- Right: Queue Button -->
         <div class="controls-right">
-            <button id="btn-queue" class="control-btn" title="Show Queue">☰</button>
+            <button id="btn-queue" class="control-btn" title="Show Queue"><i class="bi bi-music-note-list"></i></button>
         </div>
         <!-- REMOVED: Old Visual Mode Button -->
     </div>

@@ -259,12 +259,15 @@ export function setupSettingsPanel() {
             }
         });
 
-        // Update button title based on state (icon-only, no text change)
+        // Update button icon and title based on fullscreen state
         document.addEventListener('fullscreenchange', () => {
+            const icon = fullscreenBtn.querySelector('i');
             if (document.fullscreenElement) {
                 fullscreenBtn.title = 'Exit Fullscreen';
+                if (icon) icon.className = 'bi bi-fullscreen-exit';
             } else {
                 fullscreenBtn.title = 'Enter Fullscreen';
+                if (icon) icon.className = 'bi bi-fullscreen';
             }
         });
     }

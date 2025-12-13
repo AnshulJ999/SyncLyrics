@@ -127,13 +127,16 @@ export function updateControlState(trackInfo) {
     if (playPauseBtn) {
         playPauseBtn.disabled = !canControl;
         const isPlaying = trackInfo.is_playing === true;
+        const icon = playPauseBtn.querySelector('i');
 
-        if (isPlaying) {
-            playPauseBtn.classList.remove('paused');
-            playPauseBtn.classList.add('playing');
-        } else {
-            playPauseBtn.classList.remove('playing');
-            playPauseBtn.classList.add('paused');
+        if (icon) {
+            if (isPlaying) {
+                icon.className = 'bi bi-pause-fill';
+                playPauseBtn.title = 'Pause';
+            } else {
+                icon.className = 'bi bi-play-fill';
+                playPauseBtn.title = 'Play';
+            }
         }
     }
 }
@@ -408,12 +411,15 @@ export function updateLikeButton() {
     const btn = document.getElementById('btn-like');
     if (!btn) return;
 
-    if (isLiked) {
-        btn.innerHTML = '❤️';
-        btn.classList.add('liked');
-    } else {
-        btn.innerHTML = '♡';
-        btn.classList.remove('liked');
+    const icon = btn.querySelector('i');
+    if (icon) {
+        if (isLiked) {
+            icon.className = 'bi bi-heart-fill';
+            btn.classList.add('liked');
+        } else {
+            icon.className = 'bi bi-heart';
+            btn.classList.remove('liked');
+        }
     }
 }
 
