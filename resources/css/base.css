@@ -779,10 +779,13 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     margin: 0;
 }
 
-.control-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.25);
-    transform: scale(1.1);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+/* Hover effect - only for devices with mouse/trackpad (prevents sticky hover on touch) */
+@media (hover: hover) {
+    .control-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(1.1);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    }
 }
 
 .control-btn:active:not(:disabled) {
