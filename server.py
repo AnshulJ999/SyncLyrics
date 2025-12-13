@@ -1265,7 +1265,18 @@ async def toggle_playback():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # Spotify and Hybrid sources use Spotify API
+    # HYBRID MODE: Windows first (fast, no rate limits), Spotify fallback
+    if source == 'spotify_hybrid':
+        from system_utils.windows import windows_toggle_playback
+        success = await windows_toggle_playback()
+        if success:
+            return jsonify({"status": "success", "message": "Toggled (Windows)"})
+        
+        # Windows failed - fall back to Spotify API (covers Spotify Connect, SMTC glitches)
+        logger.debug("Windows toggle failed for hybrid, falling back to Spotify API")
+        # Fall through to Spotify logic below
+    
+    # Spotify source (and hybrid fallback) uses Spotify API
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1310,6 +1321,14 @@ async def next_track():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
+    # HYBRID MODE: Windows first, Spotify fallback
+    if source == 'spotify_hybrid':
+        from system_utils.windows import windows_next
+        success = await windows_next()
+        if success:
+            return jsonify({"status": "success", "message": "Skipped (Windows)"})
+        logger.debug("Windows next failed for hybrid, falling back to Spotify API")
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1331,6 +1350,14 @@ async def previous_track():
             return jsonify({"status": "success", "message": "Previous (Windows)"})
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
+    
+    # HYBRID MODE: Windows first, Spotify fallback
+    if source == 'spotify_hybrid':
+        from system_utils.windows import windows_previous
+        success = await windows_previous()
+        if success:
+            return jsonify({"status": "success", "message": "Previous (Windows)"})
+        logger.debug("Windows previous failed for hybrid, falling back to Spotify API")
     
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
