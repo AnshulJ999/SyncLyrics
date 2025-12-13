@@ -2,6 +2,8 @@
 
 A feature-rich desktop and web application that displays synchronized lyrics for your currently playing music. Supports Spotify, Windows Media, and audio recognition.
 
+This started as a hobby project where I just wanted realtime lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). 
+
 > **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
@@ -135,7 +137,7 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 
 ## 🤝 Contributing
 
-Pull requests are welcome and encouraged! Please test your changes on Windows or HASS before submitting.
+Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test on Windows or HASS before submitting. Even small fixes help!
 
 ---
 
@@ -147,7 +149,7 @@ Pull requests are welcome and encouraged! Please test your changes on Windows or
 
 ## ⚠️ Disclaimer (AI Usage)
 
-Much of the app has been coded with AI assistance (vibe-coded), so please keep an open mind.
+This project was built with significant AI assistance (yes, vibe-coded 🤖). It works great for my use case, but if you find rough edges, PRs are always welcome!
 
 ---
 
@@ -159,3 +161,5 @@ Based on the original work by [Konstantinos Petrakis](https://github.com/konstan
 - [ShazamIO](https://github.com/shazamio/shazamio) - Audio recognition
 - [Spotipy](https://github.com/spotipy-dev/spotipy) - Spotify API
 - [LRCLib](https://lrclib.net/) - Lyrics database
+- [Quart](https://github.com/pallets/quart) - Async web framework
+- [Spotify Lyrics](https://github.com/akashrchandran/spotify-lyrics-api) - Spotify lyrics proxy
