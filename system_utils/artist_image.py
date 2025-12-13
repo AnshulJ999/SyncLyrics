@@ -517,7 +517,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             if name_changed or id_mismatch_is_critical:
                                 if validation_retry < 3:
                                     # SMTC may be lagging - wait and retry
-                                    await asyncio.sleep(1.0)
+                                    await asyncio.sleep(0.5)
                                     continue
                                 else:
                                     # Genuinely different song after 4 attempts (4 seconds wait)
@@ -769,7 +769,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                             
                             if name_changed or id_mismatch_is_critical:
                                 if final_retry < 3:
-                                    await asyncio.sleep(1.0)
+                                    await asyncio.sleep(0.5)
                                     continue
                                 else:
                                     logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) before metadata save, discarding")
