@@ -43,7 +43,7 @@ TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
 app.config['SERVER_NAME'] = None
-app.secret_key = "secret key"
+app.secret_key = SERVER.get("secret_key")
 
 # --- Helper Functions ---
 
