@@ -949,7 +949,7 @@ body[data-minimal="true"] .album-art {
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
     /* Micro-blur (0.5px) reduces jagged edges without looking blurry */
-    filter: blur(0.5px) !important;
+    filter: blur(0.0px) !important;
 
     /* Reset transforms to prevent scaling blur */
     transform: none !important;
@@ -973,8 +973,8 @@ body.sharp-mode .background-overlay {
      /* FIX: Override the default flat black 0.6 opacity */
     /* Make it almost transparent to let the art shine */
  /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
-    backdrop-filter: blur(0.5px) saturate(105%) !important;
-    -webkit-backdrop-filter: blur(0.5px) saturate(105%) !important;
+    backdrop-filter: blur(0.0px) saturate(130%) !important;
+    -webkit-backdrop-filter: blur(0.0px) saturate(130%) !important;
     /* Very transparent background (5%) to let the art shine */
     background: rgba(0, 0, 0, 0.05) !important;
 
@@ -1057,7 +1057,7 @@ body.sharp-mode .next {
 /* Provides good image clarity with better text readability than sharp mode */
 body.soft-mode .background-layer {
     /* Medium blur (6px) - provides softness while maintaining image clarity */
-    filter: blur(3px) !important;
+    filter: blur(2px) !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
@@ -1067,7 +1067,7 @@ body.soft-mode .background-layer {
 
 body.soft-mode .background-overlay {
     /* Light backdrop blur (10px) - softens edges without major haziness */
-    backdrop-filter: blur(5px) saturate(140%) !important;
+    backdrop-filter: blur(4px) saturate(140%) !important;
     -webkit-backdrop-filter: blur(5px) saturate(140%) !important;
     /* Medium dark overlay for better text contrast and readability */
     background: rgba(0, 0, 0, 0.20) !important;
