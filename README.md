@@ -1,15 +1,21 @@
 # SyncLyrics
 
-A feature-rich desktop and web application that displays synchronized lyrics for your currently playing music. Supports Spotify, Windows Media, and audio recognition (Shazam).
+A feature-rich desktop and web application that displays synchronized lyrics for your currently playing music. Supports Spotify, Windows Media, and audio recognition.
 
-> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested.
+> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
 
-![Main UI](screenshots/SyncLyrics%20Main%20UI.png)
+![Main UI](<screenshots/SyncLyrics Main UI.png>)
+
+_Main UI_
+
+![Minimal Mode](<screenshots/Minimal Mode.png>) 
+
+_Minimal Mode can be accessed by adding ?minimal=true to the URL_
 
 ## ✨ Features
 
 ### 🎵 Lyrics
-- **5 Providers:** Spotify, LRCLib, NetEase, QQ Music, Musicxmatch
+- **4 Providers:** Spotify, LRCLib, NetEase, QQ Music
 - **Parallel Search:** Queries all providers simultaneously for fastest results
 - **Local Caching:** Saves lyrics offline for instant future access
 - **Provider Selection:** Manually choose your preferred provider per song
@@ -18,7 +24,7 @@ A feature-rich desktop and web application that displays synchronized lyrics for
 ### 🎨 Visual Modes
 - **Background Styles:** Sharp, Soft, and Blur modes for album art display
 - **Visual Mode:** Activates during instrumentals with artist image slideshow
-- **Album Art Database:** Caches high-quality art from iTunes, Deezer, Spotify, MusicBrainz
+- **Album Art Database:** Caches high-quality art from iTunes, Spotify and LastFM (requires API key)
 - **Artist Images:** Fetches from Deezer, FanArt.tv, TheAudioDB, Spotify
 
 ### 🎤 Audio Recognition
@@ -47,25 +53,18 @@ A feature-rich desktop and web application that displays synchronized lyrics for
 1. Go to **[Releases](../../releases)**
 2. Download and extract `SyncLyrics.zip`
 3. Run `SyncLyrics.exe`
-4. (Optional) Configure `.env` for Spotify API credentials
+4. (Optional) Configure `.env` for Spotify API credentials and other advanced features.
 
 ### Option 2: Home Assistant Addon
-1. Add this repository to your Home Assistant addon store
+1. Add https://github.com/AnshulJ999/homeassistant-addons as a repository to your Home Assistant addon store
 2. Install the SyncLyrics addon
 3. Configure environment variables in addon settings
 4. Start the addon and access via Ingress or direct URL
 
-### Option 3: Docker
-```bash
-docker run -d \
-  -p 9012:9012 \
-  -v /path/to/config:/config \
-  -e SPOTIFY_CLIENT_ID=your_id \
-  -e SPOTIFY_CLIENT_SECRET=your_secret \
-  synclyrics
-```
+### Option 3: Run from Source
 
-### Option 4: Run from Source
+You can use the included run.bat or 'Run SyncLyrics Hidden.vbs' to run the app directly. Install the requirements first. 
+
 ```bash
 git clone https://github.com/AnshulJ999/SyncLyrics.git
 cd SyncLyrics
@@ -102,23 +101,13 @@ Append these to the URL for custom displays (e.g., `http://localhost:9012/?minim
 | `hideControls` | `true/false` | Hide playback controls |
 | `hideProgress` | `true/false` | Hide progress bar |
 
-### HASS/Docker Paths
-
-For persistent storage in containers, set these environment variables:
-
-```env
-SYNCLYRICS_SETTINGS_FILE=/config/settings.json
-SYNCLYRICS_LYRICS_DB=/config/lyrics_database
-SYNCLYRICS_ALBUM_ART_DB=/config/album_art_database
-SYNCLYRICS_CACHE_DIR=/config/cache
-SPOTIPY_CACHE_PATH=/config/.spotify_cache
-```
+These can easily be configured via the on-screen settings panel and the URL can be copied. 
 
 ---
 
 ## 🛠️ Build
 
-To create a standalone Windows executable:
+To create a standalone Windows executable yourself:
 
 ```bash
 python build.py
@@ -135,8 +124,8 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 - For HASS, use your actual access URL (not `127.0.0.1`)
 
 ### Windows Media Not Detected
-- Check that your media player supports Windows SMTC (System Media Transport Controls)
-- Some apps (browsers, games) may be blocklisted - check settings
+- Check that your media player supports Windows SMTC (System Media Transport Controls) (MusicBee requires a special plugin to support SMTC)
+- Some apps (browsers, games) may be blocklisted - check settings and remove them from blocklist if needed. 
 
 ### Audio Recognition Not Working
 - **Backend mode:** Ensure you have a loopback audio device (e.g., VB-Cable, WASAPI loopback)
@@ -146,7 +135,7 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 
 ## 🤝 Contributing
 
-Pull requests are welcome! Please test your changes on Windows before submitting.
+Pull requests are welcome and encouraged! Please test your changes on Windows or HASS before submitting.
 
 ---
 
@@ -156,9 +145,9 @@ Pull requests are welcome! Please test your changes on Windows before submitting
 
 ---
 
-## ⚠️ Disclaimer
+## ⚠️ Disclaimer (AI Usage)
 
-This application uses AI-assisted development. Much of the code has been written with AI assistance.
+Much of the app has been coded with AI assistance (vibe-coded), so please keep an open mind.
 
 ---
 
@@ -170,4 +159,3 @@ Based on the original work by [Konstantinos Petrakis](https://github.com/konstan
 - [ShazamIO](https://github.com/shazamio/shazamio) - Audio recognition
 - [Spotipy](https://github.com/spotipy-dev/spotipy) - Spotify API
 - [LRCLib](https://lrclib.net/) - Lyrics database
-- [syncedlyrics](https://github.com/moehmeni/syncedlyrics) - Lyrics fetching
