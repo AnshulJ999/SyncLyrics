@@ -6,6 +6,10 @@ This started as a hobby project where I just wanted real-time lyrics on any of m
 
 > **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
 
+![Video](<screenshots/Video Demo.mp4>)
+
+_Video demo showcasing the app's main features_
+
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
 _Main UI_
