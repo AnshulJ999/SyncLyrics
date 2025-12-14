@@ -73,6 +73,115 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
         return False
 
 
+# ==========================================
+# WINDOWS PLAYBACK CONTROLS
+# ==========================================
+
+async def _get_current_session():
+    """Get the current Windows media session for playback control."""
+    global _win_media_manager
+    if not MediaManager:
+        return None
+    
+    try:
+        if _win_media_manager is None:
+            _win_media_manager = await MediaManager.request_async()
+        
+        if _win_media_manager:
+            return _win_media_manager.get_current_session()
+    except Exception as e:
+        logger.debug(f"Failed to get Windows media session: {e}")
+    return None
+
+
+async def windows_play() -> bool:
+    """Resume playback on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_play_async()
+            logger.debug("Windows playback: play")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows play failed: {e}")
+    return False
+
+
+async def windows_pause() -> bool:
+    """Pause playback on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_pause_async()
+            logger.debug("Windows playback: pause")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows pause failed: {e}")
+    return False
+
+
+async def windows_toggle_playback() -> bool:
+    """Toggle play/pause on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_toggle_play_pause_async()
+            logger.debug("Windows playback: toggle")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows toggle failed: {e}")
+    return False
+
+
+async def windows_next() -> bool:
+    """Skip to next track on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_skip_next_async()
+            logger.debug("Windows playback: next")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows next failed: {e}")
+    return False
+
+
+async def windows_previous() -> bool:
+    """Skip to previous track on current Windows media session."""
+    session = await _get_current_session()
+    if session:
+        try:
+            await session.try_skip_previous_async()
+            logger.debug("Windows playback: previous")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows previous failed: {e}")
+    return False
+
+
+# DISABLED: Seek functionality - backend ready, frontend not implemented yet
+# async def windows_seek(position_ms: int) -> bool:
+#     """Seek to position in current Windows media session.
+#     
+#     Args:
+#         position_ms: Position in milliseconds
+#         
+#     Returns:
+#         True if successful, False otherwise
+#     """
+#     session = await _get_current_session()
+#     if session:
+#         try:
+#             # Windows uses 100-nanosecond units (10,000 per millisecond)
+#             position_100ns = position_ms * 10000
+#             await session.try_change_playback_position_async(position_100ns)
+#             logger.debug(f"Windows playback: seek to {position_ms}ms")
+#             return True
+#         except Exception as e:
+#             logger.warning(f"Windows seek failed: {e}")
+#     return False
+
+
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
     """Windows Media metadata fetcher with standardized output."""
     global _win_media_manager
@@ -126,7 +235,12 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # ---------------------------
             
         playback_info = current_session.get_playback_info()
-        if not playback_info or playback_info.playback_status != 4:
+        # FIX: Accept both Playing (4) and Paused (5) states
+        # Windows PlaybackStatus enum: Closed=0, Opened=1, Changing=2, Stopped=3, Playing=4, Paused=5
+        # Previously only accepted Playing (4), causing source to flip to Spotify when paused
+        # This broke playback controls (would control Spotify instead of Windows app)
+        playback_status = playback_info.playback_status if playback_info else None
+        if playback_status not in (4, 5):  # 4 = Playing, 5 = Paused
             return None
             
         info = await current_session.try_get_media_properties_async()
@@ -156,8 +270,17 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 return None
             position = seconds
         else:
-            elapsed = time.time() - timeline.last_updated_time.timestamp()
-            position = seconds + elapsed
+            # FIX: Only interpolate position when PLAYING (status 4)
+            # When paused (status 5), the song isn't advancing, so don't add elapsed time
+            if playback_status == 4:
+                elapsed = time.time() - timeline.last_updated_time.timestamp()
+                # Cap interpolation to 5 seconds to prevent runaway drift
+                # SMTC updates every 4-5s; this limits pause-detection lag
+                elapsed = min(elapsed, 5.0)
+                position = seconds + elapsed
+            else:
+                # Paused - use raw position without interpolation
+                position = seconds
         
         # Get duration if available
         duration_ms = None
@@ -184,7 +307,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         background_image_path = None
         
         # 1. Always load album art for top left display (independent of artist image preference)
-        db_result = load_album_art_from_db(artist, album, title)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        loop = asyncio.get_running_loop()
+        db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
         if db_result:
             found_in_db = True
             album_art_found_in_db = True  # CRITICAL: Only set when actual album art is found
@@ -211,7 +336,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
-        artist_image_result = load_artist_image_from_db(artist)
+        # FIX: Run in executor to avoid blocking event loop during file I/O
+        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
@@ -328,28 +454,51 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 
                 # Only extract if we haven't already for this track OR if file doesn't exist
                 if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    stream = await thumbnail_ref.open_read_async()
+                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
+                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
+                    try:
+                        stream = await asyncio.wait_for(
+                            thumbnail_ref.open_read_async(),
+                            timeout=3.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("TRACE: Windows thumbnail open_read_async timed out")
+                        stream = None
+                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
+                        # We won't retry thumbnail extraction for this track until it changes
+                        state._last_windows_track_id = current_track_id
+                    
                     if stream:
                         reader = DataReader(stream)
-                        await reader.load_async(stream.size)
-                        byte_data = bytearray(stream.size)
-                        reader.read_bytes(byte_data)
-                        
-                        # Save directly to unique file (no race condition possible)
-                        loop = asyncio.get_running_loop()
-                        save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
-                        
-                        if save_ok:
+                        try:
+                            await asyncio.wait_for(
+                                reader.load_async(stream.size),
+                                timeout=3.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("TRACE: Windows thumbnail load_async timed out")
+                            stream = None
+                            # Also mark as processed on load timeout
                             state._last_windows_track_id = current_track_id
+                        else:
+                            byte_data = bytearray(stream.size)
+                            reader.read_bytes(byte_data)
                             
-                            # Cleanup: Delete OLD thumbnails to keep cache small
-                            # We only keep the current one
-                            for f in CACHE_DIR.glob("thumb_*.jpg"):
-                                if f.name != thumb_filename:
-                                    try:
-                                        os.remove(f)
-                                    except:
-                                        pass
+                            # Save directly to unique file (no race condition possible)
+                            loop = asyncio.get_running_loop()
+                            save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
+                            
+                            if save_ok:
+                                state._last_windows_track_id = current_track_id
+                                
+                                # Cleanup: Delete OLD thumbnails to keep cache small
+                                # We only keep the current one
+                                for f in CACHE_DIR.glob("thumb_*.jpg"):
+                                    if f.name != thumb_filename:
+                                        try:
+                                            os.remove(f)
+                                        except:
+                                            pass
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():
@@ -402,31 +551,36 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
                  # FIX: Wait for DB to avoid flicker
                  try:
-                     # Wait 300ms for high-res art
-                     await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
+                     # Refined Fix: Use asyncio.wait to avoid cancelling the background task on timeout
+                     # wait_for() would CANCEL the task on timeout, killing the download
+                     # wait() just returns - task stays in pending set and continues running
+                     done, pending = await asyncio.wait([task], timeout=0.3)
                      
-                     # Check DB again!
-                     db_result = load_album_art_from_db(artist, album, title)
-                     if db_result:
-                         # Found it! Update variables to use High-Res immediately
-                         found_in_db = True
-                         db_image_path = db_result["path"]
-                         
-                         # NEW: Use path directly instead of copying (eliminates race conditions)
-                         try:
-                             # FIX: Add timestamp for cache busting
-                             mtime = int(time.time())
+                     if task in done:
+                         # Task completed within timeout - check DB for high-res art
+                         # FIX: Run in executor to avoid blocking event loop during file I/O
+                         db_result = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
+                         if db_result:
+                             # Found it! Update variables to use High-Res immediately
+                             found_in_db = True
+                             db_image_path = db_result["path"]
+                             
+                             # NEW: Use path directly instead of copying (eliminates race conditions)
                              try:
-                                 if db_image_path.exists():
-                                     mtime = int(db_image_path.stat().st_mtime)
-                             except: pass
-                             album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
-                             result_extra_fields = {"album_art_path": str(db_image_path)}
-                         except Exception as e:
-                             logger.debug(f"Failed to set DB art path after wait: {e}")
-                             # If setting path fails, we fall back to the Windows thumbnail which is already set
-                 except asyncio.TimeoutError:
-                     pass # Fallback to Windows thumbnail
+                                 # FIX: Add timestamp for cache busting
+                                 mtime = int(time.time())
+                                 try:
+                                     if db_image_path.exists():
+                                         mtime = int(db_image_path.stat().st_mtime)
+                                 except: pass
+                                 album_art_url = f"/cover-art?id={current_track_id}&t={mtime}"
+                                 result_extra_fields = {"album_art_path": str(db_image_path)}
+                             except Exception as e:
+                                 logger.debug(f"Failed to set DB art path after wait: {e}")
+                     # If task in pending: timeout occurred, but task continues in background
+                     # Next poll cycle will see the result in DB
+                 except Exception:
+                     pass  # Fallback to Windows thumbnail
 
         # Re-fetch app_id safely for frontend control logic (optimistic enabling)
         # This allows frontend to enable controls immediately for Spotify app before enrichment completes
@@ -447,11 +601,18 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "colors": ("#24273a", "#363b54"),
             "album_art_url": album_art_url,  # ALWAYS album art (for top left display)
             "background_image_url": background_image_url if background_image_url else album_art_url,  # Artist image if selected, else album art
-            "is_playing": True,
+            "is_playing": playback_status == 4,  # True only if Playing (not Paused)
             "source": "windows_media",
             "app_id": app_id,  # ADDED: Pass app_id for optimistic control enabling (enables controls for spotify.exe before enrichment)
             "background_style": saved_background_style  # Return saved style preference
         }
+        
+        # Track last active time for paused timeout logic
+        if playback_status == 4:  # Playing
+            state._windows_last_active_time = time.time()
+        
+        # Include last_active_time in result for metadata.py timeout check
+        result["last_active_time"] = state._windows_last_active_time
         
         # Add album_art_path if we have a direct path (DB file or unique thumbnail)
         if result_extra_fields.get("album_art_path"):

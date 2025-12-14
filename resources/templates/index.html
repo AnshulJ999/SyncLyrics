@@ -17,7 +17,8 @@
         <p>To use Spotify features, please authorize this application.</p>
         <a href="{{ spotify_auth_url }}" class="spotify-login-button">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
-                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.56.3z"/>
+                <path
+                    d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.56.3z" />
             </svg>
             Login with Spotify
         </a>
@@ -26,23 +27,225 @@
 </div>
 {% endif %}
 
-<!-- Settings Toggle Button -->
-<button id="settings-toggle" class="settings-toggle" title="Display Settings">⚙</button>
+<!-- Top Right Controls Container (Audio Source + Settings) -->
+<div class="top-right-controls">
+    <!-- Audio Source Toggle Button -->
+    <button id="source-toggle" class="source-toggle" title="Audio Source Settings">
+        <span class="recording-dot" id="recording-dot"></span>
+        <span class="source-name" id="source-name">Spotify</span>
+    </button>
+
+    <!-- Settings Toggle Button -->
+    <button id="settings-toggle" class="settings-toggle" title="Display Settings"><i class="bi bi-gear"></i></button>
+</div>
+
+<!-- Audio Source Modal -->
+<div id="audio-source-modal" class="audio-source-modal">
+    <div class="audio-source-modal-content">
+        <div class="audio-source-header">
+            <h3>🎤 Audio Source</h3>
+            <button id="audio-source-close" class="audio-source-close">×</button>
+        </div>
+
+        <div class="audio-source-body">
+            <!-- Enhanced Status Section -->
+            <div class="audio-source-status">
+                <div class="status-row">
+                    <span class="status-label">Status</span>
+                    <span class="status-value" id="recognition-status">Idle</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Mode</span>
+                    <span class="status-value" id="recognition-mode">—</span>
+                </div>
+                <div class="status-row" id="attempt-row" style="display: none;">
+                    <span class="status-label">Attempts</span>
+                    <span class="status-value" id="recognition-attempts">—</span>
+                </div>
+                <!-- Audio Level Meter (inline) - COMMENTED OUT, using large meter instead
+                <div class="status-row" id="audio-level-row" style="display: none;">
+                    <span class="status-label">Audio Level</span>
+                    <div class="audio-level-meter-inline">
+                        <div class="audio-level-fill-inline" id="audio-level-fill-inline"></div>
+                    </div>
+                </div>
+                -->
+                <div class="status-row" id="last-match-row" style="display: none;">
+                    <span class="status-label">Last Match</span>
+                    <span class="status-value" id="last-match-info">—</span>
+                </div>
+                <div class="status-row" id="enrichment-row" style="display: none;">
+                    <span class="status-label">Enrichment</span>
+                    <span class="status-value enriched" id="enrichment-status">☑ Spotify</span>
+                </div>
+            </div>
+
+            <!-- HTTPS Warning (shown when mic selected on non-secure) -->
+            <div class="https-warning" id="https-warning">
+                <span class="https-warning-text">
+                    ⚠️ Browser microphone requires HTTPS. Enable HTTPS in settings or use a backend device.
+                </span>
+            </div>
+
+            <!-- Quick Start Buttons -->
+            <div class="quick-start-section">
+                <h4>Quick Start</h4>
+                <div class="quick-start-buttons">
+                    <div class="quick-start-card" id="quick-start-backend">
+                        <div class="quick-start-icon">🔊</div>
+                        <div class="quick-start-info">
+                            <div class="quick-start-title">System Audio</div>
+                            <div class="quick-start-subtitle" id="backend-device-name">Auto (Loopback)</div>
+                        </div>
+                        <button class="quick-start-btn" id="quick-start-backend-btn">▶ Start</button>
+                    </div>
+                    <div class="quick-start-card" id="quick-start-frontend">
+                        <div class="quick-start-icon">🎤</div>
+                        <div class="quick-start-info">
+                            <div class="quick-start-title">Browser Mic</div>
+                            <div class="quick-start-subtitle">Default Microphone</div>
+                        </div>
+                        <button class="quick-start-btn" id="quick-start-frontend-btn">▶ Start</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Device Selection -->
+            <div class="audio-source-section">
+                <h4>Custom Device</h4>
+                <select id="device-select" class="device-select">
+                    <optgroup label="System Audio (Backend)">
+                        <option value="">Loading devices...</option>
+                    </optgroup>
+                    <optgroup label="Browser Microphone (Frontend)">
+                        <option value="frontend:default">Default Microphone</option>
+                    </optgroup>
+                </select>
+                <div class="sample-rate-info" id="sample-rate-info"></div>
+            </div>
+
+            <!-- Audio Level Meter (large, for calibration) -->
+            <div class="audio-level-container" id="audio-level-container" style="display: none;">
+                <div class="audio-level-header">
+                    <h4>Audio Level</h4>
+                    <span class="audio-level-value" id="audio-level-value">Amp: 0</span>
+                </div>
+                <div class="audio-level-meter">
+                    <div class="audio-level-fill" id="audio-level-fill"></div>
+                </div>
+            </div>
+
+            <!-- Control Button (toggles between Start/Stop) -->
+            <div class="audio-source-controls">
+                <button id="recognition-toggle" class="control-btn-audio start">
+                    ▶ Start Recognition
+                </button>
+            </div>
+
+            <!-- Current Song (when active) -->
+            <div class="current-song-info" id="current-song-info" style="display: none;">
+                <div class="current-song-label">Currently Recognized</div>
+                <div class="current-song-title" id="current-song-title">—</div>
+                <div class="current-song-artist" id="current-song-artist">—</div>
+            </div>
+
+            <!-- Advanced Settings (Collapsible) -->
+            <button class="advanced-toggle" id="advanced-toggle">
+                <span>Advanced Settings</span>
+                <span class="arrow">▼</span>
+            </button>
+            <div class="advanced-content" id="advanced-content">
+                <div class="advanced-content-inner">
+                    <!-- Recognition Interval Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Recognition Interval</span>
+                            <button class="reset-btn" data-target="recognition-interval" data-default="5"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="recognition-interval" value="5" min="1"
+                                max="15" step="1">
+                            <span class="slider-value" id="recognition-interval-value">5s</span>
+                        </div>
+                    </div>
+
+                    <!-- Capture Duration Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Capture Duration</span>
+                            <button class="reset-btn" data-target="capture-duration" data-default="5"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="capture-duration" value="5" min="2" max="10"
+                                step="0.5">
+                            <span class="slider-value" id="capture-duration-value">5s</span>
+                        </div>
+                    </div>
+
+                    <!-- Latency Offset Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Latency Offset</span>
+                            <button class="reset-btn" data-target="latency-offset" data-default="0"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="latency-offset" value="0" min="-2" max="2"
+                                step="0.1">
+                            <span class="slider-value" id="latency-offset-value">0s</span>
+                        </div>
+                    </div>
+
+                    <!-- Silence Threshold Slider -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-label">Silence Threshold</span>
+                            <button class="reset-btn" data-target="silence-threshold" data-default="500"
+                                title="Reset to default">↺</button>
+                        </div>
+                        <div class="slider-control">
+                            <input type="range" class="slider-input" id="silence-threshold" value="500" min="50"
+                                max="2000" step="10">
+                            <span class="slider-value" id="silence-threshold-value">500</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Settings Panel -->
 <div id="settings-panel" class="settings-panel" style="display: none;">
-    <h3>Display Options</h3>
-    <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
-    <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
-    <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
-    <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
-    <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
-    <label><input type="checkbox" id="opt-colors" checked> Use Album Colors</label>
-    <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
-    <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
-    <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
-    <label><input type="checkbox" id="opt-show-provider" checked> Show Provider Info</label>
-    <button id="copy-url-btn">Copy Current URL</button>
+    <div class="settings-header">
+        <h3>Display Options</h3>
+        <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
+            <i class="bi bi-fullscreen"></i>
+        </button>
+    </div>
+    <div class="settings-options">
+        <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
+        <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
+        <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
+        <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
+        <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
+        <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
+        <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
+        <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Mode Toggle</label>
+        <label><input type="checkbox" id="opt-colors"> Use Album Colors</label>
+        <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
+        <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
+        <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
+    </div>
+    <button id="copy-url-btn" class="settings-action-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        Copy URL
+    </button>
     <div id="url-display" class="url-display"></div>
 </div>
 
@@ -68,10 +271,7 @@
 
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
-    <!-- Music Note Icon (♪) -->
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-    </svg>
+    <i class="bi bi-music-note"></i>
 </button>
 
 <!-- Provider Selection Modal (NEW) -->
@@ -86,7 +286,7 @@
             <button class="provider-tab" data-tab="album-art">Album Art & Images</button>
             <!-- REMOVED: Separate Artist Images Tab -->
         </div>
-        
+
         <!-- WRAPPER FOR DESKTOP GRID -->
         <div class="provider-content-wrapper">
             <!-- Added data-title for CSS pseudo-element header -->
@@ -95,12 +295,14 @@
                     <!-- Populated dynamically -->
                 </div>
                 <div class="provider-modal-footer">
-                    <button id="mark-instrumental-btn" class="btn-instrumental" title="Click to mark/unmark as instrumental">🎵 Instrumental</button>
+                    <button id="mark-instrumental-btn" class="btn-instrumental"
+                        title="Click to mark/unmark as instrumental">🎵 Instrumental</button>
                     <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
-                    <button id="lyrics-delete-cache" class="btn-danger" title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+                    <button id="lyrics-delete-cache" class="btn-danger"
+                        title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
                 </div>
             </div>
-            
+
             <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
                 <!-- Background Style Controls (Static - JS duplication removed) -->
                 <div class="style-controls-section">
@@ -112,15 +314,17 @@
                         <button class="style-btn" data-style="blur">Blur</button>
                     </div>
                 </div>
-                
+
                 <div id="album-art-grid" class="art-grid">
                     <!-- Populated dynamically -->
                 </div>
                 <div class="provider-modal-footer">
-                    <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
+                    <div
+                        style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
                         Select an image to use
                     </div>
-                    <button id="album-art-clear-preference" class="btn-secondary" style="margin-top: 10px; width: 100%;">Reset to Default Art</button>
+                    <button id="album-art-clear-preference" class="btn-secondary"
+                        style="margin-top: 10px; width: 100%;">Reset to Default Art</button>
                 </div>
             </div>
 
@@ -156,19 +360,19 @@
     <div id="playback-controls" class="playback-controls">
         <!-- Left: Like Button -->
         <div class="controls-left">
-            <button id="btn-like" class="control-btn" title="Save to Liked Songs">♡</button>
+            <button id="btn-like" class="control-btn" title="Save to Liked Songs"><i class="bi bi-heart"></i></button>
         </div>
 
         <!-- Center: Main Playback -->
         <div class="controls-center">
-            <button id="btn-previous" class="control-btn" title="Previous Track">◄◄</button>
-            <button id="btn-play-pause" class="control-btn play-pause-btn paused" title="Play/Pause"></button>
-            <button id="btn-next" class="control-btn" title="Next Track">►►</button>
+            <button id="btn-previous" class="control-btn" title="Previous Track"><i class="bi bi-rewind-fill"></i></button>
+            <button id="btn-play-pause" class="control-btn play-pause-btn" title="Play/Pause"><i class="bi bi-play-fill"></i></button>
+            <button id="btn-next" class="control-btn" title="Next Track"><i class="bi bi-fast-forward-fill"></i></button>
         </div>
 
         <!-- Right: Queue Button -->
         <div class="controls-right">
-            <button id="btn-queue" class="control-btn" title="Show Queue">☰</button>
+            <button id="btn-queue" class="control-btn" title="Show Queue"><i class="bi bi-music-note-list"></i></button>
         </div>
         <!-- REMOVED: Old Visual Mode Button -->
     </div>

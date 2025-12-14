@@ -27,6 +27,8 @@ export let displayConfig = {
     showProgress: true,
     showBottomNav: true,
     showProvider: true,
+    showAudioSource: true,      // Audio source menu (top left)
+    showVisualModeToggle: true, // Visual mode toggle button (bottom left)
     useAlbumColors: false,
     artBackground: false,
     softAlbumArt: false,  // Soft album art background (medium blur, no scaling, balanced)

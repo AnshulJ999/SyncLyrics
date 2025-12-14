@@ -68,8 +68,17 @@ class MDNSService:
             logger.info("mDNS registration successful")
             
         except Exception as e:
-            logger.error(f"Failed to register mDNS service: {e}")
-            self.unregister()
+            # FIX: Better error message, don't unregister (nothing registered yet)
+            error_msg = str(e) if str(e) else type(e).__name__
+            logger.warning(f"mDNS registration failed: {error_msg} (app still works via IP address)")
+            # Clean up without calling unregister
+            if self.zeroconf:
+                try:
+                    self.zeroconf.close()
+                except:
+                    pass
+            self.zeroconf = None
+            self.info = None
 
     def unregister(self):
         """Unregister the service."""

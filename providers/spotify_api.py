@@ -24,9 +24,31 @@ from logging_config import get_logger
 from config import SPOTIFY, ALBUM_ART
 
 # Load environment variables
-load_dotenv()
+# load_dotenv() # Environment variables are already loaded by config.py
 
 logger = get_logger(__name__)
+
+
+# ===========================================
+# Counting Session for Accurate API Tracking
+# ===========================================
+# Custom requests.Session that counts ALL HTTP requests made by spotipy,
+# including internal retries, token refreshes, and other hidden calls.
+# This gives accurate stats that match Spotify Developer Dashboard.
+
+class CountingSession(requests.Session):
+    """A requests.Session subclass that counts all HTTP requests (thread-safe)."""
+    
+    def __init__(self, stats_dict: dict):
+        super().__init__()
+        self._stats = stats_dict
+        self._lock = threading.Lock()  # Thread-safe counter
+    
+    def request(self, method, url, **kwargs):
+        """Override request() to count every HTTP call."""
+        with self._lock:
+            self._stats['total_requests'] += 1
+        return super().request(method, url, **kwargs)
 
 # ===========================================
 # Spotify Image URL Enhancement (Shared Utility)
@@ -351,12 +373,15 @@ class SpotifyAPI:
         self._cache_enabled = SPOTIFY["cache"]["enabled"]
         self._last_track_id = None  # Track the current track ID to detect track changes
         
-        # Smart caching settings
-        self.active_ttl = 6.0   # Default: Poll every 6s when playing (interpolate in between)
-        self.active_ttl_normal = 6.0   # Normal mode (when Windows Media is active)
-        self.active_ttl_fast = 2.0     # Fast mode (Spotify-only mode, reduced latency)
-        self.idle_ttl = 6.0     # Poll every 6s when paused (Safe: max ~17k req/day)
-        self.backoff_ttl = 30.0 # Circuit breaker timeout
+        # Smart caching settings - now configurable via config.py/environment variables
+        # These can be set via SPOTIFY_POLLING_FAST_INTERVAL and SPOTIFY_POLLING_SLOW_INTERVAL
+        polling_config = SPOTIFY.get("polling", {})
+        self.active_ttl_fast = float(polling_config.get("fast_interval", 2.0))   # Fast mode (Spotify-only)
+        self.active_ttl_normal = float(polling_config.get("slow_interval", 6.0)) # Normal mode (Windows Media hybrid)
+        self.idle_ttl = float(polling_config.get("slow_interval", 6.0))          # Poll rate when paused
+        self.active_ttl = self.active_ttl_normal  # Default: Start in normal mode
+        self.backoff_ttl = 30.0  # Circuit breaker timeout (not user-configurable)
+
         
         # Backoff state
         self._backoff_until = 0
@@ -367,6 +392,9 @@ class SpotifyAPI:
         # Artist Image Cache
         # Key: artist_id, Value: list of image URLs
         self._artist_image_cache = {}
+        
+        # FIX: Throttle for credential/auth errors to prevent log spam
+        self._credentials_error_logged = False
         
         # Request tracking
         # Tracks ALL Spotify API calls for rate limit monitoring
@@ -393,7 +421,9 @@ class SpotifyAPI:
         try:
             # Initialize Spotify client
             if not all([SPOTIFY["client_id"], SPOTIFY["client_secret"], SPOTIFY["redirect_uri"]]):
-                logger.error("Missing Spotify credentials in config")
+                if not self._credentials_error_logged:
+                    logger.warning("Missing Spotify credentials - Spotify features disabled (set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env)")
+                    self._credentials_error_logged = True
                 return
             
             # Determine cache path for token persistence
@@ -421,6 +451,7 @@ class SpotifyAPI:
                 
             self.sp = spotipy.Spotify(
                 auth_manager=self.auth_manager,
+                requests_session=CountingSession(self.request_stats),  # Count ALL HTTP requests
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
@@ -431,13 +462,11 @@ class SpotifyAPI:
             # Instead, we mark as not initialized and let the web-based OAuth flow handle it
             cached_token = self.auth_manager.get_cached_token()
             if cached_token:
-                # We have tokens from cache - test if they're valid
-                if self._test_connection():
-                    self.initialized = True
-                    logger.info("Spotify API initialized successfully with cached tokens")
-                else:
-                    self.initialized = False
-                    logger.warning("Cached tokens invalid - re-authentication required")
+                # OPTIMIZATION: Don't test connection synchronously in __init__
+                # This blocks the event loop for seconds/minutes if network is slow
+                # Assume initialized if tokens exist, let the first async request handle auth errors
+                self.initialized = True
+                logger.info("Spotify API initialized with cached tokens (connection verification deferred)")
             else:
                 # No cached tokens - don't test connection, wait for web auth
                 self.initialized = False
@@ -475,8 +504,7 @@ class SpotifyAPI:
             if not self.initialized:
                 return False
                 
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific only, total is counted by CountingSession)
             self.request_stats['api_calls']['current_user'] += 1
             
             # Use spotipy to make the API call (handles auth automatically)
@@ -492,8 +520,7 @@ class SpotifyAPI:
         """Test API connection with retries. Tracks API calls for statistics."""
         for attempt in range(self.max_retries):
             try:
-                # Track this API call (current_user endpoint)
-                self.request_stats['total_requests'] += 1
+                # Track this API call (endpoint-specific only, total is counted by CountingSession)
                 self.request_stats['api_calls']['current_user'] += 1
                 
                 self.sp.current_user()  # Simple API call to test connection
@@ -626,8 +653,7 @@ class SpotifyAPI:
                 self.request_stats['cached_responses'] += 1
                 return self._calculate_progress(self._metadata_cache)
             
-            # 3. API Call
-            self.request_stats['total_requests'] += 1
+            # 3. API Call (endpoint-specific tracking, total is counted by CountingSession)
             self.request_stats['api_calls']['current_playback'] += 1
             
             loop = asyncio.get_event_loop()
@@ -725,8 +751,7 @@ class SpotifyAPI:
             return None
             
         try:
-            # Track API call
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['search'] += 1
             
             # Clean up search terms
@@ -773,6 +798,83 @@ class SpotifyAPI:
             logger.error(f"Error searching track: {e}")
             return None
 
+    def search_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for a track on Spotify using ISRC code.
+        
+        ISRC (International Standard Recording Code) uniquely identifies recordings.
+        This provides exact matching, unlike text search which can be ambiguous.
+        
+        Used by audio recognition to get canonical Spotify metadata
+        (proper capitalization, Spotify track ID) from Shazam's ISRC codes.
+        
+        Args:
+            isrc: ISRC code (e.g., "USHR10622153")
+            
+        Returns:
+            Dict with Spotify metadata or None if not found:
+            {
+                'artist': str,      # Canonical artist name
+                'title': str,       # Canonical track title  
+                'album': str,       # Album name
+                'track_id': str,    # Spotify track ID
+                'duration_ms': int, # Track duration
+                'album_art_url': str,  # High-res album art
+            }
+        """
+        if not self.initialized:
+            logger.debug("Spotify not initialized, skipping ISRC search")
+            return None
+            
+        if not isrc:
+            return None
+            
+        try:
+            # Track API call (endpoint-specific, total counted by CountingSession)
+            self.request_stats['api_calls']['search'] += 1
+            
+            # Search by ISRC - returns exact match
+            results = self.sp.search(q=f"isrc:{isrc}", type='track', limit=1)
+            
+            if not results or not results.get('tracks') or not results['tracks'].get('items'):
+                logger.debug(f"No Spotify match for ISRC: {isrc}")
+                return None
+                
+            track = results['tracks']['items'][0]
+            
+            # Get highest quality album art
+            album_images = track['album'].get('images', [])
+            album_art_url = None
+            if album_images:
+                largest_image = max(album_images,
+                                   key=lambda img: (img.get('width', 0) or 0) * (img.get('height', 0) or 0),
+                                   default=album_images[0] if album_images else None)
+                if largest_image:
+                    album_art_url = largest_image['url']
+                    # Enhance to 1400px if available
+                    album_art_url = enhance_spotify_image_url_sync(album_art_url)
+            
+            result = {
+                'artist': track['artists'][0]['name'],
+                'title': track['name'],
+                'album': track['album']['name'],
+                'track_id': track['id'],
+                'duration_ms': track['duration_ms'],
+                'album_art_url': album_art_url,
+            }
+            
+            logger.info(f"ISRC lookup success: {isrc} → {result['artist']} - {result['title']}")
+            return result
+            
+        except ReadTimeout:
+            self.request_stats['errors']['timeout'] += 1
+            logger.debug(f"ISRC search timed out: {isrc}")
+            return None
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.debug(f"ISRC search error for {isrc}: {e}")
+            return None
+
     def get_request_stats(self) -> Dict[str, Any]:
         """
         Get current API request statistics for monitoring rate limits.
@@ -816,8 +918,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Pausing playback")
@@ -836,8 +937,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Resuming playback")
@@ -856,8 +956,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Skipping to next track")
@@ -876,8 +975,7 @@ class SpotifyAPI:
             return False
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['playback_control'] += 1
             
             logger.info("Going to previous track")
@@ -912,8 +1010,7 @@ class SpotifyAPI:
             return []
             
         try:
-            # Track this API call
-            self.request_stats['total_requests'] += 1
+            # Track this API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             logger.debug(f"Fetching artist images for artist_id: {artist_id}")
@@ -932,7 +1029,14 @@ class SpotifyAPI:
             # Try to enhance each image URL to 1400px if available (falls back to 640px if not)
             # Use asyncio.gather to verify all images in parallel (much faster than sequential)
             enhancement_tasks = [enhance_spotify_image_url_async(img['url']) for img in images_sorted]
-            image_urls = await asyncio.gather(*enhancement_tasks)
+            try:
+                image_urls = await asyncio.wait_for(
+                    asyncio.gather(*enhancement_tasks),
+                    timeout=15.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Spotify image enhancement timed out for artist {artist_id}")
+                image_urls = [img['url'] for img in images_sorted]  # Use original URLs
             
             # Log enhanced URLs for artist images (similar to album art logging)
             enhanced_count = sum(1 for orig, enhanced in zip([img['url'] for img in images_sorted], image_urls) if orig != enhanced)
@@ -957,7 +1061,8 @@ class SpotifyAPI:
         Returns the URL that users should visit to authorize the application.
         """
         if not hasattr(self, 'auth_manager') or not self.auth_manager:
-            logger.error("Auth manager not initialized")
+            # FIX: Throttled to debug level - this is expected when credentials are missing
+            logger.debug("Auth manager not initialized - Spotify auth unavailable")
             return None
         
         try:
@@ -981,7 +1086,7 @@ class SpotifyAPI:
             True if authentication was successful, False otherwise
         """
         if not hasattr(self, 'auth_manager') or not self.auth_manager:
-            logger.error("Auth manager not initialized")
+            logger.debug("Auth manager not initialized - cannot complete auth")
             return False
         
         try:
@@ -1001,6 +1106,7 @@ class SpotifyAPI:
             # Re-initialize the Spotify client with the new auth manager (which now has tokens)
             self.sp = spotipy.Spotify(
                 auth_manager=self.auth_manager,
+                requests_session=CountingSession(self.request_stats),  # Track ALL requests
                 requests_timeout=self.timeout,
                 retries=self.max_retries
             )
@@ -1026,7 +1132,7 @@ class SpotifyAPI:
             return None
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1043,7 +1149,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1060,7 +1166,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()
@@ -1076,7 +1182,7 @@ class SpotifyAPI:
             return False
             
         try:
-            self.request_stats['total_requests'] += 1
+            # Track API call (endpoint-specific, total counted by CountingSession)
             self.request_stats['api_calls']['other'] += 1
             
             loop = asyncio.get_event_loop()

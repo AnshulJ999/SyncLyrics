@@ -50,6 +50,7 @@ SKIP_FILES = {
     'bootstrap.min.js.map',
     'bootstrap.min.css.map',
     'bootstrap.min.css.map',
+    'bootstrap-icons.css',
     'poetry.lock',
     'poetry.lock'
 }
@@ -65,10 +66,38 @@ BINARY_EXTENSIONS = {
 # --- ⚙️ CONFIGURATION END ---
 # ==========================================
 
+def get_git_files():
+    """
+    Retrieves a list of files that git tracks or are untracked-but-not-ignored.
+    Returns None if git is not available or fails.
+    """
+    try:
+        # Check if we are in a git repo
+        subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], 
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        
+        # Run git ls-files
+        # -c: cached (tracked)
+        # -o: others (untracked)
+        # --exclude-standard: respect .gitignore
+        # -z: use NUL termination for safety with spaces
+        result = subprocess.run(
+            ['git', 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+        if result.returncode == 0:
+            files = result.stdout.split('\0')
+            return [os.path.normpath(f) for f in files if f.strip()]
+    except Exception:
+        pass
+    return None
+
 def load_gitignore_patterns():
     """
     Reads .gitignore patterns if the file exists.
-    Returns a list of patterns to ignore.
     """
     patterns = []
     if os.path.exists('.gitignore'):
@@ -76,7 +105,6 @@ def load_gitignore_patterns():
             with open('.gitignore', 'r', encoding='utf-8') as f:
                 for line in f:
                     line = line.strip()
-                    # Skip comments and empty lines
                     if line and not line.startswith('#'):
                         patterns.append(line)
         except Exception as e:
@@ -90,36 +118,71 @@ def is_binary_extension(filename):
 
 def matches_gitignore(filepath, patterns):
     """
-    Checks if a filepath matches any gitignore pattern.
-    Uses fnmatch for simple wildcard matching.
+    Robust fallback matcher for when git is not available.
+    Supports basic gitignore syntax including:
+    - Negations (!)
+    - Directory matches (ends with /)
+    - Anchored matches (starts with /)
+    - Wildcards (*, ?)
     """
     if not patterns:
         return False
         
-    # Standardize path separators to / for matching (git style)
-    # Get path relative to current working directory
+    # Prepare path for matching (relative, forward slashes)
     rel_path = os.path.relpath(filepath).replace(os.sep, '/')
     filename = os.path.basename(filepath)
     
+    # Gitignore rules apply in order, with later rules overriding earlier ones.
+    # We scan all patterns to determine final state.
+    should_ignore = False
+    
     for pattern in patterns:
-        # 1. Match specific filenames (e.g. "*.log")
-        if fnmatch.fnmatch(filename, pattern):
-            return True
+        is_negation = pattern.startswith('!')
+        if is_negation:
+            p = pattern[1:]
+        else:
+            p = pattern
             
-        # 2. Match relative paths (e.g. "dir/file.txt")
-        if fnmatch.fnmatch(rel_path, pattern):
-            return True
+        matches_this = False
+        
+        # 1. Directory Match (e.g. "build/")
+        if p.endswith('/'):
+            dir_name = p.rstrip('/')
             
-        # 3. Handle directory wildcards roughly (e.g. "build/" matching "build/file.txt")
-        # If the pattern looks like a directory, check if it's in the path parts
-        if pattern.endswith('/') and pattern[:-1] in rel_path.split('/'):
-            return True
+            if p.startswith('/'):
+                # Anchored directory: "/build/" matches "build/file" but not "src/build/file"
+                # Check if path starts with this dir
+                if rel_path == dir_name or rel_path.startswith(dir_name + '/'):
+                    matches_this = True
+            else:
+                # Floating directory: "build/" matches "src/build/file"
+                # Check if dir_name is any component of the path
+                path_parts = rel_path.split('/')
+                if dir_name in path_parts:
+                    matches_this = True
 
-    return False
+        # 2. Path/File Match
+        elif '/' in p:
+            # Pattern contains slash: match against full relative path
+            # e.g. "src/main.py" or "/src/*.py"
+            p_clean = p.lstrip('/') # fnmatch doesn't like leading slash usually
+            if fnmatch.fnmatch(rel_path, p_clean):
+                matches_this = True
+                
+        # 3. Filename Match (no slash)
+        else:
+            # Pattern is just filename: "*.log" matches "logs/error.log"
+            if fnmatch.fnmatch(filename, p):
+                matches_this = True
+                
+        # Apply result
+        if matches_this:
+            should_ignore = not is_negation
+            
+    return should_ignore
 
-def should_skip(filepath, gitignore_patterns):
-    """Decides if a file should be skipped based on User Configuration and .gitignore"""
-    # Normalize path for cross-platform consistency
+def should_skip(filepath, gitignore_patterns, use_gitignore_check=True):
+    """Decides if a file should be skipped."""
     norm_path = os.path.normpath(filepath)
     parts = norm_path.split(os.sep)
     filename = os.path.basename(norm_path)
@@ -129,7 +192,6 @@ def should_skip(filepath, gitignore_patterns):
         return "Skip List"
 
     # 2. Check directory exclusion
-    # This checks if any parent folder of the file is in SKIP_FOLDERS
     if not set(parts).isdisjoint(SKIP_FOLDERS):
         return "Skip Folder"
 
@@ -137,8 +199,8 @@ def should_skip(filepath, gitignore_patterns):
     if is_binary_extension(filename):
         return "Binary"
         
-    # 4. Check gitignore patterns
-    if matches_gitignore(filepath, gitignore_patterns):
+    # 4. Check gitignore patterns (Fallback logic)
+    if use_gitignore_check and matches_gitignore(filepath, gitignore_patterns):
         return ".gitignore"
 
     return False
@@ -147,81 +209,92 @@ def merge_files():
     """Main function to scan and merge files."""
     print("🚀 Starting Project Share Script...")
     
-    # Load gitignore patterns
-    gitignore_patterns = load_gitignore_patterns()
-    if gitignore_patterns:
-        print(f"📋 Loaded {len(gitignore_patterns)} patterns from .gitignore")
+    files_to_process = []
+    using_git = False
+    gitignore_patterns = []
+
+    # Strategy 1: Try Git (Most Reliable)
+    git_files = get_git_files()
     
-    print("🔍 Scanning files in current directory...")
+    if git_files is not None:
+        print(f"✅ Git detected. Using git to identify valid project files.")
+        files_to_process = git_files
+        using_git = True
+    else:
+        # Strategy 2: Fallback scan
+        print("⚠️  Git not available or not a repo. Falling back to directory scan.")
+        gitignore_patterns = load_gitignore_patterns()
+        if gitignore_patterns:
+            print(f"📋 Loaded {len(gitignore_patterns)} patterns from .gitignore")
+            
+        print("🔍 Scanning directory tree...")
+        for root, dirs, files in os.walk('.'):
+            # Optimization: Skip ignored folders during walk
+            dirs[:] = [d for d in dirs if d not in SKIP_FOLDERS and not d.startswith('.')]
+            
+            for file in files:
+                filepath = os.path.join(root, file)
+                files_to_process.append(filepath)
+
+    print(f"📦 Found {len(files_to_process)} candidates. filtering...")
     
     count = 0
     skipped_count = 0
-    skipped_details = []  # List to store skipped files for review
+    skipped_details = []
     
     try:
         with open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
             outfile.write("--- START OF PROJECT DUMP ---\n")
             
-            # Walk through the directory tree
-            for root, dirs, files in os.walk('.'):
-                # Modify 'dirs' in-place to skip traversing ignored folders
-                # This makes the script much faster and prevents checking massive ignored folders
-                dirs[:] = [d for d in dirs if d not in SKIP_FOLDERS and not d.startswith('.')]
+            for filepath in files_to_process:
+                # Clean up path display
+                display_path = filepath
+                if display_path.startswith('.' + os.sep):
+                    display_path = display_path[2:]
                 
-                for file in files:
-                    filepath = os.path.join(root, file)
-                    
-                    # Clean up path display (remove ./ prefix)
-                    display_path = filepath
-                    if display_path.startswith('.' + os.sep):
-                        display_path = display_path[2:]
-                    
-                    # Check if we should skip this file
-                    # In Python, non-empty strings are Truthy, so this works for "reason" strings too
-                    skip_reason = should_skip(filepath, gitignore_patterns)
-                    if skip_reason:
-                        skipped_count += 1
-                        skipped_details.append(f"{display_path} [{skip_reason}]")
-                        continue
-                    
-                    # Attempt to read and write the file
-                    try:
-                        with open(filepath, 'r', encoding='utf-8') as infile:
-                            content = infile.read()
-                            
-                            outfile.write(f"\n\n{'='*60}\n")
-                            outfile.write(f"FILE: {display_path}\n")
-                            outfile.write(f"{'='*60}\n")
-                            outfile.write(content)
-                            
-                            print(f"  + Added: {display_path}")
-                            count += 1
-                            
-                    except UnicodeDecodeError:
-                        print(f"  ⚠️  Skipping Non-UTF8: {display_path}")
-                        skipped_count += 1
-                        skipped_details.append(f"{display_path} [Non-UTF8]")
-                    except Exception as e:
-                        print(f"  ❌ Error reading {display_path}: {e}")
-                        skipped_count += 1
-                        skipped_details.append(f"{display_path} [Error]")
+                # Check skip rules
+                # If using git, we don't need to re-check gitignore (git already filtered it)
+                skip_reason = should_skip(filepath, gitignore_patterns, use_gitignore_check=not using_git)
+                
+                if skip_reason:
+                    skipped_count += 1
+                    continue
+                
+                # Read/Write
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as infile:
+                        content = infile.read()
+                        
+                        outfile.write(f"\n\n{'='*60}\n")
+                        outfile.write(f"FILE: {display_path}\n")
+                        outfile.write(f"{'='*60}\n")
+                        outfile.write(content)
+                        
+                        print(f"  + Added: {display_path}")
+                        count += 1
+                        
+                except UnicodeDecodeError:
+                    print(f"  ⚠️  Skipping Non-UTF8: {display_path}")
+                    skipped_count += 1
+                    skipped_details.append(f"{display_path} [Non-UTF8]")
+                except Exception as e:
+                    print(f"  ❌ Error reading {display_path}: {e}")
+                    skipped_count += 1
+                    skipped_details.append(f"{display_path} [Error]")
 
             outfile.write("\n\n--- END OF PROJECT DUMP ---\n")
             
         print(f"\n✅ Done! {count} files merged into '{OUTPUT_FILE}'")
         print(f"🙈 Skipped {skipped_count} files based on configuration.")
         
-        # Print the list of excluded files
         if skipped_details:
             print("\n--- Skipped Files Review ---")
             for item in sorted(skipped_details):
                 print(f"  - {item}")
-            print("-" * 30)
         
     except Exception as e:
         print(f"\n❌ Critical Error: {e}")
         
-    # Pause so user can review output
     print("\n" + "="*50)
     print("Review the list above to see what was included.")
     input("Press Enter to exit...")

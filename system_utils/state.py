@@ -144,6 +144,12 @@ _last_windows_track_id: Optional[str] = None
 # Track last app_id to avoid log spam
 _last_windows_app_id: Optional[str] = None
 
+# Track when Windows media was last actively playing (for paused timeout)
+_windows_last_active_time: float = 0
+
+# Track when Spotify was last actively playing (for paused timeout)
+_spotify_last_active_time: float = 0
+
 # ==========================================
 # SINGLETON PROVIDER INSTANCES
 # ==========================================

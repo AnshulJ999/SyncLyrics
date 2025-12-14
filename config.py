@@ -26,7 +26,15 @@ if "__compiled__" in globals() or getattr(sys, 'frozen', False):
 else:
     ROOT_DIR = Path(__file__).parent
 
-load_dotenv(ROOT_DIR / '.env')
+# ==========================================
+# Version
+# ==========================================
+VERSION = "1.3.0"
+
+# FIX: Only load .env if it exists (optimization)
+env_file = ROOT_DIR / '.env'
+if env_file.exists():
+    load_dotenv(env_file)
 
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
@@ -54,17 +62,25 @@ RESOURCES_DIR = ROOT_DIR / "resources"
 DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
 CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
 ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
+CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(ROOT_DIR / "certs")))
 
-for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
+# FIX: Wrap directory creation in try-except for permission errors
+for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, CERTS_DIR]:
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError) as e:
+        # Can't use logger here (not configured yet), so use print
+        print(f"Warning: Failed to create directory {d}: {e}")
 
 DEBUG = {
     "enabled": conf("debug.enabled", False),
     "log_file": conf("debug.log_file", "synclyrics.log"),
-    "log_level": conf("debug.log_level", "INFO"),
+    # FIX: Default to WARNING for frozen builds (less log noise in production)
+    "log_level": conf("debug.log_level", "WARNING" if getattr(sys, 'frozen', False) else "INFO"),
     "log_providers": conf("debug.log_providers", True),
     "log_polling": conf("debug.log_polling", True),
-    "log_to_console": conf("debug.log_to_console", True),
+    # FIX: Default False for frozen EXE (no console window)
+    "log_to_console": conf("debug.log_to_console", not getattr(sys, 'frozen', False)),
     "log_detailed": conf("debug.log_detailed", False),
     "performance_logging": conf("debug.performance_logging", False),
     "log_rotation": {
@@ -73,11 +89,21 @@ DEBUG = {
     }
 }
 
+import secrets
+
 SERVER = {
     "port": conf("server.port", 9012),
     "host": conf("server.host", "0.0.0.0"),
-    "secret_key": os.getenv("QUART_SECRET_KEY", "change-me-in-env"),
+    # FIX: Generate secure random key if not provided (required for session security)
+    "secret_key": os.getenv("QUART_SECRET_KEY") or secrets.token_hex(32),
     "debug": conf("server.debug", False),
+    "https": {
+        "enabled": conf("server.https.enabled", False),
+        "port": conf("server.https.port", 0),  # 0 = same as HTTP, >0 = dual-stack
+        "auto_generate": conf("server.https.auto_generate", True),
+        "cert_file": conf("server.https.cert_file", "certs/server.crt"),
+        "key_file": conf("server.https.key_file", "certs/server.key"),
+    },
 }
 
 UI = {
@@ -111,15 +137,18 @@ LYRICS = {
         "buffer_size": conf("lyrics.display.buffer_size", 6),
         "update_interval": conf("lyrics.display.update_interval", 0.1),
         "idle_interval": conf("lyrics.display.idle_interval", 5.0),
-        "latency_compensation": conf("lyrics.display.latency_compensation", 0.1),
+        "latency_compensation": conf("lyrics.display.latency_compensation", 0.0),
+        "spotify_latency_compensation": conf("lyrics.display.spotify_latency_compensation", -0.5),
+        "audio_recognition_latency_compensation": conf("lyrics.display.audio_recognition_latency_compensation", 0.0),
         "idle_wait_time": conf("lyrics.display.idle_wait_time", 3.0),
         "smart_race_timeout": conf("lyrics.display.smart_race_timeout", 3.0),
     },
 }
 
 SPOTIFY = {
-    "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
-    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
+    # FIX: Use empty string instead of None for null safety with spotipy
+    "client_id": os.getenv("SPOTIFY_CLIENT_ID", ""),
+    "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET", ""),
     "redirect_uri": conf("spotify.redirect_uri", "http://127.0.0.1:9012/callback"),
     "scope": [
         "user-read-playback-state", 
@@ -131,8 +160,16 @@ SPOTIFY = {
     "cache": {
         "metadata_ttl": conf("spotify.cache.metadata_ttl", 2.0),
         "enabled": conf("spotify.cache.enabled", True),
+    },
+    # Polling intervals for Spotify API (configurable for Home Assistant)
+    "polling": {
+        # Fast mode: Used when Spotify is the only source (no Windows Media)
+        "fast_interval": float(conf("spotify.polling.fast_interval", 2.0)),
+        # Slow mode: Used in hybrid mode (with Windows Media) and when paused
+        "slow_interval": float(conf("spotify.polling.slow_interval", 6.0)),
     }
 }
+
 
 PROVIDERS = {
     "lrclib": {
@@ -222,6 +259,10 @@ SYSTEM = {
             "preferred": conf("system.windows.media_session.preferred", True),
             "timeout": conf("system.windows.media_session.timeout", 5)
         },
+        "paused_timeout": conf("system.windows.paused_timeout", 600),  # 10 min default
+    },
+    "spotify": {
+        "paused_timeout": conf("system.spotify.paused_timeout", 600),  # 10 min default
     },
     "linux": {
         "gsettings_enabled": conf("system.linux.gsettings_enabled", True),
@@ -258,6 +299,19 @@ ARTIST_IMAGE = {
     "enable_wikipedia": conf("artist_image.enable_wikipedia", False),
     # Enable FanArt.tv album covers (fetches album artwork, can be disabled if too many duplicates)
     "enable_fanart_albumcover": conf("artist_image.enable_fanart_albumcover", True)
+}
+
+# Audio Recognition (Reaper Integration)
+# Uses ShazamIO for song identification with latency-compensated position tracking
+AUDIO_RECOGNITION = {
+    "enabled": conf("audio_recognition.enabled", False),
+    "reaper_auto_detect": conf("audio_recognition.reaper_auto_detect", False),
+    "device_id": conf("audio_recognition.device_id"),  # None = auto-detect
+    "device_name": conf("audio_recognition.device_name", ""),
+    "capture_duration": conf("audio_recognition.capture_duration", 5.0),
+    "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
+    "latency_offset": conf("audio_recognition.latency_offset", 0.0),
+    "silence_threshold": conf("audio_recognition.silence_threshold", 500),
 }
 
 # Helper functions

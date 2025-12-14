@@ -60,21 +60,26 @@ export function updateBackground() {
         return;
     }
 
-    // If showAlbumArt is false, force default background
-    if (!displayConfig.showAlbumArt) {
-        bgLayer.classList.remove('visible');
-        bgOverlay.classList.remove('visible');
-
-        if (displayConfig.useAlbumColors && currentColors) {
-            document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
-        } else {
-            document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
-        }
-
-        document.body.classList.remove('soft-mode');
-        document.body.classList.remove('sharp-mode');
-        return;
-    }
+    // FIX: Removed incorrect check that conflated thumbnail visibility with background
+    // The background should only be controlled by artBackground/softAlbumArt/sharpAlbumArt
+    // The fallback to default gradient is already handled by the else block below (lines 110-115)
+    // 
+    // ORIGINAL CODE (commented for reference):
+    // // If showAlbumArt is false, force default background
+    // if (!displayConfig.showAlbumArt) {
+    //     bgLayer.classList.remove('visible');
+    //     bgOverlay.classList.remove('visible');
+    //
+    //     if (displayConfig.useAlbumColors && currentColors) {
+    //         document.body.style.background = `linear-gradient(135deg, ${currentColors[0]} 0%, ${currentColors[1]} 100%)`;
+    //     } else {
+    //         document.body.style.background = `linear-gradient(135deg, #1e2030 0%, #2f354d 100%)`;
+    //     }
+    //
+    //     document.body.classList.remove('soft-mode');
+    //     document.body.classList.remove('sharp-mode');
+    //     return;
+    // }
 
     // Use background_image_url if available, otherwise album_art_url
     const backgroundUrl = lastTrackInfo?.background_image_url || lastTrackInfo?.album_art_url;
@@ -326,6 +331,15 @@ export function enterVisualMode() {
     setSavedBackgroundState(getCurrentBackgroundStyle());
 
     // Auto-switch to sharp mode if configured
+    // NOTE: This currently applies art BG even if user hasn't opted-in via URL.
+    // Visual mode is for instrumentals, so showing art may be desired behavior.
+    // 
+    // OPTIONAL FIX: Uncomment the hasArtBgEnabled check below to only auto-sharp
+    // when art BG is already enabled via URL params or settings:
+    // const hasArtBgEnabled = displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt;
+    // if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal && hasArtBgEnabled) {
+    //
+    // CURRENT BEHAVIOR: Always apply sharp in visual mode (ignores URL art params)
     if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal) {
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');

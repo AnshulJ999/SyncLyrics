@@ -347,6 +347,7 @@ body[data-minimal="true"] .bottom-nav,
 body[data-minimal="true"] #header,
 body[data-minimal="true"] #footer,
 body[data-minimal="true"] .settings-toggle,
+body[data-minimal="true"] .source-toggle,
 body[data-minimal="true"] .track-header,
 body[data-minimal="true"] #player-ui-container,
 body[data-minimal="true"] .album-art,
@@ -355,12 +356,41 @@ body[data-minimal="true"] .background-overlay {
     display: none !important;
 }
 
-/* ========== SETTINGS TOGGLE ========== */
-.settings-toggle {
+/* ========== TOP RIGHT CONTROLS CONTAINER ========== */
+/* Container for audio source toggle and settings gear - ensures vertical alignment */
+.top-right-controls {
     position: fixed;
     top: 20px;
     right: 20px;
     z-index: 200;
+    display: flex;
+    align-items: center;  /* KEY: Vertical center alignment regardless of child heights */
+    gap: 10px;
+    pointer-events: none;  /* Allow clicks to pass through container gaps */
+}
+
+.top-right-controls > * {
+    pointer-events: auto;  /* But children (buttons) are clickable */
+}
+
+/* Responsive: Mobile */
+@media (max-width: 480px) {
+    .top-right-controls {
+        top: 0.5rem;
+        right: 0.5rem;
+    }
+}
+
+/* Hide container in minimal mode */
+body[data-minimal="true"] .top-right-controls {
+    display: none !important;
+}
+
+/* ========== SETTINGS TOGGLE ========== */
+.settings-toggle {
+    /* Now relative within the flex container, not fixed */
+    position: relative;
+    z-index: 1;  /* Stacking within container */
     width: 40px;
     height: 40px;
     border: none;
@@ -380,6 +410,11 @@ body[data-minimal="true"] .background-overlay {
     transform: rotate(90deg);
 }
 
+/* Settings gear icon sizing */
+.settings-toggle i {
+    font-size: 1.1rem;
+}
+
 /* ========== SETTINGS PANEL ========== */
 .settings-panel {
     position: fixed;
@@ -388,56 +423,108 @@ body[data-minimal="true"] .background-overlay {
     background: rgba(26, 27, 38, 0.95);
     backdrop-filter: blur(20px);
     border-radius: 12px;
-    padding: 1.5rem;
-    min-width: 300px;
+    padding: clamp(1rem, 2vw, 1.5rem);
+    width: clamp(280px, 25vw, 360px);
+    max-height: calc(100vh - 100px);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     z-index: 1000;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
 }
 
-.settings-panel h3 {
-    margin: 0 0 1rem 0;
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: clamp(0.75rem, 1.5vw, 1.25rem);
+    flex-shrink: 0;
+}
+
+.settings-header h3 {
+    margin: 0;
     color: white;
-    font-size: 1.2rem;
+    font-size: clamp(1.1rem, 1.5vw, 1.3rem);
+}
+
+.settings-header-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings-header-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.settings-options {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: clamp(0.75rem, 1.5vw, 1.25rem);
+    min-height: 0;
 }
 
 .settings-panel label {
     display: block;
     color: rgba(255, 255, 255, 0.9);
-    margin-bottom: 0.8rem;
+    margin-bottom: clamp(0.5rem, 1vw, 0.85rem);
     cursor: pointer;
+    font-size: clamp(0.88rem, 1vw, 1rem);
 }
 
 .settings-panel input[type="checkbox"] {
     margin-right: 0.5rem;
 }
 
-.settings-panel button {
+.settings-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
     width: 100%;
-    padding: 0.8rem;
-    margin-top: 1rem;
-    background: rgba(59, 130, 246, 0.3);
-    border: 1px solid rgba(59, 130, 246, 0.5);
-    color: white;
-    border-radius: 6px;
+    padding: clamp(0.6rem, 1vw, 0.85rem) clamp(0.8rem, 1.5vw, 1rem);
+    margin-top: clamp(0.5rem, 1vw, 0.75rem);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+    font-size: clamp(0.85rem, 1vw, 0.95rem);
+    flex-shrink: 0;
 }
 
-.settings-panel button:hover {
-    background: rgba(59, 130, 246, 0.5);
+.settings-action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.settings-action-btn svg {
+    flex-shrink: 0;
 }
 
 .url-display {
-    margin-top: 1rem;
-    padding: 0.8rem;
+    margin-top: clamp(0.5rem, 1vw, 0.75rem);
+    padding: clamp(0.5rem, 1vw, 0.75rem);
     background: rgba(0, 0, 0, 0.3);
     border-radius: 6px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: clamp(0.75rem, 0.9vw, 0.9rem);
     word-break: break-all;
-    max-height: 100px;
+    max-height: 80px;
     overflow-y: auto;
+    flex-shrink: 0;
 }
 
 /* ========== TRACK HEADER ========== */
@@ -633,6 +720,7 @@ body.hide-nav #player-ui-container {
     flex: 2;
     display: flex;
     justify-content: center;
+    align-items: center;
     gap: 1.5rem; /* Space between Prev/Play/Next */
 }
 
@@ -662,6 +750,11 @@ body.hide-nav #player-ui-container {
     transform: scale(1.05);
 }
 
+/* Visual mode toggle icon sizing */
+.lyrics-toggle-btn i {
+    font-size: 1.25rem;
+}
+
 /* Hide in minimal mode */
 body[data-minimal="true"] .lyrics-toggle-btn {
     display: none !important;
@@ -671,7 +764,7 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     background: transparent;
     border: none;
     color: white;
-    font-size: 1rem;
+    font-size: 1.2rem;
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -686,10 +779,13 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     margin: 0;
 }
 
-.control-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.25);
-    transform: scale(1.1);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+/* Hover effect - only for devices with mouse/trackpad (prevents sticky hover on touch) */
+@media (hover: hover) {
+    .control-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(1.1);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    }
 }
 
 .control-btn:active:not(:disabled) {
@@ -701,42 +797,31 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     cursor: not-allowed;
 }
 
+.control-btn:focus {
+    outline: none;
+}
+
+/* Like and Queue buttons - smaller icons */
+#btn-like i,
+#btn-queue i {
+    font-size: 1rem;
+}
+
+/* Playback controls (prev/next) - slightly larger */
+#btn-previous i,
+#btn-next i {
+    font-size: 1.3rem;
+}
+
 .play-pause-btn {
     width: 50px;
     height: 50px;
-    font-size: 1.2rem;
+    font-size: 1.6rem;
     background: transparent;
     position: relative;
     /* Override any emoji rendering */
     -webkit-tap-highlight-color: transparent;
     -webkit-text-fill-color: white;
-}
-
-/* Pure CSS Play Icon (triangle) */
-.play-pause-btn.paused::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-40%, -50%);
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 8px 0 8px 14px;
-    border-color: transparent transparent transparent white;
-}
-
-/* Pure CSS Pause Icon (two bars) */
-.play-pause-btn.playing::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(calc(-50% - 5px), -50%);
-    width: 4px;
-    height: 16px;
-    background: white;
-    box-shadow: 6px 0 0 white;
 }
 
 /* ========== MINIMAL MODE OVERRIDES ========== */
@@ -797,14 +882,6 @@ body[data-minimal="true"] .album-art {
     .track-header {
         top: 0.5rem;
         left: 0.5rem;
-    }
-
-    .settings-toggle {
-        top: 0.5rem;
-        right: 0.5rem;
-        width: 40px;
-        height: 40px;
-        font-size: 1.2rem;
     }
 }
 
@@ -872,7 +949,7 @@ body[data-minimal="true"] .album-art {
 /* Maximum sharpness - image rendered at native quality without any blur or scaling */
 body.sharp-mode .background-layer {
     /* Micro-blur (0.5px) reduces jagged edges without looking blurry */
-    filter: blur(0.5px) !important;
+    filter: blur(0.0px) !important;
 
     /* Reset transforms to prevent scaling blur */
     transform: none !important;
@@ -896,8 +973,8 @@ body.sharp-mode .background-overlay {
      /* FIX: Override the default flat black 0.6 opacity */
     /* Make it almost transparent to let the art shine */
  /*   background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%) !important;*/
-    backdrop-filter: blur(0.5px) saturate(105%) !important;
-    -webkit-backdrop-filter: blur(0.5px) saturate(105%) !important;
+    backdrop-filter: blur(0.0px) saturate(130%) !important;
+    -webkit-backdrop-filter: blur(0.0px) saturate(130%) !important;
     /* Very transparent background (5%) to let the art shine */
     background: rgba(0, 0, 0, 0.05) !important;
 
@@ -980,7 +1057,7 @@ body.sharp-mode .next {
 /* Provides good image clarity with better text readability than sharp mode */
 body.soft-mode .background-layer {
     /* Medium blur (6px) - provides softness while maintaining image clarity */
-    filter: blur(3px) !important;
+    filter: blur(2px) !important;
     /* Remove scaling transform to show image at native size (no upscaling artifacts) */
     transform: none !important;
     -webkit-transform: none !important;
@@ -990,7 +1067,7 @@ body.soft-mode .background-layer {
 
 body.soft-mode .background-overlay {
     /* Light backdrop blur (10px) - softens edges without major haziness */
-    backdrop-filter: blur(5px) saturate(140%) !important;
+    backdrop-filter: blur(4px) saturate(140%) !important;
     -webkit-backdrop-filter: blur(5px) saturate(140%) !important;
     /* Medium dark overlay for better text contrast and readability */
     background: rgba(0, 0, 0, 0.20) !important;
@@ -1201,9 +1278,11 @@ body.soft-mode .background-overlay {
 }
 
 /* Like Button Active State */
+
 #btn-like.liked {
-    color: #1DB954; /* Spotify Green */
-    text-shadow: 0 0 10px rgba(29, 185, 84, 0.4);
+    color: rgb(255, 255, 255);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    /* White glow */
 }
 
 /* Queue Drawer */

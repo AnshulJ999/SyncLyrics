@@ -69,6 +69,12 @@ export function initializeDisplay() {
     if (params.has('showProvider')) {
         displayConfig.showProvider = params.get('showProvider') === 'true';
     }
+    if (params.has('showAudioSource')) {
+        displayConfig.showAudioSource = params.get('showAudioSource') === 'true';
+    }
+    if (params.has('showVisualModeToggle')) {
+        displayConfig.showVisualModeToggle = params.get('showVisualModeToggle') === 'true';
+    }
 
     // Minimal mode overrides all
     if (displayConfig.minimal) {
@@ -78,6 +84,8 @@ export function initializeDisplay() {
         displayConfig.showProgress = false;
         displayConfig.showBottomNav = false;
         displayConfig.showProvider = false;
+        displayConfig.showAudioSource = false;
+        displayConfig.showVisualModeToggle = false;
     }
 
     // Apply visibility
@@ -137,6 +145,30 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         providerInfo.style.display = displayConfig.showProvider ? 'flex' : 'none';
     }
 
+    // Audio source toggle visibility
+    const sourceToggle = document.getElementById('source-toggle');
+    if (sourceToggle) {
+        sourceToggle.style.display = displayConfig.showAudioSource ? 'block' : 'none';
+    }
+
+    // Visual mode toggle button visibility
+    const visualModeToggle = document.getElementById('btn-lyrics-toggle');
+    if (visualModeToggle) {
+        visualModeToggle.style.display = displayConfig.showVisualModeToggle ? 'flex' : 'none';
+    }
+
+    // Track info visibility (independent of album art)
+    const trackInfoEl = document.querySelector('.track-info');
+    if (trackInfoEl) {
+        trackInfoEl.style.display = displayConfig.showTrackInfo ? 'block' : 'none';
+    }
+
+    // Album art link visibility (independent of track info)
+    const albumArtLink = document.getElementById('album-art-link');
+    if (albumArtLink) {
+        albumArtLink.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+    }
+
     // Update background if callback provided
     if (updateBackgroundFn) {
         updateBackgroundFn();
@@ -187,7 +219,9 @@ export function setupSettingsPanel() {
         'opt-art-bg': 'artBackground',
         'opt-soft-art-bg': 'softAlbumArt',
         'opt-sharp-art-bg': 'sharpAlbumArt',
-        'opt-show-provider': 'showProvider'
+        'opt-show-provider': 'showProvider',
+        'opt-audio-source': 'showAudioSource',
+        'opt-visual-mode-toggle': 'showVisualModeToggle'
     };
 
     // Initialize checkboxes
@@ -210,19 +244,48 @@ export function setupSettingsPanel() {
         }
     });
 
-    // Copy URL button
+    // Fullscreen toggle button (icon-only, updates title for accessibility)
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    if (fullscreenBtn) {
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch((e) => {
+                    console.error(`Error attempting to enable fullscreen: ${e.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // Update button icon and title based on fullscreen state
+        document.addEventListener('fullscreenchange', () => {
+            const icon = fullscreenBtn.querySelector('i');
+            if (document.fullscreenElement) {
+                fullscreenBtn.title = 'Exit Fullscreen';
+                if (icon) icon.className = 'bi bi-fullscreen-exit';
+            } else {
+                fullscreenBtn.title = 'Enter Fullscreen';
+                if (icon) icon.className = 'bi bi-fullscreen';
+            }
+        });
+    }
+
+    // Copy URL button (preserves SVG icon)
     if (copyUrlBtn) {
+        const originalHTML = copyUrlBtn.innerHTML;
         copyUrlBtn.addEventListener('click', () => {
             const url = generateCurrentUrl();
             copyToClipboard(url).then(() => {
-                copyUrlBtn.textContent = '✓ Copied!';
+                copyUrlBtn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
                 setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
+                    copyUrlBtn.innerHTML = originalHTML;
                 }, 2000);
             }).catch(() => {
-                copyUrlBtn.textContent = '✗ Failed';
+                copyUrlBtn.innerHTML = '<i class="bi bi-x-lg"></i> Failed';
                 setTimeout(() => {
-                    copyUrlBtn.textContent = 'Copy Current URL';
+                    copyUrlBtn.innerHTML = originalHTML;
                 }, 2000);
             });
         });
@@ -245,6 +308,8 @@ function handleCheckboxChange(id, checked) {
     if (id === 'opt-bottom-nav') displayConfig.showBottomNav = checked;
     if (id === 'opt-colors') displayConfig.useAlbumColors = checked;
     if (id === 'opt-show-provider') displayConfig.showProvider = checked;
+    if (id === 'opt-audio-source') displayConfig.showAudioSource = checked;
+    if (id === 'opt-visual-mode-toggle') displayConfig.showVisualModeToggle = checked;
 
     // Handle mutually exclusive background options
     if (id === 'opt-art-bg') {
@@ -314,6 +379,8 @@ export function generateCurrentUrl() {
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
+    if (!displayConfig.showAudioSource) params.set('showAudioSource', 'false');
+    if (!displayConfig.showVisualModeToggle) params.set('showVisualModeToggle', 'false');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
 
     // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt, or sharpAlbumArt

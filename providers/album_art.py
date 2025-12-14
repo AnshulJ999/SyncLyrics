@@ -58,7 +58,10 @@ class AlbumArtProvider:
             masked_key = f"{self.lastfm_api_key[:4]}...{self.lastfm_api_key[-4:]}" if len(self.lastfm_api_key) > 8 else "***"
             logger.info(f"AlbumArtProvider initialized - iTunes: {self.enable_itunes}, Last.fm: {self.enable_lastfm} (API key: {api_key_status} [{masked_key}]), Spotify Enhanced: {self.enable_spotify_enhanced}")
         else:
+            # FIX: Log at INFO level (not WARNING) - missing key is optional, not an error
             logger.warning(f"AlbumArtProvider initialized - iTunes: {self.enable_itunes}, Last.fm: {self.enable_lastfm} (API key: {api_key_status} - check .env file!), Spotify Enhanced: {self.enable_spotify_enhanced}")
+
+            # logger.info(f"AlbumArtProvider initialized - iTunes: {self.enable_itunes}, Last.fm: disabled (no API key), Spotify Enhanced: {self.enable_spotify_enhanced}")
         
         # Minimum resolution threshold (default: prefer 3000x3000 or higher for best quality)
         self.min_resolution = album_art_config.get("min_resolution", 3000)
@@ -298,7 +301,9 @@ class AlbumArtProvider:
             return None
         
         if not self.lastfm_api_key:
-            logger.warning(f"Last.fm API key is missing! Check .env file for LASTFM_API_KEY. Artist: {artist}, Title: {title}")
+            # FIX: Silent return - already logged at init, no per-call spam
+            # logger.warning(f"Last.fm API key is missing! Check .env file for LASTFM_API_KEY. Artist: {artist}, Title: {title}")
+
             return None
             
         try:

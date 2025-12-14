@@ -528,7 +528,10 @@ async def ensure_album_art_db(
                 # Return the preferred provider info for immediate cache update
                 if preferred_provider and preferred_provider in providers_data:
                     p_data = providers_data[preferred_provider]
-                    return (p_data["url"], p_data["resolution"])
+                    # FIX: Return actual local file path, not resolution string
+                    # This allows color extraction and cache detection to work correctly
+                    local_path = folder / p_data.get("filename", f"{preferred_provider}.jpg")
+                    return (p_data["url"], str(local_path) if local_path.exists() else None)
             else:
                 logger.error(f"Failed to save album art database metadata for {artist} - {album or title}")
         

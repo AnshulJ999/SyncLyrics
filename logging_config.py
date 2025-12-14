@@ -13,7 +13,7 @@ from datetime import datetime
 import sys
 
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
-    ROOT_DIR = Path(sys.argv[0]).parent
+    ROOT_DIR = Path(sys.executable).parent  # FIX: use sys.executable instead of sys.argv[0]
 else:
     ROOT_DIR = Path(__file__).parent
 
@@ -132,6 +132,12 @@ def setup_logging(
     logging.getLogger('asyncio').setLevel(logging.WARNING)  # Suppress asyncio DEBUG noise
     logging.getLogger('hypercorn').setLevel(logging.INFO)  # Only show INFO+ from hypercorn
     logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx DEBUG noise (if used)
+    logging.getLogger('hpack').setLevel(logging.WARNING)  # Suppress HTTP/2 header compression noise
+    
+    # NEW: Suppress ShazamIO and Retry spam
+    logging.getLogger('shazamio').setLevel(logging.WARNING)
+    logging.getLogger('shazamio_core').setLevel(logging.WARNING) 
+    logging.getLogger('aiohttp_retry').setLevel(logging.WARNING)
     
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):

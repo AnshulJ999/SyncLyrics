@@ -73,6 +73,9 @@ import { startSlideshow, stopSlideshow } from './modules/slideshow.js';
 // Provider (Level 3)
 import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
 
+// Audio Source (Level 3)
+import audioSource from './modules/audioSource.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -115,6 +118,23 @@ async function updateLoop() {
         ]);
 
         setLastCheckTime(Date.now());
+
+        // Fix 4.1: Update audio source button with current track source
+        if (trackInfo && trackInfo.source) {
+            const sourceBtn = document.getElementById('source-name');
+            if (sourceBtn) {
+                const sourceMap = {
+                    'spotify': 'Spotify',
+                    'spotify_hybrid': 'Hybrid',
+                    'windows': 'Windows',
+                    'windows_media': 'Windows',
+                    'audio_recognition': 'Shazam',
+                    'shazam': 'Shazam',
+                    'reaper': 'Reaper'
+                };
+                sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
+            }
+        }
 
         // Handle track info errors
         if (trackInfo.error || !trackInfo.title) {
@@ -180,8 +200,8 @@ async function updateLoop() {
                 checkLikedStatus(trackInfo.id);
             }
 
-            // Reset style buttons in modal
-            updateStyleButtonsInModal(trackInfo.background_style || 'blur');
+            // Reset style buttons in modal (show 'auto' when no saved preference)
+            updateStyleButtonsInModal(trackInfo.background_style || 'auto');
 
             // Refresh queue if drawer is open
             if (queueDrawerOpen) {
@@ -194,7 +214,9 @@ async function updateLoop() {
         setLastTrackInfo(trackInfo);
 
         // Apply background style with priority: Saved Preference > URL Params > Default
-        if (trackInfo.background_style && !manualStyleOverride && !visualModeActive) {
+        // Only apply saved style if user has opted-in to art background via URL or settings
+        const hasArtBgEnabled = displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt;
+        if (trackInfo.background_style && !manualStyleOverride && !visualModeActive && hasArtBgEnabled) {
             const currentStyle = getCurrentBackgroundStyle();
             if (currentStyle !== trackInfo.background_style) {
                 console.log(`[Main] Applying saved background style: ${trackInfo.background_style}`);
@@ -260,6 +282,9 @@ async function main() {
     setupProviderUI();
     setupQueueInteractions();
     setupTouchControls();
+
+    // Initialize audio source module
+    audioSource.init();
 
     // Apply initial background
     updateBackground();

@@ -115,24 +115,28 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify or Spotify Hybrid
+    // Enable controls for Spotify, Spotify Hybrid, or Windows Media
+    // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
         trackInfo.source === 'spotify_hybrid' ||
-        (trackInfo.source === 'windows_media' && trackInfo.app_id && trackInfo.app_id.toLowerCase().includes('spotify'));
+        trackInfo.source === 'windows_media';
 
     if (prevBtn) prevBtn.disabled = !canControl;
     if (nextBtn) nextBtn.disabled = !canControl;
     if (playPauseBtn) {
         playPauseBtn.disabled = !canControl;
         const isPlaying = trackInfo.is_playing === true;
+        const icon = playPauseBtn.querySelector('i');
 
-        if (isPlaying) {
-            playPauseBtn.classList.remove('paused');
-            playPauseBtn.classList.add('playing');
-        } else {
-            playPauseBtn.classList.remove('playing');
-            playPauseBtn.classList.add('paused');
+        if (icon) {
+            if (isPlaying) {
+                icon.className = 'bi bi-pause-fill';
+                playPauseBtn.title = 'Pause';
+            } else {
+                icon.className = 'bi bi-play-fill';
+                playPauseBtn.title = 'Play';
+            }
         }
     }
 }
@@ -209,7 +213,15 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        const targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
+        // Add cache buster to force reload when song changes
+        // Uses track_id (unique per song) or stable artist+title fallback
+        let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
+        // Stable fallback: use artist_title instead of Date.now() to prevent reload spam
+        const stableFallback = `${trackInfo.artist || ''}_${trackInfo.title || ''}`.replace(/\s+/g, '_');
+        const cacheBuster = trackInfo.track_id || trackInfo.id || stableFallback;
+        targetUrl = targetUrl.includes('?')
+            ? `${targetUrl}&cb=${cacheBuster}`
+            : `${targetUrl}?cb=${cacheBuster}`;
 
         if (albumArt.src !== targetUrl) {
             if (pendingArtUrl !== targetUrl) {
@@ -262,6 +274,18 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
         }
     }
 
+    // Set individual element visibility independently
+    // const albumArtLink = document.getElementById('album-art-link');
+    if (albumArtLink) {
+        albumArtLink.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+    }
+
+    const trackInfoEl = document.querySelector('.track-info');
+    if (trackInfoEl) {
+        trackInfoEl.style.display = displayConfig.showTrackInfo ? 'block' : 'none';
+    }
+
+    // Show header if either element is visible
     const hasContent = (trackInfo.album_art_url && displayConfig.showAlbumArt) || displayConfig.showTrackInfo;
     trackHeader.style.display = hasContent ? 'flex' : 'none';
 }
@@ -387,12 +411,15 @@ export function updateLikeButton() {
     const btn = document.getElementById('btn-like');
     if (!btn) return;
 
-    if (isLiked) {
-        btn.innerHTML = '❤️';
-        btn.classList.add('liked');
-    } else {
-        btn.innerHTML = '♡';
-        btn.classList.remove('liked');
+    const icon = btn.querySelector('i');
+    if (icon) {
+        if (isLiked) {
+            icon.className = 'bi bi-heart-fill';
+            btn.classList.add('liked');
+        } else {
+            icon.className = 'bi bi-heart';
+            btn.classList.remove('liked');
+        }
     }
 }
 

@@ -104,6 +104,17 @@ from .metadata import (
     get_current_song_meta_data,
 )
 
+# --- Level 6: Session Config (runtime overrides) ---
+from .session_config import (
+    set_session_override,
+    get_session_override,
+    clear_session_overrides,
+    has_session_overrides,
+    get_audio_config_with_overrides,
+    get_effective_value,
+    get_active_overrides,
+)
+
 # Note: Platform-specific functions (windows.py, spotify.py, gnome.py) are
 # intentionally NOT re-exported at the package level. They are internal
 # implementation details called by get_current_song_meta_data.
@@ -179,4 +190,13 @@ __all__ = [
     
     # Metadata
     'get_current_song_meta_data',
+    
+    # Session Config
+    'set_session_override',
+    'get_session_override',
+    'clear_session_overrides',
+    'has_session_overrides',
+    'get_audio_config_with_overrides',
+    'get_effective_value',
+    'get_active_overrides',
 ]
