@@ -160,7 +160,7 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## 📜 License
 
-[MIT](LICENSE)
+[MIT + Commons Clause](LICENSE) — Free for personal and non-commercial use. Commercial use (selling, paid hosting, paid services) is not permitted.
 
 ---
 
