@@ -105,6 +105,17 @@ Append these to the URL for custom displays (e.g., `http://localhost:9012/?minim
 
 These can easily be configured via the on-screen settings panel and the URL can be copied. 
 
+### HTTPS (Required for Browser Microphone)
+
+To use the browser microphone for audio recognition, HTTPS is required.
+
+HTTPS is **enabled by default** for browser microphone access:
+
+- **HTTP:** `http://localhost:9012` (for local use)
+- **HTTPS:** `https://localhost:9013` (for mic access on tablets/phones)
+
+The app auto-generates a self-signed certificate. You'll need to accept the browser's security warning on first use.
+
 ---
 
 ## 🛠️ Build
