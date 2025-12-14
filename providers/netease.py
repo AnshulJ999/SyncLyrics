@@ -133,7 +133,10 @@ class NetEaseProvider(LyricsProvider):
                 song_artist = ', '.join([a.get('name', '') for a in selected_song.get('artists', [])])
                 logger.warning(f"NetEase - Low confidence match (score: {best_score}), falling back to first result: '{song_name}' by '{song_artist}'")
             
-            # Get lyrics for selected song
+            # Get lyrics for selected song - ensure song has 'id' field
+            if 'id' not in selected_song:
+                logger.warning(f"NetEase - Song missing 'id' field: {song_name}")
+                return None
             track_id = selected_song["id"]
 
             lyrics_response = req.get(
