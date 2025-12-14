@@ -2,7 +2,7 @@
 
 A feature-rich desktop and web application that displays synchronized lyrics for your currently playing music. Supports Spotify, Windows Media, and audio recognition.
 
-This started as a hobby project where I just wanted realtime lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). 
+This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). SyncLyrics aims to be a visual companion to the music experience, built for tablet dashboards.
 
 > **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
 
@@ -71,13 +71,15 @@ You can use the included run.bat or 'Run SyncLyrics Hidden.vbs' to run the app d
 git clone https://github.com/AnshulJ999/SyncLyrics.git
 cd SyncLyrics
 pip install -r requirements.txt
-cp .env.example .env  # Edit with your credentials
+copy .env.example .env  # Edit with your credentials
 python sync_lyrics.py
 ```
 
 ---
 
 ## ⚙️ Configuration
+
+The app works best with a Spotify API connection, which requires you to create a custom app in your Spotify Developer Dashboard. 
 
 ### Key Environment Variables
 
