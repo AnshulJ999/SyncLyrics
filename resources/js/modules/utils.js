@@ -23,10 +23,11 @@ export function normalizeTrackId(artist, title) {
     if (!artist) artist = "";
     if (!title) title = "";
 
-    // Simple alphanumeric normalization (matches backend logic exactly)
-    // Remove all non-alphanumeric characters and lowercase
-    const normArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Unicode-aware alphanumeric normalization (matches Python's isalnum() exactly)
+    // \p{L} = any Unicode letter, \p{N} = any Unicode number
+    // This ensures accented characters like "À" are kept, matching backend behavior
+    const normArtist = artist.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const normTitle = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
     // Join with underscore (matches backend: f"{norm_artist}_{norm_title}")
     return `${normArtist}_${normTitle}`;
