@@ -160,15 +160,21 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## 📜 License
 
-[MIT](LICENSE)
+[MIT + Commons Clause](LICENSE) — Free for personal and non-commercial use. Commercial use (selling, paid hosting, paid services) is not permitted.
 
 ---
 
 ## ⚠️ Disclaimer (AI Usage)
 
-This project was built with significant AI assistance (yes, vibe-coded 🤖). It works great for my use case, but if you find rough edges, PRs are always welcome!
+This project was built with significant AI assistance (yes, vibe-coded 🤖 over 100+ hours). It works great for my use case, but if you find rough edges, PRs are always welcome!
 
 ---
+
+## ☕ Support This Project
+
+If this project has been useful to you, consider supporting its development: 
+
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-blue?logo=paypal)](https://paypal.me/AnshulJain99)
 
 ## ❤️ Credits
 
