@@ -68,7 +68,7 @@
 
 /* Show recording dot when recording class is on button */
 .source-toggle.recording .recording-dot {
-    display: block;
+    display: inline-block;
 }
 
 @keyframes pulse-recording {
