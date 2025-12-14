@@ -502,7 +502,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():
-                    album_art_url = f"/cover-art?id={current_track_id}&t={int(time.time())}"
+                    # Use file's mtime for stable URL (not time.time() which changes every second)
+                    thumb_mtime = int(thumb_path.stat().st_mtime)
+                    album_art_url = f"/cover-art?id={current_track_id}&t={thumb_mtime}"
                     result_extra_fields = {"album_art_path": str(thumb_path)}
             except Exception as e:
                 pass
