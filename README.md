@@ -67,6 +67,8 @@ _Video demo showcasing the app's main features_
 3. Configure environment variables in addon settings
 4. Start the addon and access via Ingress or direct URL
 
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Addon-blue)](https://github.com/AnshulJ999/homeassistant-addons)
+
 ### Option 3: Run from Source
 
 You can use the included run.bat or 'Run SyncLyrics Hidden.vbs' to run the app directly. Install the requirements first. 
