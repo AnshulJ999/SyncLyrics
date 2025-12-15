@@ -158,11 +158,11 @@ class SettingsManager:
             "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
-            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
-            "providers.musicxmatch.priority": Setting("Musicxmatch Priority", int, 5, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
-            "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
-            "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
-            "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
+            "providers.musixmatch.enabled": Setting("Musixmatch", bool, True, True, "Providers", "Enable Musixmatch", "switch"),
+            "providers.musixmatch.priority": Setting("Musixmatch Priority", int, 3, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.musixmatch.timeout": Setting("Timeout", int, 15, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.musixmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.musixmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             # Storage - Deprecated (not wired up to cleanup logic)
             "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Deprecated", "Enable local DB", "switch", deprecated=True),

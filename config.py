@@ -202,12 +202,12 @@ PROVIDERS = {
         "retries": conf("providers.netease.retries", 3),
         "cache_duration": conf("providers.netease.cache_duration", 86400)
     },
-    "musicxmatch": {
-        "enabled": conf("providers.musicxmatch.enabled", False),
-        "priority": conf("providers.musicxmatch.priority", 5),
-        "timeout": conf("providers.musicxmatch.timeout", 10),
-        "retries": conf("providers.musicxmatch.retries", 3),
-        "cache_duration": conf("providers.musicxmatch.cache_duration", 86400)
+    "musixmatch": {
+        "enabled": conf("providers.musixmatch.enabled", True),
+        "priority": conf("providers.musixmatch.priority", 3),
+        "timeout": conf("providers.musixmatch.timeout", 15),
+        "retries": conf("providers.musixmatch.retries", 3),
+        "cache_duration": conf("providers.musixmatch.cache_duration", 86400)
     }
 }
 
