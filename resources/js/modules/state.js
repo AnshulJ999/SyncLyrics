@@ -14,6 +14,12 @@ export let currentColors = ["#24273a", "#363b54"];
 export let updateInterval = 100; // Default value, will be updated from config
 export let lastCheckTime = 0;    // Track last check time
 
+// ========== WORD-SYNC STATE ==========
+export let wordSyncedLyrics = null;  // Current word-synced lyrics data from API
+export let hasWordSync = false;       // Whether current song has word-sync available
+export let wordSyncProvider = null;   // Which provider is serving word-sync data
+export let wordSyncStyle = 'fade';    // 'fade' or 'pop' - animation style for word highlighting
+
 // ========== TRACK INFO ==========
 export let lastTrackInfo = null;
 export let pendingArtUrl = null;
@@ -105,3 +111,7 @@ export function setManualStyleOverride(value) { manualStyleOverride = value; }
 export function setQueueDrawerOpen(value) { queueDrawerOpen = value; }
 export function setQueuePollInterval(value) { queuePollInterval = value; }
 export function setIsLiked(value) { isLiked = value; }
+export function setWordSyncedLyrics(value) { wordSyncedLyrics = value; }
+export function setHasWordSync(value) { hasWordSync = value; }
+export function setWordSyncProvider(value) { wordSyncProvider = value; }
+export function setWordSyncStyle(value) { wordSyncStyle = value; }

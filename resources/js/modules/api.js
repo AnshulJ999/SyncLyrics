@@ -12,7 +12,10 @@ import {
     visualModeConfig,
     currentColors,
     setUpdateInterval,
-    setCurrentColors
+    setCurrentColors,
+    setWordSyncedLyrics,
+    setHasWordSync,
+    setWordSyncProvider
 } from './state.js';
 
 // ========== CORE FETCH WRAPPER ==========
@@ -165,6 +168,18 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
             updateProviderDisplayFn(data.provider);
         } else if (updateProviderDisplayFn) {
             updateProviderDisplayFn("None");
+        }
+
+        // Update word-sync state
+        // Word-sync data is automatically used when available (ON by default)
+        if (data.has_word_sync && data.word_synced_lyrics) {
+            setWordSyncedLyrics(data.word_synced_lyrics);
+            setHasWordSync(true);
+            setWordSyncProvider(data.word_sync_provider || null);
+        } else {
+            setWordSyncedLyrics(null);
+            setHasWordSync(false);
+            setWordSyncProvider(null);
         }
 
         return data || data.lyrics;

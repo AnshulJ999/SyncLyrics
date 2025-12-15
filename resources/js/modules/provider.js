@@ -91,12 +91,12 @@ export async function showProviderModal() {
             providerItem.innerHTML = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
-                        <span class="provider-item-name">${displayName}</span>
+                        <span class="provider-item-name">${displayName}${provider.has_word_sync ? ' 🎤' : ''}</span>
                         ${provider.is_current ? '<span class="current-badge">Current</span>' : ''}
                         ${provider.cached ? '<span class="cached-badge">Cached</span>' : ''}
                     </div>
                     <div class="provider-item-meta">
-                        Priority: ${provider.priority}
+                        Priority: ${provider.priority}${provider.has_word_sync ? ' • Word Sync' : ''}
                     </div>
                 </div>
                 <button class="provider-select-btn" data-provider="${provider.name}">

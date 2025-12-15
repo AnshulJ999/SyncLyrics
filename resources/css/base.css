@@ -976,7 +976,7 @@ body.sharp-mode .background-overlay {
     backdrop-filter: blur(0.0px) saturate(130%) !important;
     -webkit-backdrop-filter: blur(0.0px) saturate(130%) !important;
     /* Very transparent background (5%) to let the art shine */
-    background: rgba(0, 0, 0, 0.05) !important;
+    background: rgba(0, 0, 0, 0.03) !important;
 
     /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
     /* background: rgba(0, 0, 0, 0.1) !important; */
@@ -1546,5 +1546,90 @@ body.soft-mode .background-overlay {
     /* Force it to start on a new row */
     grid-row-start: auto;
 
+}
+
+/* ========== WORD-SYNCED LYRICS STYLES ========== */
+/* Karaoke-style word highlighting for providers with word-sync data */
+
+/* Container for word-synced current line */
+.current.word-sync-active {
+    /* Override default animation for word-sync mode */
+    animation: none;
+}
+
+/* Individual word spans in word-synced mode */
+.word-sync-word {
+    display: inline-block;
+    transition: all 0.15s ease-out;
+    position: relative;
+    padding: 0 0.05em;
+}
+
+/* Words not yet sung (upcoming) */
+.word-upcoming {
+    opacity: 0.5;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Words already sung */
+.word-sung {
+    opacity: 1;
+    color: white;
+}
+
+/* Currently active word - FADE style */
+/* Uses CSS gradient mask to reveal the word progressively */
+.word-active {
+    opacity: 1;
+    color: white;
+    font-weight: 600;
+    /* Subtle glow for active word */
+    text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+}
+
+/* Fade style: gradient reveal from left to right */
+.word-sync-fade .word-active {
+    background: linear-gradient(
+        90deg,
+        white 0%,
+        white var(--word-progress, 0%),
+        rgba(255, 255, 255, 0.5) var(--word-progress, 0%),
+        rgba(255, 255, 255, 0.5) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Fallback for browsers without background-clip: text */
+}
+
+/* Pop style: scale animation on active word */
+.word-sync-pop .word-active {
+    /* Scale is applied via inline style in JS for smooth animation */
+    transition: transform 0.1s ease-out;
+    will-change: transform;
+}
+
+/* Ensure word-sung words have full visibility in both modes */
+.word-sync-fade .word-sung,
+.word-sync-pop .word-sung {
+    opacity: 1;
+    color: white;
+    font-weight: 500;
+}
+
+/* Reduced motion preference - disable word animations */
+@media (prefers-reduced-motion: reduce) {
+    .word-sync-word {
+        transition: none;
+    }
+    
+    .word-sync-pop .word-active {
+        transform: none !important;
+    }
+    
+    .word-sync-fade .word-active {
+        background: none;
+        -webkit-text-fill-color: white;
+    }
 }
 

@@ -558,11 +558,24 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
             'name': str,
             'priority': int,
             'cached': bool,
-            'is_current': bool
+            'is_current': bool,
+            'has_word_sync': bool  # Whether this provider has word-synced lyrics cached
         }
     """
     # Check database for cached providers
     saved_providers = _get_saved_provider_names(artist, title)
+    
+    # Check which providers have word-synced lyrics cached
+    word_sync_providers = set()
+    db_path = _get_db_path(artist, title)
+    if db_path and os.path.exists(db_path):
+        try:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            word_synced = data.get("word_synced_lyrics", {})
+            word_sync_providers = set(word_synced.keys())
+        except Exception:
+            pass
     
     result = []
     for provider in providers:
@@ -573,7 +586,8 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
             'name': provider.name,
             'priority': provider.priority,
             'cached': provider.name in saved_providers,
-            'is_current': provider.name == current_song_provider
+            'is_current': provider.name == current_song_provider,
+            'has_word_sync': provider.name in word_sync_providers
         })
     
     # Sort by priority for consistent ordering

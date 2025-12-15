@@ -76,6 +76,9 @@ import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, upda
 // Audio Source (Level 3)
 import audioSource from './modules/audioSource.js';
 
+// Word Sync (Level 2)
+import { updateCurrentLineWithWordSync } from './modules/wordSync.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -258,6 +261,13 @@ async function updateLoop() {
 
         // Check for visual mode
         checkForVisualMode(data, trackId);
+
+        // Update word-sync highlighting if available
+        // This runs on every poll cycle to update word highlighting based on current position
+        if (trackInfo && trackInfo.position !== undefined) {
+            const currentLineText = data && data.lyrics ? data.lyrics[2] : '';
+            updateCurrentLineWithWordSync(trackInfo.position, currentLineText);
+        }
 
         await sleep(currentPollInterval);
     }
