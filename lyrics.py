@@ -501,9 +501,17 @@ def _save_all_results_background(
 def _backfill_missing_providers(
     artist: str,
     title: str,
-    missing_providers: List[object]
+    missing_providers: List[object],
+    skip_provider_limit: bool = False
 ) -> None:
-    """Fetches any providers that are missing in the DB while UI uses cached lyrics."""
+    """Fetches any providers that are missing in the DB while UI uses cached lyrics.
+    
+    Args:
+        artist: Artist name
+        title: Song title
+        missing_providers: List of provider objects to fetch from
+        skip_provider_limit: If True, skip the 3-provider limit check (used for word-sync backfill)
+    """
     song_key = _normalized_song_key(artist, title)
     if song_key in _backfill_tracker:
         return
@@ -538,13 +546,15 @@ def _backfill_missing_providers(
 
             while pending:
                 # Check if we already have 3 providers saved - if so, stop backfilling
-                saved_providers = _get_saved_provider_names(artist, title)
-                if len(saved_providers) >= 3:
-                    logger.info(f"Backfill stopped for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
-                    # Cancel remaining tasks to avoid unnecessary requests
-                    for task in pending:
-                        task.cancel()
-                    break
+                # Skip this check for word-sync backfill (skip_provider_limit=True)
+                if not skip_provider_limit:
+                    saved_providers = _get_saved_provider_names(artist, title)
+                    if len(saved_providers) >= 3:
+                        logger.info(f"Backfill stopped for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
+                        # Cancel remaining tasks to avoid unnecessary requests
+                        for task in pending:
+                            task.cancel()
+                        break
 
                 # Wait for at least one task to complete
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -564,14 +574,16 @@ def _backfill_missing_providers(
                             logger.info(f"Backfill saved lyrics from {provider.name}")
                             
                             # Check again after saving - if we now have 3 providers, stop
-                            saved_providers = _get_saved_provider_names(artist, title)
-                            if len(saved_providers) >= 3:
-                                logger.info(f"Backfill completed for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
-                                # Cancel remaining tasks
-                                for task in pending:
-                                    task.cancel()
-                                pending = set()  # Clear pending to exit loop
-                                break
+                            # Skip this check for word-sync backfill (skip_provider_limit=True)
+                            if not skip_provider_limit:
+                                saved_providers = _get_saved_provider_names(artist, title)
+                                if len(saved_providers) >= 3:
+                                    logger.info(f"Backfill completed for {artist} - {title} (reached 3 providers: {', '.join(saved_providers)})")
+                                    # Cancel remaining tasks
+                                    for task in pending:
+                                        task.cancel()
+                                    pending = set()  # Clear pending to exit loop
+                                    break
                     except Exception as exc:
                         logger.debug(f"Backfill provider error ({getattr(provider, 'name', 'Unknown')}): {exc}")
         finally:
@@ -1012,7 +1024,7 @@ async def _update_song():
                             ]
                             if missing:
                                 logger.info(f"Word-sync backfill triggered for {target_artist} - {target_title} (no word-sync cached, trying: {', '.join(p.name for p in missing)})")
-                                _backfill_missing_providers(target_artist, target_title, missing)
+                                _backfill_missing_providers(target_artist, target_title, missing, skip_provider_limit=True)
                         else:
                             # Normal backfill for providers < 3
                             missing = [
