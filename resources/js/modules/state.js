@@ -76,7 +76,7 @@ export const providerDisplayNames = {
     "spotify": "Spotify",
     "netease": "NetEase",
     "qq": "QQ",
-    "musicxmatch": "Musixmatch"
+    "musixmatch": "Musixmatch"
 };
 
 // ========== STATE SETTERS ==========
