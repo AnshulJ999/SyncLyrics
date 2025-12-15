@@ -113,6 +113,13 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
         return lineData?.text || '';
     }
 
+    // XSS prevention: escape HTML special characters
+    const escapeHtml = (text) => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    };
+
     const currentWord = findCurrentWord(position, lineData);
     const words = lineData.words;
     
@@ -121,7 +128,8 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
     for (let i = 0; i < words.length; i++) {
         const word = words[i];
         // Word text is in 'word' field (from Musixmatch) or 'text' field (fallback)
-        const wordText = word.word || word.text || '';
+        // Escape to prevent XSS from malicious lyrics
+        const wordText = escapeHtml(word.word || word.text || '');
         
         // Determine word state
         let classes = ['word-sync-word'];

@@ -181,6 +181,30 @@ def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
     return set()
 
 
+def _get_word_sync_provider_names(artist: str, title: str) -> Set[str]:
+    """Returns provider names that have word-synced lyrics cached.
+    
+    Used by backfill logic to specifically check which providers have word-sync
+    data (separate from line-sync data in saved_lyrics).
+    """
+    if not FEATURES.get("save_lyrics_locally", False):
+        return set()
+
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return set()
+
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        word_synced = data.get("word_synced_lyrics", {})
+        if isinstance(word_synced, dict):
+            return set(word_synced.keys())
+    except Exception:
+        pass
+    return set()
+
+
 def _normalize_provider_result(result: Optional[Any]) -> Tuple[Optional[List[Tuple[float, str]]], Dict[str, Any], Optional[List[Dict[str, Any]]]]:
     """
     Normalize provider output into a lyrics list, metadata dict, and word-synced data.
@@ -946,11 +970,14 @@ async def _update_song():
                         # For word-sync backfill, prioritize Musixmatch/NetEase
                         if not has_word_sync:
                             # Specifically target word-sync providers
+                            # FIX: Check word_sync_saved instead of saved_providers
+                            # This ensures we fetch word-sync even if line-sync already cached
                             word_sync_providers = ["musixmatch", "netease"]
+                            word_sync_saved = _get_word_sync_provider_names(target_artist, target_title)
                             missing = [
                                 provider
                                 for provider in providers
-                                if provider.enabled and provider.name in word_sync_providers and provider.name not in saved_providers
+                                if provider.enabled and provider.name in word_sync_providers and provider.name not in word_sync_saved
                             ]
                             if missing:
                                 logger.info(f"Word-sync backfill triggered for {target_artist} - {target_title} (no word-sync cached, trying: {', '.join(p.name for p in missing)})")
