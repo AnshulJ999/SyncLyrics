@@ -1055,7 +1055,7 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
         
     # 2. After last lyric
     last_lyric_time = current_song_lyrics[-1][0]
-    if position + adaptive_delta > last_lyric_time + 6.0: # End song after 6s
+    if position + adaptive_delta > last_lyric_time + 9.0: # End song after 9s
         return -3
     
     # 3. Find current line

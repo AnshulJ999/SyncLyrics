@@ -6,7 +6,7 @@ import random  # ADD THIS IMPORT
 from functools import wraps
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory, websocket
-from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, set_manual_instrumental
+from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, _is_cached_instrumental, set_manual_instrumental
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art, clear_artist_image_cache
 from state_manager import *
@@ -127,6 +127,10 @@ async def lyrics() -> dict:
                 # Manually marked as instrumental - override detection
                 is_instrumental = True
                 has_lyrics = False
+            # Also check cached metadata from providers (e.g., Musixmatch returns is_instrumental flag)
+            elif _is_cached_instrumental(artist, title):
+                is_instrumental = True
+                has_lyrics = False
     
     if isinstance(lyrics_data, str):
         # Handle error messages or status strings
@@ -151,11 +155,17 @@ async def lyrics() -> dict:
     # (lyrics_data is a tuple of strings)
     if not lyrics_data or all(not line for line in lyrics_data):
          has_lyrics = False
-         # Check for instrumental text if not manually marked
-         if not is_instrumental_manual and lyrics_data and len(lyrics_data) == 1:
-             text = lyrics_data[0][1].lower().strip() if len(lyrics_data[0]) > 1 else ""
-             if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
-                 is_instrumental = True
+    
+    # FIX: Check instrumental using RAW cached lyrics, not the display tuple
+    # The display tuple always has 6 elements, so len()==1 was never true before
+    # This also checks the metadata is_instrumental flag saved by providers like Musixmatch
+    if not is_instrumental_manual:
+        current_lyrics = lyrics_module.current_song_lyrics
+        if current_lyrics and len(current_lyrics) == 1:
+            text = current_lyrics[0][1].lower().strip() if len(current_lyrics[0]) > 1 else ""
+            if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+                is_instrumental = True
+                has_lyrics = False
 
     return {
         "lyrics": list(lyrics_data),
@@ -187,8 +197,11 @@ async def current_track() -> dict:
                 if is_instrumental_manual:
                     # Manually marked as instrumental - override detection
                     is_instrumental = True
+                # Check cached metadata from providers (e.g., Musixmatch returns is_instrumental flag)
+                elif _is_cached_instrumental(artist, title):
+                    is_instrumental = True
                 else:
-                    # Fall back to automatic detection
+                    # Fall back to automatic detection via lyrics text
                     current_lyrics = lyrics_module.current_song_lyrics
                     if current_lyrics and len(current_lyrics) == 1:
                         text = current_lyrics[0][1].lower().strip()

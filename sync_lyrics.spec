@@ -83,7 +83,7 @@ a = Analysis(
         'providers.lrclib',
         'providers.netease',
         'providers.qq',
-        'providers.musicxmatch',
+        'providers.musixmatch',
         'providers.spotify_api',
         'providers.spotify_lyrics',
         'providers.album_art',
@@ -98,7 +98,6 @@ a = Analysis(
         'spotipy',
         'spotipy.oauth2',
         'spotipy.cache_handler',
-        'musicxmatch_api',
         'aiohttp',
         
         # === HTTPS/SSL Support ===

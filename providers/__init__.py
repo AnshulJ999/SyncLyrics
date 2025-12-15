@@ -13,13 +13,15 @@ from .lrclib import LRCLIBProvider
 from .netease import NetEaseProvider
 from .spotify_lyrics import SpotifyLyrics
 from .qq import QQMusicProvider
+from .musixmatch import MusixmatchProvider  # <--- ADDED
 
 # List of all available providers
 available_providers = [
     LRCLIBProvider,
     NetEaseProvider,
     SpotifyLyrics,
-    QQMusicProvider
+    QQMusicProvider,
+    MusixmatchProvider  # <--- ADDED
 ]
 
 __all__ = [
@@ -28,5 +30,6 @@ __all__ = [
     'NetEaseProvider',
     'SpotifyLyrics',
     'QQMusicProvider',
+    'MusixmatchProvider',  # <--- ADDED
     'available_providers'
-] 
+]
