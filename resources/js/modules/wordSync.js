@@ -29,21 +29,35 @@ export function findCurrentWord(position, lineData) {
     }
 
     const words = lineData.words;
+    const lineStart = lineData.start || 0;
+    
+    // Calculate absolute time for first word
+    const firstWordStart = lineStart + (words[0].time || 0);
     
     // Check if we're before the first word
-    if (position < words[0].start) {
+    if (position < firstWordStart) {
         return { wordIndex: -1, progress: 0 };
     }
 
     // Find current word
+    // Word timing: word.time is OFFSET from line start, not absolute time
     for (let i = 0; i < words.length; i++) {
         const word = words[i];
-        const wordEnd = word.start + (word.duration || 0.5);
+        const wordStart = lineStart + (word.time || 0);
         
-        if (position >= word.start && position < wordEnd) {
+        // Calculate word end: either next word's start or estimate based on line end
+        let wordEnd;
+        if (i + 1 < words.length) {
+            wordEnd = lineStart + (words[i + 1].time || 0);
+        } else {
+            // Last word - use line end or estimate
+            wordEnd = lineData.end || (wordStart + 0.5);
+        }
+        
+        if (position >= wordStart && position < wordEnd) {
             // Calculate progress within this word (0-1)
-            const duration = word.duration || 0.5;
-            const progress = Math.min(1, (position - word.start) / duration);
+            const duration = wordEnd - wordStart;
+            const progress = duration > 0 ? Math.min(1, (position - wordStart) / duration) : 1;
             return { wordIndex: i, progress };
         }
     }
@@ -99,7 +113,8 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
     
     for (let i = 0; i < words.length; i++) {
         const word = words[i];
-        const wordText = word.text || word.word || '';
+        // Word text is in 'word' field (from Musixmatch) or 'text' field (fallback)
+        const wordText = word.word || word.text || '';
         
         // Determine word state
         let classes = ['word-sync-word'];
@@ -207,6 +222,12 @@ export function updateCurrentLineWithWordSync(position, currentLineText) {
             currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
         }
         return;
+    }
+    
+    // Debug: Log that word-sync is active (only once per song)
+    if (!window._wordSyncLogged) {
+        console.log(`[WordSync] Active! ${wordSyncedLyrics.length} lines available, style: ${wordSyncStyle}`);
+        window._wordSyncLogged = true;
     }
 
     const currentEl = document.getElementById('current');

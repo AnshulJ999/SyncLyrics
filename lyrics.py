@@ -605,7 +605,7 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
             'provider': str  # Name of provider now being used
         }
     """
-    global current_song_provider, current_song_lyrics
+    global current_song_provider, current_song_lyrics, current_song_word_synced_lyrics, current_word_sync_provider
     
     # Validate provider exists and is enabled
     provider_obj = None
@@ -630,6 +630,16 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
                 lyrics = data['saved_lyrics'][provider_name]
                 current_song_lyrics = lyrics
                 current_song_provider = provider_name
+                
+                # BUGFIX: Also load word-synced lyrics from cache for this provider
+                word_synced_cache = data.get('word_synced_lyrics', {})
+                if provider_name in word_synced_cache:
+                    current_song_word_synced_lyrics = word_synced_cache[provider_name]
+                    current_word_sync_provider = provider_name
+                    logger.debug(f"Loaded {len(current_song_word_synced_lyrics)} word-synced lines from cached {provider_name}")
+                else:
+                    current_song_word_synced_lyrics = None
+                    current_word_sync_provider = None
                 
                 # Update preference in DB using atomic write pattern
                 # FIX: Use temp file to prevent race conditions during rapid song skipping
@@ -701,6 +711,15 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
             # Update current state
             current_song_lyrics = lyrics
             current_song_provider = provider_name
+            
+            # BUGFIX: Also update word-synced lyrics globals
+            if word_synced:
+                current_song_word_synced_lyrics = word_synced
+                current_word_sync_provider = provider_name
+                logger.debug(f"Loaded {len(word_synced)} word-synced lines from freshly fetched {provider_name}")
+            else:
+                current_song_word_synced_lyrics = None
+                current_word_sync_provider = None
             
             logger.info(f"Fetched and switched to {provider_name} lyrics")
             return {
