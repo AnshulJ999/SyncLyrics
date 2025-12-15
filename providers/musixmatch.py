@@ -12,7 +12,6 @@ import requests
 sys.path.append(str(Path(__file__).parent.parent))
 
 from .base import LyricsProvider
-from config import get_provider_config
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -24,26 +23,41 @@ class MusixmatchProvider(LyricsProvider):
     
     Uses the desktop app API (apic-desktop.musixmatch.com) which provides
     actual synced lyrics, unlike the public API which blocks richsync access.
+    
+    Key implementation notes:
+    - Uses macro.subtitles.get endpoint for single-request lyrics fetch
+    - Token-based authentication with automatic refresh
+    - 10-second rate limiting to avoid captcha blocks
     """
     
-    # Desktop API endpoints (not public API)
+    # Desktop API endpoints (not the public API which blocks synced lyrics)
     BASE_URL = "https://apic-desktop.musixmatch.com/ws/1.1/"
     APP_ID = "web-desktop-app-v1.0"
     
-    # Default token (fallback - will be refreshed automatically)
+    # Default fallback token (from MxLRC project - https://github.com/fashni/MxLRC)
+    # This is a community API token that provides Plus-tier access.
+    # It's used as a fallback when dynamic token fetch fails.
+    # The token is public knowledge (open source) and widely used by:
+    # - MxLRC, YouTube Music plugins, Pear Desktop, etc.
+    # Safe to keep: Yes - it's not a personal/private key, just a rate-limited community token.
+    # If this token gets blocked, dynamic token fetch will still work.
     DEFAULT_TOKEN = "2203269256ff7abcb649269df00e14c833dbf4ddfb5b36a1aae8b0"
+    
+    # Rate limiting: Musixmatch can captcha-block rapid requests
+    # 10 seconds is conservative but prevents rate limiting issues
+    MIN_REQUEST_INTERVAL = 10.0
     
     def __init__(self):
         """Initialize Musixmatch provider with config settings"""
         super().__init__(provider_name="musixmatch")
         
-        # Get config settings
-        config = get_provider_config("musixmatch")
-        
         # Token management
         self._token: Optional[str] = None
         self._token_expires: float = 0
         self._token_refresh_attempts: int = 0
+        
+        # Rate limiting
+        self._last_request_time: float = 0
         
         # Headers for desktop API
         self._headers = {
@@ -55,6 +69,7 @@ class MusixmatchProvider(LyricsProvider):
         """
         Get a valid token for API requests.
         Fetches new token if expired or not available.
+        Falls back to DEFAULT_TOKEN if fetch fails.
         """
         # Return cached token if still valid (with 60s buffer)
         if self._token and time.time() < (self._token_expires - 60):
@@ -77,6 +92,16 @@ class MusixmatchProvider(LyricsProvider):
             )
             
             if resp.status_code == 200:
+                # Preserve cookies from response for future requests
+                if 'set-cookie' in resp.headers:
+                    cookie = resp.headers.get('set-cookie', '')
+                    # Extract relevant cookie parts
+                    for part in cookie.split(';'):
+                        part = part.strip()
+                        if part.startswith('x-mxm-'):
+                            self._headers['cookie'] = part
+                            break
+                
                 data = resp.json()
                 status = data.get("message", {}).get("header", {}).get("status_code")
                 
@@ -89,14 +114,26 @@ class MusixmatchProvider(LyricsProvider):
                         logger.debug(f"Musixmatch - Got new token: {token[:20]}...")
                         return self._token
             
-            logger.warning(f"Musixmatch - Token request failed, using default")
+            logger.warning("Musixmatch - Token request failed, using default")
             return self.DEFAULT_TOKEN
             
         except Exception as e:
             logger.error(f"Musixmatch - Token fetch error: {e}")
             return self.DEFAULT_TOKEN
     
-    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
+    def _apply_rate_limit(self) -> None:
+        """
+        Apply rate limiting to avoid captcha blocks.
+        Sleeps if called too soon after the last request.
+        """
+        time_since_last = time.time() - self._last_request_time
+        if time_since_last < self.MIN_REQUEST_INTERVAL:
+            sleep_time = self.MIN_REQUEST_INTERVAL - time_since_last
+            logger.debug(f"Musixmatch - Rate limiting: sleeping {sleep_time:.1f}s")
+            time.sleep(sleep_time)
+    
+    def get_lyrics(self, artist: str, title: str, album: str = None, 
+                   duration: int = None, _retry: bool = True) -> Optional[Dict[str, Any]]:
         """
         Get lyrics using Musixmatch Desktop API.
         
@@ -110,11 +147,15 @@ class MusixmatchProvider(LyricsProvider):
             title (str): Track title
             album (str): Album name (optional)
             duration (int): Track duration in seconds (optional)
+            _retry (bool): Internal flag to prevent infinite retry loops
             
         Returns:
             Optional[Dict[str, Any]]: Dictionary with synced lyrics and metadata or None
         """
         try:
+            # Apply rate limiting
+            self._apply_rate_limit()
+            
             # Get valid token
             token = self._get_token()
             if not token:
@@ -152,6 +193,9 @@ class MusixmatchProvider(LyricsProvider):
                 timeout=15
             )
             
+            # Update rate limit timestamp
+            self._last_request_time = time.time()
+            
             if resp.status_code != 200:
                 logger.warning(f"Musixmatch - HTTP {resp.status_code}")
                 return None
@@ -162,12 +206,12 @@ class MusixmatchProvider(LyricsProvider):
             header = data.get("message", {}).get("header", {})
             if header.get("status_code") != 200:
                 hint = header.get("hint", "")
-                if hint == "renew":
+                if hint == "renew" and _retry:
+                    # Token expired - refresh and retry once
                     logger.info("Musixmatch - Token expired, refreshing...")
                     self._token = None
                     self._token_expires = 0
-                    # Retry once with new token
-                    return self.get_lyrics(artist, title, album, duration)
+                    return self.get_lyrics(artist, title, album, duration, _retry=False)
                 elif hint == "captcha":
                     logger.warning("Musixmatch - Captcha required (rate limited)")
                     return None
@@ -180,7 +224,7 @@ class MusixmatchProvider(LyricsProvider):
             macro_calls = body.get("macro_calls", {})
             
             if not macro_calls:
-                logger.info(f"Musixmatch - No macro_calls in response")
+                logger.info("Musixmatch - No macro_calls in response")
                 return None
             
             # Check track match
@@ -190,10 +234,12 @@ class MusixmatchProvider(LyricsProvider):
             if track_status == 404:
                 logger.info(f"Musixmatch - Track not found: {artist} - {title}")
                 return None
-            elif track_status == 401:
+            elif track_status == 401 and _retry:
+                # Token invalid - refresh and retry once
                 logger.warning("Musixmatch - Token invalid, refreshing...")
                 self._token = None
-                return None
+                self._token_expires = 0
+                return self.get_lyrics(artist, title, album, duration, _retry=False)
             elif track_status != 200:
                 logger.info(f"Musixmatch - Track match failed: status {track_status}")
                 return None
@@ -203,20 +249,19 @@ class MusixmatchProvider(LyricsProvider):
             track = track_body.get("track", {})
             
             if not track:
-                logger.info(f"Musixmatch - No track data")
+                logger.info("Musixmatch - No track data")
                 return None
             
             track_name = track.get("track_name", "")
             artist_name = track.get("artist_name", "")
             is_instrumental = track.get("instrumental", 0) == 1
             has_subtitles = track.get("has_subtitles", 0) == 1
-            has_lyrics = track.get("has_lyrics", 0) == 1
             
             logger.info(f"Musixmatch - Found: {track_name} by {artist_name} (subtitles: {has_subtitles})")
             
             # Handle instrumental tracks
             if is_instrumental:
-                logger.info(f"Musixmatch - Instrumental track")
+                logger.info("Musixmatch - Instrumental track")
                 return {
                     "lyrics": [(0.0, "Instrumental")],
                     "is_instrumental": True
@@ -245,20 +290,20 @@ class MusixmatchProvider(LyricsProvider):
                             "is_instrumental": False
                         }
             
-            # Fallback: check for plain lyrics (but we only want synced)
+            # Fallback: log if plain lyrics exist but no sync
             lyrics_result = macro_calls.get("track.lyrics.get", {}).get("message", {})
             lyrics_body = lyrics_result.get("body", {})
             
             if isinstance(lyrics_body, dict) and lyrics_body.get("lyrics"):
                 lyrics_text = lyrics_body["lyrics"].get("lyrics_body", "")
                 if lyrics_text:
-                    logger.info(f"Musixmatch - Found plain lyrics only (no sync), skipping")
+                    logger.info("Musixmatch - Found plain lyrics only (no sync), skipping")
             
-            logger.info(f"Musixmatch - No synced lyrics available")
+            logger.info("Musixmatch - No synced lyrics available")
             return None
             
         except requests.exceptions.Timeout:
-            logger.warning(f"Musixmatch - Request timeout")
+            logger.warning("Musixmatch - Request timeout")
             return None
         except Exception as e:
             logger.error(f"Musixmatch - Error: {e}")
