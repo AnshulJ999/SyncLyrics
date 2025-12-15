@@ -33,7 +33,9 @@ providers = [
 # LATENCY_COMPENSATION = LYRICS.get("display", {}).get("latency_compensation", -0.1)
 current_song_data = None
 current_song_lyrics = None
+current_song_word_synced_lyrics = None  # NEW: Current word-synced lyrics data
 current_song_provider: Optional[str] = None  # Tracks which provider is currently serving lyrics
+current_word_sync_provider: Optional[str] = None  # NEW: Tracks which provider is serving word-synced lyrics
 _db_lock = asyncio.Lock()  # Protects read/modify/write cycle for DB files
 _update_lock = asyncio.Lock()  # Protects against race conditions in `_update_song` - ensures only one song update happens at a time
 _backfill_tracker: Set[str] = set()  # Avoid duplicate backfill runs per song
@@ -54,8 +56,12 @@ def _get_db_path(artist: str, title: str) -> Optional[str]:
         return None
 
 def _load_from_db(artist: str, title: str) -> Optional[list]:
-    """Loads lyrics from disk, prioritizing user preference or highest-quality provider available."""
-    global current_song_provider
+    """Loads lyrics from disk, prioritizing user preference or highest-quality provider available.
+    
+    Also loads word-synced lyrics if available, setting the global current_song_word_synced_lyrics.
+    Word-sync priority: Musixmatch > NetEase (when auto-selecting).
+    """
+    global current_song_provider, current_song_word_synced_lyrics, current_word_sync_provider
     
     if not FEATURES.get("save_lyrics_locally", False): return None
     
@@ -66,33 +72,60 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
         with open(db_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
+        # Reset word-sync state before loading
+        current_song_word_synced_lyrics = None
+        current_word_sync_provider = None
+        
         # NEW FORMAT: Multi-provider storage
         if "saved_lyrics" in data and isinstance(data["saved_lyrics"], dict):
             saved_lyrics = data["saved_lyrics"]
+            word_synced_lyrics = data.get("word_synced_lyrics", {})
+            
+            # Determine which provider to use for line-synced lyrics
+            selected_provider = None
+            selected_lyrics = None
             
             # Check for user's preferred provider first
             preferred_provider = data.get('preferred_provider')
             if preferred_provider and preferred_provider in saved_lyrics:
-                current_song_provider = preferred_provider
+                selected_provider = preferred_provider
+                selected_lyrics = saved_lyrics[preferred_provider]
                 logger.info(f"Loaded lyrics from Local DB: {preferred_provider} (User Preference)")
-                return saved_lyrics[preferred_provider]
+            else:
+                # If no preference, find the BEST provider available (lowest priority number = best)
+                best_priority = 999
+                for provider in providers:
+                    if provider.name in saved_lyrics:
+                        if provider.priority < best_priority:
+                            best_priority = provider.priority
+                            selected_lyrics = saved_lyrics[provider.name]
+                            selected_provider = provider.name
+                
+                if selected_lyrics:
+                    logger.info(f"Loaded lyrics from Local DB: {selected_provider} (Priority {best_priority})")
             
-            # If no preference, find the BEST provider available (lowest priority number = best)
-            best_priority = 999
-            best_lyrics = None
-            best_provider = None
-            
-            for provider in providers:
-                if provider.name in saved_lyrics:
-                    if provider.priority < best_priority:
-                        best_priority = provider.priority
-                        best_lyrics = saved_lyrics[provider.name]
-                        best_provider = provider.name
-            
-            if best_lyrics:
-                current_song_provider = best_provider
-                logger.info(f"Loaded lyrics from Local DB: {best_provider} (Priority {best_priority})")
-                return best_lyrics
+            if selected_lyrics:
+                current_song_provider = selected_provider
+                
+                # Load word-synced lyrics - check if selected provider has word-sync
+                # If not, try to find best word-sync from any provider (Musixmatch > NetEase)
+                word_sync_priority_order = ["musixmatch", "netease"]  # Priority order for word-sync
+                
+                # First check if selected provider has word-sync
+                if selected_provider and selected_provider in word_synced_lyrics:
+                    current_song_word_synced_lyrics = word_synced_lyrics[selected_provider]
+                    current_word_sync_provider = selected_provider
+                    logger.info(f"Loaded word-synced lyrics from: {selected_provider}")
+                else:
+                    # Try to get word-sync from any available provider (priority order)
+                    for ws_provider in word_sync_priority_order:
+                        if ws_provider in word_synced_lyrics:
+                            current_song_word_synced_lyrics = word_synced_lyrics[ws_provider]
+                            current_word_sync_provider = ws_provider
+                            logger.info(f"Loaded word-synced lyrics from: {ws_provider} (fallback)")
+                            break
+                
+                return selected_lyrics
         
         # LEGACY FORMAT: Single provider (backward compatibility)
         elif data.get('lyrics') and isinstance(data['lyrics'], list):
@@ -105,6 +138,28 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
         logger.error(f"Failed to load from Local DB: {e}")
     
     return None
+
+
+def _has_any_word_sync_cached(artist: str, title: str) -> bool:
+    """Check if any provider has word-synced lyrics cached for this song.
+    
+    Used by backfill logic to determine if we should try to fetch word-sync data.
+    """
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return False
+
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        word_synced = data.get("word_synced_lyrics", {})
+        return bool(word_synced)  # True if any provider has word-sync
+    except Exception:
+        return False
+
 
 def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
     """Returns provider names already stored in the DB entry for this song."""
@@ -126,29 +181,45 @@ def _get_saved_provider_names(artist: str, title: str) -> Set[str]:
     return set()
 
 
-def _normalize_provider_result(result: Optional[Any]) -> Tuple[Optional[List[Tuple[float, str]]], Dict[str, Any]]:
+def _normalize_provider_result(result: Optional[Any]) -> Tuple[Optional[List[Tuple[float, str]]], Dict[str, Any], Optional[List[Dict[str, Any]]]]:
     """
-    Normalize provider output into a lyrics list and metadata dict.
+    Normalize provider output into a lyrics list, metadata dict, and word-synced data.
 
     This allows new providers to return dictionaries while maintaining backwards
     compatibility with existing ones that return lists.
+    
+    Returns:
+        Tuple of (lyrics, metadata, word_synced_lyrics)
+        - lyrics: List of (timestamp, text) tuples for line-synced display
+        - metadata: Dictionary with provider metadata (is_instrumental, etc.)
+        - word_synced_lyrics: List of word-synced line dicts, or None if not available
     """
     if not result:
-        return None, {}
+        return None, {}, None
 
     if isinstance(result, list):
-        return result, {}
+        return result, {}, None
 
     if isinstance(result, dict):
         lyrics = result.get("lyrics")
         if not isinstance(lyrics, list):
-            return None, {}
+            return None, {}, None
 
-        metadata = {key: value for key, value in result.items() if key != "lyrics"}
+        # Extract word_synced_lyrics if present
+        word_synced = result.get("word_synced_lyrics")
+        
+        # Build metadata from remaining keys (excluding lyrics and word_synced_lyrics)
+        metadata = {key: value for key, value in result.items() 
+                   if key not in ("lyrics", "word_synced_lyrics")}
         metadata.setdefault("is_instrumental", False)
-        return lyrics, metadata
+        
+        # Add flag indicating word-sync availability
+        if word_synced:
+            metadata["has_word_sync"] = True
+        
+        return lyrics, metadata, word_synced
 
-    return None, {}
+    return None, {}, None
 
 
 def _apply_instrumental_marker(lyrics: Optional[List[Tuple[float, str]]], metadata: Dict[str, Any]) -> Optional[List[Tuple[float, str]]]:
@@ -262,8 +333,19 @@ def _normalized_song_key(artist: str, title: str) -> str:
     """Creates a consistent key for tracking per-song background tasks."""
     return f"{artist.strip().lower()}::{title.strip().lower()}"
 
-async def _save_to_db(artist: str, title: str, lyrics: list, source: str, metadata: Optional[Dict[str, Any]] = None) -> None:
-    """Saves found lyrics to disk with multi-provider support (merge mode)."""
+async def _save_to_db(artist: str, title: str, lyrics: list, source: str, 
+                      metadata: Optional[Dict[str, Any]] = None,
+                      word_synced: Optional[List[Dict[str, Any]]] = None) -> None:
+    """Saves found lyrics to disk with multi-provider support (merge mode).
+    
+    Args:
+        artist: Artist name
+        title: Song title
+        lyrics: List of (timestamp, text) tuples for line-synced lyrics
+        source: Provider name
+        metadata: Optional metadata dict (is_instrumental, has_word_sync, etc.)
+        word_synced: Optional list of word-synced line dicts
+    """
     if not FEATURES.get("save_lyrics_locally", False) or not lyrics: return
     
     db_path = _get_db_path(artist, title)
@@ -307,6 +389,12 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str, metada
                 data.setdefault("metadata", {})
                 data["metadata"][source] = metadata
             
+            # NEW: Store word-synced lyrics if available
+            if word_synced:
+                data.setdefault("word_synced_lyrics", {})
+                data["word_synced_lyrics"][source] = word_synced
+                logger.debug(f"Stored {len(word_synced)} word-synced lines from {source}")
+            
             # Save merged data using atomic write pattern
             # This prevents corruption if app crashes during write:
             # 1. Write to temp file first
@@ -327,8 +415,10 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str, metada
                     except:
                         pass
                 raise write_err
-                
-            logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers)")
+            
+            # Log what we saved
+            word_sync_status = f", word-sync from {source}" if word_synced else ""
+            logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers{word_sync_status})")
         except Exception as e:
             logger.error(f"Failed to save to DB: {e}")
 
@@ -355,10 +445,10 @@ def _save_all_results_background(
 
                     try:
                         raw_result = await task
-                        lyrics, metadata = _normalize_provider_result(raw_result)
+                        lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
                         lyrics = _apply_instrumental_marker(lyrics, metadata)
                         if lyrics:
-                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
+                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                             logger.info(f"Background save complete for {provider.name}")
                     except Exception as exc:
                         logger.debug(f"Background provider error ({provider.name}): {exc}")
@@ -429,10 +519,10 @@ def _backfill_missing_providers(
 
                     try:
                         raw_result = await task
-                        lyrics, metadata = _normalize_provider_result(raw_result)
+                        lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
                         lyrics = _apply_instrumental_marker(lyrics, metadata)
                         if lyrics:
-                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
+                            await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                             logger.info(f"Backfill saved lyrics from {provider.name}")
                             
                             # Check again after saving - if we now have 3 providers, stop
@@ -562,12 +652,12 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
         else:
             raw_result = await asyncio.to_thread(provider_obj.get_lyrics, artist, title)
 
-        lyrics, metadata = _normalize_provider_result(raw_result)
+        lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
         lyrics = _apply_instrumental_marker(lyrics, metadata)
 
         if lyrics:
             # Save to DB with preference
-            await _save_to_db(artist, title, lyrics, provider_name, metadata=metadata)
+            await _save_to_db(artist, title, lyrics, provider_name, metadata=metadata, word_synced=word_synced)
             
             # Update preference in DB using atomic write pattern
             # FIX: Use temp file to prevent race conditions during rapid song skipping
@@ -810,19 +900,40 @@ async def _update_song():
                     current_song_lyrics = local_lyrics
 
                     saved_providers = _get_saved_provider_names(target_artist, target_title)
-                    # Only backfill if we have fewer than 3 providers saved
-                    # This prevents unnecessary requests to unreliable providers
-                    if len(saved_providers) < 3:
-                        missing = [
-                            provider
-                            for provider in providers
-                            if provider.enabled and provider.name not in saved_providers
-                        ]
-                        if missing:
-                            logger.info(f"Backfill triggered for {target_artist} - {target_title} (have {len(saved_providers)}/3 providers, missing: {', '.join(p.name for p in missing)})")
-                            _backfill_missing_providers(target_artist, target_title, missing)
+                    has_word_sync = _has_any_word_sync_cached(target_artist, target_title)
+                    
+                    # Backfill if:
+                    # 1. We have fewer than 3 providers saved, OR
+                    # 2. No word-sync lyrics are cached yet (to get karaoke data over time)
+                    # This ensures existing songs eventually get word-synced data without
+                    # being too aggressive about refetching.
+                    should_backfill = len(saved_providers) < 3 or not has_word_sync
+                    
+                    if should_backfill:
+                        # For word-sync backfill, prioritize Musixmatch/NetEase
+                        if not has_word_sync:
+                            # Specifically target word-sync providers
+                            word_sync_providers = ["musixmatch", "netease"]
+                            missing = [
+                                provider
+                                for provider in providers
+                                if provider.enabled and provider.name in word_sync_providers and provider.name not in saved_providers
+                            ]
+                            if missing:
+                                logger.info(f"Word-sync backfill triggered for {target_artist} - {target_title} (no word-sync cached, trying: {', '.join(p.name for p in missing)})")
+                                _backfill_missing_providers(target_artist, target_title, missing)
+                        else:
+                            # Normal backfill for providers < 3
+                            missing = [
+                                provider
+                                for provider in providers
+                                if provider.enabled and provider.name not in saved_providers
+                            ]
+                            if missing:
+                                logger.info(f"Backfill triggered for {target_artist} - {target_title} (have {len(saved_providers)}/3 providers, missing: {', '.join(p.name for p in missing)})")
+                                _backfill_missing_providers(target_artist, target_title, missing)
                     else:
-                        logger.debug(f"Skipping backfill for {target_artist} - {target_title} (already have {len(saved_providers)} providers)")
+                        logger.debug(f"Skipping backfill for {target_artist} - {target_title} (have {len(saved_providers)} providers, word-sync: {has_word_sync})")
             else:
                 # 2. Try Internet (Smart Race) - BACKGROUND
                 # CRITICAL PERFORMANCE FIX: Don't await internet fetch inside lock
@@ -863,12 +974,12 @@ async def _get_lyrics(artist: str, title: str):
                 else:
                     raw_result = await asyncio.to_thread(provider.get_lyrics, artist, title)
 
-                lyrics, metadata = _normalize_provider_result(raw_result)
+                lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
                 lyrics = _apply_instrumental_marker(lyrics, metadata)
 
                 if lyrics:
                     logger.info(f"Found lyrics using {provider.name}")
-                    await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
+                    await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                     if best_lyrics is None:
                         best_lyrics = lyrics
                         best_provider_name = provider.name
@@ -915,13 +1026,13 @@ async def _get_lyrics(artist: str, title: str):
                 logger.debug(f"Provider task failed for {getattr(provider, 'name', 'Unknown')}: {exc}")
                 continue
 
-            lyrics, metadata = _normalize_provider_result(raw_result)
+            lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
             lyrics = _apply_instrumental_marker(lyrics, metadata)
 
             if lyrics:
-                await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
-                logger.info(f"Saved lyrics using {provider.name} (Priority {provider.priority})")
-
+                await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
+                logger.info(f"Saved lyrics using {provider.name} (Priority {provider.priority})")             
+                
                 if provider.priority < best_priority:
                     best_priority = provider.priority
                     best_result = lyrics
@@ -970,11 +1081,11 @@ async def _get_lyrics(artist: str, title: str):
                         logger.debug(f"Provider task failed during grace window ({getattr(provider, 'name', 'Unknown')}): {exc}")
                         continue
 
-                    lyrics, metadata = _normalize_provider_result(raw_result)
+                    lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
                     lyrics = _apply_instrumental_marker(lyrics, metadata)
 
                     if lyrics:
-                        await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata)
+                        await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                         logger.info(f"Grace window got lyrics from {provider.name} (Priority {provider.priority})")
 
                         if provider.priority < best_priority:
