@@ -861,8 +861,11 @@ async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
     This function runs in the background after _update_song has already
     updated current_song_data and released the lock. This prevents the
     UI from freezing while waiting for internet requests to complete.
+    
+    After fetching, reloads from DB to populate word-sync globals.
     """
     global current_song_lyrics, current_song_data, current_song_provider
+    global current_song_word_synced_lyrics, current_word_sync_provider
 
     try:
         # Use the global _get_lyrics function to fetch from internet providers
@@ -875,6 +878,12 @@ async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
             current_song_data["artist"] == target_artist and 
             current_song_data["title"] == target_title):
             current_song_lyrics = fetched_lyrics
+            
+            # BUGFIX: Reload from DB to populate word-sync globals
+            # _get_lyrics() saves word-sync to DB but doesn't return it.
+            # Loading from DB is the cleanest way to populate the globals.
+            _load_from_db(target_artist, target_title)
+            
             logger.info(f"Background fetch completed for {target_artist} - {target_title}")
         else:
             # Song changed during fetch - discard these lyrics to prevent wrong display
@@ -894,6 +903,7 @@ async def _update_song():
     concurrent calls from causing inconsistent state.
     """
     global current_song_lyrics, current_song_data, current_song_provider
+    global current_song_word_synced_lyrics, current_word_sync_provider
 
     # CRITICAL FIX: Use lock to prevent concurrent updates
     # This ensures only one song update happens at a time, preventing race conditions
@@ -906,6 +916,9 @@ async def _update_song():
         if new_song_data is None or (not new_song_data["artist"].strip() and not new_song_data["title"].strip()):
             current_song_lyrics = None
             current_song_data = new_song_data
+            # BUGFIX: Also clear word-sync state when no song is playing
+            current_song_word_synced_lyrics = None
+            current_word_sync_provider = None
             return
 
         # Check if song changed
@@ -926,6 +939,10 @@ async def _update_song():
             # Reset provider when song changes so UI shows correct info during fetch
             # This prevents showing the previous song's provider while searching for new lyrics
             current_song_provider = None
+            
+            # BUGFIX: Also reset word-sync globals to prevent stale word-sync from previous song
+            current_song_word_synced_lyrics = None
+            current_word_sync_provider = None
             
             # Store song identifier to validate after async fetch completes
             # This ensures we don't set lyrics if the song changed again during fetch
