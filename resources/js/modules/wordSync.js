@@ -52,12 +52,17 @@ export function findCurrentWord(position, lineData) {
         const word = words[i];
         const wordStart = lineStart + (word.time || 0);
         
-        // Calculate word end: either next word's start or estimate based on line end
+        // Calculate word end using duration if available (from Musixmatch/NetEase)
+        // Falls back to next word's start for backward compatibility with cached songs
         let wordEnd;
-        if (i + 1 < words.length) {
+        if (word.duration !== undefined && word.duration > 0) {
+            // Use explicit duration from backend (more precise, handles pauses)
+            wordEnd = wordStart + word.duration;
+        } else if (i + 1 < words.length) {
+            // Fallback: next word's start
             wordEnd = lineStart + (words[i + 1].time || 0);
         } else {
-            // Last word - use line end or estimate
+            // Last word without duration - use line end or estimate
             wordEnd = lineData.end || (wordStart + 0.5);
         }
         

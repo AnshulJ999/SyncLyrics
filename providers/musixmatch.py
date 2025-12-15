@@ -407,9 +407,9 @@ class MusixmatchProvider(LyricsProvider):
                 "end": 18.56,
                 "text": "We were both young...",
                 "words": [
-                    {"word": "We", "time": 0},
-                    {"word": "were", "time": 0.213},
-                    ...  // Spaces filtered out
+                    {"word": "We", "time": 0, "duration": 0.213},
+                    {"word": "were", "time": 0.213, "duration": 0.15},
+                    ...  // Spaces filtered out, duration calculated from next word offset
                 ]
             },
             ...
@@ -431,6 +431,7 @@ class MusixmatchProvider(LyricsProvider):
                 te = line.get("te", 0)  # Line end time
                 full_text = line.get("x", "")  # Full line text
                 chars = line.get("l", [])  # Character/word list
+                line_duration = te - ts if te > ts else 0
                 
                 # Build words list, filtering out spaces
                 words = []
@@ -444,6 +445,20 @@ class MusixmatchProvider(LyricsProvider):
                             "word": char,
                             "time": offset  # Offset from line start
                         })
+                
+                # Calculate duration for each word based on next word's offset
+                # This provides precise timing for frontend animation
+                for i, word in enumerate(words):
+                    if i + 1 < len(words):
+                        # Duration = next word's start - this word's start
+                        word["duration"] = round(words[i + 1]["time"] - word["time"], 3)
+                    else:
+                        # Last word: duration = line end - word start
+                        word["duration"] = round(line_duration - word["time"], 3)
+                    
+                    # Ensure duration is positive (defensive)
+                    if word["duration"] < 0:
+                        word["duration"] = 0.5  # Fallback to 500ms
                 
                 if words or full_text:
                     result.append({

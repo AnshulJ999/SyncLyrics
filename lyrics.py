@@ -144,6 +144,7 @@ def _has_any_word_sync_cached(artist: str, title: str) -> bool:
     """Check if any provider has word-synced lyrics cached for this song.
     
     Used by backfill logic to determine if we should try to fetch word-sync data.
+    Returns True only if at least one provider has a non-empty list of word-synced lines.
     """
     if not FEATURES.get("save_lyrics_locally", False):
         return False
@@ -156,7 +157,20 @@ def _has_any_word_sync_cached(artist: str, title: str) -> bool:
         with open(db_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         word_synced = data.get("word_synced_lyrics", {})
-        return bool(word_synced)  # True if any provider has word-sync
+        
+        # BUGFIX: Check for actual non-empty word-sync data, not just dict existence
+        # This handles edge cases:
+        # - {} (empty dict) -> False
+        # - {"musixmatch": []} (empty list) -> False  
+        # - {"musixmatch": None} (None value) -> False
+        # - {"musixmatch": [{...}]} (valid data) -> True
+        if not isinstance(word_synced, dict):
+            return False
+        
+        return any(
+            isinstance(v, list) and len(v) > 0 
+            for v in word_synced.values()
+        )
     except Exception:
         return False
 

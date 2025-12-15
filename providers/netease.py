@@ -269,16 +269,21 @@ class NetEaseProvider(LyricsProvider):
             
             for word_start_ms, word_duration_ms, word_text in word_matches:
                 word_start_ms = int(word_start_ms)
+                word_duration_ms = int(word_duration_ms)
                 
                 # Calculate offset from line start (convert to seconds)
                 offset = (word_start_ms - line_start_ms) / 1000.0
+                
+                # Convert duration to seconds
+                duration = word_duration_ms / 1000.0
                 
                 # Clean up the word text
                 word = word_text.strip()
                 if word:
                     words.append({
                         "word": word,
-                        "time": round(offset, 3)
+                        "time": round(offset, 3),
+                        "duration": round(duration, 3)  # Explicit duration from YRC format
                     })
                     full_text_parts.append(word)
             
