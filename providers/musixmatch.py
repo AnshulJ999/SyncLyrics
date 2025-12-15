@@ -256,8 +256,11 @@ class MusixmatchProvider(LyricsProvider):
             artist_name = track.get("artist_name", "")
             is_instrumental = track.get("instrumental", 0) == 1
             has_subtitles = track.get("has_subtitles", 0) == 1
+            has_richsync = track.get("has_richsync", 0) == 1
+            track_id = track.get("track_id")
+            commontrack_id = track.get("commontrack_id")
             
-            logger.info(f"Musixmatch - Found: {track_name} by {artist_name} (subtitles: {has_subtitles})")
+            logger.info(f"Musixmatch - Found: {track_name} by {artist_name} (subtitles: {has_subtitles}, richsync: {has_richsync})")
             
             # Handle instrumental tracks
             if is_instrumental:
@@ -267,7 +270,7 @@ class MusixmatchProvider(LyricsProvider):
                     "is_instrumental": True
                 }
             
-            # Get synced subtitles (the good stuff!)
+            # Get synced subtitles (line-synced)
             subtitle_result = macro_calls.get("track.subtitles.get", {}).get("message", {})
             subtitle_body = subtitle_result.get("body", {})
             
@@ -276,19 +279,34 @@ class MusixmatchProvider(LyricsProvider):
                 subtitle_body = {}
             
             subtitle_list = subtitle_body.get("subtitle_list", [])
+            line_synced_lyrics = None
             
             if subtitle_list:
                 subtitle = subtitle_list[0].get("subtitle", {})
                 subtitle_raw = subtitle.get("subtitle_body", "")
                 
                 if subtitle_raw:
-                    parsed = self._parse_subtitles(subtitle_raw)
-                    if parsed:
-                        logger.info(f"Musixmatch - Got {len(parsed)} synced lines")
-                        return {
-                            "lyrics": parsed,
-                            "is_instrumental": False
-                        }
+                    line_synced_lyrics = self._parse_subtitles(subtitle_raw)
+                    if line_synced_lyrics:
+                        logger.info(f"Musixmatch - Got {len(line_synced_lyrics)} synced lines")
+            
+            # Fetch word-synced RichSync data if available
+            word_synced_lyrics = None
+            if has_richsync and track_id and commontrack_id:
+                word_synced_lyrics = self._fetch_richsync(track_id, commontrack_id, token)
+                if word_synced_lyrics:
+                    logger.info(f"Musixmatch - Got {len(word_synced_lyrics)} word-synced lines")
+            
+            # Return results if we have any lyrics
+            if line_synced_lyrics:
+                result = {
+                    "lyrics": line_synced_lyrics,
+                    "is_instrumental": False
+                }
+                # Include word-synced data if available
+                if word_synced_lyrics:
+                    result["word_synced_lyrics"] = word_synced_lyrics
+                return result
             
             # Fallback: log if plain lyrics exist but no sync
             lyrics_result = macro_calls.get("track.lyrics.get", {}).get("message", {})
@@ -307,6 +325,141 @@ class MusixmatchProvider(LyricsProvider):
             return None
         except Exception as e:
             logger.error(f"Musixmatch - Error: {e}")
+            return None
+    
+    def _fetch_richsync(self, track_id: int, commontrack_id: int, token: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch RichSync (word-synced) lyrics for a track.
+        
+        RichSync provides word-by-word timing data for karaoke-style display.
+        
+        Args:
+            track_id: Musixmatch track ID
+            commontrack_id: Musixmatch common track ID
+            token: API token
+            
+        Returns:
+            List of word-synced line data or None
+        """
+        try:
+            # Note: We don't apply rate limiting here since we just made a request
+            # and this is a follow-up for the same song
+            resp = requests.get(
+                f"{self.BASE_URL}track.richsync.get",
+                params={
+                    "app_id": self.APP_ID,
+                    "usertoken": token,
+                    "track_id": track_id,
+                    "commontrack_id": commontrack_id,
+                },
+                headers=self._headers,
+                timeout=15
+            )
+            
+            if resp.status_code != 200:
+                logger.debug(f"Musixmatch - RichSync HTTP {resp.status_code}")
+                return None
+            
+            data = resp.json()
+            header = data.get("message", {}).get("header", {})
+            
+            if header.get("status_code") != 200:
+                logger.debug(f"Musixmatch - RichSync not available: {header.get('hint', '')}")
+                return None
+            
+            body = data.get("message", {}).get("body", {})
+            richsync = body.get("richsync", {})
+            richsync_body = richsync.get("richsync_body", "")
+            
+            if richsync_body:
+                return self._parse_richsync(richsync_body)
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Musixmatch - RichSync fetch error: {e}")
+            return None
+    
+    def _parse_richsync(self, richsync_body: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Parse RichSync JSON format into structured word-synced data.
+        
+        Input format:
+        [
+            {
+                "ts": 15.68,  // line start time (seconds)
+                "te": 18.56,  // line end time (seconds)
+                "l": [
+                    {"c": "We", "o": 0},     // character/word, offset from ts
+                    {"c": " ", "o": 0.115},
+                    {"c": "were", "o": 0.213},
+                    ...
+                ],
+                "x": "We were both young..."  // full line text
+            },
+            ...
+        ]
+        
+        Output format:
+        [
+            {
+                "start": 15.68,
+                "end": 18.56,
+                "text": "We were both young...",
+                "words": [
+                    {"word": "We", "time": 0},
+                    {"word": "were", "time": 0.213},
+                    ...  // Spaces filtered out
+                ]
+            },
+            ...
+        ]
+        """
+        try:
+            lines = json.loads(richsync_body)
+            
+            if not isinstance(lines, list):
+                return None
+            
+            result = []
+            
+            for line in lines:
+                if not isinstance(line, dict):
+                    continue
+                
+                ts = line.get("ts", 0)  # Line start time
+                te = line.get("te", 0)  # Line end time
+                full_text = line.get("x", "")  # Full line text
+                chars = line.get("l", [])  # Character/word list
+                
+                # Build words list, filtering out spaces
+                words = []
+                for char_data in chars:
+                    char = char_data.get("c", "")
+                    offset = char_data.get("o", 0)
+                    
+                    # Skip spaces - we only want actual words
+                    if char.strip():
+                        words.append({
+                            "word": char,
+                            "time": offset  # Offset from line start
+                        })
+                
+                if words or full_text:
+                    result.append({
+                        "start": ts,
+                        "end": te,
+                        "text": full_text,
+                        "words": words
+                    })
+            
+            return result if result else None
+            
+        except json.JSONDecodeError as e:
+            logger.debug(f"Musixmatch - RichSync JSON parse error: {e}")
+            return None
+        except Exception as e:
+            logger.debug(f"Musixmatch - RichSync parse error: {e}")
             return None
     
     def _parse_subtitles(self, subtitle_body: str) -> Optional[List[Tuple[float, str]]]:

@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent)) 
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import requests as req
 import logging
@@ -139,43 +139,155 @@ class NetEaseProvider(LyricsProvider):
                 return None
             track_id = selected_song["id"]
 
+            # Fetch lyrics with YRC (word-synced) parameters
             lyrics_response = req.get(
                 "https://music.163.com/api/song/lyric",
-                params={"id": track_id, "lv": 1},
+                params={
+                    "id": track_id,
+                    "lv": 1,   # Line-synced LRC lyrics
+                    "yv": 1,   # YRC word-synced lyrics
+                    "kv": 1    # Karaoke lyrics (alternative word-sync)
+                },
                 headers=self.headers,
                 timeout=10
             ).json()
             
+            # Get line-synced LRC lyrics
             lyrics_text = lyrics_response.get("lrc", {}).get("lyric")
-            if not lyrics_text:
+            line_synced_lyrics = None
+            if lyrics_text:
+                line_synced_lyrics = self._parse_lrc(lyrics_text)
+            
+            # Get word-synced YRC lyrics
+            yrc_text = lyrics_response.get("yrc", {}).get("lyric")
+            word_synced_lyrics = None
+            if yrc_text:
+                word_synced_lyrics = self._parse_yrc(yrc_text)
+                if word_synced_lyrics:
+                    logger.info(f"NetEase - Got {len(word_synced_lyrics)} word-synced lines")
+            
+            if not line_synced_lyrics:
                 logger.info(f"NetEase - No lyrics found for: {search_term}")
                 return None
             
-            # Process lyrics
-            processed_lyrics = []
-            for line in lyrics_text.split("\n"):
-                try:
-                    if not line.startswith("[") or "]" not in line: continue
-                    time_part = line[1:line.find("]")]
-                    
-                    # Skip meta tags
-                    if not time_part or not time_part[0].isdigit(): continue
-                    
-                    m, s = time_part.split(":")
-                    seconds = float(m) * 60 + float(s)
-                    text = line[line.find("]") + 1:].strip()
-                    if text:
-                        processed_lyrics.append((seconds, text))
-                except ValueError:
-                    continue
+            result = {
+                "lyrics": line_synced_lyrics,
+                "is_instrumental": False
+            }
             
-            if processed_lyrics:
-                return {
-                    "lyrics": processed_lyrics,
-                    "is_instrumental": False
-                }
-            return None
+            # Include word-synced data if available
+            if word_synced_lyrics:
+                result["word_synced_lyrics"] = word_synced_lyrics
+            
+            return result
             
         except Exception as e:
             logger.error(f"NetEase - Error fetching lyrics from NetEase for {search_term}: {str(e)}")
             return None
+    
+    def _parse_lrc(self, lyrics_text: str) -> Optional[List[Tuple[float, str]]]:
+        """Parse standard LRC format into list of (timestamp, text) tuples."""
+        processed_lyrics = []
+        for line in lyrics_text.split("\n"):
+            try:
+                if not line.startswith("[") or "]" not in line:
+                    continue
+                time_part = line[1:line.find("]")]
+                
+                # Skip meta tags
+                if not time_part or not time_part[0].isdigit():
+                    continue
+                
+                m, s = time_part.split(":")
+                seconds = float(m) * 60 + float(s)
+                text = line[line.find("]") + 1:].strip()
+                if text:
+                    processed_lyrics.append((seconds, text))
+            except ValueError:
+                continue
+        
+        return processed_lyrics if processed_lyrics else None
+    
+    def _parse_yrc(self, yrc_text: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Parse NetEase YRC format into structured word-synced data.
+        
+        Input format:
+        [ch:0]
+        [16240,3600](16240,270,0)We (16510,210,0)were (16720,570,0)both...
+        
+        Where:
+        - [16240,3600] = Line start time (ms), duration (ms)
+        - (16240,270,0) = Word start time (ms), duration (ms), unknown flag
+        - The time in () is ABSOLUTE, not offset from line start
+        
+        Output format:
+        [
+            {
+                "start": 16.24,
+                "end": 19.84,
+                "text": "We were both young...",
+                "words": [
+                    {"word": "We", "time": 0},       # time = offset from line start
+                    {"word": "were", "time": 0.27},
+                    {"word": "both", "time": 0.48},
+                    ...
+                ]
+            },
+            ...
+        ]
+        """
+        import re
+        
+        result = []
+        
+        for line in yrc_text.split("\n"):
+            line = line.strip()
+            
+            # Skip empty lines and metadata lines
+            if not line or line.startswith("[ch:"):
+                continue
+            
+            # Parse line header: [start_ms,duration_ms]
+            line_match = re.match(r'\[(\d+),(\d+)\](.+)', line)
+            if not line_match:
+                continue
+            
+            line_start_ms = int(line_match.group(1))
+            line_duration_ms = int(line_match.group(2))
+            line_content = line_match.group(3)
+            
+            line_start = line_start_ms / 1000.0
+            line_end = (line_start_ms + line_duration_ms) / 1000.0
+            
+            # Parse words: (start_ms,duration_ms,flag)text
+            word_pattern = r'\((\d+),(\d+),\d+\)([^(]*)'
+            word_matches = re.findall(word_pattern, line_content)
+            
+            words = []
+            full_text_parts = []
+            
+            for word_start_ms, word_duration_ms, word_text in word_matches:
+                word_start_ms = int(word_start_ms)
+                
+                # Calculate offset from line start (convert to seconds)
+                offset = (word_start_ms - line_start_ms) / 1000.0
+                
+                # Clean up the word text
+                word = word_text.strip()
+                if word:
+                    words.append({
+                        "word": word,
+                        "time": round(offset, 3)
+                    })
+                    full_text_parts.append(word)
+            
+            if words:
+                result.append({
+                    "start": round(line_start, 3),
+                    "end": round(line_end, 3),
+                    "text": " ".join(full_text_parts),
+                    "words": words
+                })
+        
+        return result if result else None
