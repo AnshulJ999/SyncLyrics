@@ -139,7 +139,7 @@ class LRCLIBProvider(LyricsProvider):
                         if result.get("syncedLyrics") or result.get("instrumental"):
                             response = result
                             found_match = True
-                            logger.info(f"LRCLib - Found match in search results: {result.get('name')} by {result.get('artistName')} (instrumental: {result.get('instrumental', False)})")
+                            logger.info(f"LRCLib - Found match in search results: {result.get('trackName')} by {result.get('artistName')} (instrumental: {result.get('instrumental', False)})")
                             break
                     
                     if not found_match:
