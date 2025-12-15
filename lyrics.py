@@ -10,7 +10,7 @@ from providers.lrclib import LRCLIBProvider
 from providers.netease import NetEaseProvider
 from providers.spotify_lyrics import SpotifyLyrics
 from providers.qq import QQMusicProvider
-from providers.musicxmatch import MusicxmatchProvider
+from providers.musixmatch import MusixmatchProvider
 from config import LYRICS, DEBUG, FEATURES, DATABASE_DIR
 from logging_config import get_logger
 
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 providers = [
     LRCLIBProvider(),      # Priority 1
     SpotifyLyrics(),       # Priority 2
-    MusicxmatchProvider(), # Priority 2
+    MusixmatchProvider(), # Priority 2
     NetEaseProvider(),     # Priority 3
     QQMusicProvider()      # Priority 4
 ]

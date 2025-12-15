@@ -1,0 +1,316 @@
+"""Musixmatch Provider for synchronized lyrics - Uses Desktop API"""
+
+import sys
+import time
+import json
+from pathlib import Path
+from typing import Optional, List, Tuple, Dict, Any
+
+import requests
+
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from .base import LyricsProvider
+from config import get_provider_config
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+class MusixmatchProvider(LyricsProvider):
+    """
+    Provider for fetching synced lyrics from Musixmatch Desktop API.
+    
+    Uses the desktop app API (apic-desktop.musixmatch.com) which provides
+    actual synced lyrics, unlike the public API which blocks richsync access.
+    """
+    
+    # Desktop API endpoints (not public API)
+    BASE_URL = "https://apic-desktop.musixmatch.com/ws/1.1/"
+    APP_ID = "web-desktop-app-v1.0"
+    
+    # Default token (fallback - will be refreshed automatically)
+    DEFAULT_TOKEN = "2203269256ff7abcb649269df00e14c833dbf4ddfb5b36a1aae8b0"
+    
+    def __init__(self):
+        """Initialize Musixmatch provider with config settings"""
+        super().__init__(provider_name="musixmatch")
+        
+        # Get config settings
+        config = get_provider_config("musixmatch")
+        
+        # Token management
+        self._token: Optional[str] = None
+        self._token_expires: float = 0
+        self._token_refresh_attempts: int = 0
+        
+        # Headers for desktop API
+        self._headers = {
+            "authority": "apic-desktop.musixmatch.com",
+            "cookie": "x-mxm-token-guid=",
+        }
+    
+    def _get_token(self) -> Optional[str]:
+        """
+        Get a valid token for API requests.
+        Fetches new token if expired or not available.
+        """
+        # Return cached token if still valid (with 60s buffer)
+        if self._token and time.time() < (self._token_expires - 60):
+            return self._token
+        
+        # Limit refresh attempts to avoid infinite loops
+        if self._token_refresh_attempts >= 3:
+            logger.warning("Musixmatch - Too many token refresh attempts, using default")
+            self._token_refresh_attempts = 0
+            return self.DEFAULT_TOKEN
+        
+        try:
+            self._token_refresh_attempts += 1
+            
+            resp = requests.get(
+                f"{self.BASE_URL}token.get",
+                params={"app_id": self.APP_ID},
+                headers=self._headers,
+                timeout=10
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                status = data.get("message", {}).get("header", {}).get("status_code")
+                
+                if status == 200:
+                    token = data.get("message", {}).get("body", {}).get("user_token")
+                    if token:
+                        self._token = token
+                        self._token_expires = time.time() + 600  # 10 minutes
+                        self._token_refresh_attempts = 0
+                        logger.debug(f"Musixmatch - Got new token: {token[:20]}...")
+                        return self._token
+            
+            logger.warning(f"Musixmatch - Token request failed, using default")
+            return self.DEFAULT_TOKEN
+            
+        except Exception as e:
+            logger.error(f"Musixmatch - Token fetch error: {e}")
+            return self.DEFAULT_TOKEN
+    
+    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
+        """
+        Get lyrics using Musixmatch Desktop API.
+        
+        Uses macro.subtitles.get endpoint which returns:
+        - Track info (matcher.track.get)
+        - Plain lyrics (track.lyrics.get)  
+        - Synced subtitles (track.subtitles.get) ← The important one!
+        
+        Args:
+            artist (str): Artist name
+            title (str): Track title
+            album (str): Album name (optional)
+            duration (int): Track duration in seconds (optional)
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary with synced lyrics and metadata or None
+        """
+        try:
+            # Get valid token
+            token = self._get_token()
+            if not token:
+                logger.warning("Musixmatch - No token available")
+                return None
+            
+            # Clean up input strings
+            artist = artist.strip()
+            title = title.strip()
+            
+            # Build request params
+            params = {
+                "format": "json",
+                "namespace": "lyrics_richsynched",
+                "subtitle_format": "mxm",
+                "app_id": self.APP_ID,
+                "usertoken": token,
+                "q_artist": artist,
+                "q_track": title,
+            }
+            
+            if album:
+                params["q_album"] = album.strip()
+            if duration:
+                params["q_duration"] = str(duration)
+                params["f_subtitle_length"] = str(duration)
+            
+            logger.info(f"Musixmatch - Searching: {artist} - {title}")
+            
+            # Make request to macro.subtitles.get
+            resp = requests.get(
+                f"{self.BASE_URL}macro.subtitles.get",
+                params=params,
+                headers=self._headers,
+                timeout=15
+            )
+            
+            if resp.status_code != 200:
+                logger.warning(f"Musixmatch - HTTP {resp.status_code}")
+                return None
+            
+            data = resp.json()
+            
+            # Check response status
+            header = data.get("message", {}).get("header", {})
+            if header.get("status_code") != 200:
+                hint = header.get("hint", "")
+                if hint == "renew":
+                    logger.info("Musixmatch - Token expired, refreshing...")
+                    self._token = None
+                    self._token_expires = 0
+                    # Retry once with new token
+                    return self.get_lyrics(artist, title, album, duration)
+                elif hint == "captcha":
+                    logger.warning("Musixmatch - Captcha required (rate limited)")
+                    return None
+                else:
+                    logger.info(f"Musixmatch - API error: {hint or header.get('status_code')}")
+                    return None
+            
+            # Parse macro_calls response
+            body = data.get("message", {}).get("body", {})
+            macro_calls = body.get("macro_calls", {})
+            
+            if not macro_calls:
+                logger.info(f"Musixmatch - No macro_calls in response")
+                return None
+            
+            # Check track match
+            track_result = macro_calls.get("matcher.track.get", {}).get("message", {})
+            track_status = track_result.get("header", {}).get("status_code")
+            
+            if track_status == 404:
+                logger.info(f"Musixmatch - Track not found: {artist} - {title}")
+                return None
+            elif track_status == 401:
+                logger.warning("Musixmatch - Token invalid, refreshing...")
+                self._token = None
+                return None
+            elif track_status != 200:
+                logger.info(f"Musixmatch - Track match failed: status {track_status}")
+                return None
+            
+            # Get track info
+            track_body = track_result.get("body", {})
+            track = track_body.get("track", {})
+            
+            if not track:
+                logger.info(f"Musixmatch - No track data")
+                return None
+            
+            track_name = track.get("track_name", "")
+            artist_name = track.get("artist_name", "")
+            is_instrumental = track.get("instrumental", 0) == 1
+            has_subtitles = track.get("has_subtitles", 0) == 1
+            has_lyrics = track.get("has_lyrics", 0) == 1
+            
+            logger.info(f"Musixmatch - Found: {track_name} by {artist_name} (subtitles: {has_subtitles})")
+            
+            # Handle instrumental tracks
+            if is_instrumental:
+                logger.info(f"Musixmatch - Instrumental track")
+                return {
+                    "lyrics": [(0.0, "Instrumental")],
+                    "is_instrumental": True
+                }
+            
+            # Get synced subtitles (the good stuff!)
+            subtitle_result = macro_calls.get("track.subtitles.get", {}).get("message", {})
+            subtitle_body = subtitle_result.get("body", {})
+            
+            # Handle empty body (can be list [] on 404)
+            if isinstance(subtitle_body, list) or not subtitle_body:
+                subtitle_body = {}
+            
+            subtitle_list = subtitle_body.get("subtitle_list", [])
+            
+            if subtitle_list:
+                subtitle = subtitle_list[0].get("subtitle", {})
+                subtitle_raw = subtitle.get("subtitle_body", "")
+                
+                if subtitle_raw:
+                    parsed = self._parse_subtitles(subtitle_raw)
+                    if parsed:
+                        logger.info(f"Musixmatch - Got {len(parsed)} synced lines")
+                        return {
+                            "lyrics": parsed,
+                            "is_instrumental": False
+                        }
+            
+            # Fallback: check for plain lyrics (but we only want synced)
+            lyrics_result = macro_calls.get("track.lyrics.get", {}).get("message", {})
+            lyrics_body = lyrics_result.get("body", {})
+            
+            if isinstance(lyrics_body, dict) and lyrics_body.get("lyrics"):
+                lyrics_text = lyrics_body["lyrics"].get("lyrics_body", "")
+                if lyrics_text:
+                    logger.info(f"Musixmatch - Found plain lyrics only (no sync), skipping")
+            
+            logger.info(f"Musixmatch - No synced lyrics available")
+            return None
+            
+        except requests.exceptions.Timeout:
+            logger.warning(f"Musixmatch - Request timeout")
+            return None
+        except Exception as e:
+            logger.error(f"Musixmatch - Error: {e}")
+            return None
+    
+    def _parse_subtitles(self, subtitle_body: str) -> Optional[List[Tuple[float, str]]]:
+        """
+        Parse synced subtitles from Musixmatch JSON format.
+        
+        Format: [{"text": "lyrics", "time": {"total": 1.5, "minutes": 0, "seconds": 1, "hundredths": 50}}, ...]
+        
+        Args:
+            subtitle_body: JSON string containing subtitle data
+            
+        Returns:
+            List of (timestamp, text) tuples or None
+        """
+        try:
+            lines = json.loads(subtitle_body)
+            
+            if not isinstance(lines, list):
+                return None
+            
+            result = []
+            
+            for line in lines:
+                if not isinstance(line, dict):
+                    continue
+                
+                text = line.get("text", "").strip()
+                time_data = line.get("time", {})
+                
+                # Use 'total' if available, otherwise calculate from components
+                if "total" in time_data:
+                    total_seconds = float(time_data["total"])
+                else:
+                    minutes = time_data.get("minutes", 0)
+                    seconds = time_data.get("seconds", 0)
+                    hundredths = time_data.get("hundredths", 0)
+                    total_seconds = minutes * 60 + seconds + hundredths / 100
+                
+                # Include empty lines as instrumental breaks (♪)
+                if not text:
+                    text = "♪"
+                
+                result.append((total_seconds, text))
+            
+            return result if result else None
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Musixmatch - JSON parse error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Musixmatch - Parse error: {e}")
+            return None
