@@ -18,6 +18,7 @@ import {
     wordSyncAnchorTimestamp,
     wordSyncIsPlaying,
     wordSyncAnimationId,
+    wordSyncLatencyCompensation,
     setWordSyncAnimationId
 } from './state.js';
 
@@ -28,25 +29,21 @@ import {
  * 
  * @param {number} position - Current playback position in seconds
  * @param {Array} lineData - Word-synced data for current line
- * @returns {Object|null} { wordIndex, progress } or null if not found
+ * @returns {Object|null} Object with wordIndex and progress (0-1), or null
  */
 export function findCurrentWord(position, lineData) {
     if (!lineData || !lineData.words || lineData.words.length === 0) {
         return null;
     }
 
-    const words = lineData.words;
     const lineStart = lineData.start || 0;
-    
-    // Calculate absolute time for first word
-    const firstWordStart = lineStart + (words[0].time || 0);
-    
-    // Check if we're before the first word
-    if (position < firstWordStart) {
-        return { wordIndex: -1, progress: 0 };
+    const words = lineData.words;
+
+    // Before first word
+    if (position < lineStart) {
+        return null;
     }
 
-    // Find current word
     // Word timing: word.time is OFFSET from line start, not absolute time
     for (let i = 0; i < words.length; i++) {
         const word = words[i];
@@ -192,17 +189,27 @@ let _wordSyncLogged = false;
 function getInterpolatedPosition() {
     if (!wordSyncIsPlaying) {
         // Paused - return anchor position without interpolation
-        return wordSyncAnchorPosition;
+        // Apply latency compensation even when paused for consistency
+        return wordSyncAnchorPosition + wordSyncLatencyCompensation;
     }
     
     // Calculate elapsed time since last server poll
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
     
+    // If elapsed is huge (>0.5s), we likely just resumed from pause
+    // Don't interpolate forward - wait for next poll to update anchor
+    // This prevents the 2-second jump bug on resume
+    if (elapsed > 0.5) {
+        return wordSyncAnchorPosition + wordSyncLatencyCompensation;
+    }
+    
     // Cap interpolation to 2 seconds to prevent runaway drift
     // (Server polls every 100ms, so anything > 1s means we missed a poll)
     const cappedElapsed = Math.min(elapsed, 2.0);
     
-    return wordSyncAnchorPosition + cappedElapsed;
+    // Apply latency compensation (negative = lyrics appear later)
+    // This matches the backend line-sync behavior
+    return wordSyncAnchorPosition + cappedElapsed + wordSyncLatencyCompensation;
 }
 
 /**

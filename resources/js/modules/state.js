@@ -18,13 +18,14 @@ export let lastCheckTime = 0;    // Track last check time
 export let wordSyncedLyrics = null;  // Current word-synced lyrics data from API
 export let hasWordSync = false;       // Whether current song has word-sync available
 export let wordSyncProvider = null;   // Which provider is serving word-sync data
-export let wordSyncStyle = 'fade';    // 'fade' or 'pop' - animation style for word highlighting
+export let wordSyncStyle = 'pop';    // 'fade' or 'pop' - animation style for word highlighting
 
 // Word-sync interpolation state (for smooth 60-144fps animation between 100ms polls)
 export let wordSyncAnchorPosition = 0;    // Last known playback position (seconds)
 export let wordSyncAnchorTimestamp = 0;   // performance.now() when position was received
 export let wordSyncIsPlaying = true;      // Is playback currently active?
 export let wordSyncAnimationId = null;    // requestAnimationFrame id for cleanup
+export let wordSyncLatencyCompensation = 0; // Latency compensation from server (seconds)
 
 // ========== TRACK INFO ==========
 export let lastTrackInfo = null;
@@ -127,3 +128,4 @@ export function setWordSyncAnchorPosition(value) { wordSyncAnchorPosition = valu
 export function setWordSyncAnchorTimestamp(value) { wordSyncAnchorTimestamp = value; }
 export function setWordSyncIsPlaying(value) { wordSyncIsPlaying = value; }
 export function setWordSyncAnimationId(value) { wordSyncAnimationId = value; }
+export function setWordSyncLatencyCompensation(value) { wordSyncLatencyCompensation = value; }

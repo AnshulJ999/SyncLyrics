@@ -223,6 +223,21 @@ async def current_track() -> dict:
             
             metadata["is_instrumental"] = is_instrumental
             metadata["is_instrumental_manual"] = is_instrumental_manual
+            
+            # Add latency compensation for word-sync (based on source)
+            # Same logic as _find_current_lyric_index in lyrics.py
+            source = metadata.get("source", "")
+            if source == "spotify":
+                # Spotify-only mode (e.g., HAOS without Windows)
+                latency_comp = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
+            elif source == "audio_recognition":
+                # Audio recognition mode
+                latency_comp = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+            else:
+                # Normal mode (Windows Media, hybrid)
+                latency_comp = LYRICS.get("display", {}).get("latency_compensation", 0.0)
+            metadata["latency_compensation"] = latency_comp
+            
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
