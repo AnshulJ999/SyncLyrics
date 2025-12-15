@@ -4,6 +4,9 @@
  * This module handles word-level timing for karaoke-style lyrics display.
  * Supports two visual styles: 'fade' (gradient sweep) and 'pop' (word scale).
  * 
+ * Uses requestAnimationFrame for smooth 60-144fps animation, interpolating
+ * position between 100ms server polls.
+ * 
  * Level 2 - Imports: state
  */
 
@@ -11,7 +14,11 @@ import {
     wordSyncedLyrics,
     hasWordSync,
     wordSyncStyle,
-    lastTrackInfo
+    wordSyncAnchorPosition,
+    wordSyncAnchorTimestamp,
+    wordSyncIsPlaying,
+    wordSyncAnimationId,
+    setWordSyncAnimationId
 } from './state.js';
 
 // ========== WORD SYNC UTILITIES ==========
@@ -133,7 +140,7 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
                     const progress = Math.round(currentWord.progress * 100);
                     inlineStyle = `--word-progress: ${progress}%;`;
                 } else if (style === 'pop') {
-                    // Scale effect based on progress
+                    // Scale effect based on progress (peaks at 50% through word)
                     const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
                     inlineStyle = `transform: scale(${scale.toFixed(3)});`;
                 }
@@ -151,44 +158,6 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
 }
 
 /**
- * Check if current line has word-sync data available
- * 
- * @param {string} currentLineText - The current line text to match
- * @returns {Object|null} Matching word-sync line data or null
- */
-export function getWordSyncForLine(currentLineText) {
-    if (!hasWordSync || !wordSyncedLyrics) {
-        return null;
-    }
-
-    // Try to find matching line by text
-    const normalizedText = currentLineText.toLowerCase().trim();
-    
-    for (const line of wordSyncedLyrics) {
-        const lineText = (line.text || '').toLowerCase().trim();
-        if (lineText === normalizedText) {
-            return line;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Get word-sync line by position
- * 
- * @param {number} position - Current playback position in seconds
- * @returns {Object|null} Word-sync line data or null
- */
-export function getWordSyncByPosition(position) {
-    if (!hasWordSync || !wordSyncedLyrics) {
-        return null;
-    }
-
-    return findCurrentWordSyncLine(position);
-}
-
-/**
  * Check if word-sync is available for the current song
  * 
  * @returns {boolean} True if word-sync is available
@@ -197,55 +166,82 @@ export function isWordSyncAvailable() {
     return hasWordSync && wordSyncedLyrics && wordSyncedLyrics.length > 0;
 }
 
+// ========== ANIMATION LOOP ==========
+
+// Track if we've logged word-sync activation (reset on song change)
+let _wordSyncLogged = false;
+
 /**
- * Get current playback position from track info
+ * Calculate interpolated position based on anchor + elapsed time
  * 
- * @returns {number} Position in seconds
+ * @returns {number} Current interpolated position in seconds
  */
-export function getCurrentPosition() {
-    if (!lastTrackInfo) return 0;
-    return lastTrackInfo.position || 0;
+function getInterpolatedPosition() {
+    if (!wordSyncIsPlaying) {
+        // Paused - return anchor position without interpolation
+        return wordSyncAnchorPosition;
+    }
+    
+    // Calculate elapsed time since last server poll
+    const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
+    
+    // Cap interpolation to 2 seconds to prevent runaway drift
+    // (Server polls every 100ms, so anything > 1s means we missed a poll)
+    const cappedElapsed = Math.min(elapsed, 2.0);
+    
+    return wordSyncAnchorPosition + cappedElapsed;
 }
 
 /**
- * Update the current line element with word-sync highlighting
- * Call this on each update loop iteration when word-sync is available
+ * Core animation frame callback - runs at display refresh rate (60-144fps)
  * 
- * @param {number} position - Current playback position in seconds
- * @param {string} currentLineText - Current line text for matching
+ * @param {DOMHighResTimeStamp} timestamp - High resolution timestamp from rAF
  */
-export function updateCurrentLineWithWordSync(position, currentLineText) {
-    if (!hasWordSync || !wordSyncedLyrics) {
-        // No word-sync available, ensure we clean up any previous word-sync state
-        const currentEl = document.getElementById('current');
-        if (currentEl) {
-            currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
-        }
+function animateWordSync(timestamp) {
+    // Check if we should continue animating
+    if (!hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
+        // No word-sync, clean up and stop
+        cleanupWordSync();
+        setWordSyncAnimationId(null);
         return;
     }
     
-    // Debug: Log that word-sync is active (only once per song)
-    if (!window._wordSyncLogged) {
-        console.log(`[WordSync] Active! ${wordSyncedLyrics.length} lines available, style: ${wordSyncStyle}`);
-        window._wordSyncLogged = true;
+    // Log activation once per song
+    if (!_wordSyncLogged) {
+        console.log(`[WordSync] Animation started! ${wordSyncedLyrics.length} lines, style: ${wordSyncStyle}, running at display refresh rate`);
+        _wordSyncLogged = true;
     }
-
+    
     const currentEl = document.getElementById('current');
-    if (!currentEl) return;
-
-    // Find the matching word-sync line by position (more reliable than text matching)
+    if (!currentEl) {
+        // Element not found, request next frame anyway
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+        return;
+    }
+    
+    // Get interpolated position (smooth between polls)
+    const position = getInterpolatedPosition();
+    
+    // Find the matching word-sync line
     const wordSyncLine = findCurrentWordSyncLine(position);
     
     if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
-        // No word-sync data for this position, show plain text
+        // No word-sync data for this position, clean up classes
         currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
-        // Don't modify innerHTML - let setLyricsInDom handle text updates
+        // Request next frame
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
     }
-
+    
     // Add word-sync classes
     currentEl.classList.add('word-sync-active');
     currentEl.classList.add(`word-sync-${wordSyncStyle}`);
+    // Remove other style class if present
+    if (wordSyncStyle === 'fade') {
+        currentEl.classList.remove('word-sync-pop');
+    } else {
+        currentEl.classList.remove('word-sync-fade');
+    }
     
     // Render word-synced line
     const html = renderWordSyncLine(wordSyncLine, position, wordSyncStyle);
@@ -254,4 +250,57 @@ export function updateCurrentLineWithWordSync(position, currentLineText) {
     if (currentEl.innerHTML !== html) {
         currentEl.innerHTML = html;
     }
+    
+    // Request next frame (automatically runs at display refresh rate)
+    setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+}
+
+/**
+ * Clean up word-sync classes from the current element
+ */
+function cleanupWordSync() {
+    const currentEl = document.getElementById('current');
+    if (currentEl) {
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
+    }
+    _wordSyncLogged = false;
+}
+
+/**
+ * Start the word-sync animation loop
+ * Safe to call multiple times - will not create duplicate loops
+ */
+export function startWordSyncAnimation() {
+    // Don't start if already running
+    if (wordSyncAnimationId !== null) {
+        return;
+    }
+    
+    // Don't start if no word-sync data
+    if (!hasWordSync || !wordSyncedLyrics) {
+        return;
+    }
+    
+    console.log('[WordSync] Starting animation loop');
+    setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+}
+
+/**
+ * Stop the word-sync animation loop
+ */
+export function stopWordSyncAnimation() {
+    if (wordSyncAnimationId !== null) {
+        cancelAnimationFrame(wordSyncAnimationId);
+        setWordSyncAnimationId(null);
+        console.log('[WordSync] Animation loop stopped');
+    }
+    cleanupWordSync();
+}
+
+/**
+ * Reset word-sync state (call on song change)
+ */
+export function resetWordSyncState() {
+    stopWordSyncAnimation();
+    _wordSyncLogged = false;
 }

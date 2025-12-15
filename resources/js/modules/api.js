@@ -15,7 +15,10 @@ import {
     setCurrentColors,
     setWordSyncedLyrics,
     setHasWordSync,
-    setWordSyncProvider
+    setWordSyncProvider,
+    setWordSyncAnchorPosition,
+    setWordSyncAnchorTimestamp,
+    setWordSyncIsPlaying
 } from './state.js';
 
 // ========== CORE FETCH WRAPPER ==========
@@ -133,7 +136,17 @@ export async function getCurrentTrack() {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        return await response.json();
+        const data = await response.json();
+        
+        // Update word-sync interpolation anchor on each successful poll
+        // This enables smooth 60-144fps animation between 100ms poll intervals
+        if (data && data.position !== undefined) {
+            setWordSyncAnchorPosition(data.position);
+            setWordSyncAnchorTimestamp(performance.now());
+            setWordSyncIsPlaying(data.is_playing !== false); // Default to true if not specified
+        }
+        
+        return data;
     } catch (error) {
         console.error('Error fetching current track:', error);
         return { error: error.message };

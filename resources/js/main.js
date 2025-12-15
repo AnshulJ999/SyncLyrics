@@ -77,7 +77,7 @@ import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, upda
 import audioSource from './modules/audioSource.js';
 
 // Word Sync (Level 2)
-import { updateCurrentLineWithWordSync } from './modules/wordSync.js';
+import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState } from './modules/wordSync.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -181,6 +181,9 @@ async function updateLoop() {
             // Reset visual mode on track change
             resetVisualModeState();
 
+            // Reset word-sync state on track change (stops animation, clears logged flag)
+            resetWordSyncState();
+
             // Reset manual overrides on track change
             setManualVisualModeOverride(false);
             setManualStyleOverride(false);
@@ -262,12 +265,10 @@ async function updateLoop() {
         // Check for visual mode
         checkForVisualMode(data, trackId);
 
-        // Update word-sync highlighting if available
-        // This runs on every poll cycle to update word highlighting based on current position
-        if (trackInfo && trackInfo.position !== undefined) {
-            const currentLineText = data && data.lyrics ? data.lyrics[2] : '';
-            updateCurrentLineWithWordSync(trackInfo.position, currentLineText);
-        }
+        // Start word-sync animation loop if word-sync is available
+        // The rAF loop runs at display refresh rate (60-144fps) for smooth animation
+        // Position is interpolated between polls using anchor + elapsed time
+        startWordSyncAnimation();
 
         await sleep(currentPollInterval);
     }
