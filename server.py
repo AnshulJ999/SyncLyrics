@@ -148,7 +148,10 @@ async def lyrics() -> dict:
             "provider": provider,
             "has_lyrics": False,
             "is_instrumental": is_instrumental,
-            "is_instrumental_manual": is_instrumental_manual
+            "is_instrumental_manual": is_instrumental_manual,
+            "word_synced_lyrics": None,
+            "has_word_sync": False,
+            "word_sync_provider": None
         }
     
     # Check if lyrics are actually empty or just [...]
@@ -167,13 +170,22 @@ async def lyrics() -> dict:
                 is_instrumental = True
                 has_lyrics = False
 
+    # Get word-synced lyrics data (for karaoke-style display)
+    word_synced_lyrics = lyrics_module.current_song_word_synced_lyrics
+    word_sync_provider = lyrics_module.current_word_sync_provider
+    has_word_sync = word_synced_lyrics is not None and len(word_synced_lyrics) > 0
+
     return {
         "lyrics": list(lyrics_data),
         "colors": colors,
         "provider": provider,
         "has_lyrics": has_lyrics,
         "is_instrumental": is_instrumental,
-        "is_instrumental_manual": is_instrumental_manual
+        "is_instrumental_manual": is_instrumental_manual,
+        # Word-synced lyrics for karaoke-style display
+        "word_synced_lyrics": word_synced_lyrics if has_word_sync else None,
+        "has_word_sync": has_word_sync,
+        "word_sync_provider": word_sync_provider if has_word_sync else None
     }
 
 @app.route("/current-track")
