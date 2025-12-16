@@ -182,6 +182,75 @@ export function isWordSyncAvailable() {
     return hasWordSync && wordSyncedLyrics && wordSyncedLyrics.length > 0;
 }
 
+/**
+ * Find the INDEX of the current line from word-synced lyrics based on position
+ * Used by dom.js to get all 6 lines from word-sync data
+ * 
+ * @param {number} position - Current playback position in seconds
+ * @returns {number} Index of current line, or -1 if not found
+ */
+export function findCurrentWordSyncLineIndex(position) {
+    if (!wordSyncedLyrics || wordSyncedLyrics.length === 0) {
+        return -1;
+    }
+
+    for (let i = 0; i < wordSyncedLyrics.length; i++) {
+        const line = wordSyncedLyrics[i];
+        const nextLine = wordSyncedLyrics[i + 1];
+        const lineEnd = nextLine ? nextLine.start : (line.end || line.start + 10);
+        
+        if (position >= line.start && position < lineEnd) {
+            return i;
+        }
+    }
+    
+    // Check if we're before the first line
+    if (position < wordSyncedLyrics[0].start) {
+        return -1;
+    }
+    
+    // After last line
+    return wordSyncedLyrics.length - 1;
+}
+
+/**
+ * Get 6 line texts for display from word-sync data
+ * Used by dom.js when word-sync is enabled to keep all lines in sync
+ * 
+ * @param {number} position - Current flywheel position
+ * @returns {Array<string|null>} [prev2, prev1, null (current), next1, next2, next3]
+ */
+export function getWordSyncDisplayLines(position) {
+    const idx = findCurrentWordSyncLineIndex(position);
+    if (idx === -1) {
+        return null;
+    }
+    
+    const getText = (i) => {
+        if (i < 0 || i >= wordSyncedLyrics.length) return "";
+        return wordSyncedLyrics[i]?.text || "";
+    };
+    
+    return [
+        getText(idx - 2),  // prev-2
+        getText(idx - 1),  // prev-1
+        null,              // current (handled by word spans in updateWordSyncDOM)
+        getText(idx + 1),  // next-1
+        getText(idx + 2),  // next-2
+        getText(idx + 3)   // next-3
+    ];
+}
+
+/**
+ * Get current flywheel position
+ * Exported for dom.js to use the same timing source as word-sync
+ * 
+ * @returns {number} Current visual position in seconds
+ */
+export function getFlywheelPosition() {
+    return visualPosition;
+}
+
 // ========== FLYWHEEL CLOCK ==========
 
 /**

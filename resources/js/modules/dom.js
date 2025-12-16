@@ -17,6 +17,7 @@ import {
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
+import { getWordSyncDisplayLines, getFlywheelPosition } from './wordSync.js';
 
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
@@ -75,21 +76,32 @@ export function setLyricsInDom(lyrics) {
     setUpdateInProgress(true);
     setLastLyrics([...lyrics]);
 
+    // When word-sync is active, get all 6 lines from word-sync data
+    // This ensures ALL lines use the SAME timing source (flywheel clock)
+    // and eliminates timing mismatches that cause flash/duplicate issues
+    let displayLyrics = lyrics;
+    if (hasWordSync && wordSyncEnabled) {
+        const wsLines = getWordSyncDisplayLines(getFlywheelPosition());
+        if (wsLines) {
+            displayLyrics = wsLines;
+        }
+    }
+
     // Update all elements simultaneously
-    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
-    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+    updateLyricElement(document.getElementById('prev-2'), displayLyrics[0]);
+    updateLyricElement(document.getElementById('prev-1'), displayLyrics[1]);
     
     // CRITICAL: Skip #current when word-sync is active and enabled
     // Word-sync owns this element and manages its own DOM (spans for each word)
     // If we update it here, we destroy the word-sync spans causing "mixing" behavior
     // Only skip if BOTH: song has word-sync AND user has it enabled
     if (!hasWordSync || !wordSyncEnabled) {
-        updateLyricElement(document.getElementById('current'), lyrics[2]);
+        updateLyricElement(document.getElementById('current'), displayLyrics[2]);
     }
     
-    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
-    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
-    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+    updateLyricElement(document.getElementById('next-1'), displayLyrics[3]);
+    updateLyricElement(document.getElementById('next-2'), displayLyrics[4]);
+    updateLyricElement(document.getElementById('next-3'), displayLyrics[5]);
 
     // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
     if (!visualModeActive) {
