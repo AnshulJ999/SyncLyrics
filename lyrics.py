@@ -92,17 +92,32 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
                 selected_lyrics = saved_lyrics[preferred_provider]
                 logger.info(f"Loaded lyrics from Local DB: {preferred_provider} (User Preference)")
             else:
-                # If no preference, find the BEST provider available (lowest priority number = best)
+                # If no preference, find the BEST provider available
+                # Priority 1: Lowest priority number (higher priority)
+                # Priority 2 (Tiebreaker): Prefer providers with word-sync
                 best_priority = 999
+                best_has_word_sync = False
                 for provider in providers:
                     if provider.name in saved_lyrics:
+                        has_ws = provider.name in word_synced_lyrics and len(word_synced_lyrics.get(provider.name, [])) > 0
+                        
+                        # Select this provider if:
+                        # 1. It has better (lower) priority, OR
+                        # 2. Same priority but this one has word-sync and current best doesn't
                         if provider.priority < best_priority:
                             best_priority = provider.priority
+                            best_has_word_sync = has_ws
                             selected_lyrics = saved_lyrics[provider.name]
                             selected_provider = provider.name
+                        elif provider.priority == best_priority and has_ws and not best_has_word_sync:
+                            # Tiebreaker: prefer word-sync
+                            best_has_word_sync = has_ws
+                            selected_lyrics = saved_lyrics[provider.name]
+                            selected_provider = provider.name
+                            logger.debug(f"Tiebreaker: {provider.name} preferred (has word-sync)")
                 
                 if selected_lyrics:
-                    logger.info(f"Loaded lyrics from Local DB: {selected_provider} (Priority {best_priority})")
+                    logger.info(f"Loaded lyrics from Local DB: {selected_provider} (Priority {best_priority}, word-sync: {best_has_word_sync})")
             
             if selected_lyrics:
                 current_song_provider = selected_provider
