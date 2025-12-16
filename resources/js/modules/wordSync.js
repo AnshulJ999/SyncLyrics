@@ -242,13 +242,17 @@ export function getWordSyncDisplayLines(position) {
 }
 
 /**
- * Get current flywheel position
- * Exported for dom.js to use the same timing source as word-sync
+ * Get current position for line detection
+ * Calculates position FRESH using the same anchor data as the animation loop
+ * This ensures dom.js and word-sync are always in sync
  * 
- * @returns {number} Current visual position in seconds
+ * @returns {number} Current position in seconds (with latency compensation)
  */
 export function getFlywheelPosition() {
-    return visualPosition;
+    // Calculate position the same way updateFlywheelClock does
+    const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    return wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
 }
 
 // ========== FLYWHEEL CLOCK ==========
