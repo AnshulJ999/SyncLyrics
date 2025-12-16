@@ -323,17 +323,25 @@ async function main() {
     // Setup word-sync toggle button
     const wordSyncToggleBtn = document.getElementById('btn-word-sync-toggle');
     if (wordSyncToggleBtn) {
+        const iconEl = wordSyncToggleBtn.querySelector('i');
+        
+        // Helper to update icon based on state
+        const updateIcon = (enabled) => {
+            if (iconEl) {
+                iconEl.className = enabled ? 'bi bi-mic-fill' : 'bi bi-mic-mute';
+            }
+            wordSyncToggleBtn.classList.toggle('active', enabled);
+        };
+        
         // Initialize button state from current setting
-        if (wordSyncEnabled) {
-            wordSyncToggleBtn.classList.add('active');
-        }
+        updateIcon(wordSyncEnabled);
         
         wordSyncToggleBtn.addEventListener('click', () => {
             const newState = !wordSyncEnabled;
             setWordSyncEnabled(newState);
             
-            // Update button appearance
-            wordSyncToggleBtn.classList.toggle('active', newState);
+            // Update button appearance (icon swap)
+            updateIcon(newState);
             
             // Save to localStorage for persistence
             localStorage.setItem('wordSyncEnabled', newState);
@@ -362,7 +370,7 @@ async function main() {
         if (savedState !== null && !new URLSearchParams(window.location.search).has('wordSync')) {
             const enabled = savedState === 'true';
             setWordSyncEnabled(enabled);
-            wordSyncToggleBtn.classList.toggle('active', enabled);
+            updateIcon(enabled);
         }
     }
 

@@ -790,11 +790,10 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     font-size: 1.1rem;
 }
 
-/* Active state when word-sync is enabled */
+/* Active state when word-sync is enabled (subtle, no color) */
 .word-sync-toggle-btn.active {
-    background: rgba(30, 215, 96, 0.3);
-    border-color: rgba(30, 215, 96, 0.5);
-    color: #1ed760;
+    color: white;
+    opacity: 1;
 }
 
 /* Disabled state when no word-sync available */
