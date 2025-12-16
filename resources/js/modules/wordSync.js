@@ -4,13 +4,13 @@
  * This module handles word-level timing for karaoke-style lyrics display.
  * Supports two visual styles: 'fade' (gradient sweep) and 'pop' (word scale).
  * 
- * Uses requestAnimationFrame for smooth 60-144fps animation, interpolating
- * position between 100ms server polls.
+ * Uses requestAnimationFrame for smooth 60-144fps animation with a
+ * FLYWHEEL CLOCK that never goes backwards, eliminating visual jitter.
  * 
- * Performance optimizations:
- * - DOM recycling: Only rebuild HTML when line changes, not every frame
- * - Time smoothing: Exponential smoothing to reduce poll jitter
- * - Gap detection: Correctly handle silences between words
+ * Key architecture:
+ * - Frontend owns time (monotonic clock)
+ * - Server polls only "nudge" the clock via speed adjustment
+ * - Visual position NEVER decreases during normal playback
  * 
  * Level 2 - Imports: state
  */
@@ -33,15 +33,17 @@ import {
 let cachedLineId = null;
 let wordElements = [];
 
-// Time smoothing: Exponential smoothing for position
-let smoothedPosition = 0;
-const SMOOTHING_FACTOR = 0.2; // Higher = more responsive, Lower = smoother
-
-// Track last frame time for delta calculations
-let lastFrameTime = 0;
+// FLYWHEEL CLOCK: Monotonic time that never goes backwards
+let visualPosition = 0;        // Our smooth, monotonic position (seconds)
+let lastFrameTime = 0;         // Last animation frame timestamp (ms)
+let visualSpeed = 1.0;         // Current visual speed multiplier (0.9 - 1.1)
+let lastServerSync = 0;        // Last time we synced with server
 
 // Track if we've logged word-sync activation (reset on song change)
 let _wordSyncLogged = false;
+
+// Debug mode - set to true to see clock behavior
+const DEBUG_CLOCK = false;
 
 // ========== WORD SYNC UTILITIES ==========
 
@@ -178,57 +180,68 @@ export function isWordSyncAvailable() {
     return hasWordSync && wordSyncedLyrics && wordSyncedLyrics.length > 0;
 }
 
-// ========== ANIMATION LOOP ==========
+// ========== FLYWHEEL CLOCK ==========
 
 /**
- * Calculate interpolated position based on anchor + elapsed time
+ * Update the flywheel clock
  * 
- * @returns {number} Current interpolated position in seconds
+ * Key property: visualPosition NEVER decreases during normal playback.
+ * This eliminates all backwards jumps and jitter.
+ * 
+ * Instead of snapping to server position, we adjust our speed to catch up.
+ * 
+ * @param {number} timestamp - Current animation frame timestamp
+ * @returns {number} Current visual position in seconds
  */
-function getInterpolatedPosition() {
+function updateFlywheelClock(timestamp) {
+    // Calculate delta time since last frame
+    const dt = lastFrameTime ? (timestamp - lastFrameTime) / 1000 : 0;
+    lastFrameTime = timestamp;
+    
+    // If paused, don't advance time
     if (!wordSyncIsPlaying) {
-        // Paused - return anchor position without interpolation
-        // Apply latency compensation even when paused for consistency
-        return wordSyncAnchorPosition + wordSyncLatencyCompensation;
+        return visualPosition;
     }
     
-    // Calculate elapsed time since last server poll
+    // Calculate where server thinks we are
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
+    const serverPosition = wordSyncAnchorPosition + elapsed + wordSyncLatencyCompensation;
     
-    // If elapsed is huge (>0.5s), we likely just resumed from pause
-    // Don't interpolate forward - wait for next poll to update anchor
-    // This prevents the 2-second jump bug on resume
-    if (elapsed > 0.5) {
-        return wordSyncAnchorPosition + wordSyncLatencyCompensation;
+    // Calculate drift (difference between our position and server)
+    const drift = serverPosition - visualPosition;
+    
+    // Handle seeks (large jumps > 1.5s)
+    if (Math.abs(drift) > 1.5) {
+        if (DEBUG_CLOCK) {
+            console.log(`[WordSync] Seek detected, drift: ${drift.toFixed(2)}s, snapping to server`);
+        }
+        visualPosition = serverPosition;
+        visualSpeed = 1.0;
+        return visualPosition;
     }
     
-    // Cap interpolation to 2 seconds to prevent runaway drift
-    // (Server polls every 100ms, so anything > 1s means we missed a poll)
-    const cappedElapsed = Math.min(elapsed, 2.0);
+    // Soft sync: Adjust speed to correct drift
+    // If behind (drift > 0), speed up. If ahead (drift < 0), slow down.
+    // The 0.5 multiplier means we correct ~50% of drift per second
+    visualSpeed = 1.0 + (drift * 0.5);
     
-    // Apply latency compensation (negative = lyrics appear later)
-    // This matches the backend line-sync behavior
-    return wordSyncAnchorPosition + cappedElapsed + wordSyncLatencyCompensation;
-}
-
-/**
- * Get smoothed position using exponential smoothing
- * Reduces jitter from 100ms poll variance
- * 
- * @returns {number} Smoothed position in seconds
- */
-function getSmoothedPosition() {
-    const rawPosition = getInterpolatedPosition();
+    // Clamp speed to reasonable range (90% - 110%)
+    // This prevents wild accelerations from network hiccups
+    visualSpeed = Math.max(0.9, Math.min(1.1, visualSpeed));
     
-    // Handle seeks (large jumps > 1 second) - bypass smoothing
-    if (Math.abs(rawPosition - smoothedPosition) > 1.0) {
-        smoothedPosition = rawPosition;
-        return smoothedPosition;
+    // MONOTONIC: Advance visual position (NEVER backwards)
+    // Even if visualSpeed is < 1.0, dt is always positive, so we always move forward
+    visualPosition += dt * visualSpeed;
+    
+    // Decay speed back towards 1.0 (stabilization)
+    visualSpeed += (1.0 - visualSpeed) * 0.1;
+    
+    // Debug logging (1% of frames to avoid spam)
+    if (DEBUG_CLOCK && Math.random() < 0.01) {
+        console.log(`[Clock] visual: ${visualPosition.toFixed(3)}, server: ${serverPosition.toFixed(3)}, drift: ${drift.toFixed(3)}, speed: ${visualSpeed.toFixed(3)}`);
     }
     
-    // Exponential smoothing: gently chase the raw position
-    smoothedPosition += (rawPosition - smoothedPosition) * SMOOTHING_FACTOR;
-    return smoothedPosition;
+    return visualPosition;
 }
 
 /**
@@ -241,8 +254,9 @@ function getSmoothedPosition() {
  * @param {string} style - Animation style ('fade' or 'pop')
  */
 function updateWordSyncDOM(currentEl, lineData, position, style) {
-    // Generate unique ID for this line
-    const lineId = `${lineData.start}_${lineData.words.length}`;
+    // FIX 3: Generate unique ID for this line (prevents cache collisions)
+    // Include start, end, and first few words to ensure uniqueness
+    const lineId = `${lineData.start}_${lineData.end || 0}_${lineData.words.length}_${(lineData.words[0]?.word || '').substring(0, 10)}`;
     
     // PHASE A: Rebuild DOM only when LINE changes
     if (cachedLineId !== lineId) {
@@ -310,9 +324,6 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
  * @param {DOMHighResTimeStamp} timestamp - High resolution timestamp from rAF
  */
 function animateWordSync(timestamp) {
-    // Track frame time for future delta-based animations
-    lastFrameTime = timestamp;
-    
     // Check if we should continue animating
     if (!hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
         // No word-sync, clean up and stop
@@ -323,7 +334,7 @@ function animateWordSync(timestamp) {
     
     // Log activation once per song
     if (!_wordSyncLogged) {
-        console.log(`[WordSync] Animation started! ${wordSyncedLyrics.length} lines, style: ${wordSyncStyle}, running at display refresh rate`);
+        console.log(`[WordSync] Animation started! ${wordSyncedLyrics.length} lines, style: ${wordSyncStyle}, using flywheel clock`);
         _wordSyncLogged = true;
     }
     
@@ -334,8 +345,8 @@ function animateWordSync(timestamp) {
         return;
     }
     
-    // Get smoothed interpolated position (reduces poll jitter)
-    const position = getSmoothedPosition();
+    // Get position from FLYWHEEL CLOCK (monotonic, never goes backwards)
+    const position = updateFlywheelClock(timestamp);
     
     // Find the matching word-sync line
     const wordSyncLine = findCurrentWordSyncLine(position);
@@ -379,7 +390,9 @@ function cleanupWordSync() {
     // Reset module state
     cachedLineId = null;
     wordElements = [];
-    smoothedPosition = 0;
+    visualPosition = 0;
+    visualSpeed = 1.0;
+    lastFrameTime = 0;
     _wordSyncLogged = false;
 }
 
@@ -398,7 +411,12 @@ export function startWordSyncAnimation() {
         return;
     }
     
-    console.log('[WordSync] Starting animation loop');
+    // Initialize flywheel clock from current anchor
+    visualPosition = wordSyncAnchorPosition + wordSyncLatencyCompensation;
+    visualSpeed = 1.0;
+    lastFrameTime = 0;
+    
+    console.log('[WordSync] Starting animation loop with flywheel clock');
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
 }
 
@@ -419,8 +437,10 @@ export function stopWordSyncAnimation() {
  */
 export function resetWordSyncState() {
     stopWordSyncAnimation();
-    // Reset smoothing position to prevent carry-over between songs
-    smoothedPosition = 0;
+    // Reset flywheel clock
+    visualPosition = 0;
+    visualSpeed = 1.0;
+    lastFrameTime = 0;
     cachedLineId = null;
     wordElements = [];
     _wordSyncLogged = false;

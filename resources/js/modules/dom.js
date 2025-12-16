@@ -11,6 +11,7 @@ import {
     lastLyrics,
     updateInProgress,
     visualModeActive,
+    hasWordSync,
     setLastLyrics,
     setUpdateInProgress
 } from './state.js';
@@ -76,7 +77,14 @@ export function setLyricsInDom(lyrics) {
     // Update all elements simultaneously
     updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
     updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
-    updateLyricElement(document.getElementById('current'), lyrics[2]);
+    
+    // CRITICAL: Skip #current when word-sync is handling it
+    // Word-sync owns this element and manages its own DOM (spans for each word)
+    // If we update it here, we destroy the word-sync spans causing "mixing" behavior
+    if (!hasWordSync) {
+        updateLyricElement(document.getElementById('current'), lyrics[2]);
+    }
+    
     updateLyricElement(document.getElementById('next-1'), lyrics[3]);
     updateLyricElement(document.getElementById('next-2'), lyrics[4]);
     updateLyricElement(document.getElementById('next-3'), lyrics[5]);
