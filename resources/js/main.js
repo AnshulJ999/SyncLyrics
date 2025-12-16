@@ -87,6 +87,36 @@ import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState } fro
 // Connect slideshow functions to background module
 setSlideshowFunctions(startSlideshow, stopSlideshow);
 
+// ========== WORD-SYNC TOGGLE UI HELPER ==========
+
+/**
+ * Update word-sync toggle button UI state
+ * Called when hasWordSync or wordSyncEnabled changes
+ */
+function updateWordSyncToggleUI() {
+    const toggleBtn = document.getElementById('btn-word-sync-toggle');
+    if (!toggleBtn) return;
+    
+    const iconEl = toggleBtn.querySelector('i');
+    
+    // Update icon based on enabled state
+    if (iconEl) {
+        iconEl.className = wordSyncEnabled ? 'bi bi-mic-fill' : 'bi bi-mic-mute';
+    }
+    
+    // Update active class
+    toggleBtn.classList.toggle('active', wordSyncEnabled && hasWordSync);
+    
+    // Update unavailable class based on hasWordSync
+    toggleBtn.classList.toggle('unavailable', !hasWordSync);
+    
+    // Also sync the settings checkbox
+    const checkbox = document.getElementById('opt-word-sync');
+    if (checkbox) {
+        checkbox.checked = wordSyncEnabled;
+    }
+}
+
 // ========== ADAPTIVE POLLING CONSTANTS ==========
 const IDLE_THRESHOLD = 20000; // 20 seconds before switching to slow polling
 const IDLE_POLL_INTERVAL = 1000; // 1 second when in slow polling mode
@@ -272,6 +302,10 @@ async function updateLoop() {
         // The rAF loop runs at display refresh rate (60-144fps) for smooth animation
         // Position is interpolated between polls using anchor + elapsed time
         startWordSyncAnimation();
+        
+        // Update word-sync toggle button UI state (icon, unavailable class)
+        // This ensures button reflects current hasWordSync state after each poll
+        updateWordSyncToggleUI();
 
         await sleep(currentPollInterval);
     }
@@ -323,25 +357,15 @@ async function main() {
     // Setup word-sync toggle button
     const wordSyncToggleBtn = document.getElementById('btn-word-sync-toggle');
     if (wordSyncToggleBtn) {
-        const iconEl = wordSyncToggleBtn.querySelector('i');
-        
-        // Helper to update icon based on state
-        const updateIcon = (enabled) => {
-            if (iconEl) {
-                iconEl.className = enabled ? 'bi bi-mic-fill' : 'bi bi-mic-mute';
-            }
-            wordSyncToggleBtn.classList.toggle('active', enabled);
-        };
-        
-        // Initialize button state from current setting
-        updateIcon(wordSyncEnabled);
+        // Initialize button state
+        updateWordSyncToggleUI();
         
         wordSyncToggleBtn.addEventListener('click', () => {
             const newState = !wordSyncEnabled;
             setWordSyncEnabled(newState);
             
-            // Update button appearance (icon swap)
-            updateIcon(newState);
+            // Update toggle button AND settings checkbox
+            updateWordSyncToggleUI();
             
             // Save to localStorage for persistence
             localStorage.setItem('wordSyncEnabled', newState);
@@ -370,7 +394,7 @@ async function main() {
         if (savedState !== null && !new URLSearchParams(window.location.search).has('wordSync')) {
             const enabled = savedState === 'true';
             setWordSyncEnabled(enabled);
-            updateIcon(enabled);
+            updateWordSyncToggleUI();
         }
     }
 

@@ -39,6 +39,8 @@ let wordElements = [];
 let visualPosition = 0;        // Our smooth, monotonic position (seconds)
 let lastFrameTime = 0;         // Last animation frame timestamp (ms)
 let visualSpeed = 1.0;         // Current visual speed multiplier (0.9 - 1.1)
+// DEAD CODE: lastServerSync is declared but never used. Keeping for reference.
+// TODO: Remove in next cleanup
 let lastServerSync = 0;        // Last time we synced with server
 
 // Track if we've logged word-sync activation (reset on song change)
@@ -243,16 +245,23 @@ export function getWordSyncDisplayLines(position) {
 
 /**
  * Get current position for line detection
- * Calculates position FRESH using the same anchor data as the animation loop
- * This ensures dom.js and word-sync are always in sync
+ * Returns the same visualPosition that the animation loop uses.
+ * This ensures dom.js and word-sync animation show the SAME line.
  * 
- * @returns {number} Current position in seconds (with latency compensation)
+ * NOTE: If animation hasn't started yet, visualPosition may be 0.
+ * In that case, calculate from anchor data as fallback.
+ * 
+ * @returns {number} Current position in seconds
  */
 export function getFlywheelPosition() {
-    // Calculate position the same way updateFlywheelClock does
-    const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
-    return wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+    // If visualPosition is 0 (animation not started), calculate from anchor
+    if (visualPosition === 0 && wordSyncAnchorTimestamp > 0) {
+        const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
+        const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+        return wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+    }
+    // Return the same position the animation uses
+    return visualPosition;
 }
 
 // ========== FLYWHEEL CLOCK ==========
@@ -349,9 +358,10 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
         }).join(' ');
         
-        // SMOOTH TRANSITION: Add line-entering class for fade-in effect
-        // Remove any existing transition classes first
-        currentEl.classList.remove('line-exiting', 'line-entering');
+        // SMOOTH TRANSITION: Fade-out old line before replacing
+        // Add line-exiting class to trigger CSS fade-out animation
+        currentEl.classList.remove('line-entering');
+        currentEl.classList.add('line-exiting');
         
         // Set content directly (transition handled by CSS animation)
         currentEl.innerHTML = html;
@@ -359,6 +369,7 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
         // Trigger enter animation
         // Use requestAnimationFrame to ensure the browser has time to paint
         requestAnimationFrame(() => {
+            currentEl.classList.remove('line-exiting');  // <-- ADD THIS LINE
             currentEl.classList.add('line-entering');
             // Remove the class after animation completes
             setTimeout(() => {
@@ -509,9 +520,10 @@ export function startWordSyncAnimation() {
     }
     
     // Initialize flywheel clock from current anchor
-    // Uses both line-sync and word-sync specific compensation
+    // Account for time elapsed since anchor was set + latency compensation
+    const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
     const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
-    visualPosition = wordSyncAnchorPosition + totalLatencyCompensation;
+    visualPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     visualSpeed = 1.0;
     lastFrameTime = 0;
     
@@ -545,7 +557,9 @@ export function resetWordSyncState() {
     _wordSyncLogged = false;
 }
 
-// Legacy export for backward compatibility (not used in new DOM recycling approach)
+// DEAD CODE: renderWordSyncLine is a legacy function not used in new DOM recycling approach.
+// Kept for backward compatibility reference. TODO: Remove in next cleanup.
+// @deprecated Use updateWordSyncDOM instead
 export function renderWordSyncLine(lineData, position, style = 'fade') {
     if (!lineData || !lineData.words) {
         return lineData?.text || '';
