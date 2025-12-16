@@ -1551,6 +1551,14 @@ body.soft-mode .background-overlay {
 /* ========== WORD-SYNCED LYRICS STYLES ========== */
 /* Karaoke-style word highlighting for providers with word-sync data */
 
+/* Register CSS custom property for smooth gradient animation */
+/* This allows browsers to interpolate the percentage value smoothly */
+@property --word-progress {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 0%;
+}
+
 /* Container for word-synced current line */
 .current.word-sync-active {
     /* Override default animation for word-sync mode */
@@ -1560,9 +1568,20 @@ body.soft-mode .background-overlay {
 /* Individual word spans in word-synced mode */
 .word-sync-word {
     display: inline-block;
-    transition: all 0.15s ease-out;
     position: relative;
     padding: 0 0.05em;
+    
+    /* GPU acceleration - force composite layer */
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    contain: layout style;
+    
+    /* Specific properties only - NOT 'all' (expensive) */
+    transition: opacity 0.12s ease-out, color 0.12s ease-out;
+    
+    /* Prevent subpixel rendering jitter */
+    -webkit-font-smoothing: antialiased;
 }
 
 /* Words not yet sung (upcoming) */
@@ -1599,13 +1618,14 @@ body.soft-mode .background-overlay {
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    /* Fallback for browsers without background-clip: text */
+    /* Smooth gradient transition using registered property */
+    transition: --word-progress 0.05s linear;
 }
 
 /* Pop style: scale animation on active word */
 .word-sync-pop .word-active {
     /* Scale is applied via inline style in JS for smooth animation */
-    transition: transform 0.1s ease-out;
+    transition: transform 0.08s ease-out;
     will-change: transform;
 }
 
@@ -1621,6 +1641,7 @@ body.soft-mode .background-overlay {
 @media (prefers-reduced-motion: reduce) {
     .word-sync-word {
         transition: none;
+        will-change: auto;
     }
     
     .word-sync-pop .word-active {

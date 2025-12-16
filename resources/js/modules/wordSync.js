@@ -7,6 +7,11 @@
  * Uses requestAnimationFrame for smooth 60-144fps animation, interpolating
  * position between 100ms server polls.
  * 
+ * Performance optimizations:
+ * - DOM recycling: Only rebuild HTML when line changes, not every frame
+ * - Time smoothing: Exponential smoothing to reduce poll jitter
+ * - Gap detection: Correctly handle silences between words
+ * 
  * Level 2 - Imports: state
  */
 
@@ -22,13 +27,43 @@ import {
     setWordSyncAnimationId
 } from './state.js';
 
+// ========== MODULE STATE ==========
+
+// DOM recycling: Cache line ID and word element references
+let cachedLineId = null;
+let wordElements = [];
+
+// Time smoothing: Exponential smoothing for position
+let smoothedPosition = 0;
+const SMOOTHING_FACTOR = 0.2; // Higher = more responsive, Lower = smoother
+
+// Track last frame time for delta calculations
+let lastFrameTime = 0;
+
+// Track if we've logged word-sync activation (reset on song change)
+let _wordSyncLogged = false;
+
 // ========== WORD SYNC UTILITIES ==========
+
+/**
+ * Escape HTML special characters to prevent XSS
+ * @param {string} text - Raw text
+ * @returns {string} Escaped HTML
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 /**
  * Find the current word being sung based on playback position
  * 
+ * Handles gaps between words correctly - returns previous word as "done"
+ * when position is in a gap (silence) between words.
+ * 
  * @param {number} position - Current playback position in seconds
- * @param {Array} lineData - Word-synced data for current line
+ * @param {Object} lineData - Word-synced data for current line
  * @returns {Object|null} Object with wordIndex and progress (0-1), or null
  */
 export function findCurrentWord(position, lineData) {
@@ -39,9 +74,15 @@ export function findCurrentWord(position, lineData) {
     const lineStart = lineData.start || 0;
     const words = lineData.words;
 
-    // Before first word
+    // Before line starts
     if (position < lineStart) {
-        return null;
+        return { wordIndex: -1, progress: 0 };
+    }
+
+    // Check if we're before the first word even starts
+    const firstWordStart = lineStart + (words[0].time || 0);
+    if (position < firstWordStart) {
+        return { wordIndex: -1, progress: 0 };
     }
 
     // Word timing: word.time is OFFSET from line start, not absolute time
@@ -63,16 +104,42 @@ export function findCurrentWord(position, lineData) {
             wordEnd = lineData.end || (wordStart + 0.5);
         }
         
+        // CASE 1: We are currently inside this word
         if (position >= wordStart && position < wordEnd) {
             // Calculate progress within this word (0-1)
             const duration = wordEnd - wordStart;
             const progress = duration > 0 ? Math.min(1, (position - wordStart) / duration) : 1;
             return { wordIndex: i, progress };
         }
+        
+        // CASE 2: Gap detection - we are BEFORE this word starts
+        // Since words are sorted, if we're before word[i], we're in the gap after word[i-1]
+        if (position < wordStart && i > 0) {
+            // Return previous word as fully sung
+            return { wordIndex: i - 1, progress: 1 };
+        }
     }
 
-    // After last word
-    return { wordIndex: words.length - 1, progress: 1 };
+    // CASE 3: After the last word
+    // Check if we're actually past the end of the last word
+    const lastWord = words[words.length - 1];
+    const lastWordStart = lineStart + (lastWord.time || 0);
+    let lastWordEnd;
+    if (lastWord.duration !== undefined && lastWord.duration > 0) {
+        lastWordEnd = lastWordStart + lastWord.duration;
+    } else {
+        lastWordEnd = lineData.end || (lastWordStart + 0.5);
+    }
+
+    if (position >= lastWordEnd) {
+        // Past the entire line - all words are sung
+        return { wordIndex: words.length, progress: 0 };
+    }
+
+    // Inside last word (fallback)
+    const duration = lastWordEnd - lastWordStart;
+    const progress = duration > 0 ? Math.min(1, (position - lastWordStart) / duration) : 1;
+    return { wordIndex: words.length - 1, progress };
 }
 
 /**
@@ -103,71 +170,6 @@ export function findCurrentWordSyncLine(position) {
 }
 
 /**
- * Render a word-synced line with span elements for each word
- * 
- * @param {Object} lineData - Word-synced line data
- * @param {number} position - Current playback position
- * @param {string} style - Animation style ('fade' or 'pop')
- * @returns {string} HTML string with word spans
- */
-export function renderWordSyncLine(lineData, position, style = 'fade') {
-    if (!lineData || !lineData.words) {
-        return lineData?.text || '';
-    }
-
-    // XSS prevention: escape HTML special characters
-    const escapeHtml = (text) => {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    };
-
-    const currentWord = findCurrentWord(position, lineData);
-    const words = lineData.words;
-    
-    let html = '';
-    
-    for (let i = 0; i < words.length; i++) {
-        const word = words[i];
-        // Word text is in 'word' field (from Musixmatch) or 'text' field (fallback)
-        // Escape to prevent XSS from malicious lyrics
-        const wordText = escapeHtml(word.word || word.text || '');
-        
-        // Determine word state
-        let classes = ['word-sync-word'];
-        let inlineStyle = '';
-        
-        if (currentWord) {
-            if (i < currentWord.wordIndex) {
-                // Already sung
-                classes.push('word-sung');
-            } else if (i === currentWord.wordIndex) {
-                // Currently being sung
-                classes.push('word-active');
-                
-                if (style === 'fade') {
-                    // Gradient progress effect
-                    const progress = Math.round(currentWord.progress * 100);
-                    inlineStyle = `--word-progress: ${progress}%;`;
-                } else if (style === 'pop') {
-                    // Scale effect based on progress (peaks at 50% through word)
-                    const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
-                    inlineStyle = `transform: scale(${scale.toFixed(3)});`;
-                }
-            } else {
-                // Not yet sung
-                classes.push('word-upcoming');
-            }
-        }
-        
-        const styleAttr = inlineStyle ? ` style="${inlineStyle}"` : '';
-        html += `<span class="${classes.join(' ')}"${styleAttr}>${wordText}</span> `;
-    }
-    
-    return html.trim();
-}
-
-/**
  * Check if word-sync is available for the current song
  * 
  * @returns {boolean} True if word-sync is available
@@ -177,9 +179,6 @@ export function isWordSyncAvailable() {
 }
 
 // ========== ANIMATION LOOP ==========
-
-// Track if we've logged word-sync activation (reset on song change)
-let _wordSyncLogged = false;
 
 /**
  * Calculate interpolated position based on anchor + elapsed time
@@ -213,11 +212,107 @@ function getInterpolatedPosition() {
 }
 
 /**
+ * Get smoothed position using exponential smoothing
+ * Reduces jitter from 100ms poll variance
+ * 
+ * @returns {number} Smoothed position in seconds
+ */
+function getSmoothedPosition() {
+    const rawPosition = getInterpolatedPosition();
+    
+    // Handle seeks (large jumps > 1 second) - bypass smoothing
+    if (Math.abs(rawPosition - smoothedPosition) > 1.0) {
+        smoothedPosition = rawPosition;
+        return smoothedPosition;
+    }
+    
+    // Exponential smoothing: gently chase the raw position
+    smoothedPosition += (rawPosition - smoothedPosition) * SMOOTHING_FACTOR;
+    return smoothedPosition;
+}
+
+/**
+ * Update word elements with current state (DOM recycling approach)
+ * Only rebuilds DOM when line changes, otherwise just updates classes/styles
+ * 
+ * @param {HTMLElement} currentEl - The current lyric element
+ * @param {Object} lineData - Word-synced line data
+ * @param {number} position - Current playback position
+ * @param {string} style - Animation style ('fade' or 'pop')
+ */
+function updateWordSyncDOM(currentEl, lineData, position, style) {
+    // Generate unique ID for this line
+    const lineId = `${lineData.start}_${lineData.words.length}`;
+    
+    // PHASE A: Rebuild DOM only when LINE changes
+    if (cachedLineId !== lineId) {
+        cachedLineId = lineId;
+        
+        // Build word spans once
+        const html = lineData.words.map((word, i) => {
+            const text = escapeHtml(word.word || word.text || '');
+            return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
+        }).join(' ');
+        
+        currentEl.innerHTML = html;
+        
+        // Cache element references for fast updates
+        wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+    }
+    
+    // PHASE B: Update only classes/styles (no DOM rebuild)
+    const currentWord = findCurrentWord(position, lineData);
+    
+    wordElements.forEach((el, i) => {
+        // Efficiently toggle classes
+        const isSung = currentWord && i < currentWord.wordIndex;
+        const isActive = currentWord && i === currentWord.wordIndex;
+        const isUpcoming = !currentWord || i > currentWord.wordIndex;
+        
+        // Only update if state changed (minor optimization)
+        const wasSung = el.classList.contains('word-sung');
+        const wasActive = el.classList.contains('word-active');
+        
+        if (isSung && !wasSung) {
+            el.classList.remove('word-active', 'word-upcoming');
+            el.classList.add('word-sung');
+            el.style.removeProperty('--word-progress');
+            el.style.removeProperty('transform');
+        } else if (isActive) {
+            if (!wasActive) {
+                el.classList.remove('word-sung', 'word-upcoming');
+                el.classList.add('word-active');
+            }
+            
+            // Update progress for active word
+            if (style === 'fade') {
+                const progress = Math.round(currentWord.progress * 100);
+                el.style.setProperty('--word-progress', `${progress}%`);
+            } else if (style === 'pop') {
+                // Scale peaks at 50% through word, creates nice "pop" feel
+                const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
+                el.style.transform = `scale(${scale.toFixed(3)})`;
+            }
+        } else if (isUpcoming && (wasSung || wasActive)) {
+            // This shouldn't normally happen during forward playback
+            // but handles seeking backwards
+            el.classList.remove('word-sung', 'word-active');
+            el.classList.add('word-upcoming');
+            el.style.removeProperty('--word-progress');
+            el.style.removeProperty('transform');
+        }
+    });
+}
+
+/**
  * Core animation frame callback - runs at display refresh rate (60-144fps)
  * 
  * @param {DOMHighResTimeStamp} timestamp - High resolution timestamp from rAF
  */
 function animateWordSync(timestamp) {
+    // Track frame time for future delta-based animations
+    lastFrameTime = timestamp;
+    
     // Check if we should continue animating
     if (!hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
         // No word-sync, clean up and stop
@@ -239,8 +334,8 @@ function animateWordSync(timestamp) {
         return;
     }
     
-    // Get interpolated position (smooth between polls)
-    const position = getInterpolatedPosition();
+    // Get smoothed interpolated position (reduces poll jitter)
+    const position = getSmoothedPosition();
     
     // Find the matching word-sync line
     const wordSyncLine = findCurrentWordSyncLine(position);
@@ -248,6 +343,9 @@ function animateWordSync(timestamp) {
     if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
         // No word-sync data for this position, clean up classes
         currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
+        // Clear cached state so we rebuild on next valid line
+        cachedLineId = null;
+        wordElements = [];
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
@@ -263,13 +361,8 @@ function animateWordSync(timestamp) {
         currentEl.classList.remove('word-sync-fade');
     }
     
-    // Render word-synced line
-    const html = renderWordSyncLine(wordSyncLine, position, wordSyncStyle);
-    
-    // Only update if HTML actually changed (performance optimization)
-    if (currentEl.innerHTML !== html) {
-        currentEl.innerHTML = html;
-    }
+    // Update DOM using recycling approach (fast path)
+    updateWordSyncDOM(currentEl, wordSyncLine, position, wordSyncStyle);
     
     // Request next frame (automatically runs at display refresh rate)
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
@@ -283,6 +376,10 @@ function cleanupWordSync() {
     if (currentEl) {
         currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
     }
+    // Reset module state
+    cachedLineId = null;
+    wordElements = [];
+    smoothedPosition = 0;
     _wordSyncLogged = false;
 }
 
@@ -322,5 +419,54 @@ export function stopWordSyncAnimation() {
  */
 export function resetWordSyncState() {
     stopWordSyncAnimation();
+    // Reset smoothing position to prevent carry-over between songs
+    smoothedPosition = 0;
+    cachedLineId = null;
+    wordElements = [];
     _wordSyncLogged = false;
+}
+
+// Legacy export for backward compatibility (not used in new DOM recycling approach)
+export function renderWordSyncLine(lineData, position, style = 'fade') {
+    if (!lineData || !lineData.words) {
+        return lineData?.text || '';
+    }
+
+    const currentWord = findCurrentWord(position, lineData);
+    const words = lineData.words;
+    
+    let html = '';
+    
+    for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const wordText = escapeHtml(word.word || word.text || '');
+        
+        let classes = ['word-sync-word'];
+        let inlineStyle = '';
+        
+        if (currentWord) {
+            if (i < currentWord.wordIndex) {
+                classes.push('word-sung');
+            } else if (i === currentWord.wordIndex) {
+                classes.push('word-active');
+                
+                if (style === 'fade') {
+                    const progress = Math.round(currentWord.progress * 100);
+                    inlineStyle = `--word-progress: ${progress}%;`;
+                } else if (style === 'pop') {
+                    const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
+                    inlineStyle = `transform: scale(${scale.toFixed(3)});`;
+                }
+            } else {
+                classes.push('word-upcoming');
+            }
+        } else {
+            classes.push('word-upcoming');
+        }
+        
+        const styleAttr = inlineStyle ? ` style="${inlineStyle}"` : '';
+        html += `<span class="${classes.join(' ')}"${styleAttr}>${wordText}</span> `;
+    }
+    
+    return html.trim();
 }
