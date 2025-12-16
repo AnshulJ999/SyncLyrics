@@ -25,6 +25,7 @@ import {
     wordSyncIsPlaying,
     wordSyncAnimationId,
     wordSyncLatencyCompensation,
+    wordSyncSpecificLatencyCompensation,
     setWordSyncAnimationId
 } from './state.js';
 
@@ -205,8 +206,10 @@ function updateFlywheelClock(timestamp) {
     }
     
     // Calculate where server thinks we are
+    // Uses BOTH the source-based line-sync compensation AND the word-sync specific adjustment
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-    const serverPosition = wordSyncAnchorPosition + elapsed + wordSyncLatencyCompensation;
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     
     // Calculate drift (difference between our position and server)
     const drift = serverPosition - visualPosition;
@@ -418,7 +421,9 @@ export function startWordSyncAnimation() {
     }
     
     // Initialize flywheel clock from current anchor
-    visualPosition = wordSyncAnchorPosition + wordSyncLatencyCompensation;
+    // Uses both line-sync and word-sync specific compensation
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    visualPosition = wordSyncAnchorPosition + totalLatencyCompensation;
     visualSpeed = 1.0;
     lastFrameTime = 0;
     

@@ -26,7 +26,8 @@ export let wordSyncAnchorPosition = 0;    // Last known playback position (secon
 export let wordSyncAnchorTimestamp = 0;   // performance.now() when position was received
 export let wordSyncIsPlaying = true;      // Is playback currently active?
 export let wordSyncAnimationId = null;    // requestAnimationFrame id for cleanup
-export let wordSyncLatencyCompensation = 0; // Latency compensation from server (seconds)
+export let wordSyncLatencyCompensation = 0; // Line-sync latency compensation from server (seconds)
+export let wordSyncSpecificLatencyCompensation = 0; // Word-sync specific latency adjustment (seconds)
 
 // ========== TRACK INFO ==========
 export let lastTrackInfo = null;
@@ -131,3 +132,4 @@ export function setWordSyncAnchorTimestamp(value) { wordSyncAnchorTimestamp = va
 export function setWordSyncIsPlaying(value) { wordSyncIsPlaying = value; }
 export function setWordSyncAnimationId(value) { wordSyncAnimationId = value; }
 export function setWordSyncLatencyCompensation(value) { wordSyncLatencyCompensation = value; }
+export function setWordSyncSpecificLatencyCompensation(value) { wordSyncSpecificLatencyCompensation = value; }

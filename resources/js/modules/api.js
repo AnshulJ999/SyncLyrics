@@ -19,7 +19,8 @@ import {
     setWordSyncAnchorPosition,
     setWordSyncAnchorTimestamp,
     setWordSyncIsPlaying,
-    setWordSyncLatencyCompensation
+    setWordSyncLatencyCompensation,
+    setWordSyncSpecificLatencyCompensation
 } from './state.js';
 
 // ========== CORE FETCH WRAPPER ==========
@@ -150,6 +151,11 @@ export async function getCurrentTrack() {
         // Update latency compensation for word-sync (source-dependent)
         if (data && data.latency_compensation !== undefined) {
             setWordSyncLatencyCompensation(data.latency_compensation);
+        }
+        
+        // Update word-sync specific latency compensation (separate from line-sync)
+        if (data && data.word_sync_latency_compensation !== undefined) {
+            setWordSyncSpecificLatencyCompensation(data.word_sync_latency_compensation);
         }
         
         return data;

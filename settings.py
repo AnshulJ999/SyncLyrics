@@ -129,6 +129,7 @@ class SettingsManager:
             "lyrics.display.latency_compensation": Setting("Latency Comp", float, -0.1, False, "Lyrics", "Sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.2, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.word_sync_latency_compensation": Setting("Word-Sync Latency", float, 0.0, False, "Lyrics", "Word-sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 3.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=10.0),
             "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 3.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
 

@@ -238,6 +238,10 @@ async def current_track() -> dict:
                 latency_comp = LYRICS.get("display", {}).get("latency_compensation", 0.0)
             metadata["latency_compensation"] = latency_comp
             
+            # Add separate word-sync latency compensation for fine-tuning karaoke timing
+            word_sync_latency_comp = LYRICS.get("display", {}).get("word_sync_latency_compensation", 0.0)
+            metadata["word_sync_latency_compensation"] = word_sync_latency_comp
+            
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
