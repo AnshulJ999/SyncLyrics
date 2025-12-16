@@ -107,23 +107,24 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
             if selected_lyrics:
                 current_song_provider = selected_provider
                 
-                # Load word-synced lyrics - check if selected provider has word-sync
-                # If not, try to find best word-sync from any provider (Musixmatch > NetEase)
-                word_sync_priority_order = ["musixmatch", "netease"]  # Priority order for word-sync
-                
-                # First check if selected provider has word-sync
+                # Load word-synced lyrics ONLY from the selected provider
+                # IMPORTANT: Do NOT fallback to other providers - mixing line-sync from one
+                # provider with word-sync from another causes timing mismatches and visual bugs
+                # Word-synced lyrics include full line text, so there's no need to mix sources
                 if selected_provider and selected_provider in word_synced_lyrics:
-                    current_song_word_synced_lyrics = word_synced_lyrics[selected_provider]
-                    current_word_sync_provider = selected_provider
-                    logger.info(f"Loaded word-synced lyrics from: {selected_provider}")
+                    ws_data = word_synced_lyrics[selected_provider]
+                    # Verify it's actually valid data (not empty list)
+                    if isinstance(ws_data, list) and len(ws_data) > 0:
+                        current_song_word_synced_lyrics = ws_data
+                        current_word_sync_provider = selected_provider
+                        logger.info(f"Loaded word-synced lyrics from: {selected_provider}")
+                    else:
+                        current_song_word_synced_lyrics = None
+                        current_word_sync_provider = None
                 else:
-                    # Try to get word-sync from any available provider (priority order)
-                    for ws_provider in word_sync_priority_order:
-                        if ws_provider in word_synced_lyrics:
-                            current_song_word_synced_lyrics = word_synced_lyrics[ws_provider]
-                            current_word_sync_provider = ws_provider
-                            logger.info(f"Loaded word-synced lyrics from: {ws_provider} (fallback)")
-                            break
+                    # Selected provider has no word-sync - that's fine, use line-sync only
+                    current_song_word_synced_lyrics = None
+                    current_word_sync_provider = None
                 
                 return selected_lyrics
         

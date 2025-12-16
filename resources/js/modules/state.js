@@ -19,6 +19,7 @@ export let wordSyncedLyrics = null;  // Current word-synced lyrics data from API
 export let hasWordSync = false;       // Whether current song has word-sync available
 export let wordSyncProvider = null;   // Which provider is serving word-sync data
 export let wordSyncStyle = 'pop';    // 'fade' or 'pop' - animation style for word highlighting
+export let wordSyncEnabled = true;    // Global toggle for word-sync (can be disabled via URL or button)
 
 // Word-sync interpolation state (for smooth 60-144fps animation between 100ms polls)
 export let wordSyncAnchorPosition = 0;    // Last known playback position (seconds)
@@ -122,6 +123,7 @@ export function setWordSyncedLyrics(value) { wordSyncedLyrics = value; }
 export function setHasWordSync(value) { hasWordSync = value; }
 export function setWordSyncProvider(value) { wordSyncProvider = value; }
 export function setWordSyncStyle(value) { wordSyncStyle = value; }
+export function setWordSyncEnabled(value) { wordSyncEnabled = value; }
 
 // Word-sync interpolation setters
 export function setWordSyncAnchorPosition(value) { wordSyncAnchorPosition = value; }

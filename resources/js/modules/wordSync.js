@@ -19,6 +19,7 @@ import {
     wordSyncedLyrics,
     hasWordSync,
     wordSyncStyle,
+    wordSyncEnabled,
     wordSyncAnchorPosition,
     wordSyncAnchorTimestamp,
     wordSyncIsPlaying,
@@ -325,8 +326,9 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
  */
 function animateWordSync(timestamp) {
     // Check if we should continue animating
-    if (!hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
-        // No word-sync, clean up and stop
+    // wordSyncEnabled = global toggle, hasWordSync = current song has word-sync data
+    if (!wordSyncEnabled || !hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
+        // No word-sync or disabled, clean up and stop
         cleanupWordSync();
         setWordSyncAnimationId(null);
         return;
@@ -406,8 +408,8 @@ export function startWordSyncAnimation() {
         return;
     }
     
-    // Don't start if no word-sync data
-    if (!hasWordSync || !wordSyncedLyrics) {
+    // Don't start if word-sync is disabled or no data
+    if (!wordSyncEnabled || !hasWordSync || !wordSyncedLyrics) {
         return;
     }
     

@@ -760,6 +760,54 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     display: none !important;
 }
 
+/* Word-Sync Toggle Button (next to visual mode) */
+.word-sync-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 76px;  /* Next to lyrics-toggle-btn */
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.word-sync-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+.word-sync-toggle-btn i {
+    font-size: 1.1rem;
+}
+
+/* Active state when word-sync is enabled */
+.word-sync-toggle-btn.active {
+    background: rgba(30, 215, 96, 0.3);
+    border-color: rgba(30, 215, 96, 0.5);
+    color: #1ed760;
+}
+
+/* Disabled state when no word-sync available */
+.word-sync-toggle-btn.unavailable {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .word-sync-toggle-btn {
+    display: none !important;
+}
+
 .control-btn {
     background: transparent;
     border: none;

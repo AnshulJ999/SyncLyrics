@@ -9,6 +9,8 @@
 
 import {
     displayConfig,
+    wordSyncEnabled,
+    setWordSyncEnabled,
     setManualStyleOverride
 } from './state.js';
 import { showToast } from './dom.js';
@@ -74,6 +76,11 @@ export function initializeDisplay() {
     }
     if (params.has('showVisualModeToggle')) {
         displayConfig.showVisualModeToggle = params.get('showVisualModeToggle') === 'true';
+    }
+
+    // Word-sync toggle (enabled by default, can be disabled via URL)
+    if (params.has('wordSync')) {
+        setWordSyncEnabled(params.get('wordSync') !== 'false');
     }
 
     // Minimal mode overrides all
@@ -244,6 +251,30 @@ export function setupSettingsPanel() {
         }
     });
 
+    // Word-sync checkbox (separate from displayConfig)
+    const wordSyncCheckbox = document.getElementById('opt-word-sync');
+    if (wordSyncCheckbox) {
+        // Initialize from current state
+        wordSyncCheckbox.checked = wordSyncEnabled;
+        
+        wordSyncCheckbox.addEventListener('change', (e) => {
+            setWordSyncEnabled(e.target.checked);
+            
+            // Update the toggle button state too
+            const toggleBtn = document.getElementById('btn-word-sync-toggle');
+            if (toggleBtn) {
+                toggleBtn.classList.toggle('active', e.target.checked);
+            }
+            
+            // Save to localStorage
+            localStorage.setItem('wordSyncEnabled', e.target.checked);
+            
+            // Update URL
+            history.replaceState(null, '', generateCurrentUrl());
+            updateUrlDisplay();
+        });
+    }
+
     // Fullscreen toggle button (icon-only, updates title for accessibility)
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     if (fullscreenBtn) {
@@ -381,6 +412,7 @@ export function generateCurrentUrl() {
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
     if (!displayConfig.showAudioSource) params.set('showAudioSource', 'false');
     if (!displayConfig.showVisualModeToggle) params.set('showVisualModeToggle', 'false');
+    if (!wordSyncEnabled) params.set('wordSync', 'false');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
 
     // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt, or sharpAlbumArt

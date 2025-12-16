@@ -21,11 +21,14 @@ import {
     visualModeActive,
     queueDrawerOpen,
     manualStyleOverride,
+    hasWordSync,
+    wordSyncEnabled,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
     setManualStyleOverride,
-    setManualVisualModeOverride
+    setManualVisualModeOverride,
+    setWordSyncEnabled
 } from './modules/state.js';
 
 // Utils (Level 1)
@@ -315,6 +318,52 @@ async function main() {
     const queueCloseBtn = document.getElementById('queue-close');
     if (queueCloseBtn) {
         queueCloseBtn.addEventListener('click', toggleQueueDrawer);
+    }
+
+    // Setup word-sync toggle button
+    const wordSyncToggleBtn = document.getElementById('btn-word-sync-toggle');
+    if (wordSyncToggleBtn) {
+        // Initialize button state from current setting
+        if (wordSyncEnabled) {
+            wordSyncToggleBtn.classList.add('active');
+        }
+        
+        wordSyncToggleBtn.addEventListener('click', () => {
+            const newState = !wordSyncEnabled;
+            setWordSyncEnabled(newState);
+            
+            // Update button appearance
+            wordSyncToggleBtn.classList.toggle('active', newState);
+            
+            // Save to localStorage for persistence
+            localStorage.setItem('wordSyncEnabled', newState);
+            
+            // Start/stop word-sync animation based on new state
+            if (newState && hasWordSync) {
+                startWordSyncAnimation();
+                console.log('[WordSync] Enabled via toggle');
+            } else {
+                stopWordSyncAnimation();
+                console.log('[WordSync] Disabled via toggle');
+            }
+            
+            // Update URL without page reload
+            const url = new URL(window.location.href);
+            if (!newState) {
+                url.searchParams.set('wordSync', 'false');
+            } else {
+                url.searchParams.delete('wordSync');
+            }
+            history.replaceState(null, '', url.toString());
+        });
+        
+        // Load from localStorage (URL param takes precedence via initializeDisplay)
+        const savedState = localStorage.getItem('wordSyncEnabled');
+        if (savedState !== null && !new URLSearchParams(window.location.search).has('wordSync')) {
+            const enabled = savedState === 'true';
+            setWordSyncEnabled(enabled);
+            wordSyncToggleBtn.classList.toggle('active', enabled);
+        }
     }
 
     console.log('[Main] Initialization complete. Starting update loop...');
