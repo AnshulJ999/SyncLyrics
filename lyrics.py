@@ -574,6 +574,17 @@ def _backfill_missing_providers(
                             await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                             logger.info(f"Backfill saved lyrics from {provider.name}")
                             
+                            # FIX: If word-sync was saved and this is the same song still playing,
+                            # reload from DB to update the global word-sync variables.
+                            # This ensures word-sync appears immediately after backfill completes
+                            # without requiring the user to re-select the provider.
+                            if word_synced and current_song_data:
+                                if (current_song_data.get("artist") == artist and 
+                                    current_song_data.get("title") == title):
+                                    # Reload from DB to pick up the new word-sync data
+                                    _load_from_db(artist, title)
+                                    logger.info(f"Reloaded word-sync after backfill from {provider.name}")
+                            
                             # Check again after saving - if we now have 3 providers, stop
                             # Skip this check for word-sync backfill (skip_provider_limit=True)
                             if not skip_provider_limit:

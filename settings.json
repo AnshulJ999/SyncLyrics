@@ -42,7 +42,7 @@
     "lyrics.display.smart_race_timeout": 3.0,
     "lyrics.display.spotify_latency_compensation": -0.5,
     "lyrics.display.update_interval": 0.1,
-    "lyrics.display.word_sync_latency_compensation": -0.5,
+    "lyrics.display.word_sync_latency_compensation": -0.9,
     "media_source.gnome.enabled": false,
     "media_source.gnome.priority": 2,
     "media_source.spotify.enabled": true,
