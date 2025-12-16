@@ -270,13 +270,28 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
     if (cachedLineId !== lineId) {
         cachedLineId = lineId;
         
-        // Build word spans once
+        // Build word spans for the new line
         const html = lineData.words.map((word, i) => {
             const text = escapeHtml(word.word || word.text || '');
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
         }).join(' ');
         
+        // SMOOTH TRANSITION: Add line-entering class for fade-in effect
+        // Remove any existing transition classes first
+        currentEl.classList.remove('line-exiting', 'line-entering');
+        
+        // Set content directly (transition handled by CSS animation)
         currentEl.innerHTML = html;
+        
+        // Trigger enter animation
+        // Use requestAnimationFrame to ensure the browser has time to paint
+        requestAnimationFrame(() => {
+            currentEl.classList.add('line-entering');
+            // Remove the class after animation completes
+            setTimeout(() => {
+                currentEl.classList.remove('line-entering');
+            }, 200); // Match animation duration
+        });
         
         // Cache element references for fast updates
         wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));

@@ -1610,6 +1610,31 @@ body.soft-mode .background-overlay {
 .current.word-sync-active {
     /* Override default animation for word-sync mode */
     animation: none;
+    
+    /* Smooth line transitions */
+    transition: opacity 0.15s ease-out, transform 0.2s ease-out;
+}
+
+/* Fade out old line before replacement */
+.current.word-sync-active.line-exiting {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+/* Fade in new line after replacement */
+.current.word-sync-active.line-entering {
+    animation: lineEnter 0.2s ease-out forwards;
+}
+
+@keyframes lineEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Individual word spans in word-synced mode */
