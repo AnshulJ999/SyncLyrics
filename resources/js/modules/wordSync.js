@@ -230,12 +230,16 @@ function updateFlywheelClock(timestamp) {
     // This prevents wild accelerations from network hiccups
     visualSpeed = Math.max(0.9, Math.min(1.1, visualSpeed));
     
+    // FIX: Only stabilize when very close to sync (dead-zone damping)
+    // This prevents the decay from fighting the drift correction
+    // 30ms threshold matches word-level timing sensitivity
+    if (Math.abs(drift) < 0.03) {
+        visualSpeed += (1.0 - visualSpeed) * 0.05;
+    }
+    
     // MONOTONIC: Advance visual position (NEVER backwards)
     // Even if visualSpeed is < 1.0, dt is always positive, so we always move forward
     visualPosition += dt * visualSpeed;
-    
-    // Decay speed back towards 1.0 (stabilization)
-    visualSpeed += (1.0 - visualSpeed) * 0.1;
     
     // Debug logging (1% of frames to avoid spam)
     if (DEBUG_CLOCK && Math.random() < 0.01) {
