@@ -89,6 +89,14 @@ let currentWordIndex = -1;
 let currentWordProgress = 0;
 let totalWordsInLine = 0;
 
+// Render position smoothing - reduces micro-jitter in word progress calculations
+// renderPosition follows visualPosition with slight inertia for smoother animations
+const RENDER_SMOOTHING = 0.25;  // 0.25 = follows quickly but smooths jitter
+let renderPosition = 0;
+
+// Ultra-short word threshold - words shorter than this skip pop animation
+const ULTRA_SHORT_WORD_MS = 60;  // 60ms
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -122,13 +130,13 @@ export function findCurrentWord(position, lineData) {
 
     // Before line starts
     if (position < lineStart) {
-        return { wordIndex: -1, progress: 0 };
+        return { wordIndex: -1, progress: 0, duration: 0 };
     }
 
     // Check if we're before the first word even starts
     const firstWordStart = lineStart + (words[0].time || 0);
     if (position < firstWordStart) {
-        return { wordIndex: -1, progress: 0 };
+        return { wordIndex: -1, progress: 0, duration: 0 };
     }
 
     // Word timing: word.time is OFFSET from line start, not absolute time
@@ -155,14 +163,14 @@ export function findCurrentWord(position, lineData) {
             // Calculate progress within this word (0-1)
             const duration = wordEnd - wordStart;
             const progress = duration > 0 ? Math.min(1, (position - wordStart) / duration) : 1;
-            return { wordIndex: i, progress };
+            return { wordIndex: i, progress, duration };
         }
         
         // CASE 2: Gap detection - we are BEFORE this word starts
         // Since words are sorted, if we're before word[i], we're in the gap after word[i-1]
         if (position < wordStart && i > 0) {
-            // Return previous word as fully sung
-            return { wordIndex: i - 1, progress: 1 };
+            // Return previous word as fully sung (with zero duration for gap)
+            return { wordIndex: i - 1, progress: 1, duration: 0 };
         }
     }
 
@@ -179,13 +187,13 @@ export function findCurrentWord(position, lineData) {
 
     if (position >= lastWordEnd) {
         // Past the entire line - all words are sung
-        return { wordIndex: words.length, progress: 0 };
+        return { wordIndex: words.length, progress: 0, duration: 0 };
     }
 
     // Inside last word (fallback)
     const duration = lastWordEnd - lastWordStart;
     const progress = duration > 0 ? Math.min(1, (position - lastWordStart) / duration) : 1;
-    return { wordIndex: words.length - 1, progress };
+    return { wordIndex: words.length - 1, progress, duration };
 }
 
 /**
@@ -382,6 +390,7 @@ function updateFlywheelClock(timestamp) {
         }
         snapCount++;  // Track for debug overlay
         visualPosition = serverPosition;
+        renderPosition = serverPosition;  // Reset render position on snap
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
         return visualPosition;
@@ -399,6 +408,7 @@ function updateFlywheelClock(timestamp) {
         }
         backSnapCount++;  // Track for debug overlay
         visualPosition = serverPosition;
+        renderPosition = serverPosition;  // Reset render position on snap
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
         lineChangeTime = 0;  // Consume the window
@@ -426,6 +436,10 @@ function updateFlywheelClock(timestamp) {
     
     // Advance visual position
     visualPosition += dt * visualSpeed;
+    
+    // Update render position (smoothed display position for animations)
+    // This reduces micro-jitter in word progress calculations
+    renderPosition = renderPosition + (visualPosition - renderPosition) * RENDER_SMOOTHING;
     
     // Debug logging (1% of frames to avoid spam)
     if (DEBUG_CLOCK && Math.random() < 0.01) {
@@ -521,6 +535,7 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             el.classList.add('word-sung');
             el.style.removeProperty('--word-progress');
             el.style.removeProperty('transform');
+            el.style.removeProperty('transitionDuration');  // Reset to CSS default
         } else if (isActive) {
             if (!wasActive) {
                 el.classList.remove('word-sung', 'word-upcoming');
@@ -532,9 +547,23 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
                 const progress = Math.round(currentWord.progress * 100);
                 el.style.setProperty('--word-progress', `${progress}%`);
             } else if (style === 'pop') {
-                // Scale peaks at 50% through word, creates nice "pop" feel
-                const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
-                el.style.transform = `scale(${scale.toFixed(3)})`;
+                // Get word duration for dynamic animation
+                const wordDuration = currentWord.duration || 0.15;  // Fallback 150ms
+                const wordDurationMs = wordDuration * 1000;
+                
+                // Ultra-short words (<60ms): skip pop animation entirely
+                if (wordDurationMs < ULTRA_SHORT_WORD_MS) {
+                    el.style.transform = 'scale(1.0)';
+                    el.style.transitionDuration = '0ms';
+                } else {
+                    // Dynamic transition: ~90% of word duration, capped at 150ms
+                    const transitionMs = Math.min(wordDurationMs * 0.9, 150);
+                    el.style.transitionDuration = `${transitionMs.toFixed(0)}ms`;
+                    
+                    // Scale peaks at 50% through word, creates nice "pop" feel
+                    const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
+                    el.style.transform = `scale(${scale.toFixed(3)})`;
+                }
             }
         } else if (isUpcoming && (wasSung || wasActive)) {
             // This shouldn't normally happen during forward playback
@@ -543,6 +572,7 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             el.classList.add('word-upcoming');
             el.style.removeProperty('--word-progress');
             el.style.removeProperty('transform');
+            el.style.removeProperty('transitionDuration');  // Reset to CSS default
         }
     });
 }
@@ -628,7 +658,8 @@ function animateWordSync(timestamp) {
     }
     
     // Update DOM using recycling approach (fast path)
-    updateWordSyncDOM(currentEl, wordSyncLine, position, wordSyncStyle);
+    // Use renderPosition (smoothed) for word finding to reduce jitter
+    updateWordSyncDOM(currentEl, wordSyncLine, renderPosition, wordSyncStyle);
     
     // Update debug overlay if enabled (throttled to reduce overhead)
     updateDebugOverlay();
