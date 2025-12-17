@@ -680,6 +680,7 @@ function cleanupWordSync() {
     cachedLineId = null;
     wordElements = [];
     visualPosition = 0;
+    renderPosition = 0;  // Reset smoothed position too
     visualSpeed = 1.0;
     lastFrameTime = 0;
     lastAnimationTime = 0;  // Reset FPS throttle
@@ -709,6 +710,7 @@ export function startWordSyncAnimation() {
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
     const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
     visualPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+    renderPosition = visualPosition;  // Initialize smoothed position to avoid lag on start
     visualSpeed = 1.0;
     lastFrameTime = 0;
     
