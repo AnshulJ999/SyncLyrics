@@ -197,6 +197,7 @@ class SettingsManager:
             "features.save_lyrics_locally": Setting("Save Lyrics Locally", bool, True, False, "Features", "Save lyrics to disk", "switch"),
             "features.parallel_provider_fetch": Setting("Parallel Fetch", bool, True, False, "Features", "Fetch from providers concurrently", "switch"),
             "features.album_art_db": Setting("Album Art Database", bool, True, False, "Features", "Enable album art database", "switch"),
+            "features.word_sync_auto_switch": Setting("Word-Sync Auto-Switch", bool, True, False, "Features", "Auto-switch to provider with word-sync even if another is preferred", "switch"),
             
             # Features - Deprecated (not wired up)
             "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Deprecated", "Enable minimal mode", "switch", deprecated=True),

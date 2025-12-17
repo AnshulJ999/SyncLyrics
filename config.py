@@ -279,7 +279,8 @@ FEATURES = {
     "provider_stats": conf("features.provider_stats", False),
     "auto_theme": conf("features.auto_theme", True),
     "album_art_colors": conf("features.album_art_colors", True),
-    "album_art_db": conf("features.album_art_db", True)
+    "album_art_db": conf("features.album_art_db", True),
+    "word_sync_auto_switch": conf("features.word_sync_auto_switch", True),  # Auto-switch to provider with word-sync
 }
 
 ALBUM_ART = {
