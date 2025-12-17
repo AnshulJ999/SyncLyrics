@@ -20,7 +20,8 @@ import {
     setWordSyncAnchorTimestamp,
     setWordSyncIsPlaying,
     setWordSyncLatencyCompensation,
-    setWordSyncSpecificLatencyCompensation
+    setWordSyncSpecificLatencyCompensation,
+    setAnyProviderHasWordSync
 } from './state.js';
 
 // ========== CORE FETCH WRAPPER ==========
@@ -206,6 +207,10 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
             setHasWordSync(false);
             setWordSyncProvider(null);
         }
+        
+        // Update toggle availability flag (true if ANY cached provider has word-sync)
+        // This allows toggle to be enabled even if current provider doesn't have word-sync
+        setAnyProviderHasWordSync(data.any_provider_has_word_sync || false);
 
         return data || data.lyrics;
     } catch (error) {

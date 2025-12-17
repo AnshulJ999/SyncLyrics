@@ -174,6 +174,15 @@ async def lyrics() -> dict:
     word_synced_lyrics = lyrics_module.current_song_word_synced_lyrics
     word_sync_provider = lyrics_module.current_word_sync_provider
     has_word_sync = word_synced_lyrics is not None and len(word_synced_lyrics) > 0
+    
+    # Check if ANY cached provider has word-sync (for toggle availability)
+    # This allows the toggle to be enabled even if current provider doesn't have word-sync
+    any_provider_has_word_sync = has_word_sync  # Initially same as current
+    if not any_provider_has_word_sync and lyrics_module.current_song_data:
+        artist = lyrics_module.current_song_data.get("artist", "")
+        title = lyrics_module.current_song_data.get("title", "")
+        if artist and title:
+            any_provider_has_word_sync = lyrics_module._has_any_word_sync_cached(artist, title)
 
     return {
         "lyrics": list(lyrics_data),
@@ -185,7 +194,9 @@ async def lyrics() -> dict:
         # Word-synced lyrics for karaoke-style display
         "word_synced_lyrics": word_synced_lyrics if has_word_sync else None,
         "has_word_sync": has_word_sync,
-        "word_sync_provider": word_sync_provider if has_word_sync else None
+        "word_sync_provider": word_sync_provider if has_word_sync else None,
+        # Flag for toggle availability: true if ANY cached provider has word-sync
+        "any_provider_has_word_sync": any_provider_has_word_sync
     }
 
 @app.route("/current-track")

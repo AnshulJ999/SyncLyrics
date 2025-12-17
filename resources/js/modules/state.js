@@ -28,6 +28,7 @@ export let wordSyncIsPlaying = true;      // Is playback currently active?
 export let wordSyncAnimationId = null;    // requestAnimationFrame id for cleanup
 export let wordSyncLatencyCompensation = 0; // Line-sync latency compensation from server (seconds)
 export let wordSyncSpecificLatencyCompensation = 0; // Word-sync specific latency adjustment (seconds)
+export let anyProviderHasWordSync = false; // True if ANY cached provider has word-sync (for toggle availability)
 
 // ========== TRACK INFO ==========
 export let lastTrackInfo = null;
@@ -133,3 +134,4 @@ export function setWordSyncIsPlaying(value) { wordSyncIsPlaying = value; }
 export function setWordSyncAnimationId(value) { wordSyncAnimationId = value; }
 export function setWordSyncLatencyCompensation(value) { wordSyncLatencyCompensation = value; }
 export function setWordSyncSpecificLatencyCompensation(value) { wordSyncSpecificLatencyCompensation = value; }
+export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = value; }

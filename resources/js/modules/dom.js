@@ -68,9 +68,16 @@ export function setLyricsInDom(lyrics) {
         lyrics = ['', '', lyrics.msg || '', '', '', ''];
     }
 
-    // Only update if lyrics have changed
-    if (!areLyricsDifferent(lastLyrics, lyrics)) {
-        return;
+    // DEBUG: Log entry into setLyricsInDom
+    // console.log(`[DOM] setLyricsInDom called. WordSync: ${hasWordSync}, Enabled: ${wordSyncEnabled}`);
+
+    // Only skip update if lyrics unchanged AND word-sync is NOT active
+    // When word-sync is enabled, displayLyrics changes based on position each poll
+    // so we must always proceed to recalculate display lines
+    if (!hasWordSync || !wordSyncEnabled) {
+        if (!areLyricsDifferent(lastLyrics, lyrics)) {
+            return;
+        }
     }
 
     setUpdateInProgress(true);
@@ -84,6 +91,9 @@ export function setLyricsInDom(lyrics) {
         const wsLines = getWordSyncDisplayLines(getFlywheelPosition());
         if (wsLines) {
             displayLyrics = wsLines;
+            // console.log('[DOM] Using WordSync lines for display');
+        } else {
+            // console.warn('[DOM] WordSync enabled but getWordSyncDisplayLines returned null');
         }
     }
 

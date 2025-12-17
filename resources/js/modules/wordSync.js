@@ -43,6 +43,9 @@ let visualSpeed = 1.0;         // Current visual speed multiplier (0.9 - 1.1)
 // TODO: Remove in next cleanup
 let lastServerSync = 0;        // Last time we synced with server
 
+// Track the currently active line index (single source of truth for dom.js)
+let activeLineIndex = -1;
+
 // Track if we've logged word-sync activation (reset on song change)
 let _wordSyncLogged = false;
 
@@ -217,14 +220,16 @@ export function findCurrentWordSyncLineIndex(position) {
 
 /**
  * Get 6 line texts for display from word-sync data
- * Used by dom.js when word-sync is enabled to keep all lines in sync
+ * Uses the activeLineIndex from the animation loop (single source of truth)
+ * This ensures dom.js and word-sync animation show the SAME line.
  * 
- * @param {number} position - Current flywheel position
+ * @param {number} position - NOT USED (kept for API compatibility)
  * @returns {Array<string|null>} [prev2, prev1, null (current), next1, next2, next3]
  */
 export function getWordSyncDisplayLines(position) {
-    const idx = findCurrentWordSyncLineIndex(position);
-    if (idx === -1) {
+    // Use the active line index from the animation loop (single source of truth)
+    const idx = activeLineIndex;
+    if (idx === -1 || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
         return null;
     }
     
@@ -461,13 +466,26 @@ function animateWordSync(timestamp) {
     
     if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
         // No word-sync data for this position, clean up classes
-        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
+        // FIX: Clear #current content to prevent stale "Searching lyrics..." stuck
+        currentEl.textContent = '';
+        // Reset active line index (no valid line)
+        activeLineIndex = -1;
         // Clear cached state so we rebuild on next valid line
         cachedLineId = null;
         wordElements = [];
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
+    }
+    
+    // Store the active line index (single source of truth for dom.js)
+    // Find the index of the current line for display line calculation
+    for (let i = 0; i < wordSyncedLyrics.length; i++) {
+        if (wordSyncedLyrics[i] === wordSyncLine) {
+            activeLineIndex = i;
+            break;
+        }
     }
     
     // Add word-sync classes
@@ -493,7 +511,7 @@ function animateWordSync(timestamp) {
 function cleanupWordSync() {
     const currentEl = document.getElementById('current');
     if (currentEl) {
-        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop');
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
     }
     // Reset module state
     cachedLineId = null;
@@ -501,6 +519,7 @@ function cleanupWordSync() {
     visualPosition = 0;
     visualSpeed = 1.0;
     lastFrameTime = 0;
+    activeLineIndex = -1;
     _wordSyncLogged = false;
 }
 

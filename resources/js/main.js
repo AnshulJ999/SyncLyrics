@@ -23,6 +23,7 @@ import {
     manualStyleOverride,
     hasWordSync,
     wordSyncEnabled,
+    anyProviderHasWordSync,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
@@ -104,11 +105,12 @@ function updateWordSyncToggleUI() {
         iconEl.className = wordSyncEnabled ? 'bi bi-mic-fill' : 'bi bi-mic-mute';
     }
     
-    // Update active class
+    // Update active class (only active when enabled AND current provider has word-sync)
     toggleBtn.classList.toggle('active', wordSyncEnabled && hasWordSync);
     
-    // Update unavailable class based on hasWordSync
-    toggleBtn.classList.toggle('unavailable', !hasWordSync);
+    // Update unavailable class: toggle is available if ANY provider has word-sync
+    // This allows user to enable word-sync even if current provider doesn't have it
+    toggleBtn.classList.toggle('unavailable', !anyProviderHasWordSync);
     
     // Also sync the settings checkbox
     const checkbox = document.getElementById('opt-word-sync');
