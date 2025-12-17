@@ -55,6 +55,12 @@ let _wordSyncLogged = false;
 // Debug mode - set to true to see clock behavior
 const DEBUG_CLOCK = false;
 
+// Frame rate limiting - cap at 60 FPS to reduce CPU load on high refresh displays
+// OnePlus Pad 3 has 144Hz display, running at 144 FPS is unnecessary for word-sync
+const TARGET_FPS = 60;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;  // 16.67ms
+let lastAnimationTime = 0;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -495,6 +501,15 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
  * @param {DOMHighResTimeStamp} timestamp - High resolution timestamp from rAF
  */
 function animateWordSync(timestamp) {
+    // 60 FPS THROTTLE: Skip frames on high refresh rate displays (e.g., 144Hz)
+    // This reduces CPU/GPU load by 50-60% without affecting visual quality
+    if (timestamp - lastAnimationTime < FRAME_INTERVAL) {
+        // Schedule next frame but do no work this frame
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+        return;
+    }
+    lastAnimationTime = timestamp;
+    
     // Check if we should continue animating
     // wordSyncEnabled = global toggle, hasWordSync = current song has word-sync data
     if (!wordSyncEnabled || !hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
@@ -576,6 +591,7 @@ function cleanupWordSync() {
     visualPosition = 0;
     visualSpeed = 1.0;
     lastFrameTime = 0;
+    lastAnimationTime = 0;  // Reset FPS throttle
     activeLineIndex = -1;
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
