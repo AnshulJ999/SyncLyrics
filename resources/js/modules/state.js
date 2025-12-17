@@ -34,8 +34,11 @@ export let anyProviderHasWordSync = false; // True if ANY cached provider has wo
 export let debugTimingEnabled = false;  // Whether debug overlay is visible
 export let debugRtt = 0;                // Current RTT in ms
 export let debugRttSmoothed = 0;        // EMA-smoothed RTT
+export let debugRttJitter = 0;          // RTT variability (EMA of absolute deviation)
 export let debugServerPosition = 0;    // Last server-reported position (with RTT correction)
 export let debugPollTimestamp = 0;     // When last poll completed
+export let debugLastPollTimestamp = 0; // Previous poll timestamp (for dt_poll calculation)
+export let debugPollInterval = 0;      // Time between polls (dt_poll_ms)
 export let debugSource = '';           // Current audio source
 
 // ========== TRACK INFO ==========
@@ -149,6 +152,9 @@ export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = valu
 export function setDebugTimingEnabled(value) { debugTimingEnabled = value; }
 export function setDebugRtt(value) { debugRtt = value; }
 export function setDebugRttSmoothed(value) { debugRttSmoothed = value; }
+export function setDebugRttJitter(value) { debugRttJitter = value; }
 export function setDebugServerPosition(value) { debugServerPosition = value; }
 export function setDebugPollTimestamp(value) { debugPollTimestamp = value; }
+export function setDebugLastPollTimestamp(value) { debugLastPollTimestamp = value; }
+export function setDebugPollInterval(value) { debugPollInterval = value; }
 export function setDebugSource(value) { debugSource = value; }

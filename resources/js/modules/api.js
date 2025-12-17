@@ -24,10 +24,15 @@ import {
     setAnyProviderHasWordSync,
     setDebugRtt,
     setDebugRttSmoothed,
+    setDebugRttJitter,
     setDebugServerPosition,
     setDebugPollTimestamp,
+    setDebugLastPollTimestamp,
+    setDebugPollInterval,
     setDebugSource,
-    debugRttSmoothed
+    debugRttSmoothed,
+    debugRttJitter,
+    debugPollTimestamp
 } from './state.js';
 
 // RTT smoothing constant (EMA factor)
@@ -172,6 +177,21 @@ export async function getCurrentTrack() {
                 ? rtt 
                 : debugRttSmoothed * (1 - RTT_SMOOTHING) + rtt * RTT_SMOOTHING;
             setDebugRttSmoothed(smoothed);
+            
+            // Track RTT jitter (EMA of absolute deviation from average)
+            const rttDeviation = Math.abs(rtt - smoothed);
+            const jitter = debugRttJitter === 0
+                ? rttDeviation
+                : debugRttJitter * (1 - RTT_SMOOTHING) + rttDeviation * RTT_SMOOTHING;
+            setDebugRttJitter(jitter);
+            
+            // Track poll interval (time between polls)
+            if (debugPollTimestamp > 0) {
+                const pollInterval = endTime - debugPollTimestamp;
+                setDebugPollInterval(pollInterval);
+                setDebugLastPollTimestamp(debugPollTimestamp);
+            }
+            
             setDebugServerPosition(correctedPosition);
             setDebugPollTimestamp(endTime);
             if (data.source) {

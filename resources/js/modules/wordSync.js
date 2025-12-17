@@ -30,8 +30,10 @@ import {
     debugTimingEnabled,
     debugRtt,
     debugRttSmoothed,
+    debugRttJitter,
     debugServerPosition,
     debugPollTimestamp,
+    debugPollInterval,
     debugSource
 } from './state.js';
 
@@ -71,6 +73,15 @@ let lastAnimationTime = 0;
 // Higher value = more responsive but more jittery, lower = smoother but slower to correct
 const DRIFT_SMOOTHING = 0.3;  // 0.3 = 30% new value, 70% previous (smooth but responsive)
 let filteredDrift = 0;
+
+// Debug counters for snap events
+let snapCount = 0;          // Large forward snaps (>1s drift)
+let backSnapCount = 0;      // Small backward snaps (<100ms)
+
+// Current word tracking for debug overlay
+let currentWordIndex = -1;
+let currentWordProgress = 0;
+let totalWordsInLine = 0;
 
 // ========== WORD SYNC UTILITIES ==========
 
@@ -363,6 +374,7 @@ function updateFlywheelClock(timestamp) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Seek detected, drift: ${rawDrift.toFixed(2)}s, snapping to server`);
         }
+        snapCount++;  // Track for debug overlay
         visualPosition = serverPosition;
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
@@ -376,6 +388,7 @@ function updateFlywheelClock(timestamp) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Small backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
         }
+        backSnapCount++;  // Track for debug overlay
         visualPosition = serverPosition;
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
@@ -471,6 +484,16 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
     
     // PHASE B: Update only classes/styles (no DOM rebuild)
     const currentWord = findCurrentWord(position, lineData);
+    
+    // Update word tracking for debug overlay
+    totalWordsInLine = lineData.words.length;
+    if (currentWord) {
+        currentWordIndex = currentWord.wordIndex;
+        currentWordProgress = currentWord.progress;
+    } else {
+        currentWordIndex = -1;
+        currentWordProgress = 0;
+    }
     
     wordElements.forEach((el, i) => {
         // Efficiently toggle classes
@@ -732,17 +755,28 @@ export function getDebugTimingData() {
     const drift = (serverPosition - visualPosition) * 1000;  // in ms
     const pollAge = performance.now() - debugPollTimestamp;  // ms since last poll
     
+    // Get total lines count
+    const totalLines = wordSyncedLyrics ? wordSyncedLyrics.length : 0;
+    
     return {
         serverPos: serverPosition,
         visualPos: visualPosition,
         drift: drift,
         rtt: debugRtt,
         rttSmoothed: debugRttSmoothed,
+        rttJitter: debugRttJitter,
         speed: visualSpeed,
         source: debugSource,
         pollAge: pollAge,
+        pollInterval: debugPollInterval,
         isPlaying: wordSyncIsPlaying,
         lineIndex: activeLineIndex,
+        totalLines: totalLines,
+        wordIndex: currentWordIndex,
+        wordProgress: currentWordProgress,
+        totalWords: totalWordsInLine,
+        snapCount: snapCount,
+        backSnapCount: backSnapCount,
         latencyComp: totalLatencyCompensation
     };
 }
@@ -759,13 +793,19 @@ export function updateDebugOverlay() {
     
     const data = getDebugTimingData();
     
+    // Format poll interval with warning for spikes
+    const pollWarn = data.pollInterval > 200 ? 'debug-warn' : '';
+    
     overlay.innerHTML = `
-        <div class="debug-row"><span class="debug-label">Server:</span> ${data.serverPos.toFixed(3)}s</div>
+        <div class="debug-row"><span class="debug-label">Est pos:</span> ${data.serverPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Visual:</span> ${data.visualPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
-        <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}ms)</div>
+        <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
+        <div class="debug-row"><span class="debug-label">dt_poll:</span> <span class="${pollWarn}">${data.pollInterval.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
-        <div class="debug-row"><span class="debug-label">Poll age:</span> ${data.pollAge.toFixed(0)}ms</div>
+        <div class="debug-row"><span class="debug-label">Snaps:</span> ${data.snapCount} / ${data.backSnapCount}</div>
+        <div class="debug-row"><span class="debug-label">Line:</span> ${data.lineIndex + 1}/${data.totalLines}</div>
+        <div class="debug-row"><span class="debug-label">Word:</span> ${data.wordIndex + 1}/${data.totalWords} (${(data.wordProgress * 100).toFixed(0)}%)</div>
     `;
 }
