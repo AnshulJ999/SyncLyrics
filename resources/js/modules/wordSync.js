@@ -339,8 +339,8 @@ function updateFlywheelClock(timestamp) {
     // Calculate drift (difference between our position and server)
     const drift = serverPosition - visualPosition;
     
-    // Handle seeks (large jumps > 1.5s)
-    if (Math.abs(drift) > 1.5) {
+    // Handle large jumps (seeks, buffering) - snap threshold 1.0s
+    if (Math.abs(drift) > 1.0) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Seek detected, drift: ${drift.toFixed(2)}s, snapping to server`);
         }
@@ -349,24 +349,34 @@ function updateFlywheelClock(timestamp) {
         return visualPosition;
     }
     
-    // Soft sync: Adjust speed to correct drift
-    // If behind (drift > 0), speed up. If ahead (drift < 0), slow down.
-    // The 0.5 multiplier means we correct ~50% of drift per second
-    visualSpeed = 1.0 + (drift * 0.5);
-    
-    // Clamp speed to reasonable range (90% - 110%)
-    // This prevents wild accelerations from network hiccups
-    visualSpeed = Math.max(0.9, Math.min(1.1, visualSpeed));
-    
-    // FIX: Only stabilize when very close to sync (dead-zone damping)
-    // This prevents the decay from fighting the drift correction
-    // 30ms threshold matches word-level timing sensitivity
-    if (Math.abs(drift) < 0.03) {
-        visualSpeed += (1.0 - visualSpeed) * 0.05;
+    // IMPROVEMENT: Allow small backward snaps (up to 100ms)
+    // This fixes the "can't correct early errors quickly" problem
+    // 100ms backward snap is imperceptible to users
+    if (drift > -0.1 && drift < 0) {
+        if (DEBUG_CLOCK) {
+            console.log(`[WordSync] Small backward snap: ${(drift * 1000).toFixed(0)}ms`);
+        }
+        visualPosition = serverPosition;
+        visualSpeed = 1.0;
+        return visualPosition;
     }
     
-    // MONOTONIC: Advance visual position (NEVER backwards)
-    // Even if visualSpeed is < 1.0, dt is always positive, so we always move forward
+    // IMPROVEMENT: Deadband - don't chase tiny errors (noise)
+    // If within 50ms, stay at 1x speed to avoid visible "breathing"
+    if (Math.abs(drift) < 0.05) {
+        visualSpeed = 1.0;
+    } else {
+        // Soft sync: Adjust speed to correct drift
+        // If behind (drift > 0), speed up. If ahead (drift < 0), slow down.
+        // IMPROVEMENT: 1.0x correction rate (was 0.5x) for faster convergence
+        visualSpeed = 1.0 + (drift * 1.0);
+        
+        // IMPROVEMENT: Wider speed clamp (85% - 115%) for faster recovery
+        visualSpeed = Math.max(0.85, Math.min(1.15, visualSpeed));
+    }
+    
+    // Advance visual position
+    // Note: We now allow small backward snaps above, so this is no longer strictly monotonic
     visualPosition += dt * visualSpeed;
     
     // Debug logging (1% of frames to avoid spam)
