@@ -114,7 +114,7 @@ export function setLyricsInDom(lyrics) {
 
     setTimeout(() => {
         setUpdateInProgress(false);
-    }, 800);
+    }, 100);
 }
 
 // ========== THEME COLOR ==========
