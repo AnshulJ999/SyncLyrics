@@ -40,6 +40,7 @@ export let debugPollTimestamp = 0;     // When last poll completed
 export let debugLastPollTimestamp = 0; // Previous poll timestamp (for dt_poll calculation)
 export let debugPollInterval = 0;      // Time between polls (dt_poll_ms)
 export let debugSource = '';           // Current audio source
+export let debugBadSamples = 0;        // Count of ignored bad samples
 
 // ========== TRACK INFO ==========
 
@@ -158,3 +159,4 @@ export function setDebugPollTimestamp(value) { debugPollTimestamp = value; }
 export function setDebugLastPollTimestamp(value) { debugLastPollTimestamp = value; }
 export function setDebugPollInterval(value) { debugPollInterval = value; }
 export function setDebugSource(value) { debugSource = value; }
+export function setDebugBadSamples(value) { debugBadSamples = value; }

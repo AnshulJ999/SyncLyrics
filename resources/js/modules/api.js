@@ -30,13 +30,19 @@ import {
     setDebugLastPollTimestamp,
     setDebugPollInterval,
     setDebugSource,
+    setDebugBadSamples,
     debugRttSmoothed,
     debugRttJitter,
-    debugPollTimestamp
+    debugPollTimestamp,
+    debugBadSamples
 } from './state.js';
 
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
+
+// Bad sample detection thresholds
+const BAD_POLL_INTERVAL_THRESHOLD = 180;  // ms - polls taking longer are suspicious
+const BAD_RTT_MULTIPLIER = 2.5;           // RTT > avg * 2.5 is suspicious
 
 // ========== CORE FETCH WRAPPER ==========
 
@@ -171,7 +177,7 @@ export async function getCurrentTrack() {
             const networkLatency = rtt / 2 / 1000;  // Half RTT in seconds
             const correctedPosition = data.position + networkLatency;
             
-            // Update RTT tracking for debug overlay
+            // Update RTT tracking for debug overlay (always, even for bad samples)
             setDebugRtt(rtt);
             const smoothed = debugRttSmoothed === 0 
                 ? rtt 
@@ -186,21 +192,36 @@ export async function getCurrentTrack() {
             setDebugRttJitter(jitter);
             
             // Track poll interval (time between polls)
+            let pollInterval = 0;
             if (debugPollTimestamp > 0) {
-                const pollInterval = endTime - debugPollTimestamp;
+                pollInterval = endTime - debugPollTimestamp;
                 setDebugPollInterval(pollInterval);
                 setDebugLastPollTimestamp(debugPollTimestamp);
             }
             
+            // Always update these (for debug overlay display)
             setDebugServerPosition(correctedPosition);
             setDebugPollTimestamp(endTime);
             if (data.source) {
                 setDebugSource(data.source);
             }
             
-            setWordSyncAnchorPosition(correctedPosition);
-            setWordSyncAnchorTimestamp(endTime);
-            setWordSyncIsPlaying(data.is_playing !== false); // Default to true if not specified
+            // BAD SAMPLE DETECTION: Skip anchor update if poll/RTT spiked
+            // This prevents the flywheel from chasing noisy measurements
+            const isRttSpike = debugRttSmoothed > 0 && rtt > debugRttSmoothed * BAD_RTT_MULTIPLIER;
+            const isPollSpike = pollInterval > BAD_POLL_INTERVAL_THRESHOLD;
+            
+            if (isRttSpike || isPollSpike) {
+                // Bad sample - don't update anchor, let flywheel coast
+                setDebugBadSamples(debugBadSamples + 1);
+                // Still update playing state (important for pause detection)
+                setWordSyncIsPlaying(data.is_playing !== false);
+            } else {
+                // Good sample - update anchor normally
+                setWordSyncAnchorPosition(correctedPosition);
+                setWordSyncAnchorTimestamp(endTime);
+                setWordSyncIsPlaying(data.is_playing !== false);
+            }
         }
         
         // Update latency compensation for word-sync (source-dependent)
