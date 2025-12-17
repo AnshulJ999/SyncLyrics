@@ -30,7 +30,16 @@ export let wordSyncLatencyCompensation = 0; // Line-sync latency compensation fr
 export let wordSyncSpecificLatencyCompensation = 0; // Word-sync specific latency adjustment (seconds)
 export let anyProviderHasWordSync = false; // True if ANY cached provider has word-sync (for toggle availability)
 
+// ========== DEBUG OVERLAY STATE ==========
+export let debugTimingEnabled = false;  // Whether debug overlay is visible
+export let debugRtt = 0;                // Current RTT in ms
+export let debugRttSmoothed = 0;        // EMA-smoothed RTT
+export let debugServerPosition = 0;    // Last server-reported position (with RTT correction)
+export let debugPollTimestamp = 0;     // When last poll completed
+export let debugSource = '';           // Current audio source
+
 // ========== TRACK INFO ==========
+
 export let lastTrackInfo = null;
 export let pendingArtUrl = null;
 
@@ -135,3 +144,11 @@ export function setWordSyncAnimationId(value) { wordSyncAnimationId = value; }
 export function setWordSyncLatencyCompensation(value) { wordSyncLatencyCompensation = value; }
 export function setWordSyncSpecificLatencyCompensation(value) { wordSyncSpecificLatencyCompensation = value; }
 export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = value; }
+
+// Debug overlay setters
+export function setDebugTimingEnabled(value) { debugTimingEnabled = value; }
+export function setDebugRtt(value) { debugRtt = value; }
+export function setDebugRttSmoothed(value) { debugRttSmoothed = value; }
+export function setDebugServerPosition(value) { debugServerPosition = value; }
+export function setDebugPollTimestamp(value) { debugPollTimestamp = value; }
+export function setDebugSource(value) { debugSource = value; }

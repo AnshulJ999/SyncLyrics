@@ -21,8 +21,17 @@ import {
     setWordSyncIsPlaying,
     setWordSyncLatencyCompensation,
     setWordSyncSpecificLatencyCompensation,
-    setAnyProviderHasWordSync
+    setAnyProviderHasWordSync,
+    setDebugRtt,
+    setDebugRttSmoothed,
+    setDebugServerPosition,
+    setDebugPollTimestamp,
+    setDebugSource,
+    debugRttSmoothed
 } from './state.js';
+
+// RTT smoothing constant (EMA factor)
+const RTT_SMOOTHING = 0.3;
 
 // ========== CORE FETCH WRAPPER ==========
 
@@ -156,6 +165,18 @@ export async function getCurrentTrack() {
             const rtt = endTime - startTime;  // Total round trip in ms
             const networkLatency = rtt / 2 / 1000;  // Half RTT in seconds
             const correctedPosition = data.position + networkLatency;
+            
+            // Update RTT tracking for debug overlay
+            setDebugRtt(rtt);
+            const smoothed = debugRttSmoothed === 0 
+                ? rtt 
+                : debugRttSmoothed * (1 - RTT_SMOOTHING) + rtt * RTT_SMOOTHING;
+            setDebugRttSmoothed(smoothed);
+            setDebugServerPosition(correctedPosition);
+            setDebugPollTimestamp(endTime);
+            if (data.source) {
+                setDebugSource(data.source);
+            }
             
             setWordSyncAnchorPosition(correctedPosition);
             setWordSyncAnchorTimestamp(endTime);

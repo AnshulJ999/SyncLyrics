@@ -26,7 +26,13 @@ import {
     wordSyncAnimationId,
     wordSyncLatencyCompensation,
     wordSyncSpecificLatencyCompensation,
-    setWordSyncAnimationId
+    setWordSyncAnimationId,
+    debugTimingEnabled,
+    debugRtt,
+    debugRttSmoothed,
+    debugServerPosition,
+    debugPollTimestamp,
+    debugSource
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -585,6 +591,9 @@ function animateWordSync(timestamp) {
     // Update DOM using recycling approach (fast path)
     updateWordSyncDOM(currentEl, wordSyncLine, position, wordSyncStyle);
     
+    // Update debug overlay if enabled (throttled to reduce overhead)
+    updateDebugOverlay();
+    
     // Request next frame (automatically runs at display refresh rate)
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
 }
@@ -708,4 +717,55 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
     }
     
     return html.trim();
+}
+
+// ========== DEBUG OVERLAY ==========
+
+/**
+ * Get current timing debug data for overlay display
+ * @returns {Object} Debug timing data
+ */
+export function getDebugTimingData() {
+    const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+    const drift = (serverPosition - visualPosition) * 1000;  // in ms
+    const pollAge = performance.now() - debugPollTimestamp;  // ms since last poll
+    
+    return {
+        serverPos: serverPosition,
+        visualPos: visualPosition,
+        drift: drift,
+        rtt: debugRtt,
+        rttSmoothed: debugRttSmoothed,
+        speed: visualSpeed,
+        source: debugSource,
+        pollAge: pollAge,
+        isPlaying: wordSyncIsPlaying,
+        lineIndex: activeLineIndex,
+        latencyComp: totalLatencyCompensation
+    };
+}
+
+/**
+ * Update the debug overlay element with current timing data
+ * Called from animation loop when debug is enabled
+ */
+export function updateDebugOverlay() {
+    if (!debugTimingEnabled) return;
+    
+    const overlay = document.getElementById('debug-timing-overlay');
+    if (!overlay) return;
+    
+    const data = getDebugTimingData();
+    
+    overlay.innerHTML = `
+        <div class="debug-row"><span class="debug-label">Server:</span> ${data.serverPos.toFixed(3)}s</div>
+        <div class="debug-row"><span class="debug-label">Visual:</span> ${data.visualPos.toFixed(3)}s</div>
+        <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
+        <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}ms)</div>
+        <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
+        <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
+        <div class="debug-row"><span class="debug-label">Poll age:</span> ${data.pollAge.toFixed(0)}ms</div>
+    `;
 }

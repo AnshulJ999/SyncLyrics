@@ -24,12 +24,14 @@ import {
     hasWordSync,
     wordSyncEnabled,
     anyProviderHasWordSync,
+    debugTimingEnabled,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
     setManualStyleOverride,
     setManualVisualModeOverride,
-    setWordSyncEnabled
+    setWordSyncEnabled,
+    setDebugTimingEnabled
 } from './modules/state.js';
 
 // Utils (Level 1)
@@ -81,7 +83,7 @@ import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, upda
 import audioSource from './modules/audioSource.js';
 
 // Word Sync (Level 2)
-import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState } from './modules/wordSync.js';
+import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, updateDebugOverlay } from './modules/wordSync.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -423,3 +425,111 @@ window.SyncLyrics = {
     exitVisualMode,
     updateBackground
 };
+
+// ========== DEBUG TIMING OVERLAY ==========
+
+/**
+ * Initialize debug timing overlay
+ * Activated via URL param ?debug=timing or triple-tap on lyrics
+ */
+function initDebugOverlay() {
+    // Check URL param
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('debug') === 'timing') {
+        enableDebugOverlay();
+    }
+    
+    // Setup triple-tap gesture on lyrics container
+    const lyricsContainer = document.querySelector('.lyrics-container');
+    if (lyricsContainer) {
+        let tapCount = 0;
+        let lastTapTime = 0;
+        const TAP_THRESHOLD = 500; // 500ms window for triple-tap
+        
+        lyricsContainer.addEventListener('click', (e) => {
+            // Don't trigger on control buttons
+            if (e.target.closest('button') || e.target.closest('.control')) return;
+            
+            const now = Date.now();
+            if (now - lastTapTime > TAP_THRESHOLD) {
+                tapCount = 1;
+            } else {
+                tapCount++;
+            }
+            lastTapTime = now;
+            
+            if (tapCount === 3) {
+                toggleDebugOverlay();
+                tapCount = 0;
+            }
+        });
+    }
+}
+
+/**
+ * Enable debug overlay
+ */
+function enableDebugOverlay() {
+    setDebugTimingEnabled(true);
+    
+    // Create overlay element if doesn't exist
+    if (!document.getElementById('debug-timing-overlay')) {
+        const overlay = document.createElement('div');
+        overlay.id = 'debug-timing-overlay';
+        overlay.className = 'debug-timing-overlay';
+        overlay.innerHTML = '<div class="debug-row">Loading...</div>';
+        document.body.appendChild(overlay);
+    }
+    
+    document.getElementById('debug-timing-overlay').style.display = 'block';
+    console.log('[Debug] Timing overlay enabled');
+    
+    // Start update loop for when word-sync is not active
+    startDebugUpdateLoop();
+}
+
+/**
+ * Disable debug overlay
+ */
+function disableDebugOverlay() {
+    setDebugTimingEnabled(false);
+    const overlay = document.getElementById('debug-timing-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+    console.log('[Debug] Timing overlay disabled');
+}
+
+/**
+ * Toggle debug overlay
+ */
+function toggleDebugOverlay() {
+    if (debugTimingEnabled) {
+        disableDebugOverlay();
+    } else {
+        enableDebugOverlay();
+    }
+}
+
+/**
+ * Update loop for debug overlay when word-sync animation isn't running
+ */
+function startDebugUpdateLoop() {
+    function updateLoop() {
+        if (!debugTimingEnabled) return;
+        
+        // Only update if word-sync animation isn't handling it
+        if (!wordSyncEnabled || !hasWordSync) {
+            updateDebugOverlay();
+        }
+        
+        requestAnimationFrame(updateLoop);
+    }
+    requestAnimationFrame(updateLoop);
+}
+
+// Initialize debug overlay after DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure main() has run
+    setTimeout(initDebugOverlay, 100);
+});
