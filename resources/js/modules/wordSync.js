@@ -485,8 +485,8 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             setTimeout(() => {
                 if (transitionToken !== myToken) return;
                 currentEl.classList.remove('line-entering');
-            }, 200);
-        }, 150); // Wait 150ms for fade-out
+            }, 75);  // Match CSS animation duration
+        }, 75); // Wait 75ms for fade-out (match CSS transition)
         
         return; // Skip word updates during transition
     }
