@@ -79,8 +79,10 @@ let filteredDrift = 0;
 let snapCount = 0;          // Large forward snaps (>1s drift)
 let backSnapCount = 0;      // Small backward snaps (<100ms)
 
-// Line change tracking for line-only back-snaps
-let lineJustChanged = false;  // Set true when line changes, reset after back-snap opportunity
+// Line change tracking for line-boundary back-snaps
+// Back-snaps only allowed within this window after line change (hidden by transition)
+const BACK_SNAP_WINDOW_MS = 240;  // ~2 poll cycles
+let lineChangeTime = 0;  // When line changed (performance.now())
 
 // Current word tracking for debug overlay
 let currentWordIndex = -1;
@@ -385,10 +387,13 @@ function updateFlywheelClock(timestamp) {
         return visualPosition;
     }
     
-    // RELAXED BACK-SNAP: Only allow backward snap at line changes
+    // RELAXED BACK-SNAP: Only allow backward snap within window after line changes
     // This prevents constant oscillation mid-word while still correcting at natural break points
+    // The 240ms window aligns with line transition animation (hidden from user)
     // For mid-word "ahead" errors, we rely on gentle slowdown (speed < 1.0) instead of snapping
-    if (rawDrift > -0.1 && rawDrift < 0 && lineJustChanged) {
+    const inBackSnapWindow = lineChangeTime > 0 && (performance.now() - lineChangeTime) < BACK_SNAP_WINDOW_MS;
+    
+    if (rawDrift > -0.1 && rawDrift < 0 && inBackSnapWindow) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Line-change backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
         }
@@ -396,12 +401,9 @@ function updateFlywheelClock(timestamp) {
         visualPosition = serverPosition;
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
-        lineJustChanged = false;  // Consume the flag
+        lineChangeTime = 0;  // Consume the window
         return visualPosition;
     }
-    
-    // Clear line change flag after the opportunity window
-    lineJustChanged = false;
     
     // DRIFT FILTERING (EMA): Smooth the drift signal to prevent speed "breathing"
     // This eliminates visible speed oscillation from noisy measurements
@@ -610,9 +612,9 @@ function animateWordSync(timestamp) {
     const previousLineIndex = activeLineIndex;
     activeLineIndex = lineIdx;
     
-    // Set flag for line-change back-snap opportunity
+    // Set timer for line-change back-snap window (240ms opportunity)
     if (lineIdx !== previousLineIndex) {
-        lineJustChanged = true;
+        lineChangeTime = performance.now();
     }
     
     // Add word-sync classes
@@ -818,6 +820,7 @@ export function updateDebugOverlay() {
         <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
         <div class="debug-row"><span class="debug-label">dt_poll:</span> <span class="${pollWarn}">${data.pollInterval.toFixed(0)}ms</span></div>
+        <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
         <div class="debug-row"><span class="debug-label">Snaps:</span> ${data.snapCount} / ${data.backSnapCount}</div>
         <div class="debug-row"><span class="debug-label">Bad:</span> ${data.badSamples} ignored</div>
         <div class="debug-row"><span class="debug-label">Line:</span> ${data.lineIndex + 1}/${data.totalLines}</div>

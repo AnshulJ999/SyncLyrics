@@ -173,8 +173,10 @@ export async function getCurrentTrack() {
             // RTT MIDPOINT ANCHORING: Correct position for network latency
             // The position was measured ~(RTT/2) ago on the server
             // By adding half the RTT, we estimate where the audio actually is NOW
-            const rtt = endTime - startTime;  // Total round trip in ms
-            const networkLatency = rtt / 2 / 1000;  // Half RTT in seconds
+            // Use SMOOTHED RTT to reduce position jitter from RTT spikes
+            const rtt = endTime - startTime;  // Total round trip in ms (raw)
+            const smoothedRttForCorrection = debugRttSmoothed > 0 ? debugRttSmoothed : rtt;
+            const networkLatency = smoothedRttForCorrection / 2 / 1000;  // Half smoothed RTT in seconds
             const correctedPosition = data.position + networkLatency;
             
             // Update RTT tracking for debug overlay (always, even for bad samples)
