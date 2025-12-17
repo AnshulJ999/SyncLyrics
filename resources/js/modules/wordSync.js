@@ -61,6 +61,11 @@ const TARGET_FPS = 60;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;  // 16.67ms
 let lastAnimationTime = 0;
 
+// Drift filtering (EMA) - smooths noisy drift measurements to prevent speed "breathing"
+// Higher value = more responsive but more jittery, lower = smoother but slower to correct
+const DRIFT_SMOOTHING = 0.3;  // 0.3 = 30% new value, 70% previous (smooth but responsive)
+let filteredDrift = 0;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -343,39 +348,46 @@ function updateFlywheelClock(timestamp) {
     const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     
     // Calculate drift (difference between our position and server)
-    const drift = serverPosition - visualPosition;
+    // This is the RAW drift - used for snap detection
+    const rawDrift = serverPosition - visualPosition;
     
     // Handle large jumps (seeks, buffering) - snap threshold 1.0s
-    if (Math.abs(drift) > 1.0) {
+    // Use RAW drift for immediate response to seeks
+    if (Math.abs(rawDrift) > 1.0) {
         if (DEBUG_CLOCK) {
-            console.log(`[WordSync] Seek detected, drift: ${drift.toFixed(2)}s, snapping to server`);
+            console.log(`[WordSync] Seek detected, drift: ${rawDrift.toFixed(2)}s, snapping to server`);
         }
         visualPosition = serverPosition;
         visualSpeed = 1.0;
+        filteredDrift = 0;  // Reset filter on snap
         return visualPosition;
     }
     
     // IMPROVEMENT: Allow small backward snaps (up to 100ms)
     // This fixes the "can't correct early errors quickly" problem
     // 100ms backward snap is imperceptible to users
-    if (drift > -0.1 && drift < 0) {
+    if (rawDrift > -0.1 && rawDrift < 0) {
         if (DEBUG_CLOCK) {
-            console.log(`[WordSync] Small backward snap: ${(drift * 1000).toFixed(0)}ms`);
+            console.log(`[WordSync] Small backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
         }
         visualPosition = serverPosition;
         visualSpeed = 1.0;
+        filteredDrift = 0;  // Reset filter on snap
         return visualPosition;
     }
     
+    // DRIFT FILTERING (EMA): Smooth the drift signal to prevent speed "breathing"
+    // This eliminates visible speed oscillation from noisy measurements
+    filteredDrift = filteredDrift * (1 - DRIFT_SMOOTHING) + rawDrift * DRIFT_SMOOTHING;
+    
     // IMPROVEMENT: Deadband - don't chase tiny errors (noise)
-    // If within 50ms, stay at 1x speed to avoid visible "breathing"
-    if (Math.abs(drift) < 0.05) {
+    // If filtered drift is within 50ms, stay at 1x speed
+    if (Math.abs(filteredDrift) < 0.05) {
         visualSpeed = 1.0;
     } else {
-        // Soft sync: Adjust speed to correct drift
-        // If behind (drift > 0), speed up. If ahead (drift < 0), slow down.
-        // IMPROVEMENT: 1.0x correction rate (was 0.5x) for faster convergence
-        visualSpeed = 1.0 + (drift * 1.0);
+        // Soft sync: Adjust speed to correct filtered drift
+        // Using filtered drift prevents jerky speed changes
+        visualSpeed = 1.0 + (filteredDrift * 1.0);
         
         // IMPROVEMENT: Wider speed clamp (85% - 115%) for faster recovery
         visualSpeed = Math.max(0.85, Math.min(1.15, visualSpeed));
@@ -387,7 +399,7 @@ function updateFlywheelClock(timestamp) {
     
     // Debug logging (1% of frames to avoid spam)
     if (DEBUG_CLOCK && Math.random() < 0.01) {
-        console.log(`[Clock] visual: ${visualPosition.toFixed(3)}, server: ${serverPosition.toFixed(3)}, drift: ${drift.toFixed(3)}, speed: ${visualSpeed.toFixed(3)}`);
+        console.log(`[Clock] visual: ${visualPosition.toFixed(3)}, server: ${serverPosition.toFixed(3)}, raw: ${rawDrift.toFixed(3)}, filtered: ${filteredDrift.toFixed(3)}, speed: ${visualSpeed.toFixed(3)}`);
     }
     
     return visualPosition;
@@ -592,6 +604,7 @@ function cleanupWordSync() {
     visualSpeed = 1.0;
     lastFrameTime = 0;
     lastAnimationTime = 0;  // Reset FPS throttle
+    filteredDrift = 0;      // Reset drift filter
     activeLineIndex = -1;
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;

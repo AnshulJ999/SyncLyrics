@@ -135,17 +135,30 @@ export async function getConfig() {
  */
 export async function getCurrentTrack() {
     try {
+        // RTT MEASUREMENT: Record time before request for position time correction
+        const startTime = performance.now();
+        
         const response = await fetch('/current-track');
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
         
+        // RTT MEASUREMENT: Record time after response
+        const endTime = performance.now();
+        
         // Update word-sync interpolation anchor on each successful poll
         // This enables smooth 60-144fps animation between 100ms poll intervals
         if (data && data.position !== undefined) {
-            setWordSyncAnchorPosition(data.position);
-            setWordSyncAnchorTimestamp(performance.now());
+            // RTT MIDPOINT ANCHORING: Correct position for network latency
+            // The position was measured ~(RTT/2) ago on the server
+            // By adding half the RTT, we estimate where the audio actually is NOW
+            const rtt = endTime - startTime;  // Total round trip in ms
+            const networkLatency = rtt / 2 / 1000;  // Half RTT in seconds
+            const correctedPosition = data.position + networkLatency;
+            
+            setWordSyncAnchorPosition(correctedPosition);
+            setWordSyncAnchorTimestamp(endTime);
             setWordSyncIsPlaying(data.is_playing !== false); // Default to true if not specified
         }
         
