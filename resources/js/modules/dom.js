@@ -17,7 +17,7 @@ import {
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
-import { getWordSyncDisplayLines, getFlywheelPosition } from './wordSync.js';
+// Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
 
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
@@ -68,50 +68,31 @@ export function setLyricsInDom(lyrics) {
         lyrics = ['', '', lyrics.msg || '', '', '', ''];
     }
 
-    // DEBUG: Log entry into setLyricsInDom
-    // console.log(`[DOM] setLyricsInDom called. WordSync: ${hasWordSync}, Enabled: ${wordSyncEnabled}`);
+    // When word-sync is active and enabled, the animation loop (wordSync.js) is
+    // the SINGLE AUTHORITY for all 6 lyric lines. It updates surrounding lines
+    // exactly when line changes, preventing timing mismatches.
+    // We still need to handle the initial state before animation starts.
+    if (hasWordSync && wordSyncEnabled) {
+        // Only update lastLyrics for tracking, but don't touch DOM
+        setLastLyrics([...lyrics]);
+        return;
+    }
 
-    // Only skip update if lyrics unchanged AND word-sync is NOT active
-    // When word-sync is enabled, displayLyrics changes based on position each poll
-    // so we must always proceed to recalculate display lines
-    if (!hasWordSync || !wordSyncEnabled) {
-        if (!areLyricsDifferent(lastLyrics, lyrics)) {
-            return;
-        }
+    // Line-sync mode: handle normally with change detection
+    if (!areLyricsDifferent(lastLyrics, lyrics)) {
+        return;
     }
 
     setUpdateInProgress(true);
     setLastLyrics([...lyrics]);
 
-    // When word-sync is active, get all 6 lines from word-sync data
-    // This ensures ALL lines use the SAME timing source (flywheel clock)
-    // and eliminates timing mismatches that cause flash/duplicate issues
-    let displayLyrics = lyrics;
-    if (hasWordSync && wordSyncEnabled) {
-        const wsLines = getWordSyncDisplayLines(getFlywheelPosition());
-        if (wsLines) {
-            displayLyrics = wsLines;
-            // console.log('[DOM] Using WordSync lines for display');
-        } else {
-            // console.warn('[DOM] WordSync enabled but getWordSyncDisplayLines returned null');
-        }
-    }
-
-    // Update all elements simultaneously
-    updateLyricElement(document.getElementById('prev-2'), displayLyrics[0]);
-    updateLyricElement(document.getElementById('prev-1'), displayLyrics[1]);
-    
-    // CRITICAL: Skip #current when word-sync is active and enabled
-    // Word-sync owns this element and manages its own DOM (spans for each word)
-    // If we update it here, we destroy the word-sync spans causing "mixing" behavior
-    // Only skip if BOTH: song has word-sync AND user has it enabled
-    if (!hasWordSync || !wordSyncEnabled) {
-        updateLyricElement(document.getElementById('current'), displayLyrics[2]);
-    }
-    
-    updateLyricElement(document.getElementById('next-1'), displayLyrics[3]);
-    updateLyricElement(document.getElementById('next-2'), displayLyrics[4]);
-    updateLyricElement(document.getElementById('next-3'), displayLyrics[5]);
+    // Update all elements simultaneously (line-sync only)
+    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
+    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+    updateLyricElement(document.getElementById('current'), lyrics[2]);
+    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
+    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
+    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
 
     // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
     if (!visualModeActive) {

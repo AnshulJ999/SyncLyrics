@@ -46,6 +46,9 @@ let lastServerSync = 0;        // Last time we synced with server
 // Track the currently active line index (single source of truth for dom.js)
 let activeLineIndex = -1;
 
+// Transition token for cancelling stale fade callbacks
+let transitionToken = 0;
+
 // Track if we've logged word-sync activation (reset on song change)
 let _wordSyncLogged = false;
 
@@ -152,14 +155,15 @@ export function findCurrentWord(position, lineData) {
 }
 
 /**
- * Find the current line from word-synced lyrics based on position
+ * Find the current line AND its index from word-synced lyrics based on position
+ * Returns both to avoid O(n) identity search later
  * 
  * @param {number} position - Current playback position in seconds
- * @returns {Object|null} The line object or null
+ * @returns {{line: Object|null, index: number}} The line object and its index (-1 if not found)
  */
-export function findCurrentWordSyncLine(position) {
+export function findCurrentWordSyncLineWithIndex(position) {
     if (!wordSyncedLyrics || wordSyncedLyrics.length === 0) {
-        return null;
+        return { line: null, index: -1 };
     }
 
     // Find the line that contains the current position
@@ -171,11 +175,45 @@ export function findCurrentWordSyncLine(position) {
         const lineEnd = nextLine ? nextLine.start : (line.end || lineStart + 10);
         
         if (position >= lineStart && position < lineEnd) {
-            return line;
+            return { line, index: i };
         }
     }
 
-    return null;
+    return { line: null, index: -1 };
+}
+
+// Legacy wrapper for backward compatibility
+export function findCurrentWordSyncLine(position) {
+    return findCurrentWordSyncLineWithIndex(position).line;
+}
+
+/**
+ * Update the 5 surrounding lyric lines (prev-2, prev-1, next-1, next-2, next-3)
+ * Called ONLY when the active line changes, not every frame
+ * This is the single authority for surrounding lines during word-sync
+ * 
+ * @param {number} idx - Current line index (-1 during intro)
+ */
+function updateSurroundingLines(idx) {
+    const getText = (i) => {
+        if (!wordSyncedLyrics || i < 0 || i >= wordSyncedLyrics.length) return "";
+        return wordSyncedLyrics[i]?.text || "";
+    };
+    
+    // During intro (idx = -1), show first lines as upcoming
+    const effectiveIdx = idx === -1 ? 0 : idx;
+    
+    const prev2 = document.getElementById('prev-2');
+    const prev1 = document.getElementById('prev-1');
+    const next1 = document.getElementById('next-1');
+    const next2 = document.getElementById('next-2');
+    const next3 = document.getElementById('next-3');
+    
+    if (prev2) prev2.textContent = getText(effectiveIdx - 2);
+    if (prev1) prev1.textContent = getText(effectiveIdx - 1);
+    if (next1) next1.textContent = getText(effectiveIdx + 1);
+    if (next2) next2.textContent = getText(effectiveIdx + 2);
+    if (next3) next3.textContent = getText(effectiveIdx + 3);
 }
 
 /**
@@ -347,8 +385,9 @@ function updateFlywheelClock(timestamp) {
  * @param {Object} lineData - Word-synced line data
  * @param {number} position - Current playback position
  * @param {string} style - Animation style ('fade' or 'pop')
+ * @param {boolean} lineChanged - Whether the line just changed (triggers surrounding lines update)
  */
-function updateWordSyncDOM(currentEl, lineData, position, style) {
+function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
     // FIX 3: Generate unique ID for this line (prevents cache collisions)
     // Include start, end, and first few words to ensure uniqueness
     const lineId = `${lineData.start}_${lineData.end || 0}_${lineData.words.length}_${(lineData.words[0]?.word || '').substring(0, 10)}`;
@@ -363,27 +402,37 @@ function updateWordSyncDOM(currentEl, lineData, position, style) {
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
         }).join(' ');
         
-        // SMOOTH TRANSITION: Fade-out old line before replacing
-        // Add line-exiting class to trigger CSS fade-out animation
+        // Update surrounding lines (single authority - only when line changes)
+        updateSurroundingLines(activeLineIndex);
+        
+        // Claim a new transition token (cancels any pending fade callbacks)
+        const myToken = ++transitionToken;
+        
+        // SMOOTH TRANSITION: Fade-out old line, wait, then swap content
         currentEl.classList.remove('line-entering');
         currentEl.classList.add('line-exiting');
         
-        // Set content directly (transition handled by CSS animation)
-        currentEl.innerHTML = html;
-        
-        // Trigger enter animation
-        // Use requestAnimationFrame to ensure the browser has time to paint
-        requestAnimationFrame(() => {
-            currentEl.classList.remove('line-exiting');  // <-- ADD THIS LINE
+        // Delay content swap until fade-out completes
+        setTimeout(() => {
+            // Check if this transition was cancelled by a newer one
+            if (transitionToken !== myToken) return;
+            
+            // Now swap the content (old line has faded out)
+            currentEl.innerHTML = html;
+            currentEl.classList.remove('line-exiting');
             currentEl.classList.add('line-entering');
-            // Remove the class after animation completes
+            
+            // Cache element references for fast updates
+            wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+            
+            // Remove entering class after animation completes
             setTimeout(() => {
+                if (transitionToken !== myToken) return;
                 currentEl.classList.remove('line-entering');
-            }, 200); // Match animation duration
-        });
+            }, 200);
+        }, 150); // Wait 150ms for fade-out
         
-        // Cache element references for fast updates
-        wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+        return; // Skip word updates during transition
     }
     
     // PHASE B: Update only classes/styles (no DOM rebuild)
@@ -461,16 +510,19 @@ function animateWordSync(timestamp) {
     // Get position from FLYWHEEL CLOCK (monotonic, never goes backwards)
     const position = updateFlywheelClock(timestamp);
     
-    // Find the matching word-sync line
-    const wordSyncLine = findCurrentWordSyncLine(position);
+    // Find the matching word-sync line AND its index (avoids O(n) search later)
+    const { line: wordSyncLine, index: lineIdx } = findCurrentWordSyncLineWithIndex(position);
     
     if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
         // No word-sync data for this position, clean up classes
         currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
         // FIX: Clear #current content to prevent stale "Searching lyrics..." stuck
         currentEl.textContent = '';
-        // Reset active line index (no valid line)
-        activeLineIndex = -1;
+        // Update surrounding lines for intro (show upcoming lines)
+        if (activeLineIndex !== -1) {
+            activeLineIndex = -1;
+            updateSurroundingLines(-1);
+        }
         // Clear cached state so we rebuild on next valid line
         cachedLineId = null;
         wordElements = [];
@@ -479,14 +531,9 @@ function animateWordSync(timestamp) {
         return;
     }
     
-    // Store the active line index (single source of truth for dom.js)
-    // Find the index of the current line for display line calculation
-    for (let i = 0; i < wordSyncedLyrics.length; i++) {
-        if (wordSyncedLyrics[i] === wordSyncLine) {
-            activeLineIndex = i;
-            break;
-        }
-    }
+    // Store the active line index (single source of truth)
+    const previousLineIndex = activeLineIndex;
+    activeLineIndex = lineIdx;
     
     // Add word-sync classes
     currentEl.classList.add('word-sync-active');
@@ -520,6 +567,7 @@ function cleanupWordSync() {
     visualSpeed = 1.0;
     lastFrameTime = 0;
     activeLineIndex = -1;
+    transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
 }
 
