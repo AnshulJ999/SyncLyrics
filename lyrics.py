@@ -745,6 +745,7 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
             'priority': provider.priority,
             'cached': provider.name in saved_providers,
             'is_current': provider.name == current_song_provider,
+            'is_word_sync_current': provider.name == current_word_sync_provider,
             'has_word_sync': provider.name in word_sync_providers
         })
     

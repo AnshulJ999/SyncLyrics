@@ -96,18 +96,35 @@ export async function showProviderModal() {
         data.providers.forEach(provider => {
             const providerItem = document.createElement('div');
             providerItem.className = 'provider-item';
-            if (provider.is_current) {
+            
+            // Determine if this provider is the "effective" current provider
+            // When word-sync is enabled, the word-sync provider is the effective one
+            const isEffectiveCurrent = wordSyncEnabled && hasWordSync 
+                ? provider.is_word_sync_current 
+                : provider.is_current;
+            
+            if (isEffectiveCurrent) {
                 providerItem.classList.add('current-provider');
             }
 
             const displayName = providerDisplayNames[provider.name] ||
                 provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
 
+            // Build badge HTML
+            let badgeHtml = '';
+            if (provider.is_word_sync_current && wordSyncEnabled && hasWordSync) {
+                badgeHtml = '<span class="current-badge">Word Source</span>';
+            } else if (provider.is_current && !provider.is_word_sync_current) {
+                badgeHtml = '<span class="current-badge" style="background: rgba(100, 100, 255, 0.3);">Lyrics Source</span>';
+            } else if (provider.is_current) {
+                badgeHtml = '<span class="current-badge">Current</span>';
+            }
+
             providerItem.innerHTML = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
                         <span class="provider-item-name">${displayName}${provider.has_word_sync ? ' 🎤' : ''}</span>
-                        ${provider.is_current ? '<span class="current-badge">Current</span>' : ''}
+                        ${badgeHtml}
                         ${provider.cached ? '<span class="cached-badge">Cached</span>' : ''}
                     </div>
                     <div class="provider-item-meta">
@@ -115,7 +132,7 @@ export async function showProviderModal() {
                     </div>
                 </div>
                 <button class="provider-select-btn" data-provider="${provider.name}">
-                    ${provider.is_current ? 'Selected' : 'Use This'}
+                    ${isEffectiveCurrent ? 'Selected' : 'Use This'}
                 </button>
             `;
 
