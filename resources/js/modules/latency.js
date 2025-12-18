@@ -17,8 +17,23 @@ import { showToast } from './dom.js';
 // ========== MODULE STATE ==========
 
 let saveTimeoutId = null;
-const SAVE_DEBOUNCE_MS = 500;  // Debounce delay for saving
+let toastTimeoutId = null;  // Separate debounce for toast feedback
+let lastManualAdjustMs = 0; // Timestamp of last manual adjustment (for override guard)
+const SAVE_DEBOUNCE_MS = 800;  // Debounce delay for saving
+const TOAST_DEBOUNCE_MS = 150; // Debounce delay for toast (show final value)
+const MANUAL_OVERRIDE_WINDOW_MS = 1000; // Ignore server offset for 1s after manual adjustment
 const STEP_SIZE = 0.05;        // 50ms adjustment per click
+
+// ========== GUARD FUNCTION ==========
+
+/**
+ * Check if user is actively adjusting latency (within override window)
+ * Used by api.js to skip applying server offset during manual adjustments
+ * @returns {boolean} True if manual adjustment is in progress
+ */
+export function isLatencyBeingAdjusted() {
+    return performance.now() - lastManualAdjustMs < MANUAL_OVERRIDE_WINDOW_MS;
+}
 
 // ========== CORE FUNCTIONS ==========
 
@@ -27,6 +42,9 @@ const STEP_SIZE = 0.05;        // 50ms adjustment per click
  * @param {number} delta - Change in seconds (positive = later, negative = earlier)
  */
 export function adjustLatency(delta) {
+    // Mark as manual adjustment (prevents polling from overwriting)
+    lastManualAdjustMs = performance.now();
+    
     // Calculate new offset (clamped to ±1.0 second)
     const currentOffset = songWordSyncOffset;
     const newOffset = Math.max(-1.0, Math.min(1.0, currentOffset + delta));
@@ -34,16 +52,22 @@ export function adjustLatency(delta) {
     // Apply immediately (frontend state)
     setSongWordSyncOffset(newOffset);
     
-    // Update display
+    // Update display immediately
     updateLatencyDisplay(newOffset);
     
     // Debounced save to backend
     debouncedSave(newOffset);
     
-    // Show toast feedback
-    const ms = Math.round(newOffset * 1000);
-    const sign = ms >= 0 ? '+' : '';
-    showToast(`Timing: ${sign}${ms}ms`, 'success');
+    // Debounced toast feedback (prevents DOM spam during rapid clicks)
+    if (toastTimeoutId) {
+        clearTimeout(toastTimeoutId);
+    }
+    toastTimeoutId = setTimeout(() => {
+        const ms = Math.round(newOffset * 1000);
+        const sign = ms >= 0 ? '+' : '';
+        showToast(`Timing: ${sign}${ms}ms`, 'success');
+        toastTimeoutId = null;
+    }, TOAST_DEBOUNCE_MS);
 }
 
 /**

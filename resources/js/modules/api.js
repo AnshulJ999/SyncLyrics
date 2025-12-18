@@ -39,6 +39,7 @@ import {
     debugPollTimestamp,
     debugBadSamples
 } from './state.js';
+import { isLatencyBeingAdjusted } from './latency.js';
 
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
@@ -259,7 +260,8 @@ export async function getCurrentTrack() {
         }
         
         // Update per-song word-sync offset (user adjustment)
-        if (data && data.song_word_sync_offset !== undefined) {
+        // Skip if user is actively adjusting (prevents polling from overwriting local changes)
+        if (data && data.song_word_sync_offset !== undefined && !isLatencyBeingAdjusted()) {
             setSongWordSyncOffset(data.song_word_sync_offset);
         }
         
