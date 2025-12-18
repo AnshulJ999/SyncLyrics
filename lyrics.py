@@ -114,53 +114,47 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
                 logger.info(f"Loaded lyrics from Local DB: {preferred_provider} (User Preference)")
             else:
                 # If no preference (or overridden), find the BEST provider available
-                # Priority logic:
-                # 1. Base priority from settings (lower = better)
-                # 2. Word-sync providers get a BOOST (subtracted from priority)
-                #    This ensures word-sync providers are preferred when available
-                #    Example: Musixmatch(1) vs NetEase(2) with word-sync
-                #             NetEase effective: 2-10 = -8 → NetEase wins!
-                WORD_SYNC_BOOST = 10  # How much to boost word-sync providers
+                # TWO-PASS SELECTION: Line-sync and word-sync are selected INDEPENDENTLY
+                # This allows line-sync from Spotify (priority 1) while word-sync from NetEase/Musixmatch
                 
-                best_effective_priority = 999
+                # PASS 1: Select LINE-SYNC provider using pure priority (NO boost)
+                # Line-sync comes from the highest priority provider overall
+                best_line_priority = 999
                 for provider in providers:
                     if provider.name in saved_lyrics:
-                        has_ws = provider.name in word_synced_lyrics and len(word_synced_lyrics.get(provider.name, [])) > 0
-                        
-                        # Calculate effective priority (boost word-sync providers)
-                        effective_priority = provider.priority
-                        if has_ws:
-                            effective_priority -= WORD_SYNC_BOOST
-                        
-                        # Select if this is the best so far
-                        if effective_priority < best_effective_priority:
-                            best_effective_priority = effective_priority
+                        if provider.priority < best_line_priority:
+                            best_line_priority = provider.priority
                             selected_lyrics = saved_lyrics[provider.name]
                             selected_provider = provider.name
                 
                 if selected_lyrics:
-                    has_ws = selected_provider in word_synced_lyrics and len(word_synced_lyrics.get(selected_provider, [])) > 0
-                    logger.info(f"Loaded lyrics from Local DB: {selected_provider} (word-sync: {has_ws})")
+                    logger.info(f"Loaded line-sync from Local DB: {selected_provider} (priority {best_line_priority})")
             
             if selected_lyrics:
                 current_song_provider = selected_provider
                 
-                # Load word-synced lyrics ONLY from the selected provider
-                # IMPORTANT: Do NOT fallback to other providers - mixing line-sync from one
-                # provider with word-sync from another causes timing mismatches and visual bugs
-                # Word-synced lyrics include full line text, so there's no need to mix sources
-                if selected_provider and selected_provider in word_synced_lyrics:
-                    ws_data = word_synced_lyrics[selected_provider]
-                    # Verify it's actually valid data (not empty list)
-                    if isinstance(ws_data, list) and len(ws_data) > 0:
-                        current_song_word_synced_lyrics = ws_data
-                        current_word_sync_provider = selected_provider
-                        logger.info(f"Loaded word-synced lyrics from: {selected_provider}")
-                    else:
-                        current_song_word_synced_lyrics = None
-                        current_word_sync_provider = None
+                # PASS 2: Select WORD-SYNC provider INDEPENDENTLY
+                # Word-sync comes from the best provider that HAS word-sync data
+                # WORD_SYNC_BOOST ensures word-sync providers beat non-word-sync providers
+                # Among equal-priority word-sync providers, iteration order wins (Musixmatch before NetEase in list)
+                WORD_SYNC_BOOST = 10
+                best_ws_priority = 999
+                for provider in providers:
+                    if provider.name in word_synced_lyrics:
+                        ws_data = word_synced_lyrics.get(provider.name, [])
+                        if isinstance(ws_data, list) and len(ws_data) > 0:
+                            # Apply boost to ensure word-sync providers are prioritized
+                            effective_priority = provider.priority - WORD_SYNC_BOOST
+                            if effective_priority < best_ws_priority:
+                                best_ws_priority = effective_priority
+                                current_song_word_synced_lyrics = ws_data
+                                current_word_sync_provider = provider.name
+                
+                # Log word-sync selection result
+                if current_word_sync_provider:
+                    logger.info(f"Loaded word-sync from Local DB: {current_word_sync_provider} (independent selection)")
                 else:
-                    # Selected provider has no word-sync - that's fine, use line-sync only
+                    # No provider has word-sync - that's fine, use line-sync only
                     current_song_word_synced_lyrics = None
                     current_word_sync_provider = None
                 
@@ -1254,20 +1248,14 @@ async def _get_lyrics(artist: str, title: str):
                 await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                 logger.info(f"Saved lyrics using {provider.name} (Priority {provider.priority})")             
                 
-                # BUGFIX: Apply word-sync boost during fresh fetch selection
-                # Same logic as _load_from_db() - providers with word-sync get priority boost
-                # This ensures NetEase with word-sync beats Musixmatch without word-sync
-                WORD_SYNC_BOOST = 10
-                effective_priority = provider.priority
-                if word_synced and len(word_synced) > 0:
-                    effective_priority -= WORD_SYNC_BOOST
-                    logger.debug(f"{provider.name} has word-sync, effective priority: {effective_priority}")
-                
-                if effective_priority < best_priority:
-                    best_priority = effective_priority
+                # LINE-SYNC selection: Use pure priority (no boost)
+                # Word-sync will be loaded independently via backfill reload (_load_from_db)
+                # which now uses dual selection (line-sync from Spotify, word-sync from NetEase/Musixmatch)
+                if provider.priority < best_priority:
+                    best_priority = provider.priority
                     best_result = lyrics
                     best_provider_name = provider.name
-                    logger.info(f"New best result now from {provider.name} (effective priority {effective_priority})")
+                    logger.info(f"New best result now from {provider.name} (priority {provider.priority})")
 
                 # Case A: High Quality provider (priority 1-2) finished – return immediately for UX
                 if provider.priority <= 2:
@@ -1318,17 +1306,13 @@ async def _get_lyrics(artist: str, title: str):
                         await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                         logger.info(f"Grace window got lyrics from {provider.name} (Priority {provider.priority})")
 
-                        # Apply word-sync boost during grace window selection too
-                        WORD_SYNC_BOOST = 10
-                        effective_priority = provider.priority
-                        if word_synced and len(word_synced) > 0:
-                            effective_priority -= WORD_SYNC_BOOST
-
-                        if effective_priority < best_priority:
-                            best_priority = effective_priority
+                        # LINE-SYNC selection: Use pure priority (no boost)
+                        # Word-sync will be loaded independently via backfill reload
+                        if provider.priority < best_priority:
+                            best_priority = provider.priority
                             best_result = lyrics
                             best_provider_name = provider.name
-                            logger.info(f"Grace window upgraded best result to {provider.name} (effective priority {effective_priority})")
+                            logger.info(f"Grace window upgraded best result to {provider.name} (priority {provider.priority})")
 
                         if provider.priority <= 2:
                             current_song_provider = provider.name
