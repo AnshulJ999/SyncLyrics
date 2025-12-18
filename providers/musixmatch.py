@@ -433,32 +433,37 @@ class MusixmatchProvider(LyricsProvider):
                 chars = line.get("l", [])  # Character/word list
                 line_duration = te - ts if te > ts else 0
                 
-                # Build words list, filtering out spaces
+                # Build words list with CORRECT durations
+                # Key insight: Space offsets tell us when the PREVIOUS word ends
+                # So we need to track the next item's offset (including spaces) for duration
                 words = []
-                for char_data in chars:
+                
+                for i, char_data in enumerate(chars):
                     char = char_data.get("c", "")
                     offset = char_data.get("o", 0)
                     
                     # Skip spaces - we only want actual words
-                    if char.strip():
-                        words.append({
-                            "word": char,
-                            "time": offset  # Offset from line start
-                        })
-                
-                # Calculate duration for each word based on next word's offset
-                # This provides precise timing for frontend animation
-                for i, word in enumerate(words):
-                    if i + 1 < len(words):
-                        # Duration = next word's start - this word's start
-                        word["duration"] = round(words[i + 1]["time"] - word["time"], 3)
+                    if not char.strip():
+                        continue
+                    
+                    # Find the NEXT item's offset (could be space or word)
+                    # This tells us when the current word ENDS
+                    if i + 1 < len(chars):
+                        next_offset = chars[i + 1].get("o", offset)
+                        duration = next_offset - offset
                     else:
-                        # Last word: duration = line end - word start
-                        word["duration"] = round(line_duration - word["time"], 3)
+                        # Last item: duration = line end - word start
+                        duration = line_duration - offset
                     
                     # Ensure duration is positive (defensive)
-                    if word["duration"] < 0:
-                        word["duration"] = 0.5  # Fallback to 500ms
+                    if duration < 0:
+                        duration = 0.15  # Fallback to 150ms
+                    
+                    words.append({
+                        "word": char,
+                        "time": offset,  # Offset from line start
+                        "duration": round(duration, 3)
+                    })
                 
                 if words or full_text:
                     result.append({
