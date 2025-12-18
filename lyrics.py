@@ -1026,9 +1026,13 @@ async def set_word_sync_provider_preference(artist: str, title: str, provider_na
                         pass
                 raise write_err
             
-            # Update current state
-            current_song_word_synced_lyrics = ws_data
-            current_word_sync_provider = provider_name
+            # Update current state ONLY if this song is still playing
+            # (prevents race condition if user skipped songs during API call)
+            if (current_song_data and 
+                current_song_data.get('artist') == artist and 
+                current_song_data.get('title') == title):
+                current_song_word_synced_lyrics = ws_data
+                current_word_sync_provider = provider_name
             
             logger.info(f"Set word-sync provider preference to {provider_name} for {artist} - {title}")
             return {
