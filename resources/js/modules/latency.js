@@ -129,18 +129,69 @@ async function saveOffsetToBackend(offset) {
 
 /**
  * Initialize latency controls event handlers
+ * Supports both click and press-and-hold for rapid adjustments
  */
 export function setupLatencyControls() {
     const minusBtn = document.getElementById('latency-minus');
     const plusBtn = document.getElementById('latency-plus');
     
-    if (minusBtn) {
-        minusBtn.addEventListener('click', () => adjustLatency(-STEP_SIZE));
+    // Press-and-hold auto-repeat configuration
+    const INITIAL_DELAY = 300;  // ms before repeat starts
+    const REPEAT_INTERVAL = 100; // ms between repeats (fast!)
+    
+    /**
+     * Setup press-and-hold behavior for a latency button
+     * @param {HTMLElement} btn - The button element
+     * @param {number} delta - Change per step (positive or negative)
+     */
+    function setupHoldToRepeat(btn, delta) {
+        if (!btn) return;
+        
+        let holdTimeout = null;
+        let repeatInterval = null;
+        
+        function startRepeat() {
+            // First adjustment on initial press
+            adjustLatency(delta);
+            
+            // Start repeat after delay
+            holdTimeout = setTimeout(() => {
+                repeatInterval = setInterval(() => {
+                    adjustLatency(delta);
+                }, REPEAT_INTERVAL);
+            }, INITIAL_DELAY);
+        }
+        
+        function stopRepeat() {
+            if (holdTimeout) {
+                clearTimeout(holdTimeout);
+                holdTimeout = null;
+            }
+            if (repeatInterval) {
+                clearInterval(repeatInterval);
+                repeatInterval = null;
+            }
+        }
+        
+        // Mouse events
+        btn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startRepeat();
+        });
+        btn.addEventListener('mouseup', stopRepeat);
+        btn.addEventListener('mouseleave', stopRepeat);
+        
+        // Touch events (for mobile)
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startRepeat();
+        }, { passive: false });
+        btn.addEventListener('touchend', stopRepeat);
+        btn.addEventListener('touchcancel', stopRepeat);
     }
     
-    if (plusBtn) {
-        plusBtn.addEventListener('click', () => adjustLatency(STEP_SIZE));
-    }
+    setupHoldToRepeat(minusBtn, -STEP_SIZE);
+    setupHoldToRepeat(plusBtn, STEP_SIZE);
     
     // Initialize display with current offset
     updateLatencyDisplay(songWordSyncOffset);

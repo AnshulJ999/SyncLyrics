@@ -807,7 +807,8 @@ export function renderWordSyncLine(lineData, position, style = 'fade') {
  */
 export function getDebugTimingData() {
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    // Use SAME total latency as flywheel (line 380) for accurate drift calculation
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
     const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     const drift = (serverPosition - visualPosition) * 1000;  // in ms
     const pollAge = performance.now() - debugPollTimestamp;  // ms since last poll
@@ -835,7 +836,8 @@ export function getDebugTimingData() {
         snapCount: snapCount,
         backSnapCount: backSnapCount,
         badSamples: debugBadSamples,
-        latencyComp: totalLatencyCompensation
+        latencyComp: totalLatencyCompensation,
+        songOffset: songWordSyncOffset  // Per-song offset for display
     };
 }
 
@@ -860,6 +862,7 @@ export function updateDebugOverlay() {
         <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
+        <div class="debug-row"><span class="debug-label">Offset:</span> ${data.songOffset >= 0 ? '+' : ''}${(data.songOffset * 1000).toFixed(0)}ms</div>
         <div class="debug-row"><span class="debug-label">dt_poll:</span> <span class="${pollWarn}">${data.pollInterval.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
         <div class="debug-row"><span class="debug-label">Snaps:</span> ${data.snapCount} / ${data.backSnapCount}</div>

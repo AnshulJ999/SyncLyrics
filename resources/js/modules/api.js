@@ -59,13 +59,20 @@ const BAD_RTT_MULTIPLIER = 2.5;           // RTT > avg * 2.5 is suspicious
 async function apiFetch(url, options = {}) {
     try {
         const response = await fetch(url, options);
+        // Always try to parse JSON (even on non-2xx) to get server error messages
+        const data = await response.json().catch(() => null);
+        
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            // Return parsed JSON if available (contains status/message), else generic error
+            if (data && (data.status || data.message || data.error)) {
+                return data;
+            }
+            return { status: 'error', message: `HTTP error! status: ${response.status}` };
         }
-        return await response.json();
+        return data || {};
     } catch (error) {
         console.error(`API Error [${url}]:`, error);
-        return { error: error.message };
+        return { status: 'error', message: error.message, error: error.message };
     }
 }
 
