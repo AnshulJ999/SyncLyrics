@@ -201,6 +201,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;  /* Allow badges to wrap when space is tight */
 }
 
 .provider-item-name {

@@ -141,6 +141,8 @@ LYRICS = {
         "spotify_latency_compensation": conf("lyrics.display.spotify_latency_compensation", -0.5),
         "audio_recognition_latency_compensation": conf("lyrics.display.audio_recognition_latency_compensation", 0.0),
         "word_sync_latency_compensation": conf("lyrics.display.word_sync_latency_compensation", 0.0),
+        "musixmatch_word_sync_offset": conf("lyrics.display.musixmatch_word_sync_offset", 0.0),
+        "netease_word_sync_offset": conf("lyrics.display.netease_word_sync_offset", 0.0),
         "idle_wait_time": conf("lyrics.display.idle_wait_time", 3.0),
         "smart_race_timeout": conf("lyrics.display.smart_race_timeout", 3.0),
     },
@@ -281,6 +283,7 @@ FEATURES = {
     "album_art_colors": conf("features.album_art_colors", True),
     "album_art_db": conf("features.album_art_db", True),
     "word_sync_auto_switch": conf("features.word_sync_auto_switch", True),  # Auto-switch to provider with word-sync
+    "word_sync_default_enabled": conf("features.word_sync_default_enabled", True),  # Word-sync ON by default
 }
 
 ALBUM_ART = {
