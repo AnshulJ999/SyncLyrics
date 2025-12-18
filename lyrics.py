@@ -136,29 +136,41 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
                 current_song_provider = selected_provider
                 
                 # PASS 2: Select WORD-SYNC provider INDEPENDENTLY
-                # Word-sync comes from the best provider that HAS word-sync data
-                # WORD_SYNC_BOOST ensures word-sync providers beat non-word-sync providers
-                # Among equal-priority word-sync providers, iteration order wins (Musixmatch before NetEase in list)
-                WORD_SYNC_BOOST = 10
-                best_ws_priority = 999
-                for provider in providers:
-                    if provider.name in word_synced_lyrics:
-                        ws_data = word_synced_lyrics.get(provider.name, [])
-                        if isinstance(ws_data, list) and len(ws_data) > 0:
-                            # Apply boost to ensure word-sync providers are prioritized
-                            effective_priority = provider.priority - WORD_SYNC_BOOST
-                            if effective_priority < best_ws_priority:
-                                best_ws_priority = effective_priority
-                                current_song_word_synced_lyrics = ws_data
-                                current_word_sync_provider = provider.name
+                # First check for user's preferred word-sync provider
+                preferred_ws_provider = data.get('preferred_word_sync_provider')
                 
-                # Log word-sync selection result
-                if current_word_sync_provider:
-                    logger.info(f"Loaded word-sync from Local DB: {current_word_sync_provider} (independent selection)")
-                else:
-                    # No provider has word-sync - that's fine, use line-sync only
-                    current_song_word_synced_lyrics = None
-                    current_word_sync_provider = None
+                if preferred_ws_provider and preferred_ws_provider in word_synced_lyrics:
+                    ws_data = word_synced_lyrics.get(preferred_ws_provider, [])
+                    if isinstance(ws_data, list) and len(ws_data) > 0:
+                        current_song_word_synced_lyrics = ws_data
+                        current_word_sync_provider = preferred_ws_provider
+                        logger.info(f"Loaded word-sync from Local DB: {preferred_ws_provider} (User Preference)")
+                
+                # If no preference (or preference invalid), fall back to auto-selection
+                if not current_word_sync_provider:
+                    # Word-sync comes from the best provider that HAS word-sync data
+                    # WORD_SYNC_BOOST ensures word-sync providers beat non-word-sync providers
+                    # Among equal-priority word-sync providers, iteration order wins (Musixmatch before NetEase in list)
+                    WORD_SYNC_BOOST = 10
+                    best_ws_priority = 999
+                    for provider in providers:
+                        if provider.name in word_synced_lyrics:
+                            ws_data = word_synced_lyrics.get(provider.name, [])
+                            if isinstance(ws_data, list) and len(ws_data) > 0:
+                                # Apply boost to ensure word-sync providers are prioritized
+                                effective_priority = provider.priority - WORD_SYNC_BOOST
+                                if effective_priority < best_ws_priority:
+                                    best_ws_priority = effective_priority
+                                    current_song_word_synced_lyrics = ws_data
+                                    current_word_sync_provider = provider.name
+                    
+                    # Log word-sync selection result
+                    if current_word_sync_provider:
+                        logger.info(f"Loaded word-sync from Local DB: {current_word_sync_provider} (auto-selection)")
+                    else:
+                        # No provider has word-sync - that's fine, use line-sync only
+                        current_song_word_synced_lyrics = None
+                        current_word_sync_provider = None
                 
                 return selected_lyrics
         
@@ -725,8 +737,9 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
     # Check database for cached providers
     saved_providers = _get_saved_provider_names(artist, title)
     
-    # Check which providers have word-synced lyrics cached
+    # Check which providers have word-synced lyrics cached and get word-sync preference
     word_sync_providers = set()
+    preferred_ws_provider = None
     db_path = _get_db_path(artist, title)
     if db_path and os.path.exists(db_path):
         try:
@@ -734,6 +747,7 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
                 data = json.load(f)
             word_synced = data.get("word_synced_lyrics", {})
             word_sync_providers = set(word_synced.keys())
+            preferred_ws_provider = data.get("preferred_word_sync_provider")
         except Exception:
             pass
     
@@ -748,6 +762,7 @@ def get_available_providers_for_song(artist: str, title: str) -> List[Dict[str, 
             'cached': provider.name in saved_providers,
             'is_current': provider.name == current_song_provider,
             'is_word_sync_current': provider.name == current_word_sync_provider,
+            'is_word_sync_preferred': provider.name == preferred_ws_provider,
             'has_word_sync': provider.name in word_sync_providers
         })
     
@@ -945,6 +960,130 @@ async def clear_provider_preference(artist: str, title: str) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error clearing preference: {e}")
+        return False
+
+async def set_word_sync_provider_preference(artist: str, title: str, provider_name: str) -> Dict[str, Any]:
+    """
+    Set user's preferred word-sync provider for a specific song.
+    
+    Args:
+        artist: Artist name
+        title: Song title
+        provider_name: Name of provider to use for word-sync
+        
+    Returns:
+        {
+            'status': 'success' | 'error',
+            'message': str,
+            'word_sync_provider': str  # Name of provider now being used for word-sync
+        }
+    """
+    global current_song_word_synced_lyrics, current_word_sync_provider
+    
+    # Validate provider exists
+    provider_obj = None
+    for p in providers:
+        if p.name == provider_name and p.enabled:
+            provider_obj = p
+            break
+    
+    if not provider_obj:
+        return {'status': 'error', 'message': f'Provider {provider_name} not available'}
+    
+    # Check if provider has word-sync cached
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return {'status': 'error', 'message': 'No lyrics cached for this song'}
+    
+    try:
+        async with _db_lock:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            word_synced_lyrics = data.get("word_synced_lyrics", {})
+            if provider_name not in word_synced_lyrics:
+                return {'status': 'error', 'message': f'{provider_name} has no word-sync for this song'}
+            
+            ws_data = word_synced_lyrics.get(provider_name, [])
+            if not isinstance(ws_data, list) or len(ws_data) == 0:
+                return {'status': 'error', 'message': f'{provider_name} has no word-sync for this song'}
+            
+            # Save preference
+            data['preferred_word_sync_provider'] = provider_name
+            
+            # Write atomically
+            dir_path = os.path.dirname(db_path)
+            try:
+                fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                os.replace(temp_path, db_path)
+            except Exception as write_err:
+                if 'temp_path' in locals() and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                raise write_err
+            
+            # Update current state
+            current_song_word_synced_lyrics = ws_data
+            current_word_sync_provider = provider_name
+            
+            logger.info(f"Set word-sync provider preference to {provider_name} for {artist} - {title}")
+            return {
+                'status': 'success',
+                'message': f'Word-sync now from {provider_name}',
+                'word_sync_provider': provider_name
+            }
+    except Exception as e:
+        logger.error(f"Error setting word-sync preference: {e}")
+        return {'status': 'error', 'message': f'Failed to set preference: {str(e)}'}
+
+async def clear_word_sync_provider_preference(artist: str, title: str) -> bool:
+    """
+    Clear word-sync provider preference, return to automatic selection.
+    
+    Returns:
+        True if preference was cleared, False if error
+    """
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return True  # No preference to clear
+    
+    try:
+        async with _db_lock:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if 'preferred_word_sync_provider' in data:
+                del data['preferred_word_sync_provider']
+                
+                # Write atomically
+                dir_path = os.path.dirname(db_path)
+                try:
+                    fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+                    os.replace(temp_path, db_path)
+                except Exception as write_err:
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                    raise write_err
+                
+                logger.info(f"Cleared word-sync provider preference for {artist} - {title}")
+        
+        # Reload to re-select word-sync automatically
+        reloaded = _load_from_db(artist, title)
+        if reloaded:
+            global current_song_lyrics
+            current_song_lyrics = reloaded
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing word-sync preference: {e}")
         return False
 
 async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:

@@ -16,6 +16,7 @@ import {
     setWordSyncedLyrics,
     setHasWordSync,
     setWordSyncProvider,
+    setWordSyncEnabled,
     setWordSyncAnchorPosition,
     setWordSyncAnchorTimestamp,
     setWordSyncIsPlaying,
@@ -137,6 +138,13 @@ export async function getConfig() {
         }
         if (config.slideshowIntervalSeconds !== undefined) {
             visualModeConfig.slideshowIntervalSeconds = config.slideshowIntervalSeconds;
+        }
+
+        // Apply word_sync_default_enabled setting (only if URL doesn't override)
+        // URL param takes priority over server config
+        if (config.word_sync_default_enabled !== undefined && !urlParams.has('wordSync')) {
+            setWordSyncEnabled(config.word_sync_default_enabled);
+            console.log(`Word-sync default: ${config.word_sync_default_enabled}`);
         }
 
         console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);
@@ -413,6 +421,25 @@ export async function setProviderPreference(provider) {
  */
 export async function clearProviderPreference() {
     return apiFetch('/api/providers/preference', { method: 'DELETE' });
+}
+
+/**
+ * Set word-sync provider preference
+ * 
+ * @param {string} provider - Provider name
+ * @returns {Promise<Object>} Result
+ */
+export async function setWordSyncProviderPreference(provider) {
+    return postJson('/api/providers/word-sync-preference', { provider });
+}
+
+/**
+ * Clear word-sync provider preference (reset to auto)
+ * 
+ * @returns {Promise<Object>} Result
+ */
+export async function clearWordSyncProviderPreference() {
+    return apiFetch('/api/providers/word-sync-preference', { method: 'DELETE' });
 }
 
 /**

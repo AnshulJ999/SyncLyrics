@@ -26,6 +26,7 @@ import {
     fetchAlbumArtOptions,
     setProviderPreference,
     clearProviderPreference as apiClearProviderPreference,
+    setWordSyncProviderPreference,
     setAlbumArtPreference,
     clearAlbumArtPreference as apiClearAlbumArtPreference,
     deleteCachedLyrics as apiDeleteCachedLyrics,
@@ -120,6 +121,17 @@ export async function showProviderModal() {
                 badgeHtml = '<span class="current-badge">Current</span>';
             }
 
+            // Build word-sync button if provider has word-sync
+            let wordSyncBtnHtml = '';
+            if (provider.has_word_sync) {
+                const isWsSelected = provider.is_word_sync_current || provider.is_word_sync_preferred;
+                wordSyncBtnHtml = `
+                    <button class="provider-ws-btn ${isWsSelected ? 'active' : ''}" data-provider="${provider.name}">
+                        ${isWsSelected ? '✓ Word-Sync' : 'Use Word-Sync'}
+                    </button>
+                `;
+            }
+
             providerItem.innerHTML = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
@@ -131,9 +143,12 @@ export async function showProviderModal() {
                         Priority: ${provider.priority}${provider.has_word_sync ? ' • Word Sync' : ''}
                     </div>
                 </div>
-                <button class="provider-select-btn" data-provider="${provider.name}">
-                    ${isEffectiveCurrent ? 'Selected' : 'Use This'}
-                </button>
+                <div class="provider-item-buttons">
+                    <button class="provider-select-btn" data-provider="${provider.name}">
+                        ${isEffectiveCurrent ? 'Selected' : 'Use Lyrics'}
+                    </button>
+                    ${wordSyncBtnHtml}
+                </div>
             `;
 
             providerList.appendChild(providerItem);
@@ -702,10 +717,30 @@ export function setupProviderUI() {
     // Provider selection (event delegation)
     const providerList = document.getElementById('provider-list');
     if (providerList) {
-        providerList.addEventListener('click', (e) => {
+        providerList.addEventListener('click', async (e) => {
+            // Handle lyrics provider selection
             if (e.target.classList.contains('provider-select-btn')) {
                 const providerName = e.target.getAttribute('data-provider');
                 selectProvider(providerName);
+            }
+            
+            // Handle word-sync provider selection
+            if (e.target.classList.contains('provider-ws-btn')) {
+                const providerName = e.target.getAttribute('data-provider');
+                try {
+                    const result = await setWordSyncProviderPreference(providerName);
+                    if (result.status === 'success') {
+                        const displayName = providerDisplayNames[providerName] || providerName;
+                        showToast(`Word-sync now from ${displayName}`);
+                        // Refresh the modal to update UI
+                        showProviderModal();
+                    } else {
+                        showToast(result.message || 'Failed to set word-sync provider', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error setting word-sync provider:', error);
+                    showToast('Failed to set word-sync provider', 'error');
+                }
             }
         });
     }

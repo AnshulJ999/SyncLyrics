@@ -473,6 +473,48 @@ async def set_provider_preference():
     else:
         return jsonify(result), 400
 
+@app.route("/api/providers/word-sync-preference", methods=['POST'])
+async def set_word_sync_preference():
+    """Set preferred word-sync provider for current song"""
+    from lyrics import set_word_sync_provider_preference, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    data = await request.get_json()
+    provider_name = data.get('provider')
+    
+    if not provider_name:
+        return jsonify({"error": "No provider specified"}), 400
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    result = await set_word_sync_provider_preference(artist, title, provider_name)
+    
+    if result['status'] == 'success':
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 400
+
+@app.route("/api/providers/word-sync-preference", methods=['DELETE'])
+async def clear_word_sync_preference():
+    """Clear word-sync provider preference for current song"""
+    from lyrics import clear_word_sync_provider_preference, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    
+    success = await clear_word_sync_provider_preference(artist, title)
+    
+    if success:
+        return jsonify({"status": "success", "message": "Word-sync preference cleared"}), 200
+    else:
+        return jsonify({"error": "Failed to clear preference"}), 400
+
 @app.route("/api/instrumental/mark", methods=['POST'])
 async def mark_instrumental():
     """
@@ -2179,7 +2221,9 @@ async def get_client_config():
         "visualModeDelaySeconds": settings.get("visual_mode.delay_seconds"),
         "visualModeAutoSharp": settings.get("visual_mode.auto_sharp"),
         "slideshowEnabled": settings.get("visual_mode.slideshow.enabled"),
-        "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds")
+        "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds"),
+        # Word-sync settings
+        "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True)
     }
 
 @app.route("/callback")
