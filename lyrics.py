@@ -80,6 +80,8 @@ def _load_from_db(artist: str, title: str) -> Optional[list]:
         if "saved_lyrics" in data and isinstance(data["saved_lyrics"], dict):
             saved_lyrics = data["saved_lyrics"]
             word_synced_lyrics = data.get("word_synced_lyrics", {})
+            if not isinstance(word_synced_lyrics, dict):
+                word_synced_lyrics = {}
             
             # Determine which provider to use for line-synced lyrics
             selected_provider = None
