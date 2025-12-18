@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 class NetEaseProvider(LyricsProvider):
     # Minimum score threshold for confident match (title must match)
-    MIN_CONFIDENCE_THRESHOLD = 40
+    MIN_CONFIDENCE_THRESHOLD = 50
     
     def __init__(self):
         """Initialize NetEase provider with config settings"""
