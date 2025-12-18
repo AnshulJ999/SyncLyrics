@@ -254,11 +254,12 @@ async def current_track() -> dict:
             metadata["word_sync_latency_compensation"] = word_sync_latency_comp
             
             # Add provider-specific word-sync offset (Musixmatch/NetEase may have different timing)
+            # Use settings.get() instead of LYRICS dict for hot-reload support
             word_sync_provider = lyrics_module.current_word_sync_provider
             provider_offset = 0.0
             if word_sync_provider:
-                offset_key = f"{word_sync_provider}_word_sync_offset"
-                provider_offset = LYRICS.get("display", {}).get(offset_key, 0.0)
+                offset_key = f"lyrics.display.{word_sync_provider}_word_sync_offset"
+                provider_offset = settings.get(offset_key, 0.0)
             metadata["provider_word_sync_offset"] = provider_offset
             metadata["word_sync_provider"] = word_sync_provider
             
@@ -287,7 +288,14 @@ async def save_word_sync_offset():
         data = await request.json
         artist = data.get('artist')
         title = data.get('title')
-        offset = float(data.get('offset', 0.0))
+        
+        # Defensive validation: handle NaN, Infinity, strings, null
+        try:
+            offset = float(data.get('offset', 0.0))
+            if not (-10.0 <= offset <= 10.0) or offset != offset:  # Check NaN
+                offset = 0.0
+        except (TypeError, ValueError):
+            offset = 0.0
         
         if not artist or not title:
             return {"success": False, "error": "Missing artist or title"}

@@ -288,12 +288,18 @@ async def save_song_word_sync_offset(artist: str, title: str, offset: float) -> 
     
     async with _db_lock:
         try:
-            # Load existing data or create new
+            # Load existing data or create minimal valid schema
             if os.path.exists(db_path):
                 with open(db_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
             else:
-                data = {}
+                # Create minimal valid schema to prevent partial DB files
+                data = {
+                    "artist": artist,
+                    "title": title,
+                    "saved_lyrics": {},
+                    "word_synced_lyrics": {}
+                }
             
             # Clamp offset to reasonable range
             data["word_sync_offset"] = max(-1.0, min(1.0, offset))

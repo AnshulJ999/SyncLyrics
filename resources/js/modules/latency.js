@@ -152,10 +152,17 @@ export function setupLatencyControls() {
  */
 export function setupLatencyKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
-        // Don't trigger if typing in an input field
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-            return;
-        }
+        // Comprehensive input protection:
+        // 1. Typing in input/textarea
+        // 2. ContentEditable elements
+        // 3. Ctrl/Meta/Alt modifiers (except Shift for Shift+R)
+        const isTyping = 
+            e.target.tagName === 'INPUT' || 
+            e.target.tagName === 'TEXTAREA' ||
+            e.target.isContentEditable ||
+            e.ctrlKey || e.metaKey || e.altKey;
+        
+        if (isTyping) return;
         
         // [ key = decrease (earlier)
         if (e.key === '[') {
