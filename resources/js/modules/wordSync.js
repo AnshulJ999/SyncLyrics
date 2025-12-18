@@ -677,6 +677,12 @@ function cleanupWordSync() {
     const currentEl = document.getElementById('current');
     if (currentEl) {
         currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
+        
+        // FIX: Convert word spans to plain text immediately
+        // This ensures the current line displays correctly when word-sync is toggled off
+        // Instead of waiting for the next line change
+        const plainText = currentEl.textContent;
+        currentEl.textContent = plainText;
     }
     // Reset module state
     cachedLineId = null;
