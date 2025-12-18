@@ -26,6 +26,8 @@ import {
     wordSyncAnimationId,
     wordSyncLatencyCompensation,
     wordSyncSpecificLatencyCompensation,
+    providerWordSyncOffset,
+    songWordSyncOffset,
     setWordSyncAnimationId,
     debugTimingEnabled,
     debugRtt,
@@ -373,9 +375,9 @@ function updateFlywheelClock(timestamp) {
     }
     
     // Calculate where server thinks we are
-    // Uses BOTH the source-based line-sync compensation AND the word-sync specific adjustment
+    // Uses source-based line-sync compensation, word-sync adjustment, provider offset, AND per-song offset
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
     const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     
     // Calculate drift (difference between our position and server)

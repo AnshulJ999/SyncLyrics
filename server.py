@@ -253,11 +253,69 @@ async def current_track() -> dict:
             word_sync_latency_comp = LYRICS.get("display", {}).get("word_sync_latency_compensation", 0.0)
             metadata["word_sync_latency_compensation"] = word_sync_latency_comp
             
+            # Add provider-specific word-sync offset (Musixmatch/NetEase may have different timing)
+            word_sync_provider = lyrics_module.current_word_sync_provider
+            provider_offset = 0.0
+            if word_sync_provider:
+                offset_key = f"{word_sync_provider}_word_sync_offset"
+                provider_offset = LYRICS.get("display", {}).get(offset_key, 0.0)
+            metadata["provider_word_sync_offset"] = provider_offset
+            metadata["word_sync_provider"] = word_sync_provider
+            
+            # Add word-sync default enabled setting (frontend can still toggle)
+            word_sync_default = settings.get("features.word_sync_default_enabled", True)
+            metadata["word_sync_default_enabled"] = word_sync_default
+            
+            # Add per-song word-sync offset (user adjustment)
+            song_offset = lyrics_module.get_song_word_sync_offset(artist, title)
+            metadata["song_word_sync_offset"] = song_offset
+            
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
         logger.error(f"Track Info Error: {e}")
         return {"error": str(e)}
+
+
+@app.route('/api/word-sync-offset', methods=['POST'])
+async def save_word_sync_offset():
+    """
+    Save per-song word-sync offset adjustment.
+    Frontend calls this when user adjusts latency via UI buttons.
+    """
+    try:
+        data = await request.json
+        artist = data.get('artist')
+        title = data.get('title')
+        offset = float(data.get('offset', 0.0))
+        
+        if not artist or not title:
+            return {"success": False, "error": "Missing artist or title"}
+        
+        success = await lyrics_module.save_song_word_sync_offset(artist, title, offset)
+        
+        if success:
+            return {"success": True, "offset": offset}
+        else:
+            return {"success": False, "error": "Failed to save offset"}
+    except Exception as e:
+        logger.error(f"Word-sync offset error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.route('/api/settings/reload', methods=['POST'])
+async def reload_settings():
+    """
+    Reload settings from disk without restarting the server.
+    Useful for applying backend config changes on the fly.
+    """
+    try:
+        settings.load_settings()
+        logger.info("Settings reloaded from disk")
+        return {"success": True, "message": "Settings reloaded"}
+    except Exception as e:
+        logger.error(f"Failed to reload settings: {e}")
+        return {"success": False, "error": str(e)}
 
 # --- PWA Routes ---
 

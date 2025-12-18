@@ -85,6 +85,9 @@ import audioSource from './modules/audioSource.js';
 // Word Sync (Level 2)
 import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, updateDebugOverlay } from './modules/wordSync.js';
 
+// Latency (Level 3)
+import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay } from './modules/latency.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -401,6 +404,10 @@ async function main() {
             updateWordSyncToggleUI();
         }
     }
+
+    // Initialize latency controls
+    setupLatencyControls();
+    setupLatencyKeyboardShortcuts();
 
     console.log('[Main] Initialization complete. Starting update loop...');
 

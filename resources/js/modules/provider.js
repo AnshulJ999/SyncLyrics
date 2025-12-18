@@ -36,6 +36,8 @@ import {
     updateBackground,
     checkForVisualMode
 } from './background.js';
+import { updateLatencyDisplay } from './latency.js';
+import { songWordSyncOffset } from './state.js';
 
 // ========== PROVIDER DISPLAY ==========
 
@@ -112,6 +114,9 @@ export async function showProviderModal() {
 
         // Update instrumental button state
         updateInstrumentalButtonState();
+        
+        // Update latency display with current per-song offset
+        updateLatencyDisplay(songWordSyncOffset);
 
         modal.classList.remove('hidden');
 
@@ -643,6 +648,25 @@ export function setupProviderUI() {
     const instrumentalBtn = document.getElementById('mark-instrumental-btn');
     if (instrumentalBtn) {
         instrumentalBtn.addEventListener('click', toggleInstrumentalMark);
+    }
+    
+    // Reload Settings button
+    const reloadBtn = document.getElementById('reload-settings-btn');
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/settings/reload', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('Settings reloaded');
+                } else {
+                    showToast('Failed to reload settings', 'error');
+                }
+            } catch (error) {
+                console.error('Error reloading settings:', error);
+                showToast('Error reloading settings', 'error');
+            }
+        });
     }
 
     // Provider selection (event delegation)

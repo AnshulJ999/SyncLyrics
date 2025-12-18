@@ -28,6 +28,8 @@ export let wordSyncIsPlaying = true;      // Is playback currently active?
 export let wordSyncAnimationId = null;    // requestAnimationFrame id for cleanup
 export let wordSyncLatencyCompensation = 0; // Line-sync latency compensation from server (seconds)
 export let wordSyncSpecificLatencyCompensation = 0; // Word-sync specific latency adjustment (seconds)
+export let providerWordSyncOffset = 0; // Provider-specific word-sync offset (Musixmatch/NetEase)
+export let songWordSyncOffset = 0; // Per-song word-sync offset (user adjustment)
 export let anyProviderHasWordSync = false; // True if ANY cached provider has word-sync (for toggle availability)
 
 // ========== DEBUG OVERLAY STATE ==========
@@ -147,6 +149,8 @@ export function setWordSyncIsPlaying(value) { wordSyncIsPlaying = value; }
 export function setWordSyncAnimationId(value) { wordSyncAnimationId = value; }
 export function setWordSyncLatencyCompensation(value) { wordSyncLatencyCompensation = value; }
 export function setWordSyncSpecificLatencyCompensation(value) { wordSyncSpecificLatencyCompensation = value; }
+export function setProviderWordSyncOffset(value) { providerWordSyncOffset = value; }
+export function setSongWordSyncOffset(value) { songWordSyncOffset = value; }
 export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = value; }
 
 // Debug overlay setters

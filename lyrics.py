@@ -260,6 +260,57 @@ def _get_word_sync_provider_names(artist: str, title: str) -> Set[str]:
     return set()
 
 
+def get_song_word_sync_offset(artist: str, title: str) -> float:
+    """
+    Get per-song word-sync offset (seconds).
+    Returns 0.0 if no offset saved for this song.
+    """
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return 0.0
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return float(data.get("word_sync_offset", 0.0))
+    except Exception:
+        return 0.0
+
+
+async def save_song_word_sync_offset(artist: str, title: str, offset: float) -> bool:
+    """
+    Save per-song word-sync offset (seconds).
+    Creates or updates the song's JSON file with the offset.
+    Returns True on success.
+    """
+    db_path = _get_db_path(artist, title)
+    if not db_path:
+        return False
+    
+    async with _db_lock:
+        try:
+            # Load existing data or create new
+            if os.path.exists(db_path):
+                with open(db_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            
+            # Clamp offset to reasonable range
+            data["word_sync_offset"] = max(-1.0, min(1.0, offset))
+            
+            # Write atomically via temp file
+            temp_path = db_path + ".tmp"
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(temp_path, db_path)
+            
+            logger.debug(f"Saved word-sync offset {offset:.3f}s for {artist} - {title}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save word-sync offset: {e}")
+            return False
+
+
 def _normalize_provider_result(result: Optional[Any]) -> Tuple[Optional[List[Tuple[float, str]]], Dict[str, Any], Optional[List[Dict[str, Any]]]]:
     """
     Normalize provider output into a lyrics list, metadata dict, and word-synced data.

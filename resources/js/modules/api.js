@@ -21,6 +21,8 @@ import {
     setWordSyncIsPlaying,
     setWordSyncLatencyCompensation,
     setWordSyncSpecificLatencyCompensation,
+    setProviderWordSyncOffset,
+    setSongWordSyncOffset,
     setAnyProviderHasWordSync,
     setDebugRtt,
     setDebugRttSmoothed,
@@ -234,6 +236,16 @@ export async function getCurrentTrack() {
         // Update word-sync specific latency compensation (separate from line-sync)
         if (data && data.word_sync_latency_compensation !== undefined) {
             setWordSyncSpecificLatencyCompensation(data.word_sync_latency_compensation);
+        }
+        
+        // Update provider-specific word-sync offset (Musixmatch/NetEase timing adjustments)
+        if (data && data.provider_word_sync_offset !== undefined) {
+            setProviderWordSyncOffset(data.provider_word_sync_offset);
+        }
+        
+        // Update per-song word-sync offset (user adjustment)
+        if (data && data.song_word_sync_offset !== undefined) {
+            setSongWordSyncOffset(data.song_word_sync_offset);
         }
         
         return data;

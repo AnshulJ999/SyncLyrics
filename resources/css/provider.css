@@ -354,6 +354,29 @@
     color: #93c5fd;
 }
 
+/* Reload Settings Button */
+.btn-reload {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-reload:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+}
+
 /* Scrollbar for modal */
 .provider-modal-content::-webkit-scrollbar {
     width: 6px;
@@ -473,6 +496,69 @@
 
 .provider-tab-content.active {
     display: block;
+}
+
+/* ========== LYRICS HEADER ROW (with latency controls) ========== */
+.lyrics-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lyrics-header-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.latency-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.latency-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.latency-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
+
+.latency-btn:active {
+    transform: scale(0.95);
+}
+
+.latency-value {
+    min-width: 50px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Highlight when offset is non-zero */
+.latency-value.adjusted {
+    color: #60a5fa;
 }
 
 /* ========== ALBUM ART GRID ========== */

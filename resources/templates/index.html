@@ -295,8 +295,17 @@
 
         <!-- WRAPPER FOR DESKTOP GRID -->
         <div class="provider-content-wrapper">
-            <!-- Added data-title for CSS pseudo-element header -->
-            <div id="provider-tab-content-lyrics" class="provider-tab-content active" data-title="Lyrics Source">
+            <!-- Added data-title for CSS pseudo-element header (for Album Art only now) -->
+            <div id="provider-tab-content-lyrics" class="provider-tab-content active" data-title="">
+                <!-- Real header row with latency controls -->
+                <div class="lyrics-header-row">
+                    <span class="lyrics-header-title">Lyrics Source</span>
+                    <div class="latency-controls" id="latency-controls" title="Word-sync timing adjustment">
+                        <button id="latency-minus" class="latency-btn">−</button>
+                        <span id="latency-value" class="latency-value">0ms</span>
+                        <button id="latency-plus" class="latency-btn">+</button>
+                    </div>
+                </div>
                 <div id="provider-list" class="provider-list">
                     <!-- Populated dynamically -->
                 </div>
@@ -306,6 +315,8 @@
                     <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
                     <button id="lyrics-delete-cache" class="btn-danger"
                         title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+                    <button id="reload-settings-btn" class="btn-reload"
+                        title="Reload backend settings without restart">🔄 Reload Settings</button>
                 </div>
             </div>
 
