@@ -278,15 +278,8 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
             }
         }
 
-        // Update provider info
-        if (data.provider && updateProviderDisplayFn) {
-            updateProviderDisplayFn(data.provider);
-        } else if (updateProviderDisplayFn) {
-            updateProviderDisplayFn("None");
-        }
-
-        // Update word-sync state
-        // Word-sync data is automatically used when available (ON by default)
+        // Update word-sync state FIRST (before provider display)
+        // This ensures the provider badge shows the correct provider
         if (data.has_word_sync && data.word_synced_lyrics) {
             setWordSyncedLyrics(data.word_synced_lyrics);
             setHasWordSync(true);
@@ -300,6 +293,13 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
         // Update toggle availability flag (true if ANY cached provider has word-sync)
         // This allows toggle to be enabled even if current provider doesn't have word-sync
         setAnyProviderHasWordSync(data.any_provider_has_word_sync || false);
+
+        // Update provider info (now uses word-sync provider when enabled)
+        if (data.provider && updateProviderDisplayFn) {
+            updateProviderDisplayFn(data.provider);
+        } else if (updateProviderDisplayFn) {
+            updateProviderDisplayFn("None");
+        }
 
         return data || data.lyrics;
     } catch (error) {

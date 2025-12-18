@@ -14,7 +14,10 @@ import {
     currentArtistImages,
     manualStyleOverride,
     setLastTrackInfo,
-    setManualStyleOverride
+    setManualStyleOverride,
+    wordSyncEnabled,
+    wordSyncProvider,
+    hasWordSync
 } from './state.js';
 import { showToast, setLyricsInDom } from './dom.js';
 import { normalizeTrackId } from './utils.js';
@@ -44,7 +47,10 @@ import { songWordSyncOffset } from './state.js';
 /**
  * Update the provider display badge
  * 
- * @param {string} providerName - Provider name
+ * Shows the word-sync provider when word-sync is enabled and available,
+ * otherwise shows the line-sync provider.
+ * 
+ * @param {string} providerName - Line-sync provider name (fallback)
  */
 export function updateProviderDisplay(providerName) {
     if (!displayConfig.showProvider) return;
@@ -53,8 +59,15 @@ export function updateProviderDisplay(providerName) {
     const providerNameEl = document.getElementById('provider-name');
 
     if (providerInfo && providerNameEl) {
-        const displayName = providerDisplayNames[providerName] ||
-            providerName.charAt(0).toUpperCase() + providerName.slice(1);
+        // Show word-sync provider when word-sync is enabled and available
+        // Otherwise fall back to line-sync provider
+        let effectiveProvider = providerName;
+        if (wordSyncEnabled && hasWordSync && wordSyncProvider) {
+            effectiveProvider = wordSyncProvider;
+        }
+        
+        const displayName = providerDisplayNames[effectiveProvider] ||
+            effectiveProvider.charAt(0).toUpperCase() + effectiveProvider.slice(1);
         providerNameEl.textContent = displayName;
         providerInfo.classList.remove('hidden');
     }
