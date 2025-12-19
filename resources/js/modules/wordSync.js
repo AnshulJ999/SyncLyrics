@@ -590,6 +590,11 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
  * @param {DOMHighResTimeStamp} timestamp - High resolution timestamp from rAF
  */
 function animateWordSync(timestamp) {
+    // Initialize lastAnimationTime on first frame
+    if (lastAnimationTime === 0) {
+        lastAnimationTime = timestamp;
+    }
+    
     // 60 FPS THROTTLE: Skip frames on high refresh rate displays (e.g., 144Hz)
     // This reduces CPU/GPU load by 50-60% without affecting visual quality
     if (timestamp - lastAnimationTime < FRAME_INTERVAL) {
@@ -597,7 +602,16 @@ function animateWordSync(timestamp) {
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
     }
-    lastAnimationTime = timestamp;
+    
+    // FIXED TIMESTEP: Advance by fixed interval (preserves remainder time)
+    // This maintains consistent 60 FPS cadence instead of drifting to ~51 FPS
+    lastAnimationTime += FRAME_INTERVAL;
+    
+    // SAFETY CLAMP: If too far behind (e.g., tab was backgrounded), resync
+    // Prevents runaway catch-up attempts
+    if (timestamp - lastAnimationTime > FRAME_INTERVAL * 2) {
+        lastAnimationTime = timestamp;
+    }
     
     // FPS COUNTER: Count processed frames only (after throttle)
     debugFpsFrameCount++;
