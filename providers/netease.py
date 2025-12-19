@@ -41,7 +41,7 @@ class NetEaseProvider(LyricsProvider):
         Scoring:
         - Title exact match: +80
         - Title contains target: +50
-        - Artist match: +30
+        - Artist match: +35
         - Album match: +15
         - Duration within 5s: +10
         """
@@ -64,7 +64,7 @@ class NetEaseProvider(LyricsProvider):
         
         # Artist scoring
         if any(target_artist_lower in artist or artist in target_artist_lower for artist in song_artists):
-            score += 30
+            score += 35
         
         # Album scoring (if provided)
         if target_album:
@@ -127,11 +127,10 @@ class NetEaseProvider(LyricsProvider):
                 song_artist = ', '.join([a.get('name', '') for a in selected_song.get('artists', [])])
                 logger.info(f"NetEase - Selected '{song_name}' by '{song_artist}' (score: {best_score})")
             else:
-                # Fallback to first result (preserves existing behavior)
-                selected_song = songs[0]
-                song_name = selected_song.get('name', 'Unknown')
-                song_artist = ', '.join([a.get('name', '') for a in selected_song.get('artists', [])])
-                logger.warning(f"NetEase - Low confidence match (score: {best_score}), falling back to first result: '{song_name}' by '{song_artist}'")
+                # Reject low confidence matches to avoid returning wrong lyrics
+                # This prevents issues like returning 5SOS "Bad Omens" for Bad Omens band songs
+                logger.info(f"NetEase - Rejecting low confidence match (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD}) for: {search_term}")
+                return None
             
             # Get lyrics for selected song - ensure song has 'id' field
             if 'id' not in selected_song:
