@@ -1649,6 +1649,22 @@ body.soft-mode .background-overlay {
     }
 }
 
+/* Instrumental gap (♪) entrance animation - uses line-entering without word-sync-active */
+.current.line-entering:not(.word-sync-active) {
+    animation: gapEnter 0.2s ease-out forwards;
+}
+
+@keyframes gapEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(12px) scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 /* Individual word spans in word-synced mode */
 .word-sync-word {
     display: inline-block;
