@@ -370,11 +370,11 @@ export function getFlywheelPosition() {
  * @returns {number} Current visual position in seconds
  */
 function updateFlywheelClock(timestamp) {
-    // FIXED TIMESTEP: Use constant dt for consistent timing
-    // Variable dt from rAF timestamps causes jitter on throttled frames
-    // (gaps vary between 13.9ms and 20.8ms on 144Hz display)
-    const dt = FRAME_INTERVAL / 1000;  // Always 16.67ms
-    lastFrameTime = timestamp;  // Keep for reference
+    // Calculate delta time since last frame
+    // Use variable dt to track real time, but clamp to prevent huge spikes after stalls
+    let dt = lastFrameTime ? (timestamp - lastFrameTime) / 1000 : 0;
+    dt = Math.min(dt, 0.05);  // Clamp to 50ms max to prevent jumps after GC/stalls
+    lastFrameTime = timestamp;
     
     // If paused, don't advance time
     if (!wordSyncIsPlaying) {
@@ -429,9 +429,8 @@ function updateFlywheelClock(timestamp) {
     filteredDrift = filteredDrift * (1 - DRIFT_SMOOTHING) + rawDrift * DRIFT_SMOOTHING;
     
     // IMPROVEMENT: Deadband - don't chase tiny errors (noise)
-    // Use RAW drift for deadband check (immediate detection)
-    // Use FILTERED drift for speed correction (smooth response)
-    if (Math.abs(rawDrift) < 0.02) {  // 20ms deadband on raw drift
+    // If filtered drift is within 50ms, stay at 1x speed
+    if (Math.abs(filteredDrift) < 0.05) {
         visualSpeed = 1.0;
     } else {
         // Soft sync: Adjust speed to correct filtered drift
