@@ -206,10 +206,42 @@ async def lyrics() -> dict:
 
     # Extract instrumental markers from line-sync data (for gap detection in word-sync mode)
     # These are explicit ♪ markers from Spotify/Musixmatch that indicate instrumental breaks
+    # We explicitly check Spotify/Musixmatch from cache (authoritative sources), even if not current provider
     instrumental_markers = []
-    if lyrics_module.current_song_lyrics:
-        # Symbols that indicate instrumental sections
-        instrumental_symbols = {'♪', '♪', '♫', '♬', '🎵', '🎶'}
+    instrumental_symbols = {'♪', '♪', '♫', '♬', '🎵', '🎶'}
+    
+    # First, try to load Spotify/Musixmatch from cache (authoritative sources for ♪ markers)
+    try:
+        if metadata:
+            artist = metadata.get("artist", "")
+            title = metadata.get("title", "")
+            if artist and title:
+                # Get the db path and read cached providers
+                db_path = lyrics_module._get_db_path(artist, title)
+                if db_path and os.path.exists(db_path):
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        cached_data = json.load(f)
+                    
+                    saved_lyrics = cached_data.get("saved_lyrics", {})
+                    
+                    # Priority: Spotify first, then Musixmatch
+                    for provider_name in ["spotify", "musixmatch"]:
+                        if provider_name in saved_lyrics:
+                            provider_lyrics = saved_lyrics[provider_name]
+                            for line in provider_lyrics:
+                                if len(line) >= 2:
+                                    timestamp, text = line[0], line[1]
+                                    if text.strip() in instrumental_symbols:
+                                        instrumental_markers.append(timestamp)
+                            
+                            # If we found markers, stop (use highest priority source)
+                            if instrumental_markers:
+                                break
+    except Exception as e:
+        logger.debug(f"Could not load Spotify/Musixmatch markers from cache: {e}")
+    
+    # Fallback: If no markers found from Spotify/Musixmatch, check current provider
+    if not instrumental_markers and lyrics_module.current_song_lyrics:
         for line in lyrics_module.current_song_lyrics:
             if len(line) >= 2:
                 timestamp, text = line[0], line[1]
