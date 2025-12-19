@@ -607,8 +607,10 @@ export function getFlywheelPosition() {
     // If visualPosition is 0 (animation not started), calculate from anchor
     if (visualPosition === 0 && wordSyncAnchorTimestamp > 0) {
         const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-        const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
-        return wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+        // Include ALL offsets for consistency with updateFlywheelClock
+        const totalOffset = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation
+                          + providerWordSyncOffset + songWordSyncOffset;
+        return wordSyncAnchorPosition + elapsed + totalOffset;
     }
     // Return the same position the animation uses
     return visualPosition;
