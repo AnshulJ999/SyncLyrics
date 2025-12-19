@@ -414,9 +414,14 @@ async function main() {
     
     // Listen for word-sync outro event to trigger visual mode
     // When lyrics finish, auto-enter visual mode for songs with long instrumental outros
+    // Gated by visualModeConfig.enabled to respect user settings
     window.addEventListener('wordSyncOutro', () => {
+        if (!visualModeConfig.enabled) {
+            console.log('[Main] Word-sync outro detected, but visual mode disabled in settings');
+            return;
+        }
         console.log('[Main] Word-sync outro detected, entering visual mode');
-        enterVisualMode();
+        enterVisualMode();  // Already has internal guard for visualModeActive
     });
 
     console.log('[Main] Initialization complete. Starting update loop...');

@@ -110,8 +110,12 @@ const MIN_INSTRUMENTAL_GAP_SEC = 2.0;  // 2 seconds
 // Outro detection - time after last line ends before entering visual mode
 const OUTRO_VISUAL_MODE_DELAY_SEC = 3.0;  // 3 seconds after last word ends
 
-// Track if we're in outro state (to trigger visual mode once)
-let outroTriggered = false;
+// Maximum duration for last word fallback (prevents stuck words from bad lineData.end)
+const MAX_LAST_WORD_DURATION_SEC = 2.0;  // 2 seconds max
+
+// Token for outro timeout cancellation (increments on state changes to invalidate pending callbacks)
+let outroToken = 0;
+let activeOutroToken = 0;  // Tracks which token value was active when outro was triggered
 
 // ========== WORD SYNC UTILITIES ==========
 
@@ -198,7 +202,9 @@ export function findCurrentWord(position, lineData) {
     if (lastWord.duration !== undefined && lastWord.duration > 0) {
         lastWordEnd = lastWordStart + lastWord.duration;
     } else {
-        lastWordEnd = lineData.end || (lastWordStart + 0.5);
+        // Clamp to max duration to prevent bad lineData.end from causing stuck words
+        const fallbackEnd = lineData.end || (lastWordStart + 0.5);
+        lastWordEnd = Math.min(fallbackEnd, lastWordStart + MAX_LAST_WORD_DURATION_SEC);
     }
 
     if (position >= lastWordEnd) {
@@ -760,8 +766,8 @@ function animateWordSync(timestamp) {
             updateSurroundingLines(-1);
         }
         
-        // Reset outro trigger for this song
-        outroTriggered = false;
+        // Reset outro token for this song (invalidates pending outro callbacks)
+        activeOutroToken = 0;
         
         // Clear cached state
         cachedLineId = null;
@@ -801,17 +807,23 @@ function animateWordSync(timestamp) {
         const outroStart = lineResult.outroStart || 0;
         const timeSinceOutro = position - outroStart;
         
-        if (timeSinceOutro >= OUTRO_VISUAL_MODE_DELAY_SEC && !outroTriggered) {
-            // Trigger visual mode (one-shot)
-            outroTriggered = true;
+        // Use token to track if we've already triggered for this outro
+        // Token value > 0 means we're in an active outro that was triggered
+        const wasTriggered = outroToken > 0 && outroToken === activeOutroToken;
+        
+        if (timeSinceOutro >= OUTRO_VISUAL_MODE_DELAY_SEC && !wasTriggered) {
+            // Trigger visual mode (one-shot via token)
+            outroToken++;
+            const myToken = outroToken;
+            activeOutroToken = myToken;  // Mark this outro as active
             
             // Clear current element with fade
             currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering');
             currentEl.classList.add('line-exiting');
             
-            // After fade, clear content
+            // After fade, clear content (only if token unchanged)
             setTimeout(() => {
-                if (outroTriggered) {
+                if (outroToken === myToken) {
                     currentEl.textContent = '';
                 }
             }, 300);
@@ -820,7 +832,7 @@ function animateWordSync(timestamp) {
             // The main.js will listen for this and call enterVisualMode()
             console.log('[WordSync] Outro detected, dispatching visual mode event');
             window.dispatchEvent(new CustomEvent('wordSyncOutro'));
-        } else if (!outroTriggered) {
+        } else if (!wasTriggered) {
             // Still in outro but before visual mode delay
             // Keep showing last line as fully sung for a moment, then fade
             const lastLineData = lineResult.prevLine;
@@ -857,8 +869,8 @@ function animateWordSync(timestamp) {
         return;
     }
     
-    // Reset outro trigger when we have a valid line
-    outroTriggered = false;
+    // Reset outro token when we have a valid line (invalidates pending outro callbacks)
+    activeOutroToken = 0;
     
     // Store the active line index (single source of truth)
     const previousLineIndex = activeLineIndex;
@@ -916,7 +928,9 @@ function cleanupWordSync() {
     activeLineIndex = -1;
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
-    outroTriggered = false;  // Reset outro state for next song
+    // Invalidate any pending outro callbacks by incrementing token
+    outroToken++;
+    activeOutroToken = 0;
 }
 
 /**
@@ -945,8 +959,8 @@ export function startWordSyncAnimation() {
     visualSpeed = 1.0;
     lastFrameTime = 0;
     
-    // Reset outro trigger for new animation start
-    outroTriggered = false;
+    // Reset outro token for new animation start
+    activeOutroToken = 0;
     
     console.log('[WordSync] Starting animation loop with flywheel clock');
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
