@@ -386,9 +386,11 @@ export function findCurrentWordSyncLine(position) {
  * Called ONLY when the active line changes, not every frame
  * This is the single authority for surrounding lines during word-sync
  * 
- * @param {number} idx - Current line index (-1 during intro)
+ * @param {number} idx - Current line index (-1 for intro, -2 for clear all)
+ * @param {boolean} justFinished - If true, idx is the line that JUST FINISHED 
+ *                                  (for gap/outro where current shows ♪ or is empty)
  */
-function updateSurroundingLines(idx) {
+function updateSurroundingLines(idx, justFinished = false) {
     const getText = (i) => {
         if (!wordSyncedLyrics || i < 0 || i >= wordSyncedLyrics.length) return "";
         return wordSyncedLyrics[i]?.text || "";
@@ -400,7 +402,7 @@ function updateSurroundingLines(idx) {
     const next2 = document.getElementById('next-2');
     const next3 = document.getElementById('next-3');
     
-    // During outro/visual mode entry (idx = -2), clear ALL lines
+    // Clear all mode (visual mode entry)
     if (idx === -2) {
         if (prev2) prev2.textContent = "";
         if (prev1) prev1.textContent = "";
@@ -410,22 +412,34 @@ function updateSurroundingLines(idx) {
         return;
     }
     
-    // During intro (idx = -1), show first lines as upcoming
-    // Current line shows ♪, so first actual lyric goes in next-1
+    // Intro mode: no previous lines, show upcoming lines
     if (idx === -1) {
         if (prev2) prev2.textContent = "";
         if (prev1) prev1.textContent = "";
-        if (next1) next1.textContent = getText(0);  // First line
-        if (next2) next2.textContent = getText(1);  // Second line
-        if (next3) next3.textContent = getText(2);  // Third line
-    } else {
-        // Normal case: show surrounding lines relative to current index
-        if (prev2) prev2.textContent = getText(idx - 2);
-        if (prev1) prev1.textContent = getText(idx - 1);
-        if (next1) next1.textContent = getText(idx + 1);
+        if (next1) next1.textContent = getText(0);  // First line coming up
+        if (next2) next2.textContent = getText(1);
+        if (next3) next3.textContent = getText(2);
+        return;
+    }
+    
+    // Gap/Outro mode: idx is the line that just finished singing
+    // Current slot shows ♪ (gap) or is empty (outro)
+    // So the just-finished line should appear in prev-1, not be treated as current
+    if (justFinished) {
+        if (prev2) prev2.textContent = getText(idx - 1);
+        if (prev1) prev1.textContent = getText(idx);      // The line that just finished
+        if (next1) next1.textContent = getText(idx + 1);  // Next line coming up
         if (next2) next2.textContent = getText(idx + 2);
         if (next3) next3.textContent = getText(idx + 3);
+        return;
     }
+    
+    // Normal case: idx is the current line being displayed in "current" slot
+    if (prev2) prev2.textContent = getText(idx - 2);
+    if (prev1) prev1.textContent = getText(idx - 1);
+    if (next1) next1.textContent = getText(idx + 1);
+    if (next2) next2.textContent = getText(idx + 2);
+    if (next3) next3.textContent = getText(idx + 3);
 }
 
 /**
@@ -839,10 +853,11 @@ function animateWordSync(timestamp) {
         currentEl.textContent = '♪';
         
         // Use previous line index for surrounding lines context
+        // Pass justFinished=true so the just-finished line appears in prev-1
         const contextIdx = lineResult.index;
         if (activeLineIndex !== contextIdx) {
             activeLineIndex = contextIdx;
-            updateSurroundingLines(contextIdx);
+            updateSurroundingLines(contextIdx, true);  // justFinished mode
         }
         
         // Clear cached state
