@@ -324,6 +324,9 @@ async function updateLoop() {
  * Main initialization function
  */
 async function main() {
+    // Mark document as JS-ready immediately to reveal content (FOUC prevention)
+    document.documentElement.classList.add('js-ready');
+    
     console.log('[Main] Initializing SyncLyrics...');
 
     // Load config first
@@ -414,6 +417,31 @@ async function main() {
     // Start the main loop
     updateLoop();
 }
+
+// ========== JS INIT WATCHDOG ==========
+// Auto-reload if JS fails to initialize (fixes HA WebView silent module failures)
+(function initWatchdog() {
+    const MAX_RETRIES = 3;
+    const TIMEOUT_MS = 5000;
+    const retries = parseInt(sessionStorage.getItem('js-init-retries') || '0', 10);
+    
+    setTimeout(() => {
+        if (!document.documentElement.classList.contains('js-ready')) {
+            console.error('[Init] JS failed to initialize — forcing reload');
+            if (retries < MAX_RETRIES) {
+                sessionStorage.setItem('js-init-retries', String(retries + 1));
+                location.reload();
+            } else {
+                console.error('[Init] Max retries reached — showing content anyway');
+                // Show content as last resort to avoid permanent blank screen
+                document.documentElement.classList.add('js-ready');
+            }
+        } else {
+            // Success — reset retry counter
+            sessionStorage.setItem('js-init-retries', '0');
+        }
+    }, TIMEOUT_MS);
+})();
 
 // ========== EVENT LISTENERS ==========
 

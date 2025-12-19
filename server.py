@@ -66,6 +66,26 @@ async def inject_cache_version() -> dict:
 async def theme() -> dict: 
     return {"theme": get_attribute_js_notation(get_state(), 'theme')}
 
+@app.after_request
+async def add_cache_headers(response):
+    """
+    Add Cache-Control headers to prevent stale content issues.
+    - Static assets: 1hr cache with revalidation (cache busting via ?v= handles updates)
+    - API/pages: no caching to ensure fresh data
+    """
+    path = request.path
+    
+    # Static assets (CSS, JS, images) - allow short cache since we use cache busting
+    if path.startswith('/resources/'):
+        response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
+    # API endpoints and pages - no caching
+    elif path.startswith('/api/') or path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    
+    return response
+
 # --- Routes ---
 
 @app.route("/")

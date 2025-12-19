@@ -1,3 +1,17 @@
+/* ========== FOUC PREVENTION ========== */
+/* Hide content until JavaScript initializes to prevent flash of unstyled content */
+/* The js-ready class is added by main.js on successful initialization */
+html:not(.js-ready) body {
+    visibility: hidden;
+}
+/* Fallback: show content after 2s even if JS fails (backup for watchdog) */
+html:not(.js-ready) body {
+    animation: fouc-fallback 0s 2s forwards;
+}
+@keyframes fouc-fallback {
+    to { visibility: visible; }
+}
+
 /* ========== RESET STYLES ========== */
 * {
     /* Remove default margins from all elements */
