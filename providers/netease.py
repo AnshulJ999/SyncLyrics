@@ -39,11 +39,11 @@ class NetEaseProvider(LyricsProvider):
         Higher score = better match.
         
         Scoring:
-        - Title exact match: +80
-        - Title contains target: +50
-        - Artist match: +35
-        - Album match: +15
-        - Duration within 5s: +10
+        - Title exact match: +50
+        - Title contains target: +40
+        - Artist match: +40
+        - Album match: +25
+        - Duration within 3s: +25
         """
         score = 0
         
@@ -58,9 +58,9 @@ class NetEaseProvider(LyricsProvider):
         
         # Title scoring (most important)
         if song_title == target_title_lower:
-            score += 50  # Exact match
+            score += 55  # Exact match
         elif target_title_lower in song_title or song_title in target_title_lower:
-            score += 40  # Partial match
+            score += 45  # Partial match
         
         # Artist scoring
         if any(target_artist_lower in artist or artist in target_artist_lower for artist in song_artists):
@@ -70,12 +70,12 @@ class NetEaseProvider(LyricsProvider):
         if target_album:
             target_album_lower = target_album.lower().strip()
             if target_album_lower in song_album or song_album in target_album_lower:
-                score += 25
+                score += 20
         
         # Duration scoring (if provided, within 5 second tolerance)
         if target_duration and song_duration_s:
             if abs(song_duration_s - target_duration) <= 3:
-                score += 25
+                score += 20
         
         return score
     
