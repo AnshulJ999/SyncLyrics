@@ -39,6 +39,13 @@ _SLIDESHOW_CACHE_TTL = 3600  # 1 hour
 # Key: file path (str), Value: last log timestamp
 _cover_art_log_throttle = {}
 
+# Cache for instrumental markers (avoids disk read every /lyrics poll)
+# Key: (artist, title), Value: list of marker timestamps
+_instrumental_markers_cache = {
+    'key': None,       # (artist, title) tuple
+    'markers': []      # List of timestamps
+}
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -207,15 +214,23 @@ async def lyrics() -> dict:
     # Extract instrumental markers from line-sync data (for gap detection in word-sync mode)
     # These are explicit ♪ markers from Spotify/Musixmatch that indicate instrumental breaks
     # We explicitly check Spotify/Musixmatch from cache (authoritative sources), even if not current provider
+    # PERFORMANCE: Cache markers per song to avoid disk reads every 100ms poll
     instrumental_markers = []
-    instrumental_symbols = {'♪', '♪', '♫', '♬', '🎵', '🎶'}
     
-    # First, try to load Spotify/Musixmatch from cache (authoritative sources for ♪ markers)
-    try:
-        if metadata:
-            artist = metadata.get("artist", "")
-            title = metadata.get("title", "")
-            if artist and title:
+    if metadata:
+        artist = metadata.get("artist", "")
+        title = metadata.get("title", "")
+        cache_key = (artist, title) if artist and title else None
+        
+        # Check if we have cached markers for this song
+        if cache_key and _instrumental_markers_cache['key'] == cache_key:
+            # Use cached markers (no disk read needed)
+            instrumental_markers = _instrumental_markers_cache['markers']
+        elif cache_key:
+            # Song changed - invalidate cache and extract markers from disk
+            instrumental_symbols = {'♪', '♫', '♬', '🎵', '🎶'}
+            
+            try:
                 # Get the db path and read cached providers
                 db_path = lyrics_module._get_db_path(artist, title)
                 if db_path and os.path.exists(db_path):
@@ -237,16 +252,20 @@ async def lyrics() -> dict:
                             # If we found markers, stop (use highest priority source)
                             if instrumental_markers:
                                 break
-    except Exception as e:
-        logger.debug(f"Could not load Spotify/Musixmatch markers from cache: {e}")
-    
-    # Fallback: If no markers found from Spotify/Musixmatch, check current provider
-    if not instrumental_markers and lyrics_module.current_song_lyrics:
-        for line in lyrics_module.current_song_lyrics:
-            if len(line) >= 2:
-                timestamp, text = line[0], line[1]
-                if text.strip() in instrumental_symbols:
-                    instrumental_markers.append(timestamp)
+            except Exception as e:
+                logger.debug(f"Could not load Spotify/Musixmatch markers from cache: {e}")
+            
+            # Fallback: If no markers found from Spotify/Musixmatch, check current provider
+            if not instrumental_markers and lyrics_module.current_song_lyrics:
+                for line in lyrics_module.current_song_lyrics:
+                    if len(line) >= 2:
+                        timestamp, text = line[0], line[1]
+                        if text.strip() in instrumental_symbols:
+                            instrumental_markers.append(timestamp)
+            
+            # Update cache for this song
+            _instrumental_markers_cache['key'] = cache_key
+            _instrumental_markers_cache['markers'] = instrumental_markers
 
     return {
         "lyrics": list(lyrics_data),
