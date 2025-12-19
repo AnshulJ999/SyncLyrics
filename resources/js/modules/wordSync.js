@@ -363,20 +363,28 @@ function updateSurroundingLines(idx) {
         return wordSyncedLyrics[i]?.text || "";
     };
     
-    // During intro (idx = -1), show first lines as upcoming
-    const effectiveIdx = idx === -1 ? 0 : idx;
-    
     const prev2 = document.getElementById('prev-2');
     const prev1 = document.getElementById('prev-1');
     const next1 = document.getElementById('next-1');
     const next2 = document.getElementById('next-2');
     const next3 = document.getElementById('next-3');
     
-    if (prev2) prev2.textContent = getText(effectiveIdx - 2);
-    if (prev1) prev1.textContent = getText(effectiveIdx - 1);
-    if (next1) next1.textContent = getText(effectiveIdx + 1);
-    if (next2) next2.textContent = getText(effectiveIdx + 2);
-    if (next3) next3.textContent = getText(effectiveIdx + 3);
+    // During intro (idx = -1), show first lines as upcoming
+    // Current line shows ♪, so first actual lyric goes in next-1
+    if (idx === -1) {
+        if (prev2) prev2.textContent = "";
+        if (prev1) prev1.textContent = "";
+        if (next1) next1.textContent = getText(0);  // First line
+        if (next2) next2.textContent = getText(1);  // Second line
+        if (next3) next3.textContent = getText(2);  // Third line
+    } else {
+        // Normal case: show surrounding lines relative to current index
+        if (prev2) prev2.textContent = getText(idx - 2);
+        if (prev1) prev1.textContent = getText(idx - 1);
+        if (next1) next1.textContent = getText(idx + 1);
+        if (next2) next2.textContent = getText(idx + 2);
+        if (next3) next3.textContent = getText(idx + 3);
+    }
 }
 
 /**
@@ -761,16 +769,17 @@ function animateWordSync(timestamp) {
         currentEl.textContent = '♪';
         
         // Update surrounding lines to show upcoming lyrics
-        if (activeLineIndex !== -1) {
+        // Force update on first intro frame (even if activeLineIndex was already -1)
+        if (activeLineIndex !== -1 || cachedLineId !== 'intro') {
             activeLineIndex = -1;
+            cachedLineId = 'intro';  // Mark that we've set up intro display
             updateSurroundingLines(-1);
         }
         
         // Reset outro token for this song (invalidates pending outro callbacks)
         activeOutroToken = 0;
         
-        // Clear cached state
-        cachedLineId = null;
+        // Don't clear cachedLineId here - we use it to track intro state
         wordElements = [];
         
         // Request next frame
