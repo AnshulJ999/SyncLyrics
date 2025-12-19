@@ -416,18 +416,24 @@ async function main() {
 
     // Start the main loop
     updateLoop();
+    
+    // Mark initialization as fully complete (for watchdog)
+    // This is separate from js-ready which is set early for FOUC prevention
+    document.documentElement.classList.add('js-init-complete');
 }
 
 // ========== JS INIT WATCHDOG ==========
 // Auto-reload if JS fails to initialize (fixes HA WebView silent module failures)
 (function initWatchdog() {
     const MAX_RETRIES = 3;
-    const TIMEOUT_MS = 5000;
+    const TIMEOUT_MS = 10000; // 10 seconds - generous for slow networks
     const retries = parseInt(sessionStorage.getItem('js-init-retries') || '0', 10);
     
     setTimeout(() => {
-        if (!document.documentElement.classList.contains('js-ready')) {
-            console.error('[Init] JS failed to initialize — forcing reload');
+        // Check js-init-complete (set at END of main), not js-ready (set at START)
+        // This catches: module load failures, init crashes, stuck async operations
+        if (!document.documentElement.classList.contains('js-init-complete')) {
+            console.error('[Init] JS failed to fully initialize — forcing reload');
             if (retries < MAX_RETRIES) {
                 sessionStorage.setItem('js-init-retries', String(retries + 1));
                 location.reload();
@@ -435,6 +441,7 @@ async function main() {
                 console.error('[Init] Max retries reached — showing content anyway');
                 // Show content as last resort to avoid permanent blank screen
                 document.documentElement.classList.add('js-ready');
+                document.documentElement.classList.add('js-init-complete');
             }
         } else {
             // Success — reset retry counter

@@ -76,7 +76,7 @@ async def add_cache_headers(response):
     path = request.path
     
     # Static assets (CSS, JS, images) - allow short cache since we use cache busting
-    if path.startswith('/resources/'):
+    if path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
     # API endpoints and pages - no caching
     elif path.startswith('/api/') or path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
