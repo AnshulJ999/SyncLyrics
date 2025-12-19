@@ -370,9 +370,11 @@ export function getFlywheelPosition() {
  * @returns {number} Current visual position in seconds
  */
 function updateFlywheelClock(timestamp) {
-    // Calculate delta time since last frame
-    const dt = lastFrameTime ? (timestamp - lastFrameTime) / 1000 : 0;
-    lastFrameTime = timestamp;
+    // FIXED TIMESTEP: Use constant dt for consistent timing
+    // Variable dt from rAF timestamps causes jitter on throttled frames
+    // (gaps vary between 13.9ms and 20.8ms on 144Hz display)
+    const dt = FRAME_INTERVAL / 1000;  // Always 16.67ms
+    lastFrameTime = timestamp;  // Keep for reference
     
     // If paused, don't advance time
     if (!wordSyncIsPlaying) {
@@ -427,13 +429,13 @@ function updateFlywheelClock(timestamp) {
     filteredDrift = filteredDrift * (1 - DRIFT_SMOOTHING) + rawDrift * DRIFT_SMOOTHING;
     
     // IMPROVEMENT: Deadband - don't chase tiny errors (noise)
-    // If filtered drift is within 50ms, stay at 1x speed
-    if (Math.abs(filteredDrift) < 0.05) {
+    // Use RAW drift for deadband check (immediate detection)
+    // Use FILTERED drift for speed correction (smooth response)
+    if (Math.abs(rawDrift) < 0.02) {  // 20ms deadband on raw drift
         visualSpeed = 1.0;
     } else {
         // Soft sync: Adjust speed to correct filtered drift
         // Using filtered drift prevents jerky speed changes
-        // Reduced multiplier (0.5) for gentler corrections
         visualSpeed = 1.0 + (filteredDrift * 0.5);
         
         // RELAXED SPEED CLAMP: Allow gentle slowdowns (92% - 108%)
@@ -591,8 +593,9 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
  */
 function animateWordSync(timestamp) {
     // Initialize lastAnimationTime on first frame
+    // Set to 1 frame in past so first frame processes immediately
     if (lastAnimationTime === 0) {
-        lastAnimationTime = timestamp;
+        lastAnimationTime = timestamp - FRAME_INTERVAL;
     }
     
     // 60 FPS THROTTLE: Skip frames on high refresh rate displays (e.g., 144Hz)
@@ -608,8 +611,8 @@ function animateWordSync(timestamp) {
     lastAnimationTime += FRAME_INTERVAL;
     
     // SAFETY CLAMP: If too far behind (e.g., tab was backgrounded), resync
-    // Prevents runaway catch-up attempts
-    if (timestamp - lastAnimationTime > FRAME_INTERVAL * 2) {
+    // Use 250ms threshold - 33ms was too aggressive (normal GC can cause that)
+    if (timestamp - lastAnimationTime > 250) {
         lastAnimationTime = timestamp;
     }
     
