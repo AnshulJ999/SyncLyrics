@@ -120,6 +120,10 @@ let activeOutroToken = 0;  // Tracks which token value was active when outro was
 // Track if intro display has been set up (prevents redundant updates)
 let introDisplayed = false;
 
+// Track if gap display has been set up (prevents redundant updates)
+// Needed because gap after line N has same index as line N itself
+let gapDisplayed = false;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -854,9 +858,11 @@ function animateWordSync(timestamp) {
         
         // Use previous line index for surrounding lines context
         // Pass justFinished=true so the just-finished line appears in prev-1
+        // FIX: Also update if we just entered gap mode (singing Line N → gap after Line N has same index!)
         const contextIdx = lineResult.index;
-        if (activeLineIndex !== contextIdx) {
+        if (activeLineIndex !== contextIdx || !gapDisplayed) {
             activeLineIndex = contextIdx;
+            gapDisplayed = true;  // Mark that we've set up gap display
             updateSurroundingLines(contextIdx, true);  // justFinished mode
         }
         
@@ -868,6 +874,9 @@ function animateWordSync(timestamp) {
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
     }
+    
+    // Reset gap flag when we exit gap (for normal/outro cases)
+    gapDisplayed = false;
     
     // CASE 3: OUTRO - After last line ends
     if (inOutro) {
@@ -1000,6 +1009,7 @@ function cleanupWordSync() {
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
     introDisplayed = false;  // Reset intro state for next song
+    gapDisplayed = false;    // Reset gap state for next song
     // Invalidate any pending outro callbacks by incrementing token
     outroToken++;
     activeOutroToken = 0;
