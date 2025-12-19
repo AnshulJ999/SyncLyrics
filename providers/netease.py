@@ -70,12 +70,12 @@ class NetEaseProvider(LyricsProvider):
         if target_album:
             target_album_lower = target_album.lower().strip()
             if target_album_lower in song_album or song_album in target_album_lower:
-                score += 20
+                score += 25
         
         # Duration scoring (if provided, within 5 second tolerance)
         if target_duration and song_duration_s:
             if abs(song_duration_s - target_duration) <= 3:
-                score += 15
+                score += 25
         
         return score
     
