@@ -37,7 +37,8 @@ import {
     debugPollTimestamp,
     debugPollInterval,
     debugSource,
-    debugBadSamples
+    debugBadSamples,
+    lastTrackInfo
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -80,6 +81,11 @@ let filteredDrift = 0;
 // Debug counters for snap events
 let snapCount = 0;          // Large forward snaps (>1s drift)
 let backSnapCount = 0;      // Small backward snaps (<100ms)
+
+// FPS tracking for debug overlay
+let debugFpsFrameCount = 0;
+let debugFpsLastTime = 0;
+let debugFps = 0;
 
 // Line change tracking for line-boundary back-snaps
 // Back-snaps only allowed within this window after line change (hidden by transition)
@@ -812,14 +818,36 @@ export function getDebugTimingData() {
     const serverPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     const drift = (serverPosition - visualPosition) * 1000;  // in ms
     const pollAge = performance.now() - debugPollTimestamp;  // ms since last poll
+    const anchorAge = performance.now() - wordSyncAnchorTimestamp;  // ms since anchor update
     
     // Get total lines count
     const totalLines = wordSyncedLyrics ? wordSyncedLyrics.length : 0;
     
+    // Get progress_ms from lastTrackInfo
+    const progressMs = lastTrackInfo?.progress_ms || 0;
+    
+    // Get memory usage (Chrome/Edge only)
+    let memoryMB = null;
+    if (performance.memory) {
+        memoryMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
+    }
+    
+    // Update FPS counter (calculate every second)
+    debugFpsFrameCount++;
+    const now = performance.now();
+    if (now - debugFpsLastTime >= 1000) {
+        debugFps = debugFpsFrameCount;
+        debugFpsFrameCount = 0;
+        debugFpsLastTime = now;
+    }
+    
     return {
         serverPos: serverPosition,
         visualPos: visualPosition,
+        renderPos: renderPosition,
         drift: drift,
+        filteredDrift: filteredDrift * 1000,  // in ms
+        anchorAge: anchorAge,
         rtt: debugRtt,
         rttSmoothed: debugRttSmoothed,
         rttJitter: debugRttJitter,
@@ -837,7 +865,10 @@ export function getDebugTimingData() {
         backSnapCount: backSnapCount,
         badSamples: debugBadSamples,
         latencyComp: totalLatencyCompensation,
-        songOffset: songWordSyncOffset  // Per-song offset for display
+        songOffset: songWordSyncOffset,
+        progressMs: progressMs,
+        fps: debugFps,
+        memoryMB: memoryMB
     };
 }
 
@@ -859,15 +890,19 @@ export function updateDebugOverlay() {
     overlay.innerHTML = `
         <div class="debug-row"><span class="debug-label">Est pos:</span> ${data.serverPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Visual:</span> ${data.visualPos.toFixed(3)}s</div>
-        <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
+        <div class="debug-row"><span class="debug-label">Render:</span> ${data.renderPos.toFixed(3)}s</div>
+        <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span> (filt: ${data.filteredDrift >= 0 ? '+' : ''}${data.filteredDrift.toFixed(0)})</div>
+        <div class="debug-row"><span class="debug-label">Anchor:</span> ${data.anchorAge.toFixed(0)}ms ago</div>
         <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
         <div class="debug-row"><span class="debug-label">Comp:</span> ${data.latencyComp >= 0 ? '+' : ''}${(data.latencyComp * 1000).toFixed(0)}ms (song: ${data.songOffset >= 0 ? '+' : ''}${(data.songOffset * 1000).toFixed(0)})</div>
+        <div class="debug-row"><span class="debug-label">Progress:</span> ${data.progressMs}ms</div>
         <div class="debug-row"><span class="debug-label">dt_poll:</span> <span class="${pollWarn}">${data.pollInterval.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
         <div class="debug-row"><span class="debug-label">Snaps:</span> ${data.snapCount} / ${data.backSnapCount}</div>
         <div class="debug-row"><span class="debug-label">Bad:</span> ${data.badSamples} ignored</div>
         <div class="debug-row"><span class="debug-label">Line:</span> ${data.lineIndex + 1}/${data.totalLines}</div>
         <div class="debug-row"><span class="debug-label">Word:</span> ${data.wordIndex + 1}/${data.totalWords} (${(data.wordProgress * 100).toFixed(0)}%)</div>
+        <div class="debug-row"><span class="debug-label">FPS:</span> ${data.fps}${data.memoryMB !== null ? ` | Mem: ${data.memoryMB}MB` : ''}</div>
     `;
 }
