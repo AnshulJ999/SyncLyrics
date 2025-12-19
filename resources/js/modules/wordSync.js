@@ -112,7 +112,7 @@ const MIN_INSTRUMENTAL_GAP_SEC = 6.0;  // 6 seconds
 const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 6 seconds after last word ends
 
 // Maximum duration for last word fallback (prevents stuck words from bad lineData.end)
-const MAX_LAST_WORD_DURATION_SEC = 4.0;  // 2 seconds max
+const MAX_LAST_WORD_DURATION_SEC = 4.0;  // 4 seconds max
 
 // Token for outro timeout cancellation (increments on state changes to invalidate pending callbacks)
 let outroToken = 0;
@@ -329,9 +329,10 @@ function isInSpotifyInstrumental(position) {
                 }
             }
             
-            // If no line found after marker, it's the outro
+            // If no line found after marker, this is an instrumental OUTRO
+            // Return null to let the normal outro logic handle it (for visual mode, etc.)
             if (gapEnd === Infinity) {
-                prevLineIndex = wordSyncedLyrics.length - 1;
+                return null;  // Don't trap in gap mode - let outro detection run
             }
         }
         
