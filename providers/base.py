@@ -53,13 +53,16 @@ class LyricsProvider(ABC):
             logger.info(f"{self.name} provider is disabled")
     
     @abstractmethod
-    def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+    def get_lyrics(self, artist: str, title: str, 
+                   album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
         """
         Get synchronized lyrics for a song.
         
         Args:
             artist (str): Artist name
             title (str): Song title
+            album (str, optional): Album name for better matching
+            duration (int, optional): Track duration in seconds for scoring/verification
             
         Returns:
             Optional[Dict[str, Any]]: Result dictionary containing:

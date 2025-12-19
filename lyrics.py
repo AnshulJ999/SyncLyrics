@@ -608,7 +608,9 @@ def _backfill_missing_providers(
     artist: str,
     title: str,
     missing_providers: List[object],
-    skip_provider_limit: bool = False
+    skip_provider_limit: bool = False,
+    album: str = None,
+    duration: int = None
 ) -> None:
     """Fetches any providers that are missing in the DB while UI uses cached lyrics.
     
@@ -617,6 +619,8 @@ def _backfill_missing_providers(
         title: Song title
         missing_providers: List of provider objects to fetch from
         skip_provider_limit: If True, skip the 3-provider limit check (used for word-sync backfill)
+        album: Album name for provider matching (optional)
+        duration: Track duration in seconds (optional)
     """
     song_key = _normalized_song_key(artist, title)
     if song_key in _backfill_tracker:
@@ -635,9 +639,9 @@ def _backfill_missing_providers(
 
             for provider in missing_providers:
                 if asyncio.iscoroutinefunction(provider.get_lyrics):
-                    coro = provider.get_lyrics(artist, title)
+                    coro = provider.get_lyrics(artist, title, album, duration)
                 else:
-                    coro = asyncio.to_thread(provider.get_lyrics, artist, title)
+                    coro = asyncio.to_thread(provider.get_lyrics, artist, title, album, duration)
 
                 task = asyncio.create_task(coro)
                 tasks.add(task)
@@ -847,10 +851,18 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
     
     # Lyrics not cached - fetch them
     try:
+        # Get album/duration from current song data for better provider matching
+        album = None
+        duration = None
+        if current_song_data:
+            album = current_song_data.get("album")
+            duration_ms = current_song_data.get("duration_ms")
+            duration = duration_ms // 1000 if duration_ms else None
+        
         if asyncio.iscoroutinefunction(provider_obj.get_lyrics):
-            raw_result = await provider_obj.get_lyrics(artist, title)
+            raw_result = await provider_obj.get_lyrics(artist, title, album, duration)
         else:
-            raw_result = await asyncio.to_thread(provider_obj.get_lyrics, artist, title)
+            raw_result = await asyncio.to_thread(provider_obj.get_lyrics, artist, title, album, duration)
 
         lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
         lyrics = _apply_instrumental_marker(lyrics, metadata)
@@ -1134,13 +1146,20 @@ async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:
 # Main Logic
 # ==========================================
 
-async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
+async def _fetch_and_set_lyrics(target_artist: str, target_title: str, 
+                                 album: str = None, duration: int = None):
     """
     Background task helper to fetch lyrics without blocking the UI.
     
     This function runs in the background after _update_song has already
     updated current_song_data and released the lock. This prevents the
     UI from freezing while waiting for internet requests to complete.
+    
+    Args:
+        target_artist: Artist name
+        target_title: Song title
+        album: Album name for better provider matching (optional)
+        duration: Track duration in seconds (optional)
     
     After fetching, reloads from DB to populate word-sync globals.
     """
@@ -1149,7 +1168,8 @@ async def _fetch_and_set_lyrics(target_artist: str, target_title: str):
 
     try:
         # Use the global _get_lyrics function to fetch from internet providers
-        fetched_lyrics = await _get_lyrics(target_artist, target_title)
+        # Pass album/duration for better provider matching (scoring)
+        fetched_lyrics = await _get_lyrics(target_artist, target_title, album, duration)
         
         # CRITICAL: Check if song is still the same before setting lyrics
         # This prevents stale lyrics from a previous song being displayed
@@ -1282,7 +1302,10 @@ async def _update_song():
                             ]
                             if missing:
                                 logger.info(f"Word-sync backfill triggered for {target_artist} - {target_title} (no word-sync cached, trying: {', '.join(p.name for p in missing)})")
-                                _backfill_missing_providers(target_artist, target_title, missing, skip_provider_limit=True)
+                                backfill_album = new_song_data.get("album")
+                                backfill_duration_ms = new_song_data.get("duration_ms")
+                                backfill_duration = backfill_duration_ms // 1000 if backfill_duration_ms else None
+                                _backfill_missing_providers(target_artist, target_title, missing, skip_provider_limit=True, album=backfill_album, duration=backfill_duration)
                         else:
                             # Normal backfill for providers < 3
                             missing = [
@@ -1292,7 +1315,10 @@ async def _update_song():
                             ]
                             if missing:
                                 logger.info(f"Backfill triggered for {target_artist} - {target_title} (have {len(saved_providers)}/3 providers, missing: {', '.join(p.name for p in missing)})")
-                                _backfill_missing_providers(target_artist, target_title, missing)
+                                backfill_album = new_song_data.get("album")
+                                backfill_duration_ms = new_song_data.get("duration_ms")
+                                backfill_duration = backfill_duration_ms // 1000 if backfill_duration_ms else None
+                                _backfill_missing_providers(target_artist, target_title, missing, album=backfill_album, duration=backfill_duration)
                     else:
                         logger.debug(f"Skipping backfill for {target_artist} - {target_title} (have {len(saved_providers)} providers, word-sync: {has_word_sync})")
             else:
@@ -1303,14 +1329,24 @@ async def _update_song():
                 # so other operations can continue, and _fetch_and_set_lyrics will update
                 # current_song_lyrics when the fetch completes (if song hasn't changed).
                 current_song_lyrics = [(0, "Searching lyrics...")] 
-                create_tracked_task(_fetch_and_set_lyrics(target_artist, target_title))
+                # Pass album and duration for better provider matching
+                target_album = new_song_data.get("album")
+                target_duration_ms = new_song_data.get("duration_ms")
+                target_duration = target_duration_ms // 1000 if target_duration_ms else None
+                create_tracked_task(_fetch_and_set_lyrics(target_artist, target_title, target_album, target_duration))
         else:
             # Song hasn't changed, just update the metadata (position, etc.)
             current_song_data = new_song_data
 
-async def _get_lyrics(artist: str, title: str):
+async def _get_lyrics(artist: str, title: str, album: str = None, duration: int = None):
     """
     Tries providers to find lyrics.
+    
+    Args:
+        artist: Artist name
+        title: Song title
+        album: Album name for better matching (optional)
+        duration: Track duration in seconds for scoring (optional)
     
     Modes:
     1. Sequential: Tries one by one. Safe, but slow.
@@ -1331,9 +1367,9 @@ async def _get_lyrics(artist: str, title: str):
         for provider in sorted_providers:
             try:
                 if asyncio.iscoroutinefunction(provider.get_lyrics):
-                    raw_result = await provider.get_lyrics(artist, title)
+                    raw_result = await provider.get_lyrics(artist, title, album, duration)
                 else:
-                    raw_result = await asyncio.to_thread(provider.get_lyrics, artist, title)
+                    raw_result = await asyncio.to_thread(provider.get_lyrics, artist, title, album, duration)
 
                 lyrics, metadata, word_synced = _normalize_provider_result(raw_result)
                 lyrics = _apply_instrumental_marker(lyrics, metadata)
@@ -1357,9 +1393,9 @@ async def _get_lyrics(artist: str, title: str):
     for provider in sorted_providers:
         # Wrap sync functions in thread, keep async functions as is
         if asyncio.iscoroutinefunction(provider.get_lyrics):
-            coro = provider.get_lyrics(artist, title)
+            coro = provider.get_lyrics(artist, title, album, duration)
         else:
-            coro = asyncio.to_thread(provider.get_lyrics, artist, title)
+            coro = asyncio.to_thread(provider.get_lyrics, artist, title, album, duration)
         
         task = asyncio.create_task(coro)
         tasks.append(task)
