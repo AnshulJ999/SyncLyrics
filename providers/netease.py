@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 class NetEaseProvider(LyricsProvider):
     # Minimum score threshold for confident match (title must match)
-    MIN_CONFIDENCE_THRESHOLD = 50
+    MIN_CONFIDENCE_THRESHOLD = 65
     
     def __init__(self):
         """Initialize NetEase provider with config settings"""
@@ -58,24 +58,24 @@ class NetEaseProvider(LyricsProvider):
         
         # Title scoring (most important)
         if song_title == target_title_lower:
-            score += 80  # Exact match
+            score += 50  # Exact match
         elif target_title_lower in song_title or song_title in target_title_lower:
-            score += 50  # Partial match
+            score += 40  # Partial match
         
         # Artist scoring
         if any(target_artist_lower in artist or artist in target_artist_lower for artist in song_artists):
-            score += 35
+            score += 40
         
         # Album scoring (if provided)
         if target_album:
             target_album_lower = target_album.lower().strip()
             if target_album_lower in song_album or song_album in target_album_lower:
-                score += 15
+                score += 20
         
         # Duration scoring (if provided, within 5 second tolerance)
         if target_duration and song_duration_s:
-            if abs(song_duration_s - target_duration) <= 5:
-                score += 10
+            if abs(song_duration_s - target_duration) <= 3:
+                score += 15
         
         return score
     
