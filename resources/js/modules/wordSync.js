@@ -105,13 +105,13 @@ let renderPosition = 0;
 const ULTRA_SHORT_WORD_MS = 60;  // 60ms
 
 // Gap detection threshold - show ♪ for gaps longer than this
-const MIN_INSTRUMENTAL_GAP_SEC = 2.0;  // 2 seconds
+const MIN_INSTRUMENTAL_GAP_SEC = 3.0;  // 2 seconds
 
 // Outro detection - time after last line ends before entering visual mode
-const OUTRO_VISUAL_MODE_DELAY_SEC = 3.0;  // 3 seconds after last word ends
+const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 3 seconds after last word ends
 
 // Maximum duration for last word fallback (prevents stuck words from bad lineData.end)
-const MAX_LAST_WORD_DURATION_SEC = 2.0;  // 2 seconds max
+const MAX_LAST_WORD_DURATION_SEC = 4.0;  // 2 seconds max
 
 // Token for outro timeout cancellation (increments on state changes to invalidate pending callbacks)
 let outroToken = 0;
