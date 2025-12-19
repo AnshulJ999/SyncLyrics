@@ -117,6 +117,9 @@ const MAX_LAST_WORD_DURATION_SEC = 2.0;  // 2 seconds max
 let outroToken = 0;
 let activeOutroToken = 0;  // Tracks which token value was active when outro was triggered
 
+// Track if intro display has been set up (prevents redundant updates)
+let introDisplayed = false;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -221,43 +224,69 @@ export function findCurrentWord(position, lineData) {
 }
 
 /**
- * Calculate the effective end time of a line using word timing data.
- * Uses last word's end time for accuracy instead of arbitrary fallbacks.
+ * Calculate when vocals actually end for a line.
+ * Used for gap detection - determines when we're in instrumental territory.
+ * 
+ * Priority order:
+ * 1. line.end (provider-supplied, most reliable)
+ * 2. Last word start + duration (calculated from word timing)
+ * 3. Last word start + 0.5s (conservative estimate if duration missing)
+ * 4. null (can't determine - don't show gap, fail safe)
  * 
  * @param {Object} line - Line data with words array
- * @param {Object|null} nextLine - Next line (null if this is last line)
- * @returns {number} Line end time in seconds
+ * @returns {number|null} Vocal end time in seconds, or null if can't determine
  */
-function calculateLineEnd(line, nextLine) {
+function calculateVocalEnd(line) {
     const lineStart = line.start || 0;
     
-    // Priority 1: If next line exists, use its start time
-    if (nextLine && nextLine.start !== undefined) {
-        return nextLine.start;
-    }
-    
-    // Priority 2: Calculate from last word's actual timing
-    if (line.words && line.words.length > 0) {
-        const lastWord = line.words[line.words.length - 1];
-        const lastWordStart = lineStart + (lastWord.time || 0);
-        
-        // Use word duration if available (from Musixmatch/NetEase)
-        if (lastWord.duration && lastWord.duration > 0) {
-            // Add 200ms padding for visual transition buffer
-            return lastWordStart + lastWord.duration + 0.2;
-        }
-        
-        // Fallback: estimate 500ms for last word + 200ms padding
-        return lastWordStart + 0.7;
-    }
-    
-    // Priority 3: Use line.end if provided by provider
+    // Priority 1: Use provider-supplied line.end (most reliable)
     if (line.end && line.end > lineStart) {
         return line.end;
     }
     
-    // Priority 4: Absolute fallback - 5 seconds (better than previous 10s)
-    return lineStart + 5;
+    // Priority 2 & 3: Calculate from word timing
+    if (line.words && line.words.length > 0) {
+        const lastWord = line.words[line.words.length - 1];
+        const lastWordStart = lineStart + (lastWord.time || 0);
+        
+        if (lastWord.duration && lastWord.duration > 0) {
+            // Use actual duration
+            return lastWordStart + lastWord.duration;
+        }
+        
+        // Conservative estimate: last word is 0.5s
+        return lastWordStart + 0.5;
+    }
+    
+    // Can't determine - fail safe (don't show gap)
+    return null;
+}
+
+/**
+ * Calculate the line ownership end time.
+ * This determines which line "owns" a given time position for display purposes.
+ * A line owns all time from its start until the next line starts.
+ * 
+ * Note: This is different from calculateVocalEnd() which is for gap detection.
+ * 
+ * @param {Object} line - Line data with words array
+ * @param {Object|null} nextLine - Next line (null if this is last line)
+ * @returns {number} Line ownership end time in seconds
+ */
+function calculateLineEnd(line, nextLine) {
+    // If next line exists, this line owns time until next line starts
+    if (nextLine && nextLine.start !== undefined) {
+        return nextLine.start;
+    }
+    
+    // For last line: use vocal end + small buffer for visual transition
+    const vocalEnd = calculateVocalEnd(line);
+    if (vocalEnd !== null) {
+        return vocalEnd + 0.2;  // 200ms padding
+    }
+    
+    // Absolute fallback for last line (shouldn't happen with good data)
+    return (line.start || 0) + 5;
 }
 
 /**
@@ -293,33 +322,35 @@ export function findCurrentWordSyncLineWithIndex(position) {
         const nextLine = wordSyncedLyrics[i + 1];
         
         const lineStart = line.start || 0;
-        const lineEnd = calculateLineEnd(line, nextLine);
+        const ownershipEnd = calculateLineEnd(line, nextLine);  // Until next line starts
         
-        // Position is within this line
-        if (position >= lineStart && position < lineEnd) {
-            return { line, index: i, inGap: false, inIntro: false, inOutro: false };
-        }
-        
-        // Position is PAST this line's end but BEFORE next line's start (gap)
-        if (nextLine && position >= lineEnd && position < nextLine.start) {
-            const gapDuration = nextLine.start - lineEnd;
-            
-            // Only flag as instrumental gap if it's long enough
-            if (gapDuration >= MIN_INSTRUMENTAL_GAP_SEC) {
-                return { 
-                    line: null, 
-                    index: i,  // Return previous line index for context
-                    inGap: true, 
-                    inIntro: false, 
-                    inOutro: false,
-                    gapStart: lineEnd,
-                    gapEnd: nextLine.start,
-                    prevLine: line,
-                    nextLineData: nextLine
-                };
+        // Position is within this line's ownership
+        if (position >= lineStart && position < ownershipEnd) {
+            // Check for gap: vocals ended but next line hasn't started
+            if (nextLine) {
+                const vocalEnd = calculateVocalEnd(line);
+                if (vocalEnd !== null && position >= vocalEnd) {
+                    // We're past vocals but still before next line
+                    const gapDuration = nextLine.start - vocalEnd;
+                    
+                    // Only flag as instrumental gap if it's long enough (2+ seconds)
+                    if (gapDuration >= MIN_INSTRUMENTAL_GAP_SEC) {
+                        return { 
+                            line: null, 
+                            index: i,  // Return previous line index for context
+                            inGap: true, 
+                            inIntro: false, 
+                            inOutro: false,
+                            gapStart: vocalEnd,
+                            gapEnd: nextLine.start,
+                            prevLine: line,
+                            nextLineData: nextLine
+                        };
+                    }
+                }
             }
             
-            // Short gap: return previous line as still active (keeps last word as sung)
+            // Normal case: within line vocals or short gap
             return { line, index: i, inGap: false, inIntro: false, inOutro: false };
         }
     }
@@ -368,6 +399,16 @@ function updateSurroundingLines(idx) {
     const next1 = document.getElementById('next-1');
     const next2 = document.getElementById('next-2');
     const next3 = document.getElementById('next-3');
+    
+    // During outro/visual mode entry (idx = -2), clear ALL lines
+    if (idx === -2) {
+        if (prev2) prev2.textContent = "";
+        if (prev1) prev1.textContent = "";
+        if (next1) next1.textContent = "";
+        if (next2) next2.textContent = "";
+        if (next3) next3.textContent = "";
+        return;
+    }
     
     // During intro (idx = -1), show first lines as upcoming
     // Current line shows ♪, so first actual lyric goes in next-1
@@ -768,24 +809,27 @@ function animateWordSync(timestamp) {
         currentEl.classList.add('line-entering');
         currentEl.textContent = '♪';
         
-        // Update surrounding lines to show upcoming lyrics
-        // Force update on first intro frame (even if activeLineIndex was already -1)
-        if (activeLineIndex !== -1 || cachedLineId !== 'intro') {
+        // Update surrounding lines on first intro frame
+        if (!introDisplayed) {
             activeLineIndex = -1;
-            cachedLineId = 'intro';  // Mark that we've set up intro display
+            introDisplayed = true;
             updateSurroundingLines(-1);
         }
         
         // Reset outro token for this song (invalidates pending outro callbacks)
         activeOutroToken = 0;
         
-        // Don't clear cachedLineId here - we use it to track intro state
+        // Clear cached state
+        cachedLineId = null;
         wordElements = [];
         
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
     }
+    
+    // Reset intro flag when we exit intro
+    introDisplayed = false;
     
     // CASE 2: INSTRUMENTAL GAP - Between lines with significant silence
     if (inGap) {
@@ -829,6 +873,9 @@ function animateWordSync(timestamp) {
             // Clear current element with fade
             currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering');
             currentEl.classList.add('line-exiting');
+            
+            // Clear ALL surrounding lines (prev-1, prev-2, next-1, etc.)
+            updateSurroundingLines(-2);  // -2 = clear all mode
             
             // After fade, clear content (only if token unchanged)
             setTimeout(() => {
@@ -937,6 +984,7 @@ function cleanupWordSync() {
     activeLineIndex = -1;
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
+    introDisplayed = false;  // Reset intro state for next song
     // Invalidate any pending outro callbacks by incrementing token
     outroToken++;
     activeOutroToken = 0;
