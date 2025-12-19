@@ -411,6 +411,13 @@ async function main() {
     // Initialize latency controls
     setupLatencyControls();
     setupLatencyKeyboardShortcuts();
+    
+    // Listen for word-sync outro event to trigger visual mode
+    // When lyrics finish, auto-enter visual mode for songs with long instrumental outros
+    window.addEventListener('wordSyncOutro', () => {
+        console.log('[Main] Word-sync outro detected, entering visual mode');
+        enterVisualMode();
+    });
 
     console.log('[Main] Initialization complete. Starting update loop...');
 

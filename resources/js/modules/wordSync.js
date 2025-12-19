@@ -104,6 +104,15 @@ let renderPosition = 0;
 // Ultra-short word threshold - words shorter than this skip pop animation
 const ULTRA_SHORT_WORD_MS = 60;  // 60ms
 
+// Gap detection threshold - show ♪ for gaps longer than this
+const MIN_INSTRUMENTAL_GAP_SEC = 2.0;  // 2 seconds
+
+// Outro detection - time after last line ends before entering visual mode
+const OUTRO_VISUAL_MODE_DELAY_SEC = 3.0;  // 3 seconds after last word ends
+
+// Track if we're in outro state (to trigger visual mode once)
+let outroTriggered = false;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -194,7 +203,9 @@ export function findCurrentWord(position, lineData) {
 
     if (position >= lastWordEnd) {
         // Past the entire line - all words are sung
-        return { wordIndex: words.length, progress: 0, duration: 0 };
+        // FIX: Return last word index with progress=1 so it gets marked as 'sung'
+        // Previously returned words.length which is out of bounds, leaving last word stuck as 'active'
+        return { wordIndex: words.length - 1, progress: 1, duration: 0, allSung: true };
     }
 
     // Inside last word (fallback)
@@ -204,15 +215,70 @@ export function findCurrentWord(position, lineData) {
 }
 
 /**
- * Find the current line AND its index from word-synced lyrics based on position
- * Returns both to avoid O(n) identity search later
+ * Calculate the effective end time of a line using word timing data.
+ * Uses last word's end time for accuracy instead of arbitrary fallbacks.
+ * 
+ * @param {Object} line - Line data with words array
+ * @param {Object|null} nextLine - Next line (null if this is last line)
+ * @returns {number} Line end time in seconds
+ */
+function calculateLineEnd(line, nextLine) {
+    const lineStart = line.start || 0;
+    
+    // Priority 1: If next line exists, use its start time
+    if (nextLine && nextLine.start !== undefined) {
+        return nextLine.start;
+    }
+    
+    // Priority 2: Calculate from last word's actual timing
+    if (line.words && line.words.length > 0) {
+        const lastWord = line.words[line.words.length - 1];
+        const lastWordStart = lineStart + (lastWord.time || 0);
+        
+        // Use word duration if available (from Musixmatch/NetEase)
+        if (lastWord.duration && lastWord.duration > 0) {
+            // Add 200ms padding for visual transition buffer
+            return lastWordStart + lastWord.duration + 0.2;
+        }
+        
+        // Fallback: estimate 500ms for last word + 200ms padding
+        return lastWordStart + 0.7;
+    }
+    
+    // Priority 3: Use line.end if provided by provider
+    if (line.end && line.end > lineStart) {
+        return line.end;
+    }
+    
+    // Priority 4: Absolute fallback - 5 seconds (better than previous 10s)
+    return lineStart + 5;
+}
+
+/**
+ * Find the current line AND its index from word-synced lyrics based on position.
+ * Returns extended info including gap/intro/outro state for proper UI handling.
  * 
  * @param {number} position - Current playback position in seconds
- * @returns {{line: Object|null, index: number}} The line object and its index (-1 if not found)
+ * @returns {{line: Object|null, index: number, inGap: boolean, inIntro: boolean, inOutro: boolean, gapStart: number, gapEnd: number}}
  */
 export function findCurrentWordSyncLineWithIndex(position) {
     if (!wordSyncedLyrics || wordSyncedLyrics.length === 0) {
-        return { line: null, index: -1 };
+        return { line: null, index: -1, inGap: false, inIntro: false, inOutro: false };
+    }
+
+    const firstLine = wordSyncedLyrics[0];
+    const firstLineStart = firstLine.start || 0;
+    
+    // INTRO: Before first line starts
+    if (position < firstLineStart) {
+        return { 
+            line: null, 
+            index: -1, 
+            inGap: false, 
+            inIntro: true, 
+            inOutro: false,
+            gapEnd: firstLineStart  // When intro ends
+        };
     }
 
     // Find the line that contains the current position
@@ -221,15 +287,57 @@ export function findCurrentWordSyncLineWithIndex(position) {
         const nextLine = wordSyncedLyrics[i + 1];
         
         const lineStart = line.start || 0;
-        const lineEnd = nextLine ? nextLine.start : (line.end || lineStart + 10);
+        const lineEnd = calculateLineEnd(line, nextLine);
         
+        // Position is within this line
         if (position >= lineStart && position < lineEnd) {
-            return { line, index: i };
+            return { line, index: i, inGap: false, inIntro: false, inOutro: false };
+        }
+        
+        // Position is PAST this line's end but BEFORE next line's start (gap)
+        if (nextLine && position >= lineEnd && position < nextLine.start) {
+            const gapDuration = nextLine.start - lineEnd;
+            
+            // Only flag as instrumental gap if it's long enough
+            if (gapDuration >= MIN_INSTRUMENTAL_GAP_SEC) {
+                return { 
+                    line: null, 
+                    index: i,  // Return previous line index for context
+                    inGap: true, 
+                    inIntro: false, 
+                    inOutro: false,
+                    gapStart: lineEnd,
+                    gapEnd: nextLine.start,
+                    prevLine: line,
+                    nextLineData: nextLine
+                };
+            }
+            
+            // Short gap: return previous line as still active (keeps last word as sung)
+            return { line, index: i, inGap: false, inIntro: false, inOutro: false };
         }
     }
 
-    return { line: null, index: -1 };
+    // OUTRO: Past the last line's end
+    const lastLine = wordSyncedLyrics[wordSyncedLyrics.length - 1];
+    const lastLineEnd = calculateLineEnd(lastLine, null);
+    
+    if (position >= lastLineEnd) {
+        return { 
+            line: null, 
+            index: wordSyncedLyrics.length - 1,  // Return last line index for context
+            inGap: false, 
+            inIntro: false, 
+            inOutro: true,
+            outroStart: lastLineEnd,
+            prevLine: lastLine
+        };
+    }
+
+    // Fallback: shouldn't reach here, but return last line as active
+    return { line: lastLine, index: wordSyncedLyrics.length - 1, inGap: false, inIntro: false, inOutro: false };
 }
+
 
 // Legacy wrapper for backward compatibility
 export function findCurrentWordSyncLine(position) {
@@ -289,7 +397,7 @@ export function findCurrentWordSyncLineIndex(position) {
     for (let i = 0; i < wordSyncedLyrics.length; i++) {
         const line = wordSyncedLyrics[i];
         const nextLine = wordSyncedLyrics[i + 1];
-        const lineEnd = nextLine ? nextLine.start : (line.end || line.start + 10);
+        const lineEnd = calculateLineEnd(line, nextLine);
         
         if (position >= line.start && position < lineEnd) {
             return i;
@@ -301,7 +409,7 @@ export function findCurrentWordSyncLineIndex(position) {
         return -1;
     }
     
-    // After last line
+    // After last line - return last line index
     return wordSyncedLyrics.length - 1;
 }
 
@@ -529,9 +637,11 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
     
     wordElements.forEach((el, i) => {
         // Efficiently toggle classes
-        const isSung = currentWord && i < currentWord.wordIndex;
-        const isActive = currentWord && i === currentWord.wordIndex;
-        const isUpcoming = !currentWord || i > currentWord.wordIndex;
+        // FIX: When allSung is true (position past last word), ALL words should be sung
+        // Previously the last word was staying as 'active' because wordIndex was out of bounds
+        const isSung = currentWord && (currentWord.allSung || i < currentWord.wordIndex || (i === currentWord.wordIndex && currentWord.progress >= 1));
+        const isActive = currentWord && !currentWord.allSung && i === currentWord.wordIndex && currentWord.progress < 1;
+        const isUpcoming = !currentWord || (!currentWord.allSung && i > currentWord.wordIndex);
         
         // Only update if state changed (minor optimization)
         const wasSung = el.classList.contains('word-sung');
@@ -633,26 +743,122 @@ function animateWordSync(timestamp) {
     // Get position from FLYWHEEL CLOCK (monotonic, never goes backwards)
     const position = updateFlywheelClock(timestamp);
     
-    // Find the matching word-sync line AND its index (avoids O(n) search later)
-    const { line: wordSyncLine, index: lineIdx } = findCurrentWordSyncLineWithIndex(position);
+    // Find the matching word-sync line AND its index with extended state info
+    const lineResult = findCurrentWordSyncLineWithIndex(position);
+    const { line: wordSyncLine, index: lineIdx, inGap, inIntro, inOutro } = lineResult;
     
-    if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
-        // No word-sync data for this position, clean up classes
-        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
-        // FIX: Clear #current content to prevent stale "Searching lyrics..." stuck
-        currentEl.textContent = '';
-        // Update surrounding lines for intro (show upcoming lines)
+    // CASE 1: INTRO - Before first line starts
+    if (inIntro) {
+        // Show ♪ in current element with wave animation
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-exiting');
+        currentEl.classList.add('line-entering');
+        currentEl.textContent = '♪';
+        
+        // Update surrounding lines to show upcoming lyrics
         if (activeLineIndex !== -1) {
             activeLineIndex = -1;
             updateSurroundingLines(-1);
         }
-        // Clear cached state so we rebuild on next valid line
+        
+        // Reset outro trigger for this song
+        outroTriggered = false;
+        
+        // Clear cached state
         cachedLineId = null;
         wordElements = [];
+        
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
     }
+    
+    // CASE 2: INSTRUMENTAL GAP - Between lines with significant silence
+    if (inGap) {
+        // Show ♪ in current element
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-exiting');
+        currentEl.classList.add('line-entering');
+        currentEl.textContent = '♪';
+        
+        // Use previous line index for surrounding lines context
+        const contextIdx = lineResult.index;
+        if (activeLineIndex !== contextIdx) {
+            activeLineIndex = contextIdx;
+            updateSurroundingLines(contextIdx);
+        }
+        
+        // Clear cached state
+        cachedLineId = null;
+        wordElements = [];
+        
+        // Request next frame
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+        return;
+    }
+    
+    // CASE 3: OUTRO - After last line ends
+    if (inOutro) {
+        // Check if we should trigger visual mode
+        const outroStart = lineResult.outroStart || 0;
+        const timeSinceOutro = position - outroStart;
+        
+        if (timeSinceOutro >= OUTRO_VISUAL_MODE_DELAY_SEC && !outroTriggered) {
+            // Trigger visual mode (one-shot)
+            outroTriggered = true;
+            
+            // Clear current element with fade
+            currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering');
+            currentEl.classList.add('line-exiting');
+            
+            // After fade, clear content
+            setTimeout(() => {
+                if (outroTriggered) {
+                    currentEl.textContent = '';
+                }
+            }, 300);
+            
+            // Dispatch custom event to trigger visual mode
+            // The main.js will listen for this and call enterVisualMode()
+            console.log('[WordSync] Outro detected, dispatching visual mode event');
+            window.dispatchEvent(new CustomEvent('wordSyncOutro'));
+        } else if (!outroTriggered) {
+            // Still in outro but before visual mode delay
+            // Keep showing last line as fully sung for a moment, then fade
+            const lastLineData = lineResult.prevLine;
+            if (lastLineData && lastLineData.words && lastLineData.words.length > 0) {
+                // Show last line with all words sung
+                currentEl.classList.add('word-sync-active');
+                currentEl.classList.add(`word-sync-${wordSyncStyle}`);
+                
+                // Update to show all words as sung
+                const lastIdx = wordSyncedLyrics.length - 1;
+                if (activeLineIndex !== lastIdx) {
+                    activeLineIndex = lastIdx;
+                    updateSurroundingLines(lastIdx);
+                }
+                
+                // Force redraw of last line with all words sung
+                updateWordSyncDOM(currentEl, lastLineData, position, wordSyncStyle);
+            }
+        }
+        
+        // Request next frame
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+        return;
+    }
+    
+    // CASE 4: NORMAL - We have a valid line with words
+    if (!wordSyncLine || !wordSyncLine.words || wordSyncLine.words.length === 0) {
+        // Safety fallback - shouldn't reach here with new logic
+        currentEl.classList.remove('word-sync-active', 'word-sync-fade', 'word-sync-pop', 'line-entering', 'line-exiting');
+        currentEl.textContent = '♪';
+        cachedLineId = null;
+        wordElements = [];
+        setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
+        return;
+    }
+    
+    // Reset outro trigger when we have a valid line
+    outroTriggered = false;
     
     // Store the active line index (single source of truth)
     const previousLineIndex = activeLineIndex;
@@ -710,6 +916,7 @@ function cleanupWordSync() {
     activeLineIndex = -1;
     transitionToken++;  // Cancel any pending fade callbacks
     _wordSyncLogged = false;
+    outroTriggered = false;  // Reset outro state for next song
 }
 
 /**
@@ -728,13 +935,18 @@ export function startWordSyncAnimation() {
     }
     
     // Initialize flywheel clock from current anchor
-    // Account for time elapsed since anchor was set + latency compensation
+    // Account for time elapsed since anchor was set + ALL latency compensations
+    // FIX: Include providerWordSyncOffset and songWordSyncOffset to match updateFlywheelClock
+    // Previously these were missing, causing a position mismatch on startup/page reload
     const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation;
+    const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
     visualPosition = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
     renderPosition = visualPosition;  // Initialize smoothed position to avoid lag on start
     visualSpeed = 1.0;
     lastFrameTime = 0;
+    
+    // Reset outro trigger for new animation start
+    outroTriggered = false;
     
     console.log('[WordSync] Starting animation loop with flywheel clock');
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
