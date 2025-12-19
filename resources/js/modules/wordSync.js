@@ -37,8 +37,7 @@ import {
     debugPollTimestamp,
     debugPollInterval,
     debugSource,
-    debugBadSamples,
-    lastTrackInfo
+    debugBadSamples
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -600,6 +599,15 @@ function animateWordSync(timestamp) {
     }
     lastAnimationTime = timestamp;
     
+    // FPS COUNTER: Count processed frames only (after throttle)
+    debugFpsFrameCount++;
+    const now = performance.now();
+    if (now - debugFpsLastTime >= 1000) {
+        debugFps = debugFpsFrameCount;
+        debugFpsFrameCount = 0;
+        debugFpsLastTime = now;
+    }
+    
     // Check if we should continue animating
     // wordSyncEnabled = global toggle, hasWordSync = current song has word-sync data
     if (!wordSyncEnabled || !hasWordSync || !wordSyncedLyrics || wordSyncedLyrics.length === 0) {
@@ -823,8 +831,8 @@ export function getDebugTimingData() {
     // Get total lines count
     const totalLines = wordSyncedLyrics ? wordSyncedLyrics.length : 0;
     
-    // Get progress_ms from lastTrackInfo
-    const progressMs = lastTrackInfo?.progress_ms || 0;
+    // Get progress from anchor position (in ms for display)
+    const progressMs = Math.round(wordSyncAnchorPosition * 1000);
     
     // Get memory usage (Chrome/Edge only)
     let memoryMB = null;
@@ -832,14 +840,7 @@ export function getDebugTimingData() {
         memoryMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
     }
     
-    // Update FPS counter (calculate every second)
-    debugFpsFrameCount++;
-    const now = performance.now();
-    if (now - debugFpsLastTime >= 1000) {
-        debugFps = debugFpsFrameCount;
-        debugFpsFrameCount = 0;
-        debugFpsLastTime = now;
-    }
+    // Note: FPS is tracked in animation loop, not here
     
     return {
         serverPos: serverPosition,
@@ -891,12 +892,13 @@ export function updateDebugOverlay() {
         <div class="debug-row"><span class="debug-label">Est pos:</span> ${data.serverPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Visual:</span> ${data.visualPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Render:</span> ${data.renderPos.toFixed(3)}s</div>
-        <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span> (filt: ${data.filteredDrift >= 0 ? '+' : ''}${data.filteredDrift.toFixed(0)})</div>
+        <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
+        <div class="debug-row"><span class="debug-label">Filt Drift:</span> <span class="${Math.abs(data.filteredDrift) > 50 ? 'debug-warn' : ''}">${data.filteredDrift >= 0 ? '+' : ''}${data.filteredDrift.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Anchor:</span> ${data.anchorAge.toFixed(0)}ms ago</div>
         <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
         <div class="debug-row"><span class="debug-label">Comp:</span> ${data.latencyComp >= 0 ? '+' : ''}${(data.latencyComp * 1000).toFixed(0)}ms (song: ${data.songOffset >= 0 ? '+' : ''}${(data.songOffset * 1000).toFixed(0)})</div>
-        <div class="debug-row"><span class="debug-label">Progress:</span> ${data.progressMs}ms</div>
+        <div class="debug-row"><span class="debug-label">Progress:</span> ${(data.progressMs / 1000).toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">dt_poll:</span> <span class="${pollWarn}">${data.pollInterval.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Source:</span> ${data.source || 'unknown'}</div>
         <div class="debug-row"><span class="debug-label">Snaps:</span> ${data.snapCount} / ${data.backSnapCount}</div>
