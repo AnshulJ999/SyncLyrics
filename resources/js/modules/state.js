@@ -31,6 +31,7 @@ export let wordSyncSpecificLatencyCompensation = 0; // Word-sync specific latenc
 export let providerWordSyncOffset = 0; // Provider-specific word-sync offset (Musixmatch/NetEase)
 export let songWordSyncOffset = 0; // Per-song word-sync offset (user adjustment)
 export let anyProviderHasWordSync = false; // True if ANY cached provider has word-sync (for toggle availability)
+export let instrumentalMarkers = [];       // Timestamps where ♪ appears in line-sync (for gap detection)
 
 // ========== DEBUG OVERLAY STATE ==========
 export let debugTimingEnabled = false;  // Whether debug overlay is visible
@@ -152,6 +153,7 @@ export function setWordSyncSpecificLatencyCompensation(value) { wordSyncSpecific
 export function setProviderWordSyncOffset(value) { providerWordSyncOffset = value; }
 export function setSongWordSyncOffset(value) { songWordSyncOffset = value; }
 export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = value; }
+export function setInstrumentalMarkers(value) { instrumentalMarkers = value || []; }
 
 // Debug overlay setters
 export function setDebugTimingEnabled(value) { debugTimingEnabled = value; }

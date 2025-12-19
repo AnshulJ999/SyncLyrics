@@ -25,6 +25,7 @@ import {
     setProviderWordSyncOffset,
     setSongWordSyncOffset,
     setAnyProviderHasWordSync,
+    setInstrumentalMarkers,
     setDebugRtt,
     setDebugRttSmoothed,
     setDebugRttJitter,
@@ -310,6 +311,10 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
         // Update toggle availability flag (true if ANY cached provider has word-sync)
         // This allows toggle to be enabled even if current provider doesn't have word-sync
         setAnyProviderHasWordSync(data.any_provider_has_word_sync || false);
+        
+        // Update instrumental markers (timestamps where ♪ appears in line-sync)
+        // Used for accurate gap detection during word-sync playback
+        setInstrumentalMarkers(data.instrumental_markers);
 
         // Update provider info (now uses word-sync provider when enabled)
         if (data.provider && updateProviderDisplayFn) {

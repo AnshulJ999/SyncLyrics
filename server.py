@@ -204,6 +204,18 @@ async def lyrics() -> dict:
         if artist and title:
             any_provider_has_word_sync = lyrics_module._has_any_word_sync_cached(artist, title)
 
+    # Extract instrumental markers from line-sync data (for gap detection in word-sync mode)
+    # These are explicit ♪ markers from Spotify/Musixmatch that indicate instrumental breaks
+    instrumental_markers = []
+    if lyrics_module.current_song_lyrics:
+        # Symbols that indicate instrumental sections
+        instrumental_symbols = {'♪', '♪', '♫', '♬', '🎵', '🎶'}
+        for line in lyrics_module.current_song_lyrics:
+            if len(line) >= 2:
+                timestamp, text = line[0], line[1]
+                if text.strip() in instrumental_symbols:
+                    instrumental_markers.append(timestamp)
+
     return {
         "lyrics": list(lyrics_data),
         "colors": colors,
@@ -216,7 +228,9 @@ async def lyrics() -> dict:
         "has_word_sync": has_word_sync,
         "word_sync_provider": word_sync_provider if has_word_sync else None,
         # Flag for toggle availability: true if ANY cached provider has word-sync
-        "any_provider_has_word_sync": any_provider_has_word_sync
+        "any_provider_has_word_sync": any_provider_has_word_sync,
+        # Instrumental markers for gap detection (timestamps where ♪ appears in line-sync)
+        "instrumental_markers": instrumental_markers if instrumental_markers else None
     }
 
 @app.route("/current-track")

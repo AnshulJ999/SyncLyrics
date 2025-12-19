@@ -37,7 +37,8 @@ import {
     debugPollTimestamp,
     debugPollInterval,
     debugSource,
-    debugBadSamples
+    debugBadSamples,
+    instrumentalMarkers
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -105,10 +106,10 @@ let renderPosition = 0;
 const ULTRA_SHORT_WORD_MS = 60;  // 60ms
 
 // Gap detection threshold - show ♪ for gaps longer than this
-const MIN_INSTRUMENTAL_GAP_SEC = 3.0;  // 2 seconds
+const MIN_INSTRUMENTAL_GAP_SEC = 6.0;  // 6 seconds
 
 // Outro detection - time after last line ends before entering visual mode
-const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 3 seconds after last word ends
+const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 6 seconds after last word ends
 
 // Maximum duration for last word fallback (prevents stuck words from bad lineData.end)
 const MAX_LAST_WORD_DURATION_SEC = 4.0;  // 2 seconds max
@@ -294,6 +295,60 @@ function calculateLineEnd(line, nextLine) {
 }
 
 /**
+ * Check if the current position falls within a Spotify instrumental marker range.
+ * Instrumental markers are timestamps where ♪ appears in line-sync data.
+ * 
+ * @param {number} position - Current playback position in seconds
+ * @returns {Object|null} - { markerStart, gapEnd, prevLineIndex } or null if not in instrumental
+ */
+function isInSpotifyInstrumental(position) {
+    if (!instrumentalMarkers || instrumentalMarkers.length === 0) {
+        return null;  // No Spotify markers, use timing fallback
+    }
+    
+    // Find if we're within any instrumental marker range
+    for (let i = 0; i < instrumentalMarkers.length; i++) {
+        const markerStart = instrumentalMarkers[i];
+        
+        // Only check if position is AFTER this marker
+        if (position < markerStart) continue;
+        
+        // Find where this instrumental ends: next lyric line from word-sync data
+        let gapEnd = Infinity;
+        let prevLineIndex = -1;
+        
+        if (wordSyncedLyrics && wordSyncedLyrics.length > 0) {
+            for (let j = 0; j < wordSyncedLyrics.length; j++) {
+                const lineStart = wordSyncedLyrics[j].start || 0;
+                
+                // Find first lyric line that starts AFTER the marker
+                if (lineStart > markerStart) {
+                    gapEnd = lineStart;
+                    prevLineIndex = j > 0 ? j - 1 : 0;  // Line before this one
+                    break;
+                }
+            }
+            
+            // If no line found after marker, it's the outro
+            if (gapEnd === Infinity) {
+                prevLineIndex = wordSyncedLyrics.length - 1;
+            }
+        }
+        
+        // Check if position is within this instrumental range
+        if (position >= markerStart && position < gapEnd) {
+            return {
+                markerStart,
+                gapEnd,
+                prevLineIndex
+            };
+        }
+    }
+    
+    return null;  // Not in any instrumental marker
+}
+
+/**
  * Find the current line AND its index from word-synced lyrics based on position.
  * Returns extended info including gap/intro/outro state for proper UI handling.
  * 
@@ -317,6 +372,27 @@ export function findCurrentWordSyncLineWithIndex(position) {
             inIntro: true, 
             inOutro: false,
             gapEnd: firstLineStart  // When intro ends
+        };
+    }
+    
+    // SPOTIFY MARKERS: Check for explicit instrumental markers FIRST (authoritative)
+    // These come from Spotify/Musixmatch line-sync where ♪ indicates instrumental sections
+    const spotifyInstrumental = isInSpotifyInstrumental(position);
+    if (spotifyInstrumental) {
+        const { markerStart, gapEnd, prevLineIndex } = spotifyInstrumental;
+        const prevLine = wordSyncedLyrics[prevLineIndex] || null;
+        
+        return {
+            line: null,
+            index: prevLineIndex,
+            inGap: true,
+            inIntro: false,
+            inOutro: false,
+            gapStart: markerStart,
+            gapEnd: gapEnd,
+            prevLine: prevLine,
+            nextLineData: wordSyncedLyrics[prevLineIndex + 1] || null,
+            fromSpotifyMarker: true  // Flag indicating this came from Spotify marker
         };
     }
 
