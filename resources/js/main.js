@@ -103,15 +103,14 @@ function updateWordSyncToggleUI() {
     const toggleBtn = document.getElementById('btn-word-sync-toggle');
     if (!toggleBtn) return;
     
-    const iconEl = toggleBtn.querySelector('i');
-    
-    // Update icon based on enabled state
-    if (iconEl) {
-        iconEl.className = wordSyncEnabled ? 'bi bi-mic-fill' : 'bi bi-mic-mute';
-    }
+    // SVG icon doesn't need class changes - use button's active/inactive classes instead
+    // The SVG inherits color from the button via currentColor
     
     // Update active class (only active when enabled AND current provider has word-sync)
     toggleBtn.classList.toggle('active', wordSyncEnabled && hasWordSync);
+    
+    // When disabled but available, add inactive class for visual feedback
+    toggleBtn.classList.toggle('inactive', !wordSyncEnabled && anyProviderHasWordSync);
     
     // Update unavailable class: toggle is available if ANY provider has word-sync
     // This allows user to enable word-sync even if current provider doesn't have it

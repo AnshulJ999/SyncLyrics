@@ -798,17 +798,24 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     transform: scale(1.05);
 }
 
-.word-sync-toggle-btn i {
-    font-size: 1.1rem;
+/* Style for SVG icon (karaoke mic) */
+.word-sync-toggle-btn svg.karaoke-icon {
+    transition: opacity 0.3s ease;
 }
 
-/* Active state when word-sync is enabled (subtle, no color) */
+/* Active state when word-sync is enabled and active */
 .word-sync-toggle-btn.active {
     color: white;
     opacity: 1;
 }
 
-/* Disabled state when no word-sync available */
+/* Inactive state: enabled toggle but word-sync currently off */
+.word-sync-toggle-btn.inactive {
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0.7;
+}
+
+/* Disabled state when no word-sync available from any provider */
 .word-sync-toggle-btn.unavailable {
     opacity: 0.3;
     cursor: not-allowed;

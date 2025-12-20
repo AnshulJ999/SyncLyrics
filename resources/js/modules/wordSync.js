@@ -830,8 +830,8 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
                     el.style.transform = 'scale(1.0)';
                     el.style.transitionDuration = '0ms';
                 } else {
-                    // Dynamic transition: ~90% of word duration, capped at 150ms
-                    const transitionMs = Math.min(wordDurationMs * 0.9, 150);
+                    // Dynamic transition: 100% of word duration, min 80ms, capped at 400ms
+                    const transitionMs = Math.max(80, Math.min(wordDurationMs, 400));
                     el.style.transitionDuration = `${transitionMs.toFixed(0)}ms`;
                     
                     // Scale peaks at 50% through word, creates nice "pop" feel
