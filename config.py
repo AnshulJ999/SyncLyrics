@@ -238,6 +238,11 @@ NOTIFICATIONS = {
 MEDIA_SOURCE = {
     "sources": [
         {
+            "name": "spicetify",
+            "enabled": conf("media_source.spicetify.enabled", True),
+            "priority": conf("media_source.spicetify.priority", 0),
+        },
+        {
             "name": "spotify",
             "enabled": conf("media_source.spotify.enabled", True),
             "priority": conf("media_source.spotify.priority", 2),

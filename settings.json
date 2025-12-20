@@ -51,6 +51,8 @@
     "media_source.gnome.priority": 2,
     "media_source.spotify.enabled": true,
     "media_source.spotify.priority": 2,
+    "media_source.spicetify.enabled": true,
+    "media_source.spicetify.priority": 0,
     "media_source.windows_media.enabled": true,
     "media_source.windows_media.priority": 1,
     "notifications.duration": 3,

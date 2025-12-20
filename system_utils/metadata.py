@@ -359,7 +359,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 try:
                     source_result = None
                     
-                    if source["name"] == "windows_media" and DESKTOP == "Windows":
+                    if source["name"] == "spicetify":
+                        # Spicetify bridge - direct data from Spotify Desktop via WebSocket
+                        from .spicetify import get_current_song_meta_data_spicetify
+                        source_result = await get_current_song_meta_data_spicetify()
+                    elif source["name"] == "windows_media" and DESKTOP == "Windows":
                         windows_media_checked = True
                         windows_media_result = await _get_current_song_meta_data_windows()
                         source_result = windows_media_result
@@ -664,7 +668,38 @@ async def get_current_song_meta_data() -> Optional[dict]:
             except Exception as e:
                 logger.error(f"Audio recognition enrichment failed: {e}")
         
-        # 4. If we still don't have colors (e.g. local file), extract them
+        # 4. SPICETIFY ENRICHMENT
+        # Cache album art to DB and extract colors (similar to audio_recognition)
+        if result and result.get("source") == "spicetify":
+            try:
+                art_url = result.get("album_art_url")
+                artist = result.get("artist", "")
+                title = result.get("title", "")
+                album = result.get("album", "")
+                
+                if art_url:
+                    # Cache to album art DB
+                    db_result = await ensure_album_art_db(artist, album, title, art_url)
+                    
+                    if db_result:
+                        cached_url, cached_path = db_result
+                        if cached_url:
+                            result["album_art_url"] = cached_url
+                            result["background_image_url"] = cached_url
+                        if cached_path:
+                            result["album_art_path"] = str(cached_path)
+                            result["background_image_path"] = str(cached_path)
+                    
+                    # Color extraction (if we have local path and default colors)
+                    if result.get("album_art_path"):
+                        local_art_path = Path(result["album_art_path"])
+                        if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
+                            result["colors"] = await extract_dominant_colors(local_art_path)
+                            
+            except Exception as e:
+                logger.error(f"Spicetify enrichment failed: {e}")
+        
+        # 5. If we still don't have colors (e.g. local file), extract them
         if result and result.get("source") == "windows_media":
             # NEW: Use the specific path we found/created, falling back to legacy search
             # This fixes color extraction for the new unique thumbnail system (thumb_*.jpg)

@@ -115,11 +115,12 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify, Spotify Hybrid, or Windows Media
+    // Enable controls for Spotify, Spotify Hybrid, Spicetify, or Windows Media
     // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
         trackInfo.source === 'spotify_hybrid' ||
+        trackInfo.source === 'spicetify' ||
         trackInfo.source === 'windows_media';
 
     if (prevBtn) prevBtn.disabled = !canControl;

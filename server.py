@@ -2183,6 +2183,21 @@ async def audio_stream_websocket():
         logger.info("Frontend audio WebSocket disconnected")
 
 
+@app.websocket('/ws/spicetify')
+async def spicetify_websocket():
+    """
+    WebSocket endpoint for Spicetify bridge (Spotify Desktop extension).
+    
+    Receives real-time playback data from the Spicetify browser extension:
+    - Position updates every 100ms
+    - Track metadata on song change
+    - Audio analysis data
+    - Color extraction (may be null)
+    """
+    from system_utils.spicetify import handle_spicetify_connection
+    await handle_spicetify_connection()
+
+
 # --- System Routes ---
 
 @app.route('/settings', methods=['GET', 'POST'])
