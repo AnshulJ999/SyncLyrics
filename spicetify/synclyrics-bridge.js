@@ -308,7 +308,8 @@
                 artist: item?.artists?.[0]?.name || null,
                 artists: item?.artists?.map(a => a.name) || [],
                 album: item?.album?.name || null,
-                album_uri: item?.album?.uri || null
+                album_uri: item?.album?.uri || null,
+                album_art_url: item?.album?.images?.[0]?.url || null
             },
             
             // Audio analysis
