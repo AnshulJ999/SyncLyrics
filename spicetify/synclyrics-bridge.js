@@ -592,7 +592,7 @@
                 
                 // Create gain node with very low volume (practically silent)
                 const gain = ctx.createGain();
-                gain.gain.value = 0.001;  // 0.1% volume - inaudible
+                gain.gain.value = 0.0001;  // 0.01% volume - inaudible
                 
                 // Connect: oscillator -> gain -> speakers
                 oscillator.connect(gain);
