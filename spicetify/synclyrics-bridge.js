@@ -42,12 +42,12 @@
         // Add your server IPs here - extension broadcasts to all connected servers
         WS_URLS: [
             'ws://127.0.0.1:9012/ws/spicetify',      // Local machine
-            // 'ws://192.168.1.99:9012/ws/spicetify', // HASS server (uncomment to enable)
+            'ws://192.168.1.99:9012/ws/spicetify', // HASS server (uncomment to enable)
             // 'ws://192.168.1.3:9012/ws/spicetify',  // Add more as needed
         ],
         RECONNECT_BASE_MS: 1000,                      // Initial reconnect delay
         RECONNECT_MAX_MS: 30000,                      // Max reconnect delay (30s)
-        MAX_RECONNECT_ATTEMPTS: 50,                   // Stop after 50 attempts per server (~15 min)
+        // No max attempts - keeps trying forever (caps at RECONNECT_MAX_MS delay)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
         DEBUG: false                                  // Enable console logging
@@ -97,13 +97,10 @@
 
     /**
      * Calculate exponential backoff delay for reconnection
-     * Returns null if max attempts reached (signals to stop trying)
+     * Always returns a delay (never gives up, caps at RECONNECT_MAX_MS)
      * @param {number} attempts - Current attempt count for this connection
      */
     function getReconnectDelay(attempts) {
-        if (attempts >= CONFIG.MAX_RECONNECT_ATTEMPTS) {
-            return null;  // Stop trying
-        }
         return Math.min(
             CONFIG.RECONNECT_BASE_MS * Math.pow(2, attempts),
             CONFIG.RECONNECT_MAX_MS
@@ -222,11 +219,6 @@
                 conn.ws = null;
                 
                 const delay = getReconnectDelay(conn.reconnectAttempts);
-                if (delay === null) {
-                    log('Max reconnection attempts for', url);
-                    return;
-                }
-                
                 conn.reconnectAttempts++;
                 log(`Disconnected from ${url} (code: ${event.code}), reconnecting in ${delay}ms`);
                 
@@ -248,10 +240,8 @@
         } catch (e) {
             log('Connection failed:', url, e.message);
             const delay = getReconnectDelay(conn.reconnectAttempts);
-            if (delay !== null) {
-                conn.reconnectAttempts++;
-                conn.reconnectTimer = setTimeout(() => connectTo(url), delay);
-            }
+            conn.reconnectAttempts++;
+            conn.reconnectTimer = setTimeout(() => connectTo(url), delay);
         }
     }
 
@@ -609,7 +599,7 @@
         // FALLBACK 1: setInterval (throttled when minimized, but still helps)
         // Some Spicetify versions don't fire onprogress reliably
         fallbackIntervalId = setInterval(() => {
-            if (connected && Spicetify?.Player?.isPlaying()) {
+            if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
                 sendThrottledPositionUpdate();
             }
         }, 500);  // Every 500ms as fallback
@@ -643,7 +633,7 @@
             heartbeatWorker.onmessage = (e) => {
                 if (e.data?.type === 'tick') {
                     // Worker tick received - send position if connected and playing
-                    if (connected && Spicetify?.Player?.isPlaying()) {
+                    if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
                         sendThrottledPositionUpdate();
                     }
                 }
@@ -668,7 +658,7 @@
             
             messageChannel.port1.onmessage = () => {
                 // Send position if connected and playing
-                if (connected && Spicetify?.Player?.isPlaying()) {
+                if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
                     sendThrottledPositionUpdate();
                 }
                 
@@ -761,7 +751,6 @@
         }
         
         // Reset state
-        connected = false;
         window._SyncLyricsBridgeActive = false;
         
         // Terminate Web Worker
