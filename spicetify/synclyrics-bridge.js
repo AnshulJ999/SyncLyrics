@@ -1,313 +1,441 @@
 /**
- * synclyrics-test.js - Spicetify Test Extension for SyncLyrics
+ * synclyrics-bridge.js - Spicetify Bridge Extension for SyncLyrics
  * 
- * This extension extracts ALL available data from Spicetify and sends it
- * to a local Python WebSocket server for testing purposes.
+ * This extension provides real-time playback data from Spotify Desktop
+ * to the SyncLyrics application via WebSocket for improved word-sync timing.
+ * 
+ * FEATURES:
+ * - Real-time position updates (~100-200ms vs 4-5s from SMTC)
+ * - Instant play/pause/seek detection  
+ * - Audio analysis data (tempo, beats, sections)
+ * - Album art color extraction
+ * - Buffering state detection
  * 
  * INSTALLATION:
- * 1. Copy this file to: %APPDATA%\spicetify\Extensions\
- * 2. Run: spicetify config extensions synclyrics-test.js
- * 3. Run: spicetify apply
- * 4. Restart Spotify
+ *   1. Copy this file to: %APPDATA%\spicetify\Extensions\
+ *   2. Run: spicetify config extensions synclyrics-bridge.js
+ *   3. Run: spicetify apply
  * 
- * USAGE:
- * 1. Run the Python test server: python tests/test_spicetify_data.py
- * 2. Play songs in Spotify
- * 3. Watch the Python console for extracted data
+ * UNINSTALL:
+ *   spicetify config extensions synclyrics-bridge.js-
+ *   spicetify apply
+ * 
+ * @version 1.0.0
+ * @author SyncLyrics
+ * @see https://spicetify.app/docs/development/api-wrapper
  */
 
-(function SyncLyricsTestBridge() {
+(function SyncLyricsBridge() {
     'use strict';
-    
-    const WS_URL = 'ws://127.0.0.1:9099/';  // Test WebSocket server
-    const RECONNECT_INTERVAL = 3000;  // 3 seconds
-    
+
+    // ======== CONFIGURATION ========
+    const CONFIG = {
+        WS_URL: 'ws://127.0.0.1:9012/ws/spicetify',  // SyncLyrics WebSocket endpoint
+        WS_TEST_URL: 'ws://127.0.0.1:9099/',         // Test server (for development)
+        RECONNECT_BASE_MS: 1000,                      // Initial reconnect delay
+        RECONNECT_MAX_MS: 30000,                      // Max reconnect delay (30s)
+        POSITION_THROTTLE_MS: 100,                    // Min time between position updates
+        DEBUG: false                                  // Enable console logging
+    };
+
+    // ======== STATE ========
     let ws = null;
     let connected = false;
-    let audioDataCache = {};
-    let colorCache = {};
+    let reconnectAttempts = 0;
+    let lastPositionSend = 0;
+    let currentTrackUri = null;
     
-    // Logging helper
+    // Caches (cleared on song change)
+    let audioDataCache = null;
+    let colorCache = null;
+
+    // ======== UTILITIES ========
+    
+    /**
+     * Log message to console (only if DEBUG enabled)
+     */
     function log(msg, data = null) {
-        const prefix = '[SyncLyrics-Test]';
-        if (data) {
+        if (!CONFIG.DEBUG) return;
+        const prefix = '[SyncLyrics]';
+        if (data !== null) {
             console.log(prefix, msg, data);
         } else {
             console.log(prefix, msg);
         }
     }
-    
-    // Connect to WebSocket server
-    function connect() {
-        if (ws && ws.readyState === WebSocket.OPEN) return;
-        
+
+    /**
+     * Calculate exponential backoff delay for reconnection
+     */
+    function getReconnectDelay() {
+        const delay = Math.min(
+            CONFIG.RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts),
+            CONFIG.RECONNECT_MAX_MS
+        );
+        return delay;
+    }
+
+    /**
+     * Safely get player data, handling null/undefined
+     */
+    function getPlayerData() {
         try {
-            ws = new WebSocket(WS_URL);
-            
-            ws.onopen = () => {
-                connected = true;
-                log('Connected to test server!');
-                // Send initial state
-                sendFullState('connected');
-                // IMMEDIATELY fetch and send track data for current song
-                setTimeout(() => {
-                    log('Fetching data for currently playing track...');
-                    sendTrackData();
-                }, 500);
-            };
-            
-            ws.onclose = () => {
-                connected = false;
-                log('Disconnected, reconnecting in 3s...');
-                setTimeout(connect, RECONNECT_INTERVAL);
-            };
-            
-            ws.onerror = (err) => {
-                log('WebSocket error (server not running?)');
-            };
-            
-            ws.onmessage = (event) => {
-                // Handle any commands from test server
-                try {
-                    const cmd = JSON.parse(event.data);
-                    if (cmd.type === 'request_full_state') {
-                        sendFullState('requested');
-                        sendTrackData();
-                    }
-                } catch (e) {}
-            };
+            return Spicetify?.Player?.data || null;
         } catch (e) {
-            log('Failed to connect:', e.message);
-            setTimeout(connect, RECONNECT_INTERVAL);
+            return null;
         }
     }
-    
-    // Send current playback state
-    function sendFullState(trigger = 'event') {
-        if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
-        
-        const playerData = Spicetify.Player.data;
+
+    /**
+     * Safely send message via WebSocket
+     */
+    function sendMessage(msg) {
+        if (!connected || !ws || ws.readyState !== WebSocket.OPEN) {
+            return false;
+        }
+        try {
+            ws.send(JSON.stringify(msg));
+            return true;
+        } catch (e) {
+            log('Send failed:', e.message);
+            return false;
+        }
+    }
+
+    // ======== WEBSOCKET CONNECTION ========
+
+    /**
+     * Establish WebSocket connection to SyncLyrics server
+     */
+    function connect() {
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
+        // Try main URL, fall back to test URL if configured
+        const url = CONFIG.WS_URL;
+        log('Connecting to', url);
+
+        try {
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                connected = true;
+                reconnectAttempts = 0;
+                log('Connected!');
+                
+                // Send initial state
+                sendPositionUpdate('connected');
+                
+                // Fetch track data for current song
+                if (getPlayerData()?.item?.uri) {
+                    fetchAndSendTrackData();
+                }
+            };
+
+            ws.onclose = (event) => {
+                connected = false;
+                ws = null;
+                
+                const delay = getReconnectDelay();
+                reconnectAttempts++;
+                log(`Disconnected (code: ${event.code}), reconnecting in ${delay}ms`);
+                
+                setTimeout(connect, delay);
+            };
+
+            ws.onerror = () => {
+                // Error handling done in onclose
+                log('Connection error');
+            };
+
+            ws.onmessage = (event) => {
+                handleServerMessage(event.data);
+            };
+
+        } catch (e) {
+            log('Connection failed:', e.message);
+            const delay = getReconnectDelay();
+            reconnectAttempts++;
+            setTimeout(connect, delay);
+        }
+    }
+
+    /**
+     * Handle incoming messages from SyncLyrics server
+     */
+    function handleServerMessage(data) {
+        try {
+            const msg = JSON.parse(data);
+            
+            switch (msg.type) {
+                case 'ping':
+                    sendMessage({ type: 'pong', timestamp: Date.now() });
+                    break;
+                    
+                case 'request_state':
+                    sendPositionUpdate('requested');
+                    break;
+                    
+                case 'request_track_data':
+                    fetchAndSendTrackData();
+                    break;
+                    
+                default:
+                    log('Unknown message type:', msg.type);
+            }
+        } catch (e) {
+            // Ignore invalid JSON
+        }
+    }
+
+    // ======== POSITION UPDATES ========
+
+    /**
+     * Send current playback position and state to SyncLyrics
+     * @param {string} trigger - What triggered this update
+     */
+    function sendPositionUpdate(trigger = 'progress') {
+        const playerData = getPlayerData();
         const item = playerData?.item;
-        
-        const state = {
-            type: 'state',
+
+        const msg = {
+            type: 'position',
             trigger: trigger,
             timestamp: Date.now(),
             
-            // Position data
+            // Core position data
             position_ms: Spicetify.Player.getProgress(),
-            position_percent: Spicetify.Player.getProgressPercent(),
             duration_ms: Spicetify.Player.getDuration(),
+            is_playing: Spicetify.Player.isPlaying(),
             
             // Playback state
-            is_playing: Spicetify.Player.isPlaying(),
             is_buffering: playerData?.is_buffering || false,
             is_paused: playerData?.is_paused || false,
-            playback_speed: playerData?.playback_speed || 1.0,
             
-            // Track info
+            // Track identification
             track_uri: item?.uri || null,
-            track_name: item?.name || null,
-            track_artists: item?.artists?.map(a => a.name) || [],
-            track_album: item?.album?.name || null,
-            track_album_uri: item?.album?.uri || null,
             
-            // Player settings
-            volume: Spicetify.Player.getVolume(),
-            is_muted: Spicetify.Player.getMute(),
-            repeat: Spicetify.Player.getRepeat(),  // 0=off, 1=all, 2=one
-            shuffle: Spicetify.Player.getShuffle(),
-            heart: Spicetify.Player.getHeart(),  // Liked status
-            
-            // Queue info (basic)
-            has_next: playerData?.next_tracks?.length > 0,
-            has_prev: playerData?.prev_tracks?.length > 0,
-            queue_length: playerData?.next_tracks?.length || 0,
-            
-            // Raw position data for timing analysis
+            // Internal timing (for advanced sync)
             position_as_of_timestamp: playerData?.position_as_of_timestamp,
-            internal_timestamp: playerData?.timestamp
+            spotify_timestamp: playerData?.timestamp
         };
-        
-        try {
-            ws.send(JSON.stringify(state));
-        } catch (e) {
-            log('Failed to send state:', e.message);
+
+        sendMessage(msg);
+    }
+
+    /**
+     * Send position update with throttling
+     */
+    function sendThrottledPositionUpdate() {
+        const now = Date.now();
+        if (now - lastPositionSend >= CONFIG.POSITION_THROTTLE_MS) {
+            lastPositionSend = now;
+            sendPositionUpdate('progress');
         }
     }
-    
-    // Fetch and send audio analysis + colors for current track
-    async function sendTrackData() {
-        if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    // ======== TRACK DATA (Audio Analysis + Colors) ========
+
+    /**
+     * Fetch and send audio analysis and colors for current track
+     */
+    async function fetchAndSendTrackData() {
+        const playerData = getPlayerData();
+        const item = playerData?.item;
+        const trackUri = item?.uri;
         
-        const trackUri = Spicetify.Player.data?.item?.uri;
         if (!trackUri) {
             log('No track playing');
             return;
         }
-        
-        log('Fetching track data for:', trackUri);
-        
-        // Audio Analysis
-        let audioAnalysis = null;
-        if (!audioDataCache[trackUri]) {
-            try {
-                log('Fetching audio analysis...');
-                audioDataCache[trackUri] = await Spicetify.getAudioData(trackUri);
-                log('Audio analysis received!');
-            } catch (e) {
-                log('Audio analysis failed:', e.message);
-                audioDataCache[trackUri] = { error: e.message };
-            }
+
+        // Check if this is a new track
+        if (trackUri !== currentTrackUri) {
+            currentTrackUri = trackUri;
+            audioDataCache = null;
+            colorCache = null;
         }
-        audioAnalysis = audioDataCache[trackUri];
-        
-        // Color Extraction - try track URI first, then album URI
-        let colors = null;
-        const albumUri = Spicetify.Player.data?.item?.album?.uri;
-        const cacheKey = trackUri;  // Still cache by track
-        
-        if (!colorCache[cacheKey]) {
-            // Try track URI first
-            try {
-                log('Fetching colors for track URI...');
-                const trackColors = await Spicetify.colorExtractor(trackUri);
-                if (trackColors && Object.keys(trackColors).length > 0) {
-                    log('Colors from track URI received!', trackColors);
-                    colorCache[cacheKey] = trackColors;
-                } else {
-                    log('Track URI returned empty colors, trying album URI...');
-                }
-            } catch (e) {
-                log('Track color extraction failed:', e.message);
-            }
-            
-            // Fallback to album URI if track didn't work
-            if (!colorCache[cacheKey] && albumUri) {
-                try {
-                    log('Fetching colors for album URI:', albumUri);
-                    const albumColors = await Spicetify.colorExtractor(albumUri);
-                    if (albumColors && Object.keys(albumColors).length > 0) {
-                        log('Colors from album URI received!', albumColors);
-                        colorCache[cacheKey] = albumColors;
-                    } else {
-                        log('Album URI also returned empty colors');
-                        colorCache[cacheKey] = { error: 'Both track and album URIs returned empty' };
-                    }
-                } catch (e) {
-                    log('Album color extraction failed:', e.message);
-                    colorCache[cacheKey] = { error: e.message };
-                }
-            }
-            
-            // If still nothing, mark as error
-            if (!colorCache[cacheKey]) {
-                colorCache[cacheKey] = { error: 'colorExtractor returned null/empty' };
-            }
+
+        // Fetch audio analysis (if not cached)
+        if (!audioDataCache) {
+            audioDataCache = await fetchAudioAnalysis(trackUri);
         }
-        colors = colorCache[cacheKey];
-        
-        // Send track data
-        const trackData = {
+
+        // Fetch colors (if not cached)
+        if (!colorCache) {
+            colorCache = await fetchColors(trackUri, item?.album?.uri);
+        }
+
+        // Build and send track data message
+        const msg = {
             type: 'track_data',
             timestamp: Date.now(),
             track_uri: trackUri,
-            track_name: Spicetify.Player.data?.item?.name,
-            track_artist: Spicetify.Player.data?.item?.artists?.[0]?.name,
             
-            // Audio Analysis Summary
-            audio_analysis: audioAnalysis ? {
-                // Check if we got actual data or error
-                success: !audioAnalysis.error,
-                error: audioAnalysis.error || null,
-                
-                // Basic track info
-                duration: audioAnalysis.track?.duration,
-                tempo: audioAnalysis.track?.tempo,
-                time_signature: audioAnalysis.track?.time_signature,
-                key: audioAnalysis.track?.key,
-                mode: audioAnalysis.track?.mode,  // 0=minor, 1=major
-                loudness: audioAnalysis.track?.loudness,
-                
-                // Counts
-                beats_count: audioAnalysis.beats?.length || 0,
-                bars_count: audioAnalysis.bars?.length || 0,
-                sections_count: audioAnalysis.sections?.length || 0,
-                segments_count: audioAnalysis.segments?.length || 0,
-                tatums_count: audioAnalysis.tatums?.length || 0,
-                
-                // Sample data (first few items)
-                first_beats: audioAnalysis.beats?.slice(0, 5),
-                first_sections: audioAnalysis.sections?.slice(0, 3),
-                
-                // Raw data available
-                has_beats: !!audioAnalysis.beats,
-                has_bars: !!audioAnalysis.bars,
-                has_sections: !!audioAnalysis.sections,
-                has_segments: !!audioAnalysis.segments,
-                has_tatums: !!audioAnalysis.tatums
-            } : null,
+            // Track metadata
+            track: {
+                name: item?.name || null,
+                artist: item?.artists?.[0]?.name || null,
+                artists: item?.artists?.map(a => a.name) || [],
+                album: item?.album?.name || null,
+                album_uri: item?.album?.uri || null
+            },
+            
+            // Audio analysis
+            audio_analysis: audioDataCache,
             
             // Colors
-            colors: colors ? {
-                success: !colors.error,
-                error: colors.error || null,
-                VIBRANT: colors.VIBRANT,
-                DARK_VIBRANT: colors.DARK_VIBRANT,
-                LIGHT_VIBRANT: colors.LIGHT_VIBRANT,
-                PROMINENT: colors.PROMINENT,
-                DESATURATED: colors.DESATURATED,
-                VIBRANT_NON_ALARMING: colors.VIBRANT_NON_ALARMING
-            } : null,
-            
-            // Full raw audio analysis (for detailed inspection)
-            audio_analysis_raw: audioAnalysis
+            colors: colorCache
         };
-        
+
+        sendMessage(msg);
+        log('Track data sent for:', item?.name);
+    }
+
+    /**
+     * Fetch audio analysis for a track
+     * Uses Spicetify.getAudioData() which accesses internal Spotify endpoint
+     * 
+     * @param {string} trackUri - Spotify track URI
+     * @returns {Object|null} Audio analysis data or null on error
+     */
+    async function fetchAudioAnalysis(trackUri) {
         try {
-            ws.send(JSON.stringify(trackData));
-            log('Track data sent!');
+            // getAudioData() can be called without args for current track
+            // or with specific URI
+            const data = await Spicetify.getAudioData(trackUri);
+            
+            if (!data) {
+                log('No audio data available for track');
+                return null;
+            }
+
+            // Extract key information
+            return {
+                // Track-level analysis
+                tempo: data.track?.tempo,
+                key: data.track?.key,
+                mode: data.track?.mode,  // 0=minor, 1=major
+                time_signature: data.track?.time_signature,
+                loudness: data.track?.loudness,
+                duration: data.track?.duration,
+                
+                // Timing arrays (for beat-sync features)
+                beats: data.beats || [],
+                bars: data.bars || [],
+                sections: data.sections || [],
+                segments: data.segments || [],
+                tatums: data.tatums || []
+            };
         } catch (e) {
-            log('Failed to send track data:', e.message);
+            log('Audio analysis error:', e.message);
+            return null;
         }
     }
-    
-    // Event listeners
-    Spicetify.Player.addEventListener("onprogress", () => {
-        // Send position updates every ~500ms (throttle to avoid spam)
-        if (!window._lastProgressSend || Date.now() - window._lastProgressSend > 500) {
-            window._lastProgressSend = Date.now();
-            sendFullState('onprogress');
+
+    /**
+     * Fetch colors for a track or album
+     * Uses Spicetify.colorExtractor() which extracts from artwork
+     * 
+     * @param {string} trackUri - Spotify track URI
+     * @param {string} albumUri - Spotify album URI (fallback)
+     * @returns {Object|null} Color palette or null on error
+     */
+    async function fetchColors(trackUri, albumUri) {
+        // Try track URI first (per Spicetify docs)
+        try {
+            const colors = await Spicetify.colorExtractor(trackUri);
+            if (colors && Object.keys(colors).length > 0) {
+                log('Colors extracted from track');
+                return colors;
+            }
+        } catch (e) {
+            log('Track color extraction failed:', e.message);
         }
-    });
-    
-    Spicetify.Player.addEventListener("onplaypause", () => {
-        log('Play/Pause event');
-        sendFullState('onplaypause');
-    });
-    
-    Spicetify.Player.addEventListener("songchange", () => {
-        log('Song changed!');
-        // Clear caches for new song
-        sendFullState('songchange');
-        // Delay slightly to let Spotify update internal state
-        setTimeout(() => {
-            sendTrackData();
-        }, 500);
-    });
-    
-    // Initial connection
-    log('SyncLyrics Test Extension loaded!');
-    log('Waiting for test server on ' + WS_URL);
-    
-    // Wait for Spicetify to be fully ready
-    if (Spicetify.Player && Spicetify.Player.data) {
+
+        // Fallback to album URI
+        if (albumUri) {
+            try {
+                const colors = await Spicetify.colorExtractor(albumUri);
+                if (colors && Object.keys(colors).length > 0) {
+                    log('Colors extracted from album');
+                    return colors;
+                }
+            } catch (e) {
+                log('Album color extraction failed:', e.message);
+            }
+        }
+
+        return null;
+    }
+
+    // ======== EVENT LISTENERS ========
+
+    /**
+     * Initialize all Spicetify Player event listeners
+     */
+    function initEventListeners() {
+        // Position progress (throttled)
+        Spicetify.Player.addEventListener('onprogress', () => {
+            sendThrottledPositionUpdate();
+        });
+
+        // Play/Pause (immediate)
+        Spicetify.Player.addEventListener('onplaypause', () => {
+            sendPositionUpdate('playpause');
+        });
+
+        // Song change (fetch new track data)
+        Spicetify.Player.addEventListener('songchange', () => {
+            log('Song changed');
+            
+            // Clear caches
+            audioDataCache = null;
+            colorCache = null;
+            currentTrackUri = null;
+            
+            // Send position update immediately
+            sendPositionUpdate('songchange');
+            
+            // Fetch track data after short delay (let Spotify update state)
+            setTimeout(() => {
+                fetchAndSendTrackData();
+            }, 300);
+        });
+    }
+
+    // ======== INITIALIZATION ========
+
+    /**
+     * Wait for Spicetify to be fully loaded before initializing
+     */
+    function waitForSpicetify() {
+        if (
+            typeof Spicetify === 'undefined' ||
+            !Spicetify.Player ||
+            !Spicetify.Player.data
+        ) {
+            setTimeout(waitForSpicetify, 100);
+            return;
+        }
+        
+        init();
+    }
+
+    /**
+     * Initialize the bridge
+     */
+    function init() {
+        log('SyncLyrics Bridge initializing...');
+        
+        initEventListeners();
         connect();
-    } else {
-        // Retry after a short delay
-        setTimeout(() => {
-            connect();
-        }, 1000);
+        
+        log('SyncLyrics Bridge ready!');
     }
-    
+
+    // Start initialization
+    waitForSpicetify();
+
 })();
