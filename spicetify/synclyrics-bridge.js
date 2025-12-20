@@ -64,6 +64,10 @@
         onplaypause: null,
         songchange: null
     };
+    
+    // Fallback timer references (for cleanup)
+    let heartbeatWorker = null;
+    let messageChannel = null;
 
     // ======== UTILITIES ========
     
@@ -505,29 +509,71 @@
             const workerCode = `
                 // Web Worker: sends tick every 500ms
                 // This runs in a separate thread, less affected by throttling
-                setInterval(() => {
-                    self.postMessage({ type: 'tick', time: Date.now() });
+                let timerId = setInterval(() => {
+                    self.postMessage({ type: 'tick' });
                 }, 500);
+                
+                // Allow stopping the worker
+                self.onmessage = (e) => {
+                    if (e.data === 'stop') {
+                        clearInterval(timerId);
+                        self.close();
+                    }
+                };
             `;
             const blob = new Blob([workerCode], { type: 'application/javascript' });
             const workerUrl = URL.createObjectURL(blob);
-            const worker = new Worker(workerUrl);
+            heartbeatWorker = new Worker(workerUrl);
             
-            worker.onmessage = () => {
-                // Worker tick received - send position if connected and playing
-                if (connected && Spicetify?.Player?.isPlaying()) {
-                    sendThrottledPositionUpdate();
+            // Clean up the URL object to free memory
+            URL.revokeObjectURL(workerUrl);
+            
+            heartbeatWorker.onmessage = (e) => {
+                if (e.data?.type === 'tick') {
+                    // Worker tick received - send position if connected and playing
+                    if (connected && Spicetify?.Player?.isPlaying()) {
+                        sendThrottledPositionUpdate();
+                    }
                 }
             };
             
-            worker.onerror = (e) => {
+            heartbeatWorker.onerror = (e) => {
                 log('Web Worker error:', e.message);
+                heartbeatWorker = null;
             };
             
             log('Web Worker timer initialized');
         } catch (e) {
             // Web Workers might not be available in all environments
             log('Web Worker not available:', e.message);
+            heartbeatWorker = null;
+        }
+        
+        // FALLBACK 3: MessageChannel (potentially unthrottled by Chrome)
+        // Uses message passing loop which may bypass timer throttling
+        try {
+            messageChannel = new MessageChannel();
+            
+            messageChannel.port1.onmessage = () => {
+                // Send position if connected and playing
+                if (connected && Spicetify?.Player?.isPlaying()) {
+                    sendThrottledPositionUpdate();
+                }
+                
+                // Schedule next tick (500ms)
+                setTimeout(() => {
+                    if (messageChannel) {
+                        messageChannel.port2.postMessage(null);
+                    }
+                }, 500);
+            };
+            
+            // Start the loop
+            messageChannel.port2.postMessage(null);
+            log('MessageChannel fallback initialized');
+        } catch (e) {
+            log('MessageChannel not available:', e.message);
+            messageChannel = null;
         }
     }
 
@@ -566,6 +612,22 @@
         // Reset state
         connected = false;
         window._SyncLyricsBridgeActive = false;
+        
+        // Terminate Web Worker
+        if (heartbeatWorker) {
+            heartbeatWorker.postMessage('stop');
+            heartbeatWorker.terminate();
+            heartbeatWorker = null;
+            log('Web Worker terminated');
+        }
+        
+        // Close MessageChannel
+        if (messageChannel) {
+            messageChannel.port1.close();
+            messageChannel.port2.close();
+            messageChannel = null;
+            log('MessageChannel closed');
+        }
     }
 
     // ======== INITIALIZATION ========
