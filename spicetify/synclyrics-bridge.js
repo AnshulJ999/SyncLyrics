@@ -490,13 +490,45 @@
         Spicetify.Player.addEventListener('onplaypause', listeners.onplaypause);
         Spicetify.Player.addEventListener('songchange', listeners.songchange);
         
-        // FALLBACK: Some Spicetify versions don't fire onprogress reliably
-        // Add interval timer as safety net to ensure position updates
+        // FALLBACK 1: setInterval (throttled when minimized, but still helps)
+        // Some Spicetify versions don't fire onprogress reliably
         setInterval(() => {
             if (connected && Spicetify?.Player?.isPlaying()) {
                 sendThrottledPositionUpdate();
             }
         }, 500);  // Every 500ms as fallback
+        
+        // FALLBACK 2: Web Worker timer (runs in separate thread, less throttled)
+        // When Spotify is minimized, normal timers get throttled heavily.
+        // Web Workers are less affected by background throttling.
+        try {
+            const workerCode = `
+                // Web Worker: sends tick every 500ms
+                // This runs in a separate thread, less affected by throttling
+                setInterval(() => {
+                    self.postMessage({ type: 'tick', time: Date.now() });
+                }, 500);
+            `;
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            const worker = new Worker(workerUrl);
+            
+            worker.onmessage = () => {
+                // Worker tick received - send position if connected and playing
+                if (connected && Spicetify?.Player?.isPlaying()) {
+                    sendThrottledPositionUpdate();
+                }
+            };
+            
+            worker.onerror = (e) => {
+                log('Web Worker error:', e.message);
+            };
+            
+            log('Web Worker timer initialized');
+        } catch (e) {
+            // Web Workers might not be available in all environments
+            log('Web Worker not available:', e.message);
+        }
     }
 
     /**

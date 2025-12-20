@@ -37,7 +37,7 @@ _spicetify_state: Dict[str, Any] = {
 
 # Freshness thresholds
 POSITION_STALE_MS = 1000    # Position older than 1s is stale
-METADATA_STALE_MS = 7000    # Track metadata older than 7s is stale (gives grace period for reconnects)
+METADATA_STALE_MS = 4000    # Track metadata older than 4s is stale (fast fallback to SMTC)
 
 # Track when Spicetify was last actively playing (for paused timeout)
 _spicetify_last_active_time: float = 0
