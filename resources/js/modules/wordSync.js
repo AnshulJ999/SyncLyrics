@@ -111,6 +111,12 @@ const MIN_INSTRUMENTAL_GAP_SEC = 6.0;  // 6 seconds
 // Outro detection - time after last line ends before entering visual mode
 const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 6 seconds after last word ends
 
+// ========== SCROLL ANIMATION CONFIG ==========
+// CONFIGURABLE: Change this value to experiment with different animation durations
+// Try: 100, 150, 200, 250, 300 (milliseconds)
+const SCROLL_DURATION_MS = 200;  // Total animation duration
+// Content swaps at midpoint (SCROLL_DURATION_MS / 2) when motion is fastest
+
 // Maximum duration for last word fallback (prevents stuck words from bad lineData.end)
 const MAX_LAST_WORD_DURATION_SEC = 4.0;  // 4 seconds max
 
@@ -741,46 +747,48 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
         }).join(' ');
         
-        // SCROLL ANIMATION: Trigger before content swap
-        // This creates the illusion of lines scrolling upward
+        // SCROLL ANIMATION: Quick fix with mid-motion content swap
+        // Content swaps at MIDPOINT when motion is fastest (hidden by blur)
         const lyricsContainer = document.getElementById('lyrics');
         
-        // Claim a new transition token (cancels any pending fade/scroll callbacks)
+        // Claim a new transition token (cancels any pending callbacks)
         const myToken = ++transitionToken;
         
-        // Add scrolling class to trigger CSS animation
+        // Calculate EXACT pixel distance between current and prev-1
+        // This ensures animation lands precisely where it should
+        const currentPos = currentEl.offsetTop;
+        const prev1El = document.getElementById('prev-1');
+        const prev1Pos = prev1El ? prev1El.offsetTop : 0;
+        const scrollDist = currentPos - prev1Pos;
+        
+        // Set CSS variables for animation
         if (lyricsContainer) {
+            lyricsContainer.style.setProperty('--scroll-duration', `${SCROLL_DURATION_MS}ms`);
+            lyricsContainer.style.setProperty('--dynamic-scroll-dist', `${scrollDist}px`);
             lyricsContainer.classList.add('scrolling-up');
         }
         
-        // SMOOTH TRANSITION: Wait for scroll animation, then swap content
-        // The scroll animation is 250ms (defined in CSS), we wait that duration
+        // MIDPOINT SWAP: Swap content at peak motion (hidden by blur + speed)
+        const midpoint = Math.floor(SCROLL_DURATION_MS / 2);
         setTimeout(() => {
-            // Check if this transition was cancelled by a newer one
             if (transitionToken !== myToken) return;
             
-            // Remove scroll animation class first
+            // Update surrounding lines while in motion
+            updateSurroundingLines(activeLineIndex);
+            
+            // Swap current line content (blur hides this)
+            currentEl.innerHTML = html;
+            wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+        }, midpoint);
+        
+        // END: Remove animation class after full duration
+        setTimeout(() => {
+            if (transitionToken !== myToken) return;
+            
             if (lyricsContainer) {
                 lyricsContainer.classList.remove('scrolling-up');
             }
-            
-            // Update surrounding lines (single authority - only when line changes)
-            updateSurroundingLines(activeLineIndex);
-            
-            // Now swap the current line content
-            currentEl.innerHTML = html;
-            currentEl.classList.remove('line-exiting');
-            currentEl.classList.add('line-entering');
-            
-            // Cache element references for fast updates
-            wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
-            
-            // Remove entering class after animation completes
-            setTimeout(() => {
-                if (transitionToken !== myToken) return;
-                currentEl.classList.remove('line-entering');
-            }, 75);  // Match CSS animation duration
-        }, 250); // Wait 250ms for scroll animation (match CSS --scroll-duration)
+        }, SCROLL_DURATION_MS);
         
         return; // Skip word updates during transition
     }

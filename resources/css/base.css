@@ -1756,73 +1756,67 @@ body.soft-mode .background-overlay {
 
 /* ========== SMOOTH SCROLL ANIMATION ========== */
 /* When line changes, animate all lines upward to simulate scrolling */
+/* QUICK FIX: Content swaps at MIDPOINT of animation, hidden by blur + motion */
 
-/* CSS variable for scroll distance - matches the gap in #lyrics container */
+/* CSS variables for scroll animation */
+/* --scroll-duration: Set by JS (configurable, e.g., 200ms) */
+/* --dynamic-scroll-dist: Set by JS (exact pixel distance between lines) */
 #lyrics {
-    --scroll-distance: clamp(0.8rem, 3vh, 2rem);
-    --scroll-duration: 250ms;
+    --scroll-distance-fallback: clamp(0.8rem, 3vh, 2rem);
     --scroll-easing: cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;  /* Clip during scroll animation */
 }
 
 /* Apply scroll animation to all lyric lines when container has scrolling-up class */
 #lyrics.scrolling-up .lyric-line {
-    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards;
+    animation: scrollLineUp var(--scroll-duration, 200ms) var(--scroll-easing) forwards;
 }
 
-/* Base scroll keyframe - moves lines up by the gap + approximate line height */
+/* Base scroll keyframe with motion blur at peak */
 @keyframes scrollLineUp {
     0% {
         transform: translateY(0);
+        filter: blur(0);
+    }
+    35%, 65% {
+        /* Peak motion - blur hides content swap at midpoint */
+        filter: blur(0.6px);
     }
     100% {
-        /* Move up by gap + ~1.5em to reach the position above */
-        transform: translateY(calc(-1 * (var(--scroll-distance) + 1.5em)));
+        /* Use dynamic distance from JS, fallback to CSS calculation */
+        transform: translateY(calc(-1 * var(--dynamic-scroll-dist, calc(var(--scroll-distance-fallback) + 2rem))));
+        filter: blur(0);
     }
 }
 
 /* prev-2 fades out as it scrolls off the top */
 #lyrics.scrolling-up #prev-2 {
-    animation: scrollLineUpFadeOut var(--scroll-duration) var(--scroll-easing) forwards;
+    animation: scrollLineUpFadeOut var(--scroll-duration, 200ms) var(--scroll-easing) forwards;
 }
 
 @keyframes scrollLineUpFadeOut {
     0% {
         opacity: 0.4;
         transform: translateY(0);
+        filter: blur(0);
+    }
+    35%, 65% {
+        filter: blur(0.6px);
     }
     100% {
         opacity: 0;
-        transform: translateY(calc(-1 * (var(--scroll-distance) + 1.5em)));
+        transform: translateY(calc(-1 * var(--dynamic-scroll-dist, calc(var(--scroll-distance-fallback) + 2rem))));
+        filter: blur(0);
     }
 }
 
-/* next-3 slides in from below and fades in */
-#lyrics.scrolling-up #next-3 {
-    animation: scrollLineUpFadeIn var(--scroll-duration) var(--scroll-easing) forwards;
-}
+/* next-3: Normal scroll animation (removed inverted fade-in) */
+/* It scrolls up like all other lines - content swap happens mid-motion */
 
-@keyframes scrollLineUpFadeIn {
-    0% {
-        opacity: 0;
-        transform: translateY(calc(var(--scroll-distance) + 1.5em));
-    }
-    100% {
-        opacity: 0.4;
-        transform: translateY(0);
-    }
-}
-
-/* Disable scroll animation on #current during word-sync line transitions */
-/* The word-sync has its own line-entering/exiting animations */
+/* Word-sync current line: Use same scroll animation */
+/* Removed opacity:1 override that was killing fade transitions */
 #lyrics.scrolling-up .current.word-sync-active {
-    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards;
-}
-
-/* Override the word-sync line transitions during scroll - let scroll animation take over */
-#lyrics.scrolling-up .current.word-sync-active.line-exiting,
-#lyrics.scrolling-up .current.word-sync-active.line-entering {
-    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards !important;
-    opacity: 1;
+    animation: scrollLineUp var(--scroll-duration, 200ms) var(--scroll-easing) forwards;
 }
 
 /* Reduced motion preference - disable scroll animation */
@@ -1831,8 +1825,7 @@ body.soft-mode .background-overlay {
         animation: none;
     }
     
-    #lyrics.scrolling-up #prev-2,
-    #lyrics.scrolling-up #next-3 {
+    #lyrics.scrolling-up #prev-2 {
         animation: none;
     }
 }

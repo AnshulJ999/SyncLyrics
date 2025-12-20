@@ -19,6 +19,15 @@ import {
 import { areLyricsDifferent } from './utils.js';
 // Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
 
+// ========== SCROLL ANIMATION CONFIG ==========
+// CONFIGURABLE: Change this value to experiment with different animation durations
+// Try: 100, 150, 200, 250, 300 (milliseconds)
+// Note: This should match SCROLL_DURATION_MS in wordSync.js
+const SCROLL_DURATION_MS = 100;  // Total animation duration
+
+// Token for scroll animation cancellation (prevents stale timeouts)
+let scrollToken = 0;
+
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
 const elementCache = new Map();
@@ -84,7 +93,6 @@ export function setLyricsInDom(lyrics) {
     }
 
     // Check if the current line (index 2) actually changed
-    // This is important for scroll animation - we only scroll when the current line changes
     // Store old value BEFORE updating lastLyrics
     const oldCurrentLine = lastLyrics ? lastLyrics[2] : undefined;
     const currentLineChanged = oldCurrentLine !== lyrics[2];
@@ -97,28 +105,44 @@ export function setLyricsInDom(lyrics) {
     // SCROLL ANIMATION: Only trigger if the current line changed
     // (not for initial load or just surrounding lines changing)
     if (currentLineChanged && oldCurrentLine !== '' && oldCurrentLine !== undefined) {
-        // Add scrolling class to trigger CSS animation
+        // Claim a new scroll token (cancels any pending callbacks)
+        const myToken = ++scrollToken;
+        
+        // Calculate EXACT pixel distance between current and prev-1
+        const currentEl = document.getElementById('current');
+        const prev1El = document.getElementById('prev-1');
+        const scrollDist = (currentEl && prev1El) ? (currentEl.offsetTop - prev1El.offsetTop) : 50;
+        
+        // Set CSS variables and trigger animation
         if (lyricsContainer) {
+            lyricsContainer.style.setProperty('--scroll-duration', `${SCROLL_DURATION_MS}ms`);
+            lyricsContainer.style.setProperty('--dynamic-scroll-dist', `${scrollDist}px`);
             lyricsContainer.classList.add('scrolling-up');
         }
         
-        // Wait for scroll animation to complete, then swap content
+        // MIDPOINT SWAP: Update content at peak motion (hidden by blur + speed)
+        const midpoint = Math.floor(SCROLL_DURATION_MS / 2);
         setTimeout(() => {
-            // Remove scroll animation class
-            if (lyricsContainer) {
-                lyricsContainer.classList.remove('scrolling-up');
-            }
+            if (scrollToken !== myToken) return;
             
-            // Update all elements
+            // Update all elements while in motion
             updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
             updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
             updateLyricElement(document.getElementById('current'), lyrics[2]);
             updateLyricElement(document.getElementById('next-1'), lyrics[3]);
             updateLyricElement(document.getElementById('next-2'), lyrics[4]);
             updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+        }, midpoint);
+        
+        // END: Remove animation class after full duration
+        setTimeout(() => {
+            if (scrollToken !== myToken) return;
             
+            if (lyricsContainer) {
+                lyricsContainer.classList.remove('scrolling-up');
+            }
             setUpdateInProgress(false);
-        }, 250); // Match CSS --scroll-duration
+        }, SCROLL_DURATION_MS);
     } else {
         // No scroll animation needed - just update immediately
         // (initial load, or only surrounding lines changed)
