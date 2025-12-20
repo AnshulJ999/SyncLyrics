@@ -20,7 +20,7 @@
  *   spicetify config extensions synclyrics-bridge.js-
  *   spicetify apply
  * 
- * @version 1.0.0
+ * @version 1.1.0
  * @author SyncLyrics
  * @see https://spicetify.app/docs/development/api-wrapper
  */
@@ -28,12 +28,20 @@
 (function SyncLyricsBridge() {
     'use strict';
 
+    // ======== DUPLICATE INSTANCE PROTECTION ========
+    // Prevents multiple instances when extension is reloaded
+    if (window._SyncLyricsBridgeActive) {
+        console.log('[SyncLyrics] Bridge already running, skipping initialization');
+        return;
+    }
+    window._SyncLyricsBridgeActive = true;
+
     // ======== CONFIGURATION ========
     const CONFIG = {
         WS_URL: 'ws://127.0.0.1:9012/ws/spicetify',  // SyncLyrics WebSocket endpoint
-        WS_TEST_URL: 'ws://127.0.0.1:9099/',         // Test server (for development)
         RECONNECT_BASE_MS: 1000,                      // Initial reconnect delay
         RECONNECT_MAX_MS: 30000,                      // Max reconnect delay (30s)
+        MAX_RECONNECT_ATTEMPTS: 50,                   // Stop after 50 attempts (~15 min)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         DEBUG: false                                  // Enable console logging
     };
@@ -42,12 +50,20 @@
     let ws = null;
     let connected = false;
     let reconnectAttempts = 0;
+    let reconnectTimer = null;
     let lastPositionSend = 0;
     let currentTrackUri = null;
     
     // Caches (cleared on song change)
     let audioDataCache = null;
     let colorCache = null;
+
+    // Named listener references (for cleanup)
+    let listeners = {
+        onprogress: null,
+        onplaypause: null,
+        songchange: null
+    };
 
     // ======== UTILITIES ========
     
@@ -66,13 +82,17 @@
 
     /**
      * Calculate exponential backoff delay for reconnection
+     * Returns null if max attempts reached (signals to stop trying)
      */
     function getReconnectDelay() {
-        const delay = Math.min(
+        if (reconnectAttempts >= CONFIG.MAX_RECONNECT_ATTEMPTS) {
+            log('Max reconnection attempts reached, stopping');
+            return null;
+        }
+        return Math.min(
             CONFIG.RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts),
             CONFIG.RECONNECT_MAX_MS
         );
-        return delay;
     }
 
     /**
@@ -112,12 +132,10 @@
             return;
         }
 
-        // Try main URL, fall back to test URL if configured
-        const url = CONFIG.WS_URL;
-        log('Connecting to', url);
+        log('Connecting to', CONFIG.WS_URL);
 
         try {
-            ws = new WebSocket(url);
+            ws = new WebSocket(CONFIG.WS_URL);
 
             ws.onopen = () => {
                 connected = true;
@@ -138,10 +156,19 @@
                 ws = null;
                 
                 const delay = getReconnectDelay();
+                if (delay === null) {
+                    // Max attempts reached, stop trying
+                    return;
+                }
+                
                 reconnectAttempts++;
                 log(`Disconnected (code: ${event.code}), reconnecting in ${delay}ms`);
                 
-                setTimeout(connect, delay);
+                // Clear any existing timer before setting new one
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                }
+                reconnectTimer = setTimeout(connect, delay);
             };
 
             ws.onerror = () => {
@@ -156,8 +183,10 @@
         } catch (e) {
             log('Connection failed:', e.message);
             const delay = getReconnectDelay();
-            reconnectAttempts++;
-            setTimeout(connect, delay);
+            if (delay !== null) {
+                reconnectAttempts++;
+                reconnectTimer = setTimeout(connect, delay);
+            }
         }
     }
 
@@ -262,7 +291,7 @@
             audioDataCache = await fetchAudioAnalysis(trackUri);
         }
 
-        // Fetch colors (if not cached)
+        // Fetch colors (if not cached) - pass album URI as fallback
         if (!colorCache) {
             colorCache = await fetchColors(trackUri, item?.album?.uri);
         }
@@ -285,7 +314,7 @@
             // Audio analysis
             audio_analysis: audioDataCache,
             
-            // Colors
+            // Colors (property names match Spicetify API exactly)
             colors: colorCache
         };
 
@@ -301,6 +330,12 @@
      * @returns {Object|null} Audio analysis data or null on error
      */
     async function fetchAudioAnalysis(trackUri) {
+        // Check if getAudioData function exists
+        if (typeof Spicetify.getAudioData !== 'function') {
+            log('getAudioData not available');
+            return null;
+        }
+
         try {
             // getAudioData() can be called without args for current track
             // or with specific URI
@@ -335,15 +370,24 @@
     }
 
     /**
-     * Fetch colors for a track or album
+     * Fetch colors for a track (with album fallback)
      * Uses Spicetify.colorExtractor() which extracts from artwork
+     * 
+     * Returns colors with EXACT property names from Spicetify API:
+     * VIBRANT, DARK_VIBRANT, LIGHT_VIBRANT, PROMINENT, DESATURATED, VIBRANT_NON_ALARMING
      * 
      * @param {string} trackUri - Spotify track URI
      * @param {string} albumUri - Spotify album URI (fallback)
      * @returns {Object|null} Color palette or null on error
      */
     async function fetchColors(trackUri, albumUri) {
-        // Try track URI first (per Spicetify docs)
+        // Check if colorExtractor function exists
+        if (typeof Spicetify.colorExtractor !== 'function') {
+            log('colorExtractor not available');
+            return null;
+        }
+
+        // Try track URI first
         try {
             const colors = await Spicetify.colorExtractor(trackUri);
             if (colors && Object.keys(colors).length > 0) {
@@ -354,12 +398,12 @@
             log('Track color extraction failed:', e.message);
         }
 
-        // Fallback to album URI
+        // Fallback to album URI if track failed
         if (albumUri) {
             try {
                 const colors = await Spicetify.colorExtractor(albumUri);
                 if (colors && Object.keys(colors).length > 0) {
-                    log('Colors extracted from album');
+                    log('Colors extracted from album (fallback)');
                     return colors;
                 }
             } catch (e) {
@@ -367,6 +411,7 @@
             }
         }
 
+        log('No colors available');
         return null;
     }
 
@@ -374,20 +419,21 @@
 
     /**
      * Initialize all Spicetify Player event listeners
+     * Uses named functions for proper cleanup
      */
     function initEventListeners() {
         // Position progress (throttled)
-        Spicetify.Player.addEventListener('onprogress', () => {
+        listeners.onprogress = function() {
             sendThrottledPositionUpdate();
-        });
+        };
 
         // Play/Pause (immediate)
-        Spicetify.Player.addEventListener('onplaypause', () => {
+        listeners.onplaypause = function() {
             sendPositionUpdate('playpause');
-        });
+        };
 
-        // Song change (fetch new track data)
-        Spicetify.Player.addEventListener('songchange', () => {
+        // Song change - use event.data when available
+        listeners.songchange = function(event) {
             log('Song changed');
             
             // Clear caches
@@ -398,21 +444,69 @@
             // Send position update immediately
             sendPositionUpdate('songchange');
             
-            // Fetch track data after short delay (let Spotify update state)
-            setTimeout(() => {
+            // Fetch track data
+            // Use event.data if available (guaranteed ready by Spotify),
+            // otherwise use short delay as fallback
+            if (event?.data?.item?.uri) {
                 fetchAndSendTrackData();
-            }, 300);
-        });
+            } else {
+                setTimeout(fetchAndSendTrackData, 300);
+            }
+        };
+
+        // Register listeners
+        Spicetify.Player.addEventListener('onprogress', listeners.onprogress);
+        Spicetify.Player.addEventListener('onplaypause', listeners.onplaypause);
+        Spicetify.Player.addEventListener('songchange', listeners.songchange);
+    }
+
+    /**
+     * Cleanup function - remove event listeners and close connection
+     * Called on page unload to prevent memory leaks
+     */
+    function cleanup() {
+        log('Cleaning up...');
+        
+        // Remove event listeners
+        if (Spicetify?.Player?.removeEventListener) {
+            if (listeners.onprogress) {
+                Spicetify.Player.removeEventListener('onprogress', listeners.onprogress);
+            }
+            if (listeners.onplaypause) {
+                Spicetify.Player.removeEventListener('onplaypause', listeners.onplaypause);
+            }
+            if (listeners.songchange) {
+                Spicetify.Player.removeEventListener('songchange', listeners.songchange);
+            }
+        }
+        
+        // Close WebSocket
+        if (ws) {
+            ws.close(1000, 'Extension cleanup');
+            ws = null;
+        }
+        
+        // Clear reconnect timer
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        
+        // Reset state
+        connected = false;
+        window._SyncLyricsBridgeActive = false;
     }
 
     // ======== INITIALIZATION ========
 
     /**
      * Wait for Spicetify to be fully loaded before initializing
+     * Checks for both Player and Platform per official docs
      */
     function waitForSpicetify() {
         if (
             typeof Spicetify === 'undefined' ||
+            !Spicetify.Platform ||  // Required per official docs
             !Spicetify.Player ||
             !Spicetify.Player.data
         ) {
@@ -428,6 +522,9 @@
      */
     function init() {
         log('SyncLyrics Bridge initializing...');
+        
+        // Register cleanup on page unload
+        window.addEventListener('beforeunload', cleanup);
         
         initEventListeners();
         connect();
