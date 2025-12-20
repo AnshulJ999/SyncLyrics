@@ -420,6 +420,7 @@ function updateStatusDisplay(status) {
                 'spotify': 'Spotify',
                 'spotify_hybrid': 'Hybrid',
                 'spotifyhybrid': 'Hybrid',
+                'spicetify': 'Spicetify',
                 'windows': 'Windows',
                 'windows_media': 'Windows',
                 'windowsmedia': 'Windows',

@@ -169,6 +169,7 @@ async function updateLoop() {
                 const sourceMap = {
                     'spotify': 'Spotify',
                     'spotify_hybrid': 'Hybrid',
+                    'spicetify': 'Spicetify',
                     'windows': 'Windows',
                     'windows_media': 'Windows',
                     'audio_recognition': 'Shazam',

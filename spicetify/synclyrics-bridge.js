@@ -489,6 +489,14 @@
         Spicetify.Player.addEventListener('onprogress', listeners.onprogress);
         Spicetify.Player.addEventListener('onplaypause', listeners.onplaypause);
         Spicetify.Player.addEventListener('songchange', listeners.songchange);
+        
+        // FALLBACK: Some Spicetify versions don't fire onprogress reliably
+        // Add interval timer as safety net to ensure position updates
+        setInterval(() => {
+            if (connected && Spicetify?.Player?.isPlaying()) {
+                sendThrottledPositionUpdate();
+            }
+        }, 500);  // Every 500ms as fallback
     }
 
     /**

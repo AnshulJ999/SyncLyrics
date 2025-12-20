@@ -76,7 +76,13 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         # Check staleness
         age_ms = (time.time() * 1000) - _spicetify_state['last_update']
         if age_ms > METADATA_STALE_MS:
-            logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
+            # Throttle stale log to once per 20 seconds to avoid spam
+            if not hasattr(get_current_song_meta_data_spicetify, '_last_stale_log'):
+                get_current_song_meta_data_spicetify._last_stale_log = 0
+            now = time.time()
+            if now - get_current_song_meta_data_spicetify._last_stale_log > 20:
+                logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
+                get_current_song_meta_data_spicetify._last_stale_log = now
             return None
         
         track = _spicetify_state.get('track')
@@ -107,8 +113,18 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         else:
             colors = ("#24273a", "#363b54")  # Default theme colors
         
+        # Extract Spotify track ID from URI (spotify:track:xxx -> xxx)
+        # Needed for like button functionality
+        track_uri = _spicetify_state.get('track_uri')
+        spotify_id = None
+        if track_uri and ':' in track_uri:
+            parts = track_uri.split(':')
+            if len(parts) >= 3 and parts[1] == 'track':
+                spotify_id = parts[2]
+        
         return {
             'track_id': current_track_id,
+            'id': spotify_id,  # Spotify track ID for like button
             'source': 'spicetify',
             'title': title,
             'artist': artist,
