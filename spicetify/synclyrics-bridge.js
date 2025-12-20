@@ -38,20 +38,28 @@
 
     // ======== CONFIGURATION ========
     const CONFIG = {
-        WS_URL: 'ws://127.0.0.1:9012/ws/spicetify',  // SyncLyrics WebSocket endpoint
+        // Multiple SyncLyrics server endpoints (connects to all in parallel)
+        // Add your server IPs here - extension broadcasts to all connected servers
+        WS_URLS: [
+            'ws://127.0.0.1:9012/ws/spicetify',      // Local machine
+            // 'ws://192.168.1.99:9012/ws/spicetify', // HASS server (uncomment to enable)
+            // 'ws://192.168.1.3:9012/ws/spicetify',  // Add more as needed
+        ],
         RECONNECT_BASE_MS: 1000,                      // Initial reconnect delay
         RECONNECT_MAX_MS: 30000,                      // Max reconnect delay (30s)
-        MAX_RECONNECT_ATTEMPTS: 50,                   // Stop after 50 attempts (~15 min)
+        MAX_RECONNECT_ATTEMPTS: 50,                   // Stop after 50 attempts per server (~15 min)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
         DEBUG: false                                  // Enable console logging
     };
 
     // ======== STATE ========
-    let ws = null;
-    let connected = false;
-    let reconnectAttempts = 0;
-    let reconnectTimer = null;
+    
+    // Multi-server connection state: Map<url, ConnectionState>
+    // Each server has independent connection, reconnection, and state
+    let connections = new Map();
+    
+    // Shared state (not per-connection)
     let lastPositionSend = 0;
     let currentTrackUri = null;
     
@@ -90,16 +98,26 @@
     /**
      * Calculate exponential backoff delay for reconnection
      * Returns null if max attempts reached (signals to stop trying)
+     * @param {number} attempts - Current attempt count for this connection
      */
-    function getReconnectDelay() {
-        if (reconnectAttempts >= CONFIG.MAX_RECONNECT_ATTEMPTS) {
-            log('Max reconnection attempts reached, stopping');
-            return null;
+    function getReconnectDelay(attempts) {
+        if (attempts >= CONFIG.MAX_RECONNECT_ATTEMPTS) {
+            return null;  // Stop trying
         }
         return Math.min(
-            CONFIG.RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts),
+            CONFIG.RECONNECT_BASE_MS * Math.pow(2, attempts),
             CONFIG.RECONNECT_MAX_MS
         );
+    }
+    
+    /**
+     * Check if ANY server is connected (for throttled updates)
+     */
+    function isAnyConnected() {
+        for (const conn of connections.values()) {
+            if (conn.connected) return true;
+        }
+        return false;
     }
 
     /**
@@ -114,17 +132,36 @@
     }
 
     /**
-     * Safely send message via WebSocket
+     * Broadcast message to all connected servers
+     * @returns {boolean} True if sent to at least one server
      */
-    function sendMessage(msg) {
-        if (!connected || !ws || ws.readyState !== WebSocket.OPEN) {
-            return false;
-        }
+    function broadcastMessage(msg) {
+        let sent = false;
+        const payload = JSON.stringify(msg);
+        
+        connections.forEach((conn, url) => {
+            if (conn.connected && conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+                try {
+                    conn.ws.send(payload);
+                    sent = true;
+                } catch (e) {
+                    log('Send failed to', url);
+                }
+            }
+        });
+        
+        return sent;
+    }
+    
+    /**
+     * Send message to a specific WebSocket connection
+     */
+    function sendMessageTo(ws, msg) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return false;
         try {
             ws.send(JSON.stringify(msg));
             return true;
         } catch (e) {
-            log('Send failed:', e.message);
             return false;
         }
     }
@@ -132,89 +169,112 @@
     // ======== WEBSOCKET CONNECTION ========
 
     /**
-     * Establish WebSocket connection to SyncLyrics server
+     * Initialize connections to all configured servers
      */
-    function connect() {
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    function connectAll() {
+        CONFIG.WS_URLS.forEach(url => {
+            // Initialize connection state if not exists
+            if (!connections.has(url)) {
+                connections.set(url, {
+                    ws: null,
+                    connected: false,
+                    reconnectAttempts: 0,
+                    reconnectTimer: null
+                });
+            }
+            connectTo(url);
+        });
+    }
+
+    /**
+     * Establish WebSocket connection to a specific SyncLyrics server
+     * @param {string} url - WebSocket URL to connect to
+     */
+    function connectTo(url) {
+        const conn = connections.get(url);
+        if (!conn) return;
+        
+        if (conn.ws && (conn.ws.readyState === WebSocket.OPEN || conn.ws.readyState === WebSocket.CONNECTING)) {
             return;
         }
 
-        log('Connecting to', CONFIG.WS_URL);
+        log('Connecting to', url);
 
         try {
-            ws = new WebSocket(CONFIG.WS_URL);
+            conn.ws = new WebSocket(url);
 
-            ws.onopen = () => {
-                connected = true;
-                reconnectAttempts = 0;
-                log('Connected!');
+            conn.ws.onopen = () => {
+                conn.connected = true;
+                conn.reconnectAttempts = 0;
+                log('Connected to', url);
                 
-                // Send initial state
-                sendPositionUpdate('connected');
+                // Send initial state to THIS server
+                sendPositionUpdateTo(conn.ws, 'connected');
                 
-                // Fetch track data for current song
+                // Send track data to THIS server
                 if (getPlayerData()?.item?.uri) {
-                    fetchAndSendTrackData();
+                    sendTrackDataTo(conn.ws);
                 }
             };
 
-            ws.onclose = (event) => {
-                connected = false;
-                ws = null;
+            conn.ws.onclose = (event) => {
+                conn.connected = false;
+                conn.ws = null;
                 
-                const delay = getReconnectDelay();
+                const delay = getReconnectDelay(conn.reconnectAttempts);
                 if (delay === null) {
-                    // Max attempts reached, stop trying
+                    log('Max reconnection attempts for', url);
                     return;
                 }
                 
-                reconnectAttempts++;
-                log(`Disconnected (code: ${event.code}), reconnecting in ${delay}ms`);
+                conn.reconnectAttempts++;
+                log(`Disconnected from ${url} (code: ${event.code}), reconnecting in ${delay}ms`);
                 
                 // Clear any existing timer before setting new one
-                if (reconnectTimer) {
-                    clearTimeout(reconnectTimer);
+                if (conn.reconnectTimer) {
+                    clearTimeout(conn.reconnectTimer);
                 }
-                reconnectTimer = setTimeout(connect, delay);
+                conn.reconnectTimer = setTimeout(() => connectTo(url), delay);
             };
 
-            ws.onerror = () => {
-                // Error handling done in onclose
-                log('Connection error');
+            conn.ws.onerror = () => {
+                log('Connection error:', url);
             };
 
-            ws.onmessage = (event) => {
-                handleServerMessage(event.data);
+            conn.ws.onmessage = (event) => {
+                handleServerMessage(event.data, conn.ws);
             };
 
         } catch (e) {
-            log('Connection failed:', e.message);
-            const delay = getReconnectDelay();
+            log('Connection failed:', url, e.message);
+            const delay = getReconnectDelay(conn.reconnectAttempts);
             if (delay !== null) {
-                reconnectAttempts++;
-                reconnectTimer = setTimeout(connect, delay);
+                conn.reconnectAttempts++;
+                conn.reconnectTimer = setTimeout(() => connectTo(url), delay);
             }
         }
     }
 
     /**
      * Handle incoming messages from SyncLyrics server
+     * @param {string} data - Message data
+     * @param {WebSocket} ws - The WebSocket that received the message
      */
-    function handleServerMessage(data) {
+    function handleServerMessage(data, ws) {
         try {
             const msg = JSON.parse(data);
             
             switch (msg.type) {
                 case 'ping':
-                    sendMessage({ type: 'pong', timestamp: Date.now() });
+                    sendMessageTo(ws, { type: 'pong', timestamp: Date.now() });
                     break;
                     
                 case 'request_state':
-                    sendPositionUpdate('requested');
+                    sendPositionUpdateTo(ws, 'requested');
                     break;
                     
                 case 'request_track_data':
-                    fetchAndSendTrackData();
+                    sendTrackDataTo(ws);
                     break;
                     
                 default:
@@ -228,14 +288,15 @@
     // ======== POSITION UPDATES ========
 
     /**
-     * Send current playback position and state to SyncLyrics
+     * Build position update message
      * @param {string} trigger - What triggered this update
+     * @returns {Object} Position message object
      */
-    function sendPositionUpdate(trigger = 'progress') {
+    function buildPositionMessage(trigger = 'progress') {
         const playerData = getPlayerData();
         const item = playerData?.item;
 
-        const msg = {
+        return {
             type: 'position',
             trigger: trigger,
             timestamp: Date.now(),
@@ -256,12 +317,27 @@
             position_as_of_timestamp: playerData?.position_as_of_timestamp,
             spotify_timestamp: playerData?.timestamp
         };
-
-        sendMessage(msg);
+    }
+    
+    /**
+     * Broadcast position update to all connected servers
+     * @param {string} trigger - What triggered this update
+     */
+    function sendPositionUpdate(trigger = 'progress') {
+        broadcastMessage(buildPositionMessage(trigger));
+    }
+    
+    /**
+     * Send position update to a specific server
+     * @param {WebSocket} ws - Target WebSocket connection
+     * @param {string} trigger - What triggered this update
+     */
+    function sendPositionUpdateTo(ws, trigger = 'progress') {
+        sendMessageTo(ws, buildPositionMessage(trigger));
     }
 
     /**
-     * Send position update with throttling
+     * Send position update with throttling (to all servers)
      */
     function sendThrottledPositionUpdate() {
         const now = Date.now();
@@ -326,8 +402,41 @@
             colors: colorCache
         };
 
-        sendMessage(msg);
-        log('Track data sent for:', item?.name);
+        broadcastMessage(msg);
+        log('Track data broadcast for:', item?.name);
+    }
+    
+    /**
+     * Send current track data to a specific server
+     * Uses cached data if available (doesn't re-fetch)
+     * @param {WebSocket} ws - Target WebSocket connection
+     */
+    async function sendTrackDataTo(ws) {
+        const playerData = getPlayerData();
+        const item = playerData?.item;
+        const trackUri = item?.uri;
+        
+        if (!trackUri) return;
+        
+        // Build message with whatever cache we have
+        const msg = {
+            type: 'track_data',
+            timestamp: Date.now(),
+            track_uri: trackUri,
+            track: {
+                name: item?.name || null,
+                artist: item?.artists?.[0]?.name || null,
+                artists: item?.artists?.map(a => a.name) || [],
+                album: item?.album?.name || null,
+                album_uri: item?.album?.uri || null,
+                album_art_url: item?.album?.images?.[0]?.url || null
+            },
+            audio_analysis: audioDataCache,
+            colors: colorCache
+        };
+        
+        sendMessageTo(ws, msg);
+        log('Track data sent to specific server for:', item?.name);
     }
 
     /**
@@ -632,17 +741,17 @@
             }
         }
         
-        // Close WebSocket
-        if (ws) {
-            ws.close(1000, 'Extension cleanup');
-            ws = null;
-        }
-        
-        // Clear reconnect timer
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
+        // Close all WebSocket connections
+        connections.forEach((conn, url) => {
+            if (conn.ws) {
+                conn.ws.close(1000, 'Extension cleanup');
+            }
+            if (conn.reconnectTimer) {
+                clearTimeout(conn.reconnectTimer);
+            }
+        });
+        connections.clear();
+        log('All WebSocket connections closed');
         
         // Clear fallback interval
         if (fallbackIntervalId) {
@@ -709,12 +818,13 @@
      */
     function init() {
         log('SyncLyrics Bridge initializing...');
+        log('Configured servers:', CONFIG.WS_URLS);
         
         // Register cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
         
         initEventListeners();
-        connect();
+        connectAll();  // Connect to all configured servers
         
         log('SyncLyrics Bridge ready!');
     }
