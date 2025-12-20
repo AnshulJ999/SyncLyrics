@@ -83,29 +83,64 @@ export function setLyricsInDom(lyrics) {
         return;
     }
 
+    // Check if the current line (index 2) actually changed
+    // This is important for scroll animation - we only scroll when the current line changes
+    // Store old value BEFORE updating lastLyrics
+    const oldCurrentLine = lastLyrics ? lastLyrics[2] : undefined;
+    const currentLineChanged = oldCurrentLine !== lyrics[2];
+    
     setUpdateInProgress(true);
     setLastLyrics([...lyrics]);
 
-    // Update all elements simultaneously (line-sync only)
-    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
-    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
-    updateLyricElement(document.getElementById('current'), lyrics[2]);
-    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
-    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
-    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+    const lyricsContainer = document.getElementById('lyrics');
+    
+    // SCROLL ANIMATION: Only trigger if the current line changed
+    // (not for initial load or just surrounding lines changing)
+    if (currentLineChanged && oldCurrentLine !== '' && oldCurrentLine !== undefined) {
+        // Add scrolling class to trigger CSS animation
+        if (lyricsContainer) {
+            lyricsContainer.classList.add('scrolling-up');
+        }
+        
+        // Wait for scroll animation to complete, then swap content
+        setTimeout(() => {
+            // Remove scroll animation class
+            if (lyricsContainer) {
+                lyricsContainer.classList.remove('scrolling-up');
+            }
+            
+            // Update all elements
+            updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
+            updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+            updateLyricElement(document.getElementById('current'), lyrics[2]);
+            updateLyricElement(document.getElementById('next-1'), lyrics[3]);
+            updateLyricElement(document.getElementById('next-2'), lyrics[4]);
+            updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+            
+            setUpdateInProgress(false);
+        }, 250); // Match CSS --scroll-duration
+    } else {
+        // No scroll animation needed - just update immediately
+        // (initial load, or only surrounding lines changed)
+        updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
+        updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+        updateLyricElement(document.getElementById('current'), lyrics[2]);
+        updateLyricElement(document.getElementById('next-1'), lyrics[3]);
+        updateLyricElement(document.getElementById('next-2'), lyrics[4]);
+        updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+        
+        setTimeout(() => {
+            setUpdateInProgress(false);
+        }, 100);
+    }
 
     // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
     if (!visualModeActive) {
-        const lyricsContainer = document.getElementById('lyrics');
         if (lyricsContainer && lyricsContainer.classList.contains('visual-mode-hidden')) {
             console.log('[Visual Mode] Found hidden class while inactive - removing (Self-healing)');
             lyricsContainer.classList.remove('visual-mode-hidden');
         }
     }
-
-    setTimeout(() => {
-        setUpdateInProgress(false);
-    }, 100);
 }
 
 // ========== THEME COLOR ==========

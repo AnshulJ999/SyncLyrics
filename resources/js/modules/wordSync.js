@@ -741,22 +741,33 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
         }).join(' ');
         
-        // Update surrounding lines (single authority - only when line changes)
-        updateSurroundingLines(activeLineIndex);
+        // SCROLL ANIMATION: Trigger before content swap
+        // This creates the illusion of lines scrolling upward
+        const lyricsContainer = document.getElementById('lyrics');
         
-        // Claim a new transition token (cancels any pending fade callbacks)
+        // Claim a new transition token (cancels any pending fade/scroll callbacks)
         const myToken = ++transitionToken;
         
-        // SMOOTH TRANSITION: Fade-out old line, wait, then swap content
-        currentEl.classList.remove('line-entering');
-        currentEl.classList.add('line-exiting');
+        // Add scrolling class to trigger CSS animation
+        if (lyricsContainer) {
+            lyricsContainer.classList.add('scrolling-up');
+        }
         
-        // Delay content swap until fade-out completes
+        // SMOOTH TRANSITION: Wait for scroll animation, then swap content
+        // The scroll animation is 250ms (defined in CSS), we wait that duration
         setTimeout(() => {
             // Check if this transition was cancelled by a newer one
             if (transitionToken !== myToken) return;
             
-            // Now swap the content (old line has faded out)
+            // Remove scroll animation class first
+            if (lyricsContainer) {
+                lyricsContainer.classList.remove('scrolling-up');
+            }
+            
+            // Update surrounding lines (single authority - only when line changes)
+            updateSurroundingLines(activeLineIndex);
+            
+            // Now swap the current line content
             currentEl.innerHTML = html;
             currentEl.classList.remove('line-exiting');
             currentEl.classList.add('line-entering');
@@ -769,7 +780,7 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
                 if (transitionToken !== myToken) return;
                 currentEl.classList.remove('line-entering');
             }, 75);  // Match CSS animation duration
-        }, 75); // Wait 75ms for fade-out (match CSS transition)
+        }, 250); // Wait 250ms for scroll animation (match CSS --scroll-duration)
         
         return; // Skip word updates during transition
     }

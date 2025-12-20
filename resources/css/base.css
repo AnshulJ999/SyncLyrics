@@ -1754,6 +1754,89 @@ body.soft-mode .background-overlay {
     }
 }
 
+/* ========== SMOOTH SCROLL ANIMATION ========== */
+/* When line changes, animate all lines upward to simulate scrolling */
+
+/* CSS variable for scroll distance - matches the gap in #lyrics container */
+#lyrics {
+    --scroll-distance: clamp(0.8rem, 3vh, 2rem);
+    --scroll-duration: 250ms;
+    --scroll-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Apply scroll animation to all lyric lines when container has scrolling-up class */
+#lyrics.scrolling-up .lyric-line {
+    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards;
+}
+
+/* Base scroll keyframe - moves lines up by the gap + approximate line height */
+@keyframes scrollLineUp {
+    0% {
+        transform: translateY(0);
+    }
+    100% {
+        /* Move up by gap + ~1.5em to reach the position above */
+        transform: translateY(calc(-1 * (var(--scroll-distance) + 1.5em)));
+    }
+}
+
+/* prev-2 fades out as it scrolls off the top */
+#lyrics.scrolling-up #prev-2 {
+    animation: scrollLineUpFadeOut var(--scroll-duration) var(--scroll-easing) forwards;
+}
+
+@keyframes scrollLineUpFadeOut {
+    0% {
+        opacity: 0.4;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(calc(-1 * (var(--scroll-distance) + 1.5em)));
+    }
+}
+
+/* next-3 slides in from below and fades in */
+#lyrics.scrolling-up #next-3 {
+    animation: scrollLineUpFadeIn var(--scroll-duration) var(--scroll-easing) forwards;
+}
+
+@keyframes scrollLineUpFadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(calc(var(--scroll-distance) + 1.5em));
+    }
+    100% {
+        opacity: 0.4;
+        transform: translateY(0);
+    }
+}
+
+/* Disable scroll animation on #current during word-sync line transitions */
+/* The word-sync has its own line-entering/exiting animations */
+#lyrics.scrolling-up .current.word-sync-active {
+    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards;
+}
+
+/* Override the word-sync line transitions during scroll - let scroll animation take over */
+#lyrics.scrolling-up .current.word-sync-active.line-exiting,
+#lyrics.scrolling-up .current.word-sync-active.line-entering {
+    animation: scrollLineUp var(--scroll-duration) var(--scroll-easing) forwards !important;
+    opacity: 1;
+}
+
+/* Reduced motion preference - disable scroll animation */
+@media (prefers-reduced-motion: reduce) {
+    #lyrics.scrolling-up .lyric-line {
+        animation: none;
+    }
+    
+    #lyrics.scrolling-up #prev-2,
+    #lyrics.scrolling-up #next-3 {
+        animation: none;
+    }
+}
+
 /* ========== DEBUG TIMING OVERLAY ========== */
 
 .debug-timing-overlay {
