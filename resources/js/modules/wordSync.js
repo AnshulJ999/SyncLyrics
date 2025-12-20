@@ -667,17 +667,18 @@ function updateFlywheelClock(timestamp) {
         return visualPosition;
     }
     
-    // BACK-SNAP: Allow backward snaps in "safe" zones where corrections are hidden
+    // SAFE-ZONE SNAP: Bidirectional snaps in "safe" zones where corrections are hidden
     // Safe zones: line transitions (240ms window), gaps (♪), intros, end-of-line (allSung)
-    // For mid-word "ahead" errors, we rely on gentle slowdown (speed < 1.0) instead of snapping
-    const inBackSnapWindow = lineChangeTime > 0 && (performance.now() - lineChangeTime) < BACK_SNAP_WINDOW_MS;
-    const canBackSnap = inBackSnapWindow || inSafeSnapZone;
+    // Allows BOTH forward (behind) and backward (ahead) corrections when invisible to user
+    const inLineChangeWindow = lineChangeTime > 0 && (performance.now() - lineChangeTime) < BACK_SNAP_WINDOW_MS;
+    const canSafeSnap = inLineChangeWindow || inSafeSnapZone;
     
-    if (rawDrift > -0.15 && rawDrift < 0 && canBackSnap) {
+    // Bidirectional snap: correct drift 30-150ms in either direction during safe zones
+    if (Math.abs(rawDrift) > 0.03 && Math.abs(rawDrift) < 0.15 && canSafeSnap) {
         if (DEBUG_CLOCK) {
-            console.log(`[WordSync] Safe-zone backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
+            console.log(`[WordSync] Safe-zone snap (${rawDrift > 0 ? 'forward' : 'back'}): ${(rawDrift * 1000).toFixed(0)}ms`);
         }
-        backSnapCount++;  // Track for debug overlay
+        backSnapCount++;  // Track for debug overlay (counts all safe snaps)
         visualPosition = serverPosition;
         renderPosition = serverPosition;  // Reset render position on snap
         visualSpeed = 1.0;
@@ -1296,7 +1297,7 @@ export function updateDebugOverlay() {
         <div class="debug-row"><span class="debug-label">Visual:</span> ${data.visualPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Render:</span> ${data.renderPos.toFixed(3)}s</div>
         <div class="debug-row"><span class="debug-label">Drift:</span> <span class="${Math.abs(data.drift) > 50 ? 'debug-warn' : ''}">${data.drift >= 0 ? '+' : ''}${data.drift.toFixed(0)}ms</span></div>
-        <div class="debug-row"><span class="debug-label">Filt Drift:</span> <span class="${Math.abs(data.filteredDrift) > 50 ? 'debug-warn' : ''}">${data.filteredDrift >= 0 ? '+' : ''}${data.filteredDrift.toFixed(0)}ms</span></div>
+        <div class="debug-row"><span class="debug-label">Filt Drift:</span> <span class="${Math.abs(data.filteredDrift) > 30 ? 'debug-warn' : ''}">${data.filteredDrift >= 0 ? '+' : ''}${data.filteredDrift.toFixed(0)}ms</span></div>
         <div class="debug-row"><span class="debug-label">Anchor:</span> ${data.anchorAge.toFixed(0)}ms ago</div>
         <div class="debug-row"><span class="debug-label">RTT:</span> ${data.rtt.toFixed(0)}ms (avg: ${data.rttSmoothed.toFixed(0)}, jit: ${data.rttJitter.toFixed(0)})</div>
         <div class="debug-row"><span class="debug-label">Speed:</span> ${data.speed.toFixed(3)}x</div>
@@ -1309,5 +1310,6 @@ export function updateDebugOverlay() {
         <div class="debug-row"><span class="debug-label">Line:</span> ${data.lineIndex + 1}/${data.totalLines}</div>
         <div class="debug-row"><span class="debug-label">Word:</span> ${data.wordIndex + 1}/${data.totalWords} (${(data.wordProgress * 100).toFixed(0)}%)</div>
         <div class="debug-row"><span class="debug-label">FPS:</span> ${data.fps}${data.memoryMB !== null ? ` | Mem: ${data.memoryMB}MB` : ''}</div>
+        <div class="debug-row"><span class="debug-label">Safe:</span> ${inSafeSnapZone ? '🟢 YES' : '🔴 no'}</div>
     `;
 }
