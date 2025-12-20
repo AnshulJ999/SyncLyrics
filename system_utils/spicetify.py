@@ -247,8 +247,13 @@ async def _handle_position_update(data: dict):
     # Use server time for freshness (more reliable than client timestamp)
     _spicetify_state['last_update'] = time.time() * 1000
     
-    # Debug log (will show if position updates are being received)
-    logger.debug(f"Spicetify position: {data.get('position_ms', 0)}ms, playing={data.get('is_playing')}")
+    # Debug log throttled to once per 10 seconds to reduce spam
+    if not hasattr(_handle_position_update, '_last_pos_log'):
+        _handle_position_update._last_pos_log = 0
+    now = time.time()
+    if now - _handle_position_update._last_pos_log > 10:
+        logger.debug(f"Spicetify position: {data.get('position_ms', 0)}ms, playing={data.get('is_playing')}")
+        _handle_position_update._last_pos_log = now
 
 
 async def _handle_track_data(data: dict):
