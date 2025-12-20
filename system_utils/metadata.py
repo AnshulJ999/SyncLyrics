@@ -697,12 +697,17 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     if cached:
                         if cached.get("album_art_url"):
                             result["album_art_url"] = cached["album_art_url"]
-                            result["background_image_url"] = cached["album_art_url"]
                         if cached.get("album_art_path"):
                             result["album_art_path"] = cached["album_art_path"]
-                            result["background_image_path"] = cached["album_art_path"]
                         if cached.get("colors"):
                             result["colors"] = cached["colors"]
+                        # Use artist image for background if cached, otherwise album art
+                        if cached.get("background_image_url"):
+                            result["background_image_url"] = cached["background_image_url"]
+                            result["background_image_path"] = cached.get("background_image_path", cached.get("album_art_path"))
+                        elif cached.get("album_art_url"):
+                            result["background_image_url"] = cached["album_art_url"]
+                            result["background_image_path"] = cached.get("album_art_path")
                 else:
                     # New song - run enrichment
                     art_url = result.get("album_art_url")
@@ -729,6 +734,22 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
                                 result["colors"] = await extract_dominant_colors(local_art_path)
                                 enriched["colors"] = result["colors"]
+                        
+                        # Check for Artist Image Preference (like audio_recognition source)
+                        # If user selected an artist image for background, use it instead of album art
+                        from .artist_image import load_artist_image_from_db
+                        loop = asyncio.get_running_loop()
+                        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+                        if artist_image_result:
+                            artist_image_path = artist_image_result["path"]
+                            if artist_image_path.exists():
+                                mtime = int(artist_image_path.stat().st_mtime)
+                                # Use artist image for background (keep album art for top-left display)
+                                result["background_image_url"] = f"/cover-art?id={track_id}&t={mtime}&type=background"
+                                result["background_image_path"] = str(artist_image_path)
+                                enriched["background_image_url"] = result["background_image_url"]
+                                enriched["background_image_path"] = result["background_image_path"]
+                                logger.debug(f"Spicetify: Using preferred artist image for background: {artist}")
                     
                     # Cache the enrichment result for this track
                     get_current_song_meta_data._spicetify_enriched_track = track_id
