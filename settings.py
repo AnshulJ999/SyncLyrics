@@ -194,6 +194,7 @@ class SettingsManager:
             "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "list"),
             "system.windows.paused_timeout": Setting("Paused Timeout", int, 600, False, "System", "Accept paused Windows media for N seconds (0=forever)", "number"),
             "system.spotify.paused_timeout": Setting("Spotify Paused Timeout", int, 600, False, "System", "Accept paused Spotify for N seconds (0=forever)", "number"),
+            "system.spicetify.paused_timeout": Setting("Spicetify Paused Timeout", int, 600, False, "System", "Accept paused Spicetify for N seconds (0=forever)", "number"),
 
             # Features - Active
             "features.save_lyrics_locally": Setting("Save Lyrics Locally", bool, True, False, "Features", "Save lyrics to disk", "switch"),

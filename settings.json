@@ -108,6 +108,7 @@
     "system.linux.gsettings_enabled": true,
     "system.linux.playerctl_required": true,
     "system.spotify.paused_timeout": 600,
+    "system.spicetify.paused_timeout": 600,
     "system.windows.app_blocklist": [
         "chrome",
         "msedge",
