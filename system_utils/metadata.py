@@ -679,33 +679,60 @@ async def get_current_song_meta_data() -> Optional[dict]:
         
         # 4. SPICETIFY ENRICHMENT
         # Cache album art to DB and extract colors (similar to audio_recognition)
+        # CRITICAL: Only run ONCE per song - use track_id cache to prevent repeated calls
         if result and result.get("source") == "spicetify":
             try:
-                art_url = result.get("album_art_url")
                 artist = result.get("artist", "")
                 title = result.get("title", "")
-                album = result.get("album", "")
+                track_id = result.get("track_id")
                 
-                # Always check/cache to DB if we have artist+title (even if art_url is None)
-                # The DB may have cached art from previous fetches
-                if artist and title:
-                    # Cache to album art DB (art_url may be None - DB will use fallback sources)
-                    db_result = await ensure_album_art_db(artist, album, title, art_url)
+                # Skip if we've already enriched this song (prevents log spam on every poll)
+                if not hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+                    get_current_song_meta_data._spicetify_enriched_track = None
+                    get_current_song_meta_data._spicetify_enriched_result = None
+                
+                if track_id and track_id == get_current_song_meta_data._spicetify_enriched_track:
+                    # Use cached enrichment result
+                    cached = get_current_song_meta_data._spicetify_enriched_result
+                    if cached:
+                        if cached.get("album_art_url"):
+                            result["album_art_url"] = cached["album_art_url"]
+                            result["background_image_url"] = cached["album_art_url"]
+                        if cached.get("album_art_path"):
+                            result["album_art_path"] = cached["album_art_path"]
+                            result["background_image_path"] = cached["album_art_path"]
+                        if cached.get("colors"):
+                            result["colors"] = cached["colors"]
+                else:
+                    # New song - run enrichment
+                    art_url = result.get("album_art_url")
+                    album = result.get("album", "")
                     
-                    if db_result:
-                        cached_url, cached_path = db_result
-                        if cached_url:
-                            result["album_art_url"] = cached_url
-                            result["background_image_url"] = cached_url
-                        if cached_path:
-                            result["album_art_path"] = str(cached_path)
-                            result["background_image_path"] = str(cached_path)
+                    enriched = {}
+                    if artist and title:
+                        db_result = await ensure_album_art_db(artist, album, title, art_url)
+                        
+                        if db_result:
+                            cached_url, cached_path = db_result
+                            if cached_url:
+                                result["album_art_url"] = cached_url
+                                result["background_image_url"] = cached_url
+                                enriched["album_art_url"] = cached_url
+                            if cached_path:
+                                result["album_art_path"] = str(cached_path)
+                                result["background_image_path"] = str(cached_path)
+                                enriched["album_art_path"] = str(cached_path)
+                        
+                        # Color extraction
+                        if result.get("album_art_path"):
+                            local_art_path = Path(result["album_art_path"])
+                            if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
+                                result["colors"] = await extract_dominant_colors(local_art_path)
+                                enriched["colors"] = result["colors"]
                     
-                    # Color extraction (if we have local path and default colors)
-                    if result.get("album_art_path"):
-                        local_art_path = Path(result["album_art_path"])
-                        if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
-                            result["colors"] = await extract_dominant_colors(local_art_path)
+                    # Cache the enrichment result for this track
+                    get_current_song_meta_data._spicetify_enriched_track = track_id
+                    get_current_song_meta_data._spicetify_enriched_result = enriched if enriched else None
                             
             except Exception as e:
                 logger.error(f"Spicetify enrichment failed: {e}")
