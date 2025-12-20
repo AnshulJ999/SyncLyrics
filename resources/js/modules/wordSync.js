@@ -108,6 +108,9 @@ const ULTRA_SHORT_WORD_MS = 60;  // 60ms
 // Gap detection threshold - show ♪ for gaps longer than this
 const MIN_INSTRUMENTAL_GAP_SEC = 6.0;  // 6 seconds
 
+// Grace period after last word before showing ♪ (prevents jarring transition)
+const GAP_GRACE_PERIOD_SEC = 0.9;  // 900ms delay after vocals end
+
 // Outro detection - time after last line ends before entering visual mode
 const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0;  // 6 seconds after last word ends
 
@@ -414,11 +417,14 @@ export function findCurrentWordSyncLineWithIndex(position) {
             // Check for gap: vocals ended but next line hasn't started
             if (nextLine) {
                 const vocalEnd = calculateVocalEnd(line);
-                if (vocalEnd !== null && position >= vocalEnd) {
-                    // We're past vocals but still before next line
+                // Apply grace period - wait a bit after vocals end before showing ♪
+                const gapTriggerTime = vocalEnd !== null ? vocalEnd + GAP_GRACE_PERIOD_SEC : null;
+                
+                if (gapTriggerTime !== null && position >= gapTriggerTime) {
+                    // We're past vocals + grace period but still before next line
                     const gapDuration = nextLine.start - vocalEnd;
                     
-                    // Only flag as instrumental gap if it's long enough (2+ seconds)
+                    // Only flag as instrumental gap if it's long enough
                     if (gapDuration >= MIN_INSTRUMENTAL_GAP_SEC) {
                         return { 
                             line: null, 
