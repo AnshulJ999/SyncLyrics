@@ -231,7 +231,8 @@ def _log_app_state() -> None:
             f"|- Active Source: {last_source}\n"
             f"|- Metadata Fetches:\n"
             f"|  |- Spotify: {state._metadata_fetch_counters['spotify']}\n"
-            f"|  `- Windows Media: {state._metadata_fetch_counters['windows_media']}\n"
+            f"|  |- Windows Media: {state._metadata_fetch_counters['windows_media']}\n"
+            f"|  `- Spicetify: {state._metadata_fetch_counters['spicetify']}\n"
         )
         logger.info(state_summary)
 

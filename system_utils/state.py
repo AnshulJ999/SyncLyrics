@@ -136,7 +136,7 @@ _artist_image_log_throttle: Dict[str, float] = {}
 # ==========================================
 
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
-_metadata_fetch_counters: Dict[str, int] = {'spotify': 0, 'windows_media': 0}
+_metadata_fetch_counters: Dict[str, int] = {'spotify': 0, 'windows_media': 0, 'spicetify': 0}
 
 # Last state log time
 _last_state_log_time: float = 0

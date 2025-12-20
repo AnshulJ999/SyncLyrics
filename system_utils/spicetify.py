@@ -67,6 +67,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
     
     # Use lock to prevent torn reads during multi-field updates
     async with state._spicetify_state_lock:
+        # Track metadata fetch (consistent with other sources)
+        state._metadata_fetch_counters['spicetify'] += 1
+        
         if not _spicetify_state['connected']:
             return None
         
