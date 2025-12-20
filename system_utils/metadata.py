@@ -407,6 +407,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
                                     if paused_fallback is None:
                                         paused_fallback = source_result
+                            elif source_result.get("source") == "spicetify":
+                                # Check if paused Spicetify source is within timeout (same as other sources)
+                                paused_timeout = config.SYSTEM.get("spicetify", {}).get("paused_timeout", 600)
+                                last_active = source_result.get("last_active_time", 0)
+                                
+                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                    if paused_fallback is None:
+                                        paused_fallback = source_result
                             else:
                                 # Other paused source - save as fallback
                                 if paused_fallback is None:
@@ -677,8 +686,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 title = result.get("title", "")
                 album = result.get("album", "")
                 
-                if art_url:
-                    # Cache to album art DB
+                # Always check/cache to DB if we have artist+title (even if art_url is None)
+                # The DB may have cached art from previous fetches
+                if artist and title:
+                    # Cache to album art DB (art_url may be None - DB will use fallback sources)
                     db_result = await ensure_album_art_db(artist, album, title, art_url)
                     
                     if db_result:

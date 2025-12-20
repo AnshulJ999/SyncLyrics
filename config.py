@@ -272,6 +272,9 @@ SYSTEM = {
     "spotify": {
         "paused_timeout": conf("system.spotify.paused_timeout", 600),  # 10 min default
     },
+    "spicetify": {
+        "paused_timeout": conf("system.spicetify.paused_timeout", 600),  # 10 min default
+    },
     "linux": {
         "gsettings_enabled": conf("system.linux.gsettings_enabled", True),
         "playerctl_required": conf("system.linux.playerctl_required", True)

@@ -1513,8 +1513,9 @@ async def toggle_playback():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first (fast, no rate limits), Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first (fast, no rate limits), Spotify API fallback
+    # Spicetify is Spotify Desktop, which registers with Windows SMTC
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_toggle_playback
         success = await windows_toggle_playback()
         if success:
@@ -1579,8 +1580,8 @@ async def next_track():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first, Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first, Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_next
         success = await windows_next()
         if success:
@@ -1617,8 +1618,8 @@ async def previous_track():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first, Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first, Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_previous
         success = await windows_previous()
         if success:

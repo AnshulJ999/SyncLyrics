@@ -65,59 +65,61 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
     """
     global _spicetify_last_active_time
     
-    if not _spicetify_state['connected']:
-        return None
-    
-    # Check staleness
-    age_ms = (time.time() * 1000) - _spicetify_state['last_update']
-    if age_ms > METADATA_STALE_MS:
-        logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
-        return None
-    
-    track = _spicetify_state.get('track')
-    if not track:
-        return None
-    
-    artist = track.get('artist') or ''
-    title = track.get('name') or ''
-    album = track.get('album')
-    
-    # Generate normalized track ID for change detection
-    current_track_id = _normalize_track_id(artist, title)
-    
-    # Update active time if playing
-    is_playing = _spicetify_state['is_playing']
-    if is_playing:
-        _spicetify_last_active_time = time.time()
-    
-    # Get colors (may be null if Spotify blocks API)
-    colors = _spicetify_state.get('colors')
-    if colors:
-        # Normalize to tuple format if dict
-        if isinstance(colors, dict):
-            colors = (
-                colors.get('VIBRANT') or colors.get('DARK_VIBRANT') or "#24273a",
-                colors.get('DARK_VIBRANT') or colors.get('DESATURATED') or "#363b54"
-            )
-    else:
-        colors = ("#24273a", "#363b54")  # Default theme colors
-    
-    return {
-        'track_id': current_track_id,
-        'source': 'spicetify',
-        'title': title,
-        'artist': artist,
-        'album': album,
-        'position': _spicetify_state['position_ms'] / 1000,  # Convert to seconds
-        'duration_ms': _spicetify_state['duration_ms'],
-        'is_playing': is_playing,
-        'is_buffering': _spicetify_state['is_buffering'],
-        'colors': colors,
-        'album_art_url': track.get('album_art_url'),
-        'background_image_url': track.get('album_art_url'),  # Default bg to album art
-        'audio_analysis': _spicetify_state.get('audio_analysis'),
-        'last_active_time': _spicetify_last_active_time,
-    }
+    # Use lock to prevent torn reads during multi-field updates
+    async with state._spicetify_state_lock:
+        if not _spicetify_state['connected']:
+            return None
+        
+        # Check staleness
+        age_ms = (time.time() * 1000) - _spicetify_state['last_update']
+        if age_ms > METADATA_STALE_MS:
+            logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
+            return None
+        
+        track = _spicetify_state.get('track')
+        if not track:
+            return None
+        
+        artist = track.get('artist') or ''
+        title = track.get('name') or ''
+        album = track.get('album')
+        
+        # Generate normalized track ID for change detection
+        current_track_id = _normalize_track_id(artist, title)
+        
+        # Update active time if playing
+        is_playing = _spicetify_state['is_playing']
+        if is_playing:
+            _spicetify_last_active_time = time.time()
+        
+        # Get colors (may be null if Spotify blocks API)
+        colors = _spicetify_state.get('colors')
+        if colors:
+            # Normalize to tuple format if dict
+            if isinstance(colors, dict):
+                colors = (
+                    colors.get('VIBRANT') or colors.get('DARK_VIBRANT') or "#24273a",
+                    colors.get('DARK_VIBRANT') or colors.get('DESATURATED') or "#363b54"
+                )
+        else:
+            colors = ("#24273a", "#363b54")  # Default theme colors
+        
+        return {
+            'track_id': current_track_id,
+            'source': 'spicetify',
+            'title': title,
+            'artist': artist,
+            'album': album,
+            'position': _spicetify_state['position_ms'] / 1000,  # Convert to seconds
+            'duration_ms': _spicetify_state['duration_ms'],
+            'is_playing': is_playing,
+            'is_buffering': _spicetify_state['is_buffering'],
+            'colors': colors,
+            'album_art_url': track.get('album_art_url'),
+            'background_image_url': track.get('album_art_url'),  # Default bg to album art
+            'audio_analysis': _spicetify_state.get('audio_analysis'),
+            'last_active_time': _spicetify_last_active_time,
+        }
 
 
 # =============================================================================
@@ -147,9 +149,9 @@ async def handle_spicetify_connection():
                     msg_type = msg.get('type')
                     
                     if msg_type == 'position':
-                        _handle_position_update(msg)
+                        await _handle_position_update(msg)
                     elif msg_type == 'track_data':
-                        _handle_track_data(msg)
+                        await _handle_track_data(msg)
                     elif msg_type == 'ping':
                         # Respond to keepalive
                         await websocket.send_json({'type': 'pong'})
@@ -162,7 +164,12 @@ async def handle_spicetify_connection():
     except Exception as e:
         logger.warning(f"Spicetify connection error: {e}")
     finally:
+        # Reset state on disconnect to prevent stale data on reconnect
         _spicetify_state['connected'] = False
+        _spicetify_state['track'] = None
+        _spicetify_state['audio_analysis'] = None
+        _spicetify_state['colors'] = None
+        _spicetify_state['track_uri'] = None
         logger.info("Spicetify bridge disconnected")
 
 
@@ -170,25 +177,30 @@ async def handle_spicetify_connection():
 # MESSAGE HANDLERS
 # =============================================================================
 
-def _handle_position_update(data: dict):
+async def _handle_position_update(data: dict):
     """Handle position update message from Spicetify."""
-    _spicetify_state['position_ms'] = data.get('position_ms', 0)
-    _spicetify_state['duration_ms'] = data.get('duration_ms', 0)
-    _spicetify_state['is_playing'] = data.get('is_playing', False)
-    _spicetify_state['is_buffering'] = data.get('is_buffering', False)
-    _spicetify_state['track_uri'] = data.get('track_uri')
-    
-    # Use server time for freshness (more reliable than client timestamp)
-    _spicetify_state['last_update'] = time.time() * 1000
+    async with state._spicetify_state_lock:
+        _spicetify_state['position_ms'] = data.get('position_ms', 0)
+        _spicetify_state['duration_ms'] = data.get('duration_ms', 0)
+        _spicetify_state['is_playing'] = data.get('is_playing', False)
+        _spicetify_state['is_buffering'] = data.get('is_buffering', False)
+        _spicetify_state['track_uri'] = data.get('track_uri')
+        
+        # Use server time for freshness (more reliable than client timestamp)
+        _spicetify_state['last_update'] = time.time() * 1000
 
 
-def _handle_track_data(data: dict):
+async def _handle_track_data(data: dict):
     """Handle track metadata + audio analysis from Spicetify."""
-    _spicetify_state['track'] = data.get('track')
-    _spicetify_state['audio_analysis'] = data.get('audio_analysis')
-    _spicetify_state['colors'] = data.get('colors')
-    _spicetify_state['track_uri'] = data.get('track_uri')
+    async with state._spicetify_state_lock:
+        _spicetify_state['track'] = data.get('track')
+        _spicetify_state['audio_analysis'] = data.get('audio_analysis')
+        _spicetify_state['colors'] = data.get('colors')
+        _spicetify_state['track_uri'] = data.get('track_uri')
+        
+        # Also update last_update timestamp for freshness
+        _spicetify_state['last_update'] = time.time() * 1000
     
-    # Log track change
+    # Log track change (outside lock)
     track = data.get('track', {})
     logger.debug(f"Spicetify track: {track.get('artist')} - {track.get('name')}")

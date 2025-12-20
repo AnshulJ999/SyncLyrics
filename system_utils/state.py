@@ -52,6 +52,9 @@ _art_update_lock = asyncio.Lock()
 # Global lock to prevent race conditions during metadata updates
 _meta_data_lock = asyncio.Lock()
 
+# Lock for Spicetify shared state access (prevents torn reads during updates)
+_spicetify_state_lock = asyncio.Lock()
+
 # Semaphore to limit concurrent background downloads
 # Prevents network saturation if user skips many tracks quickly
 _art_download_semaphore = asyncio.Semaphore(2)  # For album art downloads
