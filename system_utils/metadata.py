@@ -701,6 +701,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             result["album_art_path"] = cached["album_art_path"]
                         if cached.get("colors"):
                             result["colors"] = cached["colors"]
+                        if cached.get("background_style"):
+                            result["background_style"] = cached["background_style"]
                         # Use artist image for background if cached, otherwise album art
                         if cached.get("background_image_url"):
                             result["background_image_url"] = cached["background_image_url"]
@@ -716,6 +718,17 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     enriched = {}
                     if artist and title:
                         db_result = await ensure_album_art_db(artist, album, title, art_url)
+                        
+                        # Load from DB to get background_style (ensure_album_art_db doesn't return it)
+                        # FIX: Run in executor to avoid blocking the event loop during file I/O
+                        from .album_art import load_album_art_from_db
+                        loop = asyncio.get_running_loop()
+                        album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
+                        if album_art_db:
+                            saved_background_style = album_art_db.get("background_style")
+                            if saved_background_style:
+                                result["background_style"] = saved_background_style
+                                enriched["background_style"] = saved_background_style
                         
                         if db_result:
                             cached_url, cached_path = db_result
@@ -737,8 +750,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         
                         # Check for Artist Image Preference (like audio_recognition source)
                         # If user selected an artist image for background, use it instead of album art
-                        from .artist_image import load_artist_image_from_db
-                        loop = asyncio.get_running_loop()
+                        from .artist_image import load_artist_image_from_db, ensure_artist_image_db
                         artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
                         if artist_image_result:
                             artist_image_path = artist_image_result["path"]
@@ -750,6 +762,22 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 enriched["background_image_url"] = result["background_image_url"]
                                 enriched["background_image_path"] = result["background_image_path"]
                                 logger.debug(f"Spicetify: Using preferred artist image for background: {artist}")
+                        
+                        # Artist Image Backfill (like Windows/Spotify sources)
+                        # Ensures all artist image sources are populated for selection menu
+                        if artist and artist not in state._artist_download_tracker:
+                            # Get Spotify artist ID from track (if available via Spicetify)
+                            spotify_artist_id = result.get("artist_id")
+                            
+                            async def background_artist_images_backfill():
+                                """Background task to fetch artist images from all enabled sources"""
+                                try:
+                                    await ensure_artist_image_db(artist, spotify_artist_id)
+                                except Exception as e:
+                                    logger.debug(f"Spicetify: Background artist image backfill failed for {artist}: {e}")
+                            
+                            # Use tracked task to prevent silent failures
+                            create_tracked_task(background_artist_images_backfill())
                     
                     # Cache the enrichment result for this track
                     get_current_song_meta_data._spicetify_enriched_track = track_id
