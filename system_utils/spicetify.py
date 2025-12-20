@@ -37,7 +37,7 @@ _spicetify_state: Dict[str, Any] = {
 
 # Freshness thresholds
 POSITION_STALE_MS = 1000    # Position older than 1s is stale
-METADATA_STALE_MS = 5000    # Track metadata older than 5s is stale
+METADATA_STALE_MS = 7000    # Track metadata older than 7s is stale (gives grace period for reconnects)
 
 # Track when Spicetify was last actively playing (for paused timeout)
 _spicetify_last_active_time: float = 0
@@ -122,6 +122,16 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             if len(parts) >= 3 and parts[1] == 'track':
                 spotify_id = parts[2]
         
+        # Position interpolation (matches Windows pattern)
+        # When playing, estimate position based on elapsed time since last update
+        # This prevents stale positions during brief WebSocket reconnections
+        position_ms = _spicetify_state['position_ms']
+        if is_playing:
+            elapsed_ms = (time.time() * 1000) - _spicetify_state['last_update']
+            # Cap interpolation at 5 seconds to prevent runaway drift
+            elapsed_ms = min(elapsed_ms, 5000)
+            position_ms = position_ms + elapsed_ms
+        
         return {
             'track_id': current_track_id,
             'id': spotify_id,  # Spotify track ID for like button
@@ -129,7 +139,7 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'title': title,
             'artist': artist,
             'album': album,
-            'position': _spicetify_state['position_ms'] / 1000,  # Convert to seconds
+            'position': position_ms / 1000,  # Convert to seconds
             'duration_ms': _spicetify_state['duration_ms'],
             'is_playing': is_playing,
             'is_buffering': _spicetify_state['is_buffering'],
@@ -209,6 +219,10 @@ async def handle_spicetify_connection():
         _spicetify_state['audio_analysis'] = None
         _spicetify_state['colors'] = None
         _spicetify_state['track_uri'] = None
+        _spicetify_state['position_ms'] = 0
+        _spicetify_state['duration_ms'] = 0
+        _spicetify_state['is_playing'] = False
+        _spicetify_state['is_buffering'] = False
         logger.info("Spicetify bridge disconnected")
 
 
