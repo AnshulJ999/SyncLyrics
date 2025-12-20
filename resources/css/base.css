@@ -805,7 +805,7 @@ body[data-minimal="true"] .lyrics-toggle-btn {
 
 /* Icon sizing - Phosphor icons are slightly smaller than Bootstrap at same font-size */
 .word-sync-toggle-btn i {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
 }
 
 /* Active state when word-sync is enabled and active */
