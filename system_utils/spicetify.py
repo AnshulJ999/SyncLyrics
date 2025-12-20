@@ -145,14 +145,24 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
 # WEBSOCKET HANDLER (Quart style)
 # =============================================================================
 
+# Pending position update task (for debounce - only one at a time)
+_pending_position_task: asyncio.Task = None
+
+
 async def handle_spicetify_connection():
     """
     Handle Spicetify WebSocket connection.
     
     Called from server.py's @app.websocket('/ws/spicetify') endpoint.
     Uses Quart's global `websocket` object for receive/send.
+    
+    Architecture Notes:
+    - Position updates use fire-and-forget (asyncio.create_task) to avoid blocking receive loop
+    - Only one position update task runs at a time (debounce) to prevent task pileup
+    - No locks used for position updates - dict assignments are atomic in Python
+    - Track data still awaited since it's less frequent and needs ordering
     """
-    global _spicetify_state, _spicetify_last_active_time
+    global _spicetify_state, _spicetify_last_active_time, _pending_position_task
     
     _spicetify_state['connected'] = True
     logger.info("Spicetify bridge connected")
@@ -168,9 +178,15 @@ async def handle_spicetify_connection():
                     msg_type = msg.get('type')
                     
                     if msg_type == 'position':
-                        await _handle_position_update(msg)
+                        # Fire-and-forget with debounce: cancel old task if still pending
+                        if _pending_position_task and not _pending_position_task.done():
+                            _pending_position_task.cancel()
+                        _pending_position_task = asyncio.create_task(_handle_position_update(msg))
+                        
                     elif msg_type == 'track_data':
+                        # Await track data (less frequent, needs ordering)
                         await _handle_track_data(msg)
+                        
                     elif msg_type == 'ping':
                         # Respond to keepalive
                         await websocket.send_json({'type': 'pong'})
@@ -183,6 +199,10 @@ async def handle_spicetify_connection():
     except Exception as e:
         logger.warning(f"Spicetify connection error: {e}")
     finally:
+        # Cancel any pending position task
+        if _pending_position_task and not _pending_position_task.done():
+            _pending_position_task.cancel()
+        
         # Reset state on disconnect to prevent stale data on reconnect
         _spicetify_state['connected'] = False
         _spicetify_state['track'] = None
@@ -197,20 +217,29 @@ async def handle_spicetify_connection():
 # =============================================================================
 
 async def _handle_position_update(data: dict):
-    """Handle position update message from Spicetify."""
-    async with state._spicetify_state_lock:
-        _spicetify_state['position_ms'] = data.get('position_ms', 0)
-        _spicetify_state['duration_ms'] = data.get('duration_ms', 0)
-        _spicetify_state['is_playing'] = data.get('is_playing', False)
-        _spicetify_state['is_buffering'] = data.get('is_buffering', False)
-        _spicetify_state['track_uri'] = data.get('track_uri')
-        
-        # Use server time for freshness (more reliable than client timestamp)
-        _spicetify_state['last_update'] = time.time() * 1000
+    """
+    Handle position update message from Spicetify.
+    
+    Note: No lock used - Python dict item assignment is atomic.
+    This handler is called via fire-and-forget to avoid blocking the WebSocket receive loop.
+    """
+    # Simple dict updates are atomic in Python - no lock needed
+    _spicetify_state['position_ms'] = data.get('position_ms', 0)
+    _spicetify_state['duration_ms'] = data.get('duration_ms', 0)
+    _spicetify_state['is_playing'] = data.get('is_playing', False)
+    _spicetify_state['is_buffering'] = data.get('is_buffering', False)
+    _spicetify_state['track_uri'] = data.get('track_uri')
+    
+    # Use server time for freshness (more reliable than client timestamp)
+    _spicetify_state['last_update'] = time.time() * 1000
+    
+    # Debug log (will show if position updates are being received)
+    logger.debug(f"Spicetify position: {data.get('position_ms', 0)}ms, playing={data.get('is_playing')}")
 
 
 async def _handle_track_data(data: dict):
     """Handle track metadata + audio analysis from Spicetify."""
+    # Track data is less frequent, can use lock for safety during multi-key update
     async with state._spicetify_state_lock:
         _spicetify_state['track'] = data.get('track')
         _spicetify_state['audio_analysis'] = data.get('audio_analysis')
@@ -223,3 +252,4 @@ async def _handle_track_data(data: dict):
     # Log track change (outside lock)
     track = data.get('track', {})
     logger.debug(f"Spicetify track: {track.get('artist')} - {track.get('name')}")
+
