@@ -277,12 +277,14 @@
 
 <!-- NEW: Word-Sync Toggle Button (next to visual mode) -->
 <button id="btn-word-sync-toggle" class="word-sync-toggle-btn active" title="Toggle Word-Sync (Karaoke)">
-    <!-- Handheld karaoke microphone SVG (tilted, singer-style) -->
-    <svg class="karaoke-icon" viewBox="0 0 36 36" width="20" height="20" fill="currentColor">
-        <!-- Mic head (mesh grille) -->
-        <circle cx="29" cy="12" r="7" opacity="0.9"/>
-        <!-- Handle/body (tilted) -->
-        <rect x="10" y="16" width="4" height="16" rx="2" transform="rotate(-45 12 24)"/>
+    <!-- Karaoke microphone SVG (tilted 35° right like 🎤 emoji) -->
+    <svg class="karaoke-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+        <g transform="rotate(35 12 12)">
+            <!-- Mic head -->
+            <circle cx="12" cy="6.5" r="3.5"/>
+            <!-- Handle -->
+            <rect x="10.5" y="9.5" width="3" height="11" rx="1.5"/>
+        </g>
     </svg>
 </button>
 
