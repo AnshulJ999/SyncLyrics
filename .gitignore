@@ -13,7 +13,10 @@ tests/
 full_project_code.txt
 features.md
 .kiro
+backups
 
+
+backups/
 # share_project.py
 .cursor
 
