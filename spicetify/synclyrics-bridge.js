@@ -43,6 +43,7 @@
         RECONNECT_MAX_MS: 30000,                      // Max reconnect delay (30s)
         MAX_RECONNECT_ATTEMPTS: 50,                   // Stop after 50 attempts (~15 min)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
+        AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
         DEBUG: false                                  // Enable console logging
     };
 
@@ -68,6 +69,7 @@
     // Fallback timer references (for cleanup)
     let heartbeatWorker = null;
     let messageChannel = null;
+    let audioKeepAlive = null;  // Silent audio context to prevent throttling
 
     // ======== UTILITIES ========
     
@@ -575,6 +577,38 @@
             log('MessageChannel not available:', e.message);
             messageChannel = null;
         }
+        
+        // ANTI-THROTTLE: Audio Keep-Alive (silent audio prevents Chrome background throttling)
+        // Chrome doesn't throttle tabs playing audio. We create an inaudible 1Hz oscillator
+        // to trick Chrome into keeping our timers running at full speed when minimized.
+        if (CONFIG.AUDIO_KEEPALIVE) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create 1Hz oscillator (below human hearing range of ~20Hz)
+                const oscillator = ctx.createOscillator();
+                oscillator.frequency.value = 1;
+                oscillator.type = 'sine';
+                
+                // Create gain node with very low volume (practically silent)
+                const gain = ctx.createGain();
+                gain.gain.value = 0.001;  // 0.1% volume - inaudible
+                
+                // Connect: oscillator -> gain -> speakers
+                oscillator.connect(gain);
+                gain.connect(ctx.destination);
+                
+                // Start the oscillator
+                oscillator.start();
+                
+                // Store references for cleanup
+                audioKeepAlive = { ctx, oscillator, gain };
+                log('Audio keep-alive initialized (anti-throttle)');
+            } catch (e) {
+                log('Audio keep-alive failed:', e.message);
+                audioKeepAlive = null;
+            }
+        }
     }
 
     /**
@@ -627,6 +661,18 @@
             messageChannel.port2.close();
             messageChannel = null;
             log('MessageChannel closed');
+        }
+        
+        // Stop audio keep-alive
+        if (audioKeepAlive) {
+            try {
+                audioKeepAlive.oscillator.stop();
+                audioKeepAlive.ctx.close();
+            } catch (e) {
+                // Ignore errors during cleanup
+            }
+            audioKeepAlive = null;
+            log('Audio keep-alive stopped');
         }
     }
 
