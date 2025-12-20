@@ -70,6 +70,7 @@
     let heartbeatWorker = null;
     let messageChannel = null;
     let audioKeepAlive = null;  // Silent audio context to prevent throttling
+    let fallbackIntervalId = null;  // setInterval ID for cleanup
 
     // ======== UTILITIES ========
     
@@ -498,7 +499,7 @@
         
         // FALLBACK 1: setInterval (throttled when minimized, but still helps)
         // Some Spicetify versions don't fire onprogress reliably
-        setInterval(() => {
+        fallbackIntervalId = setInterval(() => {
             if (connected && Spicetify?.Player?.isPlaying()) {
                 sendThrottledPositionUpdate();
             }
@@ -641,6 +642,13 @@
         if (reconnectTimer) {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
+        }
+        
+        // Clear fallback interval
+        if (fallbackIntervalId) {
+            clearInterval(fallbackIntervalId);
+            fallbackIntervalId = null;
+            log('Fallback interval cleared');
         }
         
         // Reset state
