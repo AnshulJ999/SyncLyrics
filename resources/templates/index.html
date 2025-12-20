@@ -277,13 +277,20 @@
 
 <!-- NEW: Word-Sync Toggle Button (next to visual mode) -->
 <button id="btn-word-sync-toggle" class="word-sync-toggle-btn active" title="Toggle Word-Sync (Karaoke)">
-    <!-- Karaoke microphone SVG (tilted 35° right like 🎤 emoji) -->
+    <!-- Karaoke microphone SVG (matching 🎤 style) -->
     <svg class="karaoke-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-        <g transform="rotate(35 12 12)">
-            <!-- Mic head -->
-            <circle cx="12" cy="6.5" r="3.5"/>
-            <!-- Handle -->
-            <rect x="10.5" y="9.5" width="3" height="11" rx="1.5"/>
+        <g transform="rotate(45 12 12)">
+            <!-- Mic head (circle) -->
+            <circle cx="12" cy="5" r="4"/>
+            <!-- Mesh stripes on head -->
+            <line x1="9" y1="3" x2="15" y2="7" stroke="var(--bg-color, #1e2030)" stroke-width="1" stroke-linecap="round"/>
+            <line x1="9" y1="5.5" x2="14" y2="9" stroke="var(--bg-color, #1e2030)" stroke-width="1" stroke-linecap="round"/>
+            <!-- Handle body (tapered trapezoid) -->
+            <path d="M10 8.5 L14 8.5 L13 19 L11 19 Z" fill="currentColor"/>
+            <!-- Button on handle -->
+            <ellipse cx="12" cy="13" rx="1" ry="1.5" fill="var(--bg-color, #1e2030)" opacity="0.6"/>
+            <!-- Bottom tip -->
+            <path d="M11.2 19 L12 22 L12.8 19 Z" fill="currentColor"/>
         </g>
     </svg>
 </button>
