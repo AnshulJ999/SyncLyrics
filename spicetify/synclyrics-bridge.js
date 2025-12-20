@@ -370,48 +370,78 @@
     }
 
     /**
-     * Fetch colors for a track (with album fallback)
-     * Uses Spicetify.colorExtractor() which extracts from artwork
+     * Fetch colors using GraphQL (fixes 403 Forbidden from colorExtractor)
      * 
-     * Returns colors with EXACT property names from Spicetify API:
-     * VIBRANT, DARK_VIBRANT, LIGHT_VIBRANT, PROMINENT, DESATURATED, VIBRANT_NON_ALARMING
+     * Tries multiple methods:
+     * 1. GraphQL API (modern, what Spotify client uses)
+     * 2. Local metadata (sometimes cached)
+     * 3. Legacy colorExtractor (fallback for older versions)
      * 
      * @param {string} trackUri - Spotify track URI
-     * @param {string} albumUri - Spotify album URI (fallback)
+     * @param {string} albumUri - Spotify album URI (unused, kept for API compatibility)
      * @returns {Object|null} Color palette or null on error
      */
     async function fetchColors(trackUri, albumUri) {
-        // Check if colorExtractor function exists
-        if (typeof Spicetify.colorExtractor !== 'function') {
-            log('colorExtractor not available');
-            return null;
-        }
-
-        // Try track URI first
+        // Method 1: Try GraphQL API (Official modern way)
         try {
-            const colors = await Spicetify.colorExtractor(trackUri);
-            if (colors && Object.keys(colors).length > 0) {
-                log('Colors extracted from track');
-                return colors;
+            const track = Spicetify.Player.data?.item;
+            const imageUri = track?.album?.images?.[0]?.uri;
+            
+            if (imageUri && Spicetify.GraphQL?.Definitions?.fetchExtractedColors) {
+                const response = await Spicetify.GraphQL.Request(
+                    Spicetify.GraphQL.Definitions.fetchExtractedColors,
+                    { uris: [imageUri] }
+                );
+
+                if (response?.data?.extractedColors?.[0]) {
+                    const c = response.data.extractedColors[0];
+                    log('Colors extracted via GraphQL');
+                    return {
+                        VIBRANT: c.colorRaw?.hex,
+                        DARK_VIBRANT: c.colorDark?.hex,
+                        LIGHT_VIBRANT: c.colorLight?.hex,
+                        PROMINENT: c.colorRaw?.hex,
+                        DESATURATED: c.colorDark?.hex,
+                        VIBRANT_NON_ALARMING: c.colorLight?.hex
+                    };
+                }
             }
         } catch (e) {
-            log('Track color extraction failed:', e.message);
+            log('GraphQL color extraction failed:', e.message);
         }
 
-        // Fallback to album URI if track failed
-        if (albumUri) {
-            try {
-                const colors = await Spicetify.colorExtractor(albumUri);
+        // Method 2: Check local metadata (sometimes cached by Spotify)
+        try {
+            const metadata = Spicetify.Player.data?.item?.metadata;
+            if (metadata && metadata['extracted-color-dark']) {
+                log('Colors found in local metadata');
+                return {
+                    VIBRANT: metadata['extracted-color-raw'] || null,
+                    DARK_VIBRANT: metadata['extracted-color-dark'] || null,
+                    LIGHT_VIBRANT: metadata['extracted-color-light'] || null,
+                    PROMINENT: metadata['extracted-color-raw'] || null,
+                    DESATURATED: metadata['extracted-color-dark'] || null,
+                    VIBRANT_NON_ALARMING: metadata['extracted-color-light'] || null
+                };
+            }
+        } catch (e) {
+            log('Metadata fallback failed:', e.message);
+        }
+
+        // Method 3: Legacy colorExtractor (may still work for some users)
+        try {
+            if (typeof Spicetify.colorExtractor === 'function') {
+                const colors = await Spicetify.colorExtractor(trackUri);
                 if (colors && Object.keys(colors).length > 0) {
-                    log('Colors extracted from album (fallback)');
+                    log('Colors extracted via legacy colorExtractor');
                     return colors;
                 }
-            } catch (e) {
-                log('Album color extraction failed:', e.message);
             }
+        } catch (e) {
+            // Silently fail - 403 is expected
         }
 
-        log('No colors available');
+        log('No colors available from any method');
         return null;
     }
 
