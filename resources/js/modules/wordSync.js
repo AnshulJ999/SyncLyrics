@@ -125,6 +125,10 @@ let introDisplayed = false;
 // Needed because gap after line N has same index as line N itself
 let gapDisplayed = false;
 
+// Safe-snap zone flag - set by animation loop, read by flywheel clock
+// When true, allows back-snaps during gaps, intros, or end-of-line
+let inSafeSnapZone = false;
+
 // ========== WORD SYNC UTILITIES ==========
 
 /**
@@ -649,9 +653,9 @@ function updateFlywheelClock(timestamp) {
     // This is the RAW drift - used for snap detection
     const rawDrift = serverPosition - visualPosition;
     
-    // Handle large jumps (seeks, buffering) - snap threshold 1.0s
+    // Handle large jumps (seeks, buffering) - snap threshold 0.5s
     // Use RAW drift for immediate response to seeks
-    if (Math.abs(rawDrift) > 1.0) {
+    if (Math.abs(rawDrift) > 0.5) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Seek detected, drift: ${rawDrift.toFixed(2)}s, snapping to server`);
         }
@@ -663,22 +667,22 @@ function updateFlywheelClock(timestamp) {
         return visualPosition;
     }
     
-    // RELAXED BACK-SNAP: Only allow backward snap within window after line changes
-    // This prevents constant oscillation mid-word while still correcting at natural break points
-    // The 240ms window aligns with line transition animation (hidden from user)
+    // BACK-SNAP: Allow backward snaps in "safe" zones where corrections are hidden
+    // Safe zones: line transitions (240ms window), gaps (♪), intros, end-of-line (allSung)
     // For mid-word "ahead" errors, we rely on gentle slowdown (speed < 1.0) instead of snapping
     const inBackSnapWindow = lineChangeTime > 0 && (performance.now() - lineChangeTime) < BACK_SNAP_WINDOW_MS;
+    const canBackSnap = inBackSnapWindow || inSafeSnapZone;
     
-    if (rawDrift > -0.1 && rawDrift < 0 && inBackSnapWindow) {
+    if (rawDrift > -0.15 && rawDrift < 0 && canBackSnap) {
         if (DEBUG_CLOCK) {
-            console.log(`[WordSync] Line-change backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
+            console.log(`[WordSync] Safe-zone backward snap: ${(rawDrift * 1000).toFixed(0)}ms`);
         }
         backSnapCount++;  // Track for debug overlay
         visualPosition = serverPosition;
         renderPosition = serverPosition;  // Reset render position on snap
         visualSpeed = 1.0;
         filteredDrift = 0;  // Reset filter on snap
-        lineChangeTime = 0;  // Consume the window
+        lineChangeTime = 0;  // Consume the line-change window
         return visualPosition;
     }
     
@@ -687,18 +691,18 @@ function updateFlywheelClock(timestamp) {
     filteredDrift = filteredDrift * (1 - DRIFT_SMOOTHING) + rawDrift * DRIFT_SMOOTHING;
     
     // IMPROVEMENT: Deadband - don't chase tiny errors (noise)
-    // If filtered drift is within 50ms, stay at 1x speed
-    if (Math.abs(filteredDrift) < 0.05) {
+    // If filtered drift is within 30ms, stay at 1x speed
+    if (Math.abs(filteredDrift) < 0.03) {
         visualSpeed = 1.0;
     } else {
         // Soft sync: Adjust speed to correct filtered drift
         // Using filtered drift prevents jerky speed changes
-        // Reduced multiplier (0.5) for gentler corrections
-        visualSpeed = 1.0 + (filteredDrift * 0.5);
+        // Increased multiplier (0.8) for faster corrections
+        visualSpeed = 1.0 + (filteredDrift * 0.8);
         
-        // RELAXED SPEED CLAMP: Allow gentle slowdowns (92% - 108%)
-        // This enables smooth correction when ahead, instead of relying on snaps
-        visualSpeed = Math.max(0.92, Math.min(1.08, visualSpeed));
+        // Speed clamp: Allow 90% - 110% speed variation
+        // This enables smooth correction when ahead or behind
+        visualSpeed = Math.max(0.90, Math.min(1.10, visualSpeed));
     }
     
     // Advance visual position
@@ -920,6 +924,9 @@ function animateWordSync(timestamp) {
         cachedLineId = null;
         wordElements = [];
         
+        // Mark as safe zone for next frame's flywheel (intro = hidden)
+        inSafeSnapZone = true;
+        
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
         return;
@@ -948,6 +955,9 @@ function animateWordSync(timestamp) {
         // Clear cached state
         cachedLineId = null;
         wordElements = [];
+        
+        // Mark as safe zone for next frame's flywheel (gap = hidden)
+        inSafeSnapZone = true;
         
         // Request next frame
         setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
@@ -1057,6 +1067,11 @@ function animateWordSync(timestamp) {
     // Update debug overlay if enabled (throttled to reduce overhead)
     updateDebugOverlay();
     
+    // Determine if we're in a safe zone for next frame's back-snap opportunity
+    // End-of-line (allSung): all words have been sung, line is visually complete
+    const wordInfo = findCurrentWord(renderPosition, wordSyncLine);
+    inSafeSnapZone = wordInfo?.allSung === true;
+    
     // Request next frame (automatically runs at display refresh rate)
     setWordSyncAnimationId(requestAnimationFrame(animateWordSync));
 }
@@ -1089,6 +1104,7 @@ function cleanupWordSync() {
     _wordSyncLogged = false;
     introDisplayed = false;  // Reset intro state for next song
     gapDisplayed = false;    // Reset gap state for next song
+    inSafeSnapZone = false;  // Reset safe zone flag
     // Invalidate any pending outro callbacks by incrementing token
     outroToken++;
     activeOutroToken = 0;
