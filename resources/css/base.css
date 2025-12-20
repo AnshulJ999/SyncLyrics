@@ -803,6 +803,11 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     transition: opacity 0.3s ease;
 }
 
+/* Icon sizing - Phosphor icons are slightly smaller than Bootstrap at same font-size */
+.word-sync-toggle-btn i {
+    font-size: 1.3rem;
+}
+
 /* Active state when word-sync is enabled and active */
 .word-sync-toggle-btn.active {
     color: white;
