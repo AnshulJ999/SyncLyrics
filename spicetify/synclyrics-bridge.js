@@ -94,6 +94,17 @@
             console.log(prefix, msg);
         }
     }
+    
+    /**
+     * Extract Spotify ID from URI (spotify:track:xxx -> xxx, spotify:artist:yyy -> yyy)
+     * @param {string} uri - Spotify URI
+     * @returns {string|null} - Extracted ID or null
+     */
+    function extractSpotifyId(uri) {
+        if (!uri || typeof uri !== 'string') return null;
+        const parts = uri.split(':');
+        return parts.length >= 3 ? parts[2] : null;
+    }
 
     /**
      * Calculate exponential backoff delay for reconnection
@@ -382,7 +393,12 @@
                 artists: item?.artists?.map(a => a.name) || [],
                 album: item?.album?.name || null,
                 album_uri: item?.album?.uri || null,
-                album_art_url: item?.album?.images?.[0]?.url || null
+                album_art_url: item?.album?.images?.[0]?.url || null,
+                // Artist info for Visual Mode
+                artist_uri: item?.artists?.[0]?.uri || null,
+                artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
+                // Spotify URL for 'open in Spotify' feature
+                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null
             },
             
             // Audio analysis
@@ -419,7 +435,12 @@
                 artists: item?.artists?.map(a => a.name) || [],
                 album: item?.album?.name || null,
                 album_uri: item?.album?.uri || null,
-                album_art_url: item?.album?.images?.[0]?.url || null
+                album_art_url: item?.album?.images?.[0]?.url || null,
+                // Artist info for Visual Mode
+                artist_uri: item?.artists?.[0]?.uri || null,
+                artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
+                // Spotify URL for 'open in Spotify' feature
+                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null
             },
             audio_analysis: audioDataCache,
             colors: colorCache

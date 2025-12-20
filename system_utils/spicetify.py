@@ -148,6 +148,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'background_image_url': track.get('album_art_url'),  # Default bg to album art
             'audio_analysis': _spicetify_state.get('audio_analysis'),
             'last_active_time': _spicetify_last_active_time,
+            # Spotify-specific fields for Visual Mode and UI features
+            'artist_id': track.get('artist_id'),  # For Visual Mode artist slideshow
+            'url': track.get('url'),  # For 'open in Spotify' feature
         }
 
 
