@@ -139,6 +139,7 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'source': 'spicetify',
             'title': title,
             'artist': artist,
+            'artist_name': artist,  # For display purposes (same as artist)
             'album': album,
             'position': position_ms / 1000,  # Convert to seconds
             'duration_ms': _spicetify_state['duration_ms'],
@@ -146,7 +147,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'is_buffering': _spicetify_state['is_buffering'],
             'colors': colors,
             'album_art_url': track.get('album_art_url'),
+            'album_art_path': None,  # Set during enrichment in metadata.py
             'background_image_url': track.get('album_art_url'),  # Default bg to album art
+            'background_image_path': None,  # Set during enrichment in metadata.py
             'audio_analysis': _spicetify_state.get('audio_analysis'),
             'last_active_time': _spicetify_last_active_time,
             # Spotify-specific fields for Visual Mode and UI features
