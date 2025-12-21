@@ -8,9 +8,11 @@ Credentials loaded from environment variables.
 import base64
 import hashlib
 import hmac
+import json
 import os
 import time
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -242,6 +244,9 @@ class ACRCloudRecognizer:
                 f"Requests today: {self._requests_today}/{self._daily_limit}"
             )
             
+            # Save last match to cache for debugging
+            self._save_debug_match(result)
+            
             return recognition
             
         except requests.exceptions.Timeout:
@@ -261,3 +266,14 @@ class ACRCloudRecognizer:
             "cooldown_seconds": self._cooldown_seconds,
             "remaining_today": max(0, self._daily_limit - self._requests_today),
         }
+    
+    def _save_debug_match(self, result: dict) -> None:
+        """Save last ACRCloud match response to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            match_path = cache_dir / "last_acrcloud_match.json"
+            with open(match_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"Failed to save debug match: {e}")

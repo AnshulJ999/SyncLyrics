@@ -6,9 +6,12 @@ Uses stdlib wave module for audio conversion (no FFmpeg/pydub dependency).
 """
 
 import io
+import json
+import struct
 import time
 import wave
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -184,6 +187,44 @@ class ShazamRecognizer:
                 pass  # Best effort cleanup
             self._shazam = None
     
+    def _save_debug_audio(self, wav_bytes: bytes) -> None:
+        """Save last recognition audio to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = cache_dir / "last_recognition_audio.wav"
+            with open(audio_path, 'wb') as f:
+                f.write(wav_bytes)
+            
+            # Verify WAV header sample rate matches expected
+            self._verify_wav_header(wav_bytes)
+        except Exception as e:
+            logger.debug(f"Failed to save debug audio: {e}")
+    
+    def _verify_wav_header(self, wav_bytes: bytes) -> None:
+        """Verify WAV header sample rate is correct."""
+        try:
+            if len(wav_bytes) < 28:
+                return
+            # WAV format: bytes 24-27 contain sample rate (little-endian uint32)
+            header_rate = struct.unpack('<I', wav_bytes[24:28])[0]
+            expected_rate = 44100
+            if header_rate != expected_rate:
+                logger.warning(f"WAV header sample rate mismatch: {header_rate} Hz (expected {expected_rate} Hz)")
+        except Exception as e:
+            logger.debug(f"Failed to verify WAV header: {e}")
+    
+    def _save_debug_match(self, provider: str, result: dict) -> None:
+        """Save last match response to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            match_path = cache_dir / f"last_{provider}_match.json"
+            with open(match_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"Failed to save debug match: {e}")
+    
     async def recognize(self, audio: AudioChunk) -> Optional[RecognitionResult]:
         """
         Recognize a song from an audio chunk.
@@ -215,16 +256,8 @@ class ShazamRecognizer:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(audio)
             
-            # DEBUG: Save audio to file for inspection (set to True to enable)
-            DEBUG_SAVE_AUDIO = False
-            if DEBUG_SAVE_AUDIO:
-                from pathlib import Path
-                debug_dir = Path("cache/debug_audio")
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                debug_path = debug_dir / f"capture_{int(time.time())}.wav"
-                with open(debug_path, 'wb') as f:
-                    f.write(wav_bytes)
-                logger.info(f"DEBUG: Saved audio to {debug_path}")
+            # Save last recognition audio to cache for debugging
+            self._save_debug_audio(wav_bytes)
             
             logger.debug(f"Sending to ShazamIO ({len(wav_bytes) / 1024:.1f} KB)...")
             
@@ -330,13 +363,19 @@ class ShazamRecognizer:
             
             latency = recognition.get_latency()
             current_pos = recognition.get_current_position()
+            time_skew = match.get('timeskew', 0.0)
+            freq_skew = match.get('frequencyskew', 0.0)
             
             logger.info(
                 f"Recognized: {artist} - {title} | "
                 f"Offset: {offset:.1f}s | "
                 f"Latency: {latency:.1f}s | "
-                f"Current: {current_pos:.1f}s"
+                f"Current: {current_pos:.1f}s | "
+                f"Skew: t={time_skew:.6f}, f={freq_skew:.4f}"
             )
+            
+            # Save last match to cache for debugging
+            self._save_debug_match('shazam', result)
             
             return recognition
             
