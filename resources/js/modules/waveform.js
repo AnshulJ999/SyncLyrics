@@ -180,9 +180,9 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const barGap = Math.max(0.5, barWidth * 0.1); // Small gap between bars
     const effectiveBarWidth = barWidth - barGap;
 
-    // Colors - MusicBee style
-    const unplayedColor = 'rgba(90, 90, 100, 1)';     // Dark grey (unplayed)
-    const playedColor = 'rgba(200, 200, 210, 1)';     // Off-white (played)
+    // Colors - Neutral greys (no tint)
+    const unplayedColor = 'rgba(75, 75, 75, 1)';      // Dark grey (unplayed)
+    const playedColor = 'rgba(180, 180, 180, 1)';     // Light grey (played)
 
     // Center line for waveform
     const centerY = height / 2;
