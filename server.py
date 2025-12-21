@@ -1266,6 +1266,13 @@ async def set_album_art_preference():
     if hasattr(get_current_song_meta_data, '_last_result'):
         get_current_song_meta_data._last_result = None
     
+    # FIX: Also invalidate Spicetify enrichment cache
+    # This ensures album art selection changes take effect immediately for Spicetify source
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+        get_current_song_meta_data._spicetify_enriched_track = None
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+        get_current_song_meta_data._spicetify_enriched_result = None
+    
     # Add cache busting timestamp
     cache_bust = int(time.time())
     
@@ -1337,6 +1344,12 @@ async def clear_album_art_preference():
     get_current_song_meta_data._last_check_time = 0
     if hasattr(get_current_song_meta_data, '_last_result'):
         get_current_song_meta_data._last_result = None
+    
+    # FIX: Also invalidate Spicetify enrichment cache
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+        get_current_song_meta_data._spicetify_enriched_track = None
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+        get_current_song_meta_data._spicetify_enriched_result = None
 
     return jsonify({"status": "success", "message": "Art preferences cleared"})
 

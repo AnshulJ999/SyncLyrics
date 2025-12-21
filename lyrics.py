@@ -811,15 +811,52 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
                 current_song_lyrics = lyrics
                 current_song_provider = provider_name
                 
-                # BUGFIX: Also load word-synced lyrics from cache for this provider
+                # FIX: Word-sync is INDEPENDENT of line-sync preference
+                # When selecting a line-sync provider, keep best word-sync provider or user's word-sync preference
                 word_synced_cache = data.get('word_synced_lyrics', {})
+                ws_loaded = False
+                
+                # First check: does the selected provider have word-sync?
                 if provider_name in word_synced_cache:
-                    current_song_word_synced_lyrics = word_synced_cache[provider_name]
-                    current_word_sync_provider = provider_name
-                    logger.debug(f"Loaded {len(current_song_word_synced_lyrics)} word-synced lines from cached {provider_name}")
-                else:
-                    current_song_word_synced_lyrics = None
-                    current_word_sync_provider = None
+                    ws_data = word_synced_cache.get(provider_name, [])
+                    if isinstance(ws_data, list) and len(ws_data) > 0:
+                        current_song_word_synced_lyrics = ws_data
+                        current_word_sync_provider = provider_name
+                        ws_loaded = True
+                        logger.debug(f"Loaded {len(ws_data)} word-synced lines from {provider_name} (same as line-sync)")
+                
+                # If not, check user's word-sync preference
+                if not ws_loaded:
+                    preferred_ws_provider = data.get('preferred_word_sync_provider')
+                    if preferred_ws_provider and preferred_ws_provider in word_synced_cache:
+                        ws_data = word_synced_cache.get(preferred_ws_provider, [])
+                        if isinstance(ws_data, list) and len(ws_data) > 0:
+                            current_song_word_synced_lyrics = ws_data
+                            current_word_sync_provider = preferred_ws_provider
+                            ws_loaded = True
+                            logger.debug(f"Loaded word-sync from {preferred_ws_provider} (User Preference) while using {provider_name} for line-sync")
+                
+                # If still not, auto-select best word-sync provider
+                if not ws_loaded:
+                    WORD_SYNC_BOOST = 10
+                    best_ws_priority = 999
+                    for p in providers:
+                        if p.name in word_synced_cache:
+                            ws_data = word_synced_cache.get(p.name, [])
+                            if isinstance(ws_data, list) and len(ws_data) > 0:
+                                effective_priority = p.priority - WORD_SYNC_BOOST
+                                if effective_priority < best_ws_priority:
+                                    best_ws_priority = effective_priority
+                                    current_song_word_synced_lyrics = ws_data
+                                    current_word_sync_provider = p.name
+                                    ws_loaded = True
+                    
+                    if ws_loaded:
+                        logger.debug(f"Loaded word-sync from {current_word_sync_provider} (auto-selection) while using {provider_name} for line-sync")
+                    else:
+                        # No word-sync available at all
+                        current_song_word_synced_lyrics = None
+                        current_word_sync_provider = None
                 
                 # Update preference in DB using atomic write pattern
                 # FIX: Use temp file to prevent race conditions during rapid song skipping
@@ -900,14 +937,57 @@ async def set_provider_preference(artist: str, title: str, provider_name: str) -
             current_song_lyrics = lyrics
             current_song_provider = provider_name
             
-            # BUGFIX: Also update word-synced lyrics globals
+            # FIX: Word-sync is INDEPENDENT of line-sync preference
+            # If the fetched provider has word-sync, use it
+            # Otherwise, check DB for existing word-sync from other providers
             if word_synced:
                 current_song_word_synced_lyrics = word_synced
                 current_word_sync_provider = provider_name
                 logger.debug(f"Loaded {len(word_synced)} word-synced lines from freshly fetched {provider_name}")
             else:
-                current_song_word_synced_lyrics = None
-                current_word_sync_provider = None
+                # Provider doesn't have word-sync - check DB for existing word-sync
+                db_path = _get_db_path(artist, title)
+                ws_loaded = False
+                if db_path and os.path.exists(db_path):
+                    try:
+                        with open(db_path, 'r', encoding='utf-8') as f:
+                            db_data = json.load(f)
+                        word_synced_cache = db_data.get('word_synced_lyrics', {})
+                        
+                        # Check user's word-sync preference first
+                        preferred_ws_provider = db_data.get('preferred_word_sync_provider')
+                        if preferred_ws_provider and preferred_ws_provider in word_synced_cache:
+                            ws_data = word_synced_cache.get(preferred_ws_provider, [])
+                            if isinstance(ws_data, list) and len(ws_data) > 0:
+                                current_song_word_synced_lyrics = ws_data
+                                current_word_sync_provider = preferred_ws_provider
+                                ws_loaded = True
+                                logger.debug(f"Kept word-sync from {preferred_ws_provider} (User Preference) while fetching {provider_name} for line-sync")
+                        
+                        # If no preference, auto-select best
+                        if not ws_loaded:
+                            WORD_SYNC_BOOST = 10
+                            best_ws_priority = 999
+                            for p in providers:
+                                if p.name in word_synced_cache:
+                                    ws_data = word_synced_cache.get(p.name, [])
+                                    if isinstance(ws_data, list) and len(ws_data) > 0:
+                                        effective_priority = p.priority - WORD_SYNC_BOOST
+                                        if effective_priority < best_ws_priority:
+                                            best_ws_priority = effective_priority
+                                            current_song_word_synced_lyrics = ws_data
+                                            current_word_sync_provider = p.name
+                                            ws_loaded = True
+                            
+                            if ws_loaded:
+                                logger.debug(f"Kept word-sync from {current_word_sync_provider} (auto-selection) while fetching {provider_name} for line-sync")
+                    except Exception as e:
+                        logger.debug(f"Could not load existing word-sync from DB: {e}")
+                
+                if not ws_loaded:
+                    # No word-sync available at all
+                    current_song_word_synced_lyrics = None
+                    current_word_sync_provider = None
             
             logger.info(f"Fetched and switched to {provider_name} lyrics")
             return {
