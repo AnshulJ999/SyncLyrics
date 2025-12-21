@@ -143,6 +143,7 @@ async def save_to_db(
     Save Spicetify data to disk with atomic writes.
     
     Uses merge mode: updates existing files without overwriting other fields.
+    File I/O runs in thread pool to avoid blocking the event loop.
     
     Args:
         artist: Artist name
@@ -162,65 +163,73 @@ async def save_to_db(
     if not db_path:
         return False
     
+    # Prepare data outside the blocking section
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    def _do_file_io():
+        """Blocking file I/O - runs in thread pool."""
+        # Load existing data (merge mode)
+        existing = {}
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+            except Exception:
+                pass  # Start fresh if corrupt
+        
+        # Build/update data structure
+        data = {
+            "artist": artist,
+            "title": title,
+            "track_uri": track_uri,
+            "saved_at": existing.get("saved_at", now_iso),
+            "last_updated": now_iso,
+        }
+        
+        # Merge audio analysis (preserve existing if new is None)
+        if audio_analysis is not None:
+            data["audio_analysis"] = audio_analysis
+        elif "audio_analysis" in existing:
+            data["audio_analysis"] = existing["audio_analysis"]
+        
+        # Merge colors
+        if colors is not None:
+            data["colors"] = colors
+        elif "colors" in existing:
+            data["colors"] = existing["colors"]
+        
+        # Merge track metadata
+        if track_metadata is not None:
+            data["track_metadata"] = track_metadata
+        elif "track_metadata" in existing:
+            data["track_metadata"] = existing["track_metadata"]
+        
+        # Atomic write pattern (same as lyrics.py):
+        # 1. Write to temp file in same directory
+        # 2. Atomic replace (os.replace is atomic on all platforms)
+        dir_path = os.path.dirname(db_path)
+        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(temp_path, db_path)
+        except Exception as write_err:
+            # Cleanup temp file on error
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+            raise write_err
+        
+        return True
+    
     async with _db_lock:
         try:
-            # Load existing data (merge mode)
-            existing = {}
-            if os.path.exists(db_path):
-                try:
-                    with open(db_path, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                except Exception:
-                    pass  # Start fresh if corrupt
-            
-            # Build/update data structure
-            now_iso = datetime.utcnow().isoformat() + "Z"
-            data = {
-                "artist": artist,
-                "title": title,
-                "track_uri": track_uri,
-                "saved_at": existing.get("saved_at", now_iso),
-                "last_updated": now_iso,
-            }
-            
-            # Merge audio analysis (preserve existing if new is None)
-            if audio_analysis is not None:
-                data["audio_analysis"] = audio_analysis
-            elif "audio_analysis" in existing:
-                data["audio_analysis"] = existing["audio_analysis"]
-            
-            # Merge colors
-            if colors is not None:
-                data["colors"] = colors
-            elif "colors" in existing:
-                data["colors"] = existing["colors"]
-            
-            # Merge track metadata
-            if track_metadata is not None:
-                data["track_metadata"] = track_metadata
-            elif "track_metadata" in existing:
-                data["track_metadata"] = existing["track_metadata"]
-            
-            # Atomic write pattern (same as lyrics.py):
-            # 1. Write to temp file in same directory
-            # 2. Atomic replace (os.replace is atomic on all platforms)
-            dir_path = os.path.dirname(db_path)
-            fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                os.replace(temp_path, db_path)
-            except Exception as write_err:
-                # Cleanup temp file on error
-                if os.path.exists(temp_path):
-                    try:
-                        os.unlink(temp_path)
-                    except:
-                        pass
-                raise write_err
-            
+            # Run blocking file I/O in thread pool
+            result = await asyncio.to_thread(_do_file_io)
             logger.debug(f"Saved Spicetify data to cache: {artist} - {title}")
-            return True
+            return result
             
         except Exception as e:
             logger.error(f"Failed to save Spicetify cache: {e}")
