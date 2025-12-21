@@ -1815,7 +1815,7 @@ body.soft-mode .background-overlay {
     margin-left: auto;
     margin-right: auto;
     opacity: 1;
-    z-index: 1009;  /* Above background layers, below controls */
+    z-index: 100;  /* Above background layers, below controls */
 }
 
 .waveform-container canvas {
@@ -1824,6 +1824,8 @@ body.soft-mode .background-overlay {
     display: block;
     border-radius: 4px;
     opacity: 1;
+    /* Boost brightness and saturation for better visibility */
+    filter: brightness(1.3) saturate(1.2);
 }
 
 .waveform-container .progress-time {
