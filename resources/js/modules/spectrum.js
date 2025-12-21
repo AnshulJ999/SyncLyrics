@@ -16,18 +16,18 @@ const CONFIG = {
     // Visual appearance
     barCount: 12,                    // Number of frequency bars (matches pitches array)
     barGap: 4,                       // Gap between bars in pixels
-    minBarHeight: 4,                 // Minimum bar height in pixels
-    maxHeightPercent: 0.85,          // Max bar height as % of container
+    minBarHeight: 2,                 // Minimum bar height in pixels
+    maxHeightPercent: 0.9,           // Max bar height as % of container
     
-    // Animation
-    smoothingFactor: 0.3,            // 0-1, higher = smoother but slower response
-    decayRate: 0.95,                 // How fast bars decay when no data (1 = no decay)
+    // Animation (faster response to beats)
+    smoothingFactor: 0.15,           // 0-1, lower = faster response to changes
+    decayRate: 0.85,                 // How fast bars decay when no data (lower = faster decay)
     
-    // Colors (easily adjustable)
-    barColor: 'rgba(150, 150, 150, 0.25)',      // Base bar color
-    barColorActive: 'rgba(200, 200, 200, 0.4)', // Color when segment is active
-    gradientStart: 'rgba(255, 255, 255, 0.1)',  // Gradient top
-    gradientEnd: 'rgba(255, 255, 255, 0.0)',    // Gradient bottom (transparent)
+    // Colors (more transparent to not block content)
+    barColor: 'rgba(255, 255, 255, 0.12)',      // Base bar color - very transparent
+    barColorActive: 'rgba(255, 255, 255, 0.2)', // Color when segment is active
+    gradientStart: 'rgba(255, 255, 255, 0.08)', // Gradient top
+    gradientEnd: 'rgba(255, 255, 255, 0.02)',   // Gradient bottom (nearly transparent)
     
     // Positioning
     verticalOffset: 0                // Pixels to offset from center
@@ -189,22 +189,18 @@ function getCurrentPitchData(position) {
     }
 
     // If we found a segment, use its amplitude to drive the visualization
-    // Generate a pseudo-frequency distribution based on amplitude
+    // Generate a balanced frequency distribution across all bars
     const baseAmp = currentSegment ? currentSegment.amp : 0;
     
-    // Create a natural-looking frequency distribution
-    // Bass frequencies (left) tend to be stronger, treble (right) tends to be weaker
+    // Create a balanced frequency distribution (not bass-heavy)
     const pitches = new Array(CONFIG.barCount);
     for (let i = 0; i < CONFIG.barCount; i++) {
-        // Create a bell curve centered slightly towards bass
-        const centerPeak = 3;  // Peak around 4th bar (bass-heavy)
-        const distance = Math.abs(i - centerPeak);
-        const falloff = Math.exp(-distance * distance / 15); // Gaussian falloff
+        // Balanced distribution: slight variation across frequencies
+        // Each bar gets roughly equal energy with some random variation for visual interest
+        const baseLevel = 0.7 + (Math.sin(i * 0.5) * 0.3);  // Slight wave pattern
+        const noise = 0.7 + Math.random() * 0.6;  // More variance for reactivity
         
-        // Add some randomness for visual interest
-        const noise = 0.8 + Math.random() * 0.4;
-        
-        pitches[i] = Math.min(1, baseAmp * falloff * noise);
+        pitches[i] = Math.min(1, baseAmp * baseLevel * noise);
     }
     
     return pitches;
@@ -255,25 +251,23 @@ function renderSpectrum(canvas, pitchData) {
         currentBarHeights[i] = Math.max(CONFIG.minBarHeight, currentBarHeights[i]);
     }
 
-    // Draw bars from center (vertically centered around seekbar area)
-    const centerY = height / 2 + CONFIG.verticalOffset;
+    // Draw bars from bottom (growing upward)
+    const bottomY = height;
 
     for (let i = 0; i < CONFIG.barCount; i++) {
         const x = CONFIG.barGap + i * (barWidth + CONFIG.barGap);
         const barHeight = currentBarHeights[i];
-        const halfHeight = barHeight / 2;
 
-        // Create gradient for each bar
-        const gradient = ctx.createLinearGradient(x, centerY - halfHeight, x, centerY + halfHeight);
-        gradient.addColorStop(0, CONFIG.gradientStart);
-        gradient.addColorStop(0.5, CONFIG.barColor);
+        // Create gradient for each bar (bottom to top)
+        const gradient = ctx.createLinearGradient(x, bottomY, x, bottomY - barHeight);
+        gradient.addColorStop(0, CONFIG.barColor);
         gradient.addColorStop(1, CONFIG.gradientEnd);
 
         ctx.fillStyle = gradient;
         
-        // Draw rounded rectangle bar
+        // Draw rounded rectangle bar (from bottom upward)
         const cornerRadius = Math.min(4, barWidth / 4);
-        drawRoundedRect(ctx, x, centerY - halfHeight, barWidth, barHeight, cornerRadius);
+        drawRoundedRect(ctx, x, bottomY - barHeight, barWidth, barHeight, cornerRadius);
     }
 }
 

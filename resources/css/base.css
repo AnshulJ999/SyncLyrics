@@ -1810,7 +1810,7 @@ body.soft-mode .background-overlay {
     width: clamp(300px, 60%, 500px);
     height: 50px;  /* Taller than progress bar for waveform display */
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: 20px;  /* More space above controls */
     pointer-events: auto;
     margin-left: auto;
     margin-right: auto;
@@ -1828,17 +1828,17 @@ body.soft-mode .background-overlay {
 }
 
 /* ========== SPECTRUM VISUALIZER ========== */
-/* Full-width ambient visualizer behind content, centered around seekbar */
+/* Full-width ambient visualizer at bottom edge of screen */
 .spectrum-container {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 60px;  /* Centered around the player UI area */
-    height: 200px;  /* Configurable height */
+    bottom: 0;  /* Aligned to bottom edge */
+    height: 120px;  /* Shorter height, less intrusive */
     z-index: 1;  /* Behind content but above background */
     pointer-events: none;  /* Don't block clicks */
     display: flex;
-    align-items: center;
+    align-items: flex-end;  /* Bars grow upward from bottom */
     justify-content: center;
     overflow: hidden;
 }
@@ -1849,9 +1849,9 @@ body.soft-mode .background-overlay {
     display: block;
 }
 
-/* Hide spectrum when bottom nav is hidden - adjust position */
+/* No position adjustment needed for hide-nav since we're at bottom: 0 */
 body.hide-nav .spectrum-container {
-    bottom: 10px;
+    bottom: 0;
 }
 
 /* Hide in minimal mode */
