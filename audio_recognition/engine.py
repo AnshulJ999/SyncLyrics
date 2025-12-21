@@ -51,7 +51,7 @@ class RecognitionEngine:
     DEFAULT_INTERVAL = 5.0           # Seconds between recognitions
     DEFAULT_CAPTURE_DURATION = 5.0   # Seconds of audio to capture
     DEFAULT_STALE_THRESHOLD = 15.0   # Seconds before result is stale
-    MAX_CONSECUTIVE_FAILURES = 4     # Failures before pausing
+    MAX_CONSECUTIVE_FAILURES = 5     # Failures before pausing
     
     def __init__(
         self,
