@@ -1830,7 +1830,9 @@ body.soft-mode .background-overlay {
 
 .waveform-container .progress-time {
     margin-top: 6px;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* ========== SPECTRUM VISUALIZER ========== */

@@ -170,7 +170,7 @@ function renderWaveform(canvas, waveform, currentPosition) {
 
     // Fixed bar count for consistent appearance across all songs
     // Increase this number for smoother waveforms (e.g., 300, 500)
-    const TARGET_BAR_COUNT = 200;
+    const TARGET_BAR_COUNT = 220;
     
     // Calculate how many source segments per target bar
     const segmentSize = waveform.length / TARGET_BAR_COUNT;
