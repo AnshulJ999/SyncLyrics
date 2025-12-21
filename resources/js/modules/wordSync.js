@@ -747,10 +747,37 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
         cachedLineId = lineId;
         
         // Build word spans for the new line
-        const html = lineData.words.map((word, i) => {
+        const spans = lineData.words.map((word, i) => {
             const text = escapeHtml(word.word || word.text || '');
             return `<span class="word-sync-word word-upcoming" data-idx="${i}">${text}</span>`;
-        }).join(' ');
+        });
+        
+        // Smart join: avoid spaces around apostrophe-related tokens
+        // Handles contractions like I'm → [I, ', m] displaying as "I'm" not "I ' m"
+        // Also handles curly apostrophe (') used by some sources
+        const html = spans.reduce((acc, span, i) => {
+            if (i === 0) return span;
+            
+            const currentWord = (lineData.words[i].word || '').toLowerCase();
+            const prevWord = (lineData.words[i - 1].word || '');
+            
+            // Check if current token is an apostrophe (straight ' or curly ')
+            // U+0027 = straight apostrophe, U+2019 = RIGHT SINGLE QUOTATION MARK (curly)
+            const isApostrophe = currentWord === "'" || currentWord === "\u2019";
+            
+            // Check if previous word ends with apostrophe (straight ' or curly ')
+            const prevEndsWithApostrophe = /['\u2019]$/.test(prevWord);
+            
+            // Check if current is a common contraction suffix
+            const isContractionSuffix = /^[msdt]$|^(re|ve|ll)$/i.test(currentWord);
+            
+            // No space if: current is apostrophe, OR (prev ends with apostrophe AND current is suffix)
+            if (isApostrophe || (prevEndsWithApostrophe && isContractionSuffix)) {
+                return acc + span;
+            }
+            
+            return acc + ' ' + span;
+        }, '');
         
         // Update surrounding lines (single authority - only when line changes)
         updateSurroundingLines(activeLineIndex);
