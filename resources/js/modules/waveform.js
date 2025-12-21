@@ -170,9 +170,9 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const barGap = Math.max(0.5, barWidth * 0.1); // Small gap between bars
     const effectiveBarWidth = barWidth - barGap;
 
-    // Colors (higher contrast for visibility)
-    const unplayedColor = 'rgba(80, 85, 95, 1)';      // Solid dark grey for unplayed
-    const playedColor = 'rgba(220, 220, 225, 1)';     // Solid light grey for played
+    // Colors - Maximum Brightness
+    const unplayedColor = 'rgba(150, 150, 160, 1)';   // Light grey
+    const playedColor = 'rgba(255, 255, 255, 1)';     // Pure white
 
     // Center line for waveform
     const centerY = height / 2;
@@ -230,15 +230,15 @@ function renderFallback(canvas, trackInfo) {
     // Match regular progress bar: 6px height, centered
     const barHeight = 6;
     const y = (height - barHeight) / 2;
-    const radius = 3;  // Rounded corners
+    const radius = 4;  // Match .progress-bar border-radius
 
-    // Background (unplayed) - matches .progress-bar
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    // Background (unplayed) - matches .progress-bar CSS (faint)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
     drawRoundedBar(ctx, 0, y, width, barHeight, radius);
 
-    // Played portion - matches .progress-fill
+    // Played portion - matches .progress-fill CSS (bright)
     if (progress > 0) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
         drawRoundedBar(ctx, 0, y, width * progress, barHeight, radius);
     }
 }
