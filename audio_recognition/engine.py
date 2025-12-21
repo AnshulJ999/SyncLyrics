@@ -229,8 +229,8 @@ class RecognitionEngine:
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
                 "album_art_url": self._enriched_metadata.get("album_art_url") or self._last_result.album_art_url,
-                # Recognition source (shazam or acrcloud)
-                "source": self._last_result.source,
+                # Recognition provider (shazam or acrcloud)
+                "recognition_provider": self._last_result.recognition_provider,
                 # Debug fields
                 "_shazam_artist": self._last_result.artist,
                 "_shazam_title": self._last_result.title,
@@ -254,8 +254,8 @@ class RecognitionEngine:
             "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
             "track_id": None,
             "duration_ms": duration_ms,
-            # Recognition source (shazam or acrcloud)
-            "source": self._last_result.source,
+            # Recognition provider (shazam or acrcloud)
+            "recognition_provider": self._last_result.recognition_provider,
             "_spotify_enriched": False,
         }
     

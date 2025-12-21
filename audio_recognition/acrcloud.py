@@ -235,7 +235,7 @@ class ACRCloudRecognizer:
                 background_image_url=None,
                 genre=genre,
                 shazam_lyrics_text=None,
-                source="acrcloud",
+                recognition_provider="acrcloud",
                 duration=duration
             )
             

@@ -411,9 +411,18 @@ function updateStatusDisplay(status) {
     // Update button text - show current source
     if (elements.sourceName) {
         if (status.active) {
-            // Audio recognition is active
-            const sourceName = status.capture_mode === 'frontend' ? 'Mic' : 'Shazam';
-            elements.sourceName.textContent = sourceName;
+            // Audio recognition is active - show actual recognition provider
+            if (status.capture_mode === 'frontend') {
+                elements.sourceName.textContent = 'Mic';
+            } else {
+                // Use recognition_provider from current_song if available
+                const provider = status.current_song?.recognition_provider;
+                if (provider === 'acrcloud') {
+                    elements.sourceName.textContent = 'ACRCloud';
+                } else {
+                    elements.sourceName.textContent = 'Shazam';
+                }
+            }
         } else {
             // Audio recognition not active - show current track source
             const sourceMap = {
@@ -427,6 +436,7 @@ function updateStatusDisplay(status) {
                 'audio_recognition': 'Shazam',
                 'audiorecognition': 'Shazam',
                 'shazam': 'Shazam',
+                'acrcloud': 'ACRCloud',
                 'reaper': 'Reaper'
             };
             const displaySource = sourceMap[currentTrackSource] || 'Spotify';

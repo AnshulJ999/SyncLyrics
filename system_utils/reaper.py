@@ -531,7 +531,9 @@ class ReaperAudioSource:
             "position": position,
             "duration": song.get("duration_ms", 0) // 1000 if song.get("duration_ms") else 0,
             "is_playing": self._engine.is_playing,
-            "source": "audio_recognition",
+            "source": "audio_recognition",  # For internal routing
+            # Recognition provider (shazam or acrcloud) for display
+            "recognition_provider": song.get("recognition_provider", "shazam"),
             # Track ID from Spotify enrichment (for album art cache busting, etc.)
             "track_id": song.get("track_id"),
             # Shazam/Spotify metadata fields
