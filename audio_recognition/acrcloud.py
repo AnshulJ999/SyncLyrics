@@ -181,9 +181,16 @@ class ACRCloudRecognizer:
             album_info = track.get('album', {})
             album = album_info.get('name')
             
-            # Offset in seconds (ACRCloud returns milliseconds)
+            # Offset calculation: ACRCloud's play_offset_ms is the position at END of sample,
+            # but our system (like Shazamio) expects position at START of capture.
+            # We need to subtract the sample duration used for recognition.
             offset_ms = track.get('play_offset_ms', 0)
-            offset = offset_ms / 1000.0
+            sample_end_ms = track.get('sample_end_time_offset_ms', 0)
+            sample_begin_ms = track.get('sample_begin_time_offset_ms', 0)
+            sample_duration_ms = sample_end_ms - sample_begin_ms
+            
+            # Convert to seconds and adjust to capture START position
+            offset = (offset_ms - sample_duration_ms) / 1000.0
             
             # External IDs
             external_ids = track.get('external_ids', {})
