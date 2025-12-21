@@ -1825,7 +1825,7 @@ body.soft-mode .background-overlay {
     border-radius: 4px;
     opacity: 1;
     /* Boost brightness and saturation for better visibility */
-    filter: brightness(1.3) saturate(1.2);
+    filter: brightness(1.2) saturate(1.2);
 }
 
 .waveform-container .progress-time {

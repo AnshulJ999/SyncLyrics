@@ -168,9 +168,15 @@ function renderWaveform(canvas, waveform, currentPosition) {
 
     if (!waveform || waveform.length === 0) return;
 
-    // Calculate bar width based on number of segments and canvas width
-    const barCount = waveform.length;
-    const barWidth = width / barCount;
+    // Fixed bar count for consistent appearance across all songs
+    // Increase this number for smoother waveforms (e.g., 300, 500)
+    const TARGET_BAR_COUNT = 200;
+    
+    // Calculate how many source segments per target bar
+    const segmentSize = waveform.length / TARGET_BAR_COUNT;
+    
+    // Bar dimensions
+    const barWidth = width / TARGET_BAR_COUNT;
     const barGap = Math.max(0.5, barWidth * 0.1); // Small gap between bars
     const effectiveBarWidth = barWidth - barGap;
 
@@ -182,20 +188,35 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const centerY = height / 2;
     const maxBarHeight = height * 0.9;  // 90% of height for max amplitude
 
-    for (let i = 0; i < waveform.length; i++) {
-        const segment = waveform[i];
+    // Track duration for played/unplayed calculation
+    const trackDuration = waveform[waveform.length - 1].start;
+
+    for (let i = 0; i < TARGET_BAR_COUNT; i++) {
         const x = i * barWidth;
-        const amp = segment.amp || 0;
+        
+        // Calculate which source segments this bar covers
+        const startIdx = Math.floor(i * segmentSize);
+        const endIdx = Math.min(Math.floor((i + 1) * segmentSize), waveform.length);
+        
+        // Average amplitude across grouped segments
+        let ampSum = 0;
+        let timeSum = 0;
+        const count = Math.max(1, endIdx - startIdx);
+        
+        for (let j = startIdx; j < endIdx; j++) {
+            ampSum += waveform[j].amp || 0;
+            timeSum += waveform[j].start || 0;
+        }
+        
+        const avgAmp = ampSum / count;
+        const avgTime = timeSum / count;
         
         // Calculate bar height (bidirectional from center)
-        const barHeight = amp * maxBarHeight;
+        const barHeight = avgAmp * maxBarHeight;
         const halfBarHeight = barHeight / 2;
 
-        // Determine if this segment has been played
-        const segmentMidpoint = segment.start + (i < waveform.length - 1 
-            ? (waveform[i + 1].start - segment.start) / 2 
-            : 0);
-        const isPlayed = segmentMidpoint <= currentPosition;
+        // Determine if this bar has been played (based on average time position)
+        const isPlayed = avgTime <= currentPosition;
 
         // Set color based on played status
         ctx.fillStyle = isPlayed ? playedColor : unplayedColor;
