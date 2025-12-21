@@ -220,23 +220,22 @@ function renderWaveform(canvas, waveform, currentPosition) {
         
         // Average amplitude across grouped segments
         let ampSum = 0;
-        let timeSum = 0;
         const count = Math.max(1, endIdx - startIdx);
         
         for (let j = startIdx; j < endIdx; j++) {
             ampSum += waveform[j].amp || 0;
-            timeSum += waveform[j].start || 0;
         }
         
         const avgAmp = ampSum / count;
-        const avgTime = timeSum / count;
         
         // Calculate bar height (bidirectional from center)
         const barHeight = avgAmp * maxBarHeight;
         const halfBarHeight = barHeight / 2;
 
-        // Determine if this bar has been played (based on average time position)
-        const isPlayed = avgTime <= currentPosition;
+        // Even distribution: bar i represents (i / TARGET_BAR_COUNT) of total duration
+        // This ensures smooth, consistent progression regardless of segment distribution
+        const barTimePosition = (i / TARGET_BAR_COUNT) * trackDuration;
+        const isPlayed = barTimePosition <= currentPosition;
 
         // Set color based on played status
         ctx.fillStyle = isPlayed ? playedColor : unplayedColor;
