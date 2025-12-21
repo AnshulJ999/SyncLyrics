@@ -8,6 +8,7 @@
  */
 
 import { displayConfig } from './state.js';
+import { formatTime } from './utils.js';
 
 // ========== WAVEFORM STATE ==========
 let waveformData = null;       // Cached waveform data from API
@@ -132,6 +133,16 @@ export async function updateWaveform(trackInfo) {
     } else {
         // No waveform data - show fallback progress bar style
         renderFallback(canvas, trackInfo);
+    }
+
+    // Update time display
+    const currentTimeEl = document.getElementById('waveform-current-time');
+    const totalTimeEl = document.getElementById('waveform-total-time');
+    if (currentTimeEl) {
+        currentTimeEl.textContent = formatTime(trackInfo.position || 0);
+    }
+    if (totalTimeEl) {
+        totalTimeEl.textContent = formatTime(trackInfo.duration_ms / 1000);
     }
 }
 

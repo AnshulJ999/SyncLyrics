@@ -146,8 +146,22 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         trackHeader.style.display = (displayConfig.showAlbumArt || displayConfig.showTrackInfo) ? 'flex' : 'none';
     }
 
+    // Progress container: hide when waveform is enabled (mutually exclusive)
     if (progressContainer) {
-        progressContainer.style.display = displayConfig.showProgress ? 'block' : 'none';
+        const showProgress = displayConfig.showProgress && !displayConfig.showWaveform;
+        progressContainer.style.display = showProgress ? 'block' : 'none';
+    }
+
+    // Waveform container: show only when enabled
+    const waveformContainer = document.getElementById('waveform-container');
+    if (waveformContainer) {
+        waveformContainer.style.display = displayConfig.showWaveform ? 'block' : 'none';
+    }
+
+    // Spectrum container: show only when enabled
+    const spectrumContainer = document.getElementById('spectrum-container');
+    if (spectrumContainer) {
+        spectrumContainer.style.display = displayConfig.showSpectrum ? 'block' : 'none';
     }
 
     if (playbackControls) {
