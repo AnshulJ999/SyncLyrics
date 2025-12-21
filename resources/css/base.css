@@ -1834,7 +1834,7 @@ body.soft-mode .background-overlay {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;  /* Aligned to bottom edge */
+    bottom: -40px;  /* Aligned to bottom edge */
     height: 120px;  /* Shorter height, less intrusive */
     z-index: 1;  /* Behind content but above background */
     pointer-events: none;  /* Don't block clicks */

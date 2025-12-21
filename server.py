@@ -459,13 +459,14 @@ async def get_audio_analysis():
         for w in waveform:
             w['amp'] = round(w['amp'] / max_amp, 3)
     
-    # Process segments for spectrum: include start, duration, and real pitches
+    # Process segments for spectrum: include start, duration, pitches, and timbre
     spectrum_segments = []
     for seg in segments:
         spectrum_segments.append({
             'start': round(seg.get('start', 0), 3),
             'duration': round(seg.get('duration', 0), 3),
             'pitches': seg.get('pitches', [0] * 12),  # 12 pitch classes (C to B)
+            'timbre': seg.get('timbre', [0] * 12),    # 12 timbral coefficients
             'loudness': round(seg.get('loudness_max', -60), 1)
         })
     
