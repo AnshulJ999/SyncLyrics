@@ -171,17 +171,29 @@ async function updateLoop() {
         if (trackInfo && trackInfo.source) {
             const sourceBtn = document.getElementById('source-name');
             if (sourceBtn) {
-                const sourceMap = {
-                    'spotify': 'Spotify',
-                    'spotify_hybrid': 'Hybrid',
-                    'spicetify': 'Spicetify',
-                    'windows': 'Windows',
-                    'windows_media': 'Windows',
-                    'audio_recognition': 'Shazam',
-                    'shazam': 'Shazam',
-                    'reaper': 'Reaper'
-                };
-                sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
+                // Special handling for audio_recognition - show actual provider (Shazam or ACRCloud)
+                if (trackInfo.source === 'audio_recognition') {
+                    const provider = trackInfo.recognition_provider;
+                    if (provider === 'acrcloud') {
+                        sourceBtn.textContent = 'ACRCloud';
+                    } else if (provider === 'shazam') {
+                        sourceBtn.textContent = 'Shazam';
+                    } else {
+                        // Fallback if no provider specified
+                        sourceBtn.textContent = 'Audio';
+                    }
+                } else {
+                    // Standard source mapping
+                    const sourceMap = {
+                        'spotify': 'Spotify',
+                        'spotify_hybrid': 'Hybrid',
+                        'spicetify': 'Spicetify',
+                        'windows': 'Windows',
+                        'windows_media': 'Windows',
+                        'reaper': 'Reaper'
+                    };
+                    sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
+                }
             }
         }
 
