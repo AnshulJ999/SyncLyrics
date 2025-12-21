@@ -421,6 +421,8 @@ async def get_audio_analysis():
     
     Returns:
         - waveform: List of {start, amp} where amp is normalized 0-1
+        - segments: List of {start, duration, pitches} for spectrum visualizer
+        - beats: List of {start, duration, confidence} for beat-reactive effects
         - duration: Track duration in seconds
     """
     from system_utils.spicetify import _spicetify_state
@@ -430,6 +432,7 @@ async def get_audio_analysis():
         return jsonify({"error": "No audio analysis available (Spicetify only)"}), 404
     
     segments = analysis.get('segments', [])
+    beats = analysis.get('beats', [])
     duration = analysis.get('duration', 0)
     
     if not segments:
@@ -456,8 +459,20 @@ async def get_audio_analysis():
         for w in waveform:
             w['amp'] = round(w['amp'] / max_amp, 3)
     
+    # Process segments for spectrum: include start, duration, and real pitches
+    spectrum_segments = []
+    for seg in segments:
+        spectrum_segments.append({
+            'start': round(seg.get('start', 0), 3),
+            'duration': round(seg.get('duration', 0), 3),
+            'pitches': seg.get('pitches', [0] * 12),  # 12 pitch classes (C to B)
+            'loudness': round(seg.get('loudness_max', -60), 1)
+        })
+    
     return jsonify({
         'waveform': waveform,
+        'segments': spectrum_segments,
+        'beats': beats,  # Include beats for beat-reactive effects
         'duration': duration,
         'segment_count': len(segments)
     })

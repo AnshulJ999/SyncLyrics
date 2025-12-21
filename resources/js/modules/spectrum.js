@@ -137,9 +137,10 @@ export async function updateSpectrum(trackInfo) {
         console.debug('[Spectrum] Track changed, fetching new data');
         
         const data = await fetchSpectrumData();
-        if (data && data.waveform) {
+        if (data && data.segments) {
             spectrumData = data;
             spectrumDuration = data.duration || trackInfo.duration_ms / 1000;
+            console.debug(`[Spectrum] Loaded ${data.segments.length} segments with real pitch data`);
         } else {
             spectrumData = null;
             spectrumDuration = 0;
@@ -161,49 +162,39 @@ export async function updateSpectrum(trackInfo) {
 
 /**
  * Get pitch data for the current playback position
+ * Uses REAL pitch data from Spotify's audio analysis segments
  * 
  * @param {number} position - Current position in seconds
  * @returns {Array} 12-element array of pitch values (0-1)
  */
 function getCurrentPitchData(position) {
-    if (!spectrumData || !spectrumData.waveform) {
+    // Use real segments with pitch data
+    if (!spectrumData || !spectrumData.segments || spectrumData.segments.length === 0) {
         return new Array(CONFIG.barCount).fill(0);
     }
 
-    // Find the segment that contains the current position
-    // We need to also get the pitch data from segments
-    // Since our API returns waveform data, we need to re-fetch or extend the API
-    // For now, simulate using the amplitude data with some variation
-    
-    const waveform = spectrumData.waveform;
+    const segments = spectrumData.segments;
     let currentSegment = null;
     
-    for (let i = 0; i < waveform.length; i++) {
-        const seg = waveform[i];
-        const nextStart = i < waveform.length - 1 ? waveform[i + 1].start : spectrumDuration;
+    // Find the segment that contains the current position
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const segEnd = seg.start + seg.duration;
         
-        if (position >= seg.start && position < nextStart) {
+        if (position >= seg.start && position < segEnd) {
             currentSegment = seg;
             break;
         }
     }
 
-    // If we found a segment, use its amplitude to drive the visualization
-    // Generate a balanced frequency distribution across all bars
-    const baseAmp = currentSegment ? currentSegment.amp : 0;
-    
-    // Create a balanced frequency distribution (not bass-heavy)
-    const pitches = new Array(CONFIG.barCount);
-    for (let i = 0; i < CONFIG.barCount; i++) {
-        // Balanced distribution: slight variation across frequencies
-        // Each bar gets roughly equal energy with some random variation for visual interest
-        const baseLevel = 0.7 + (Math.sin(i * 0.5) * 0.3);  // Slight wave pattern
-        const noise = 0.7 + Math.random() * 0.6;  // More variance for reactivity
-        
-        pitches[i] = Math.min(1, baseAmp * baseLevel * noise);
+    // If we found a segment with real pitch data, return it
+    if (currentSegment && currentSegment.pitches && currentSegment.pitches.length === 12) {
+        // Return the real 12 pitch classes (C, C#, D, D#, E, F, F#, G, G#, A, A#, B)
+        return currentSegment.pitches;
     }
     
-    return pitches;
+    // Fallback: no segment found for this position
+    return new Array(CONFIG.barCount).fill(0);
 }
 
 /**
