@@ -46,6 +46,12 @@ def _check_audio_rec_available() -> bool:
 # Shutdown guard - prevents auto-restart during app cleanup
 _shutting_down = False
 
+# Auto-detect state tracking
+_auto_detect_task = None       # Background task handle
+_auto_started = False          # True if WE started the engine (not user)
+_manual_override = False       # True if user manually started/stopped
+_last_reaper_state = False     # Last known Reaper window state
+
 
 class ReaperAudioSource:
     """
@@ -353,13 +359,20 @@ class ReaperAudioSource:
         Args:
             manual: True if user-triggered (won't auto-stop when Reaper closes)
         """
-        global _shutting_down
+        global _shutting_down, _auto_started, _manual_override
         
         # Fix M2: Check shutdown flag AGAIN right before starting
         # This prevents race where: check passes -> cleanup starts -> we start engine
         if _shutting_down:
             logger.debug("Ignoring start request - shutdown in progress")
             return
+        
+        # Track manual override for auto-detect logic
+        if manual:
+            _manual_override = True   # User took control - don't auto-stop
+            _auto_started = False     # This wasn't an auto-start
+        else:
+            _auto_started = True      # This was an auto-start
         
         # Fix M2: Only reset shutdown guard on MANUAL start (user-triggered)
         # Auto-starts should NOT reset this flag to prevent race condition during cleanup
@@ -417,8 +430,20 @@ class ReaperAudioSource:
         
         await self._engine.start()
     
-    async def stop(self):
-        """Stop audio recognition."""
+    async def stop(self, manual: bool = True):
+        """
+        Stop audio recognition.
+        
+        Args:
+            manual: True if user-triggered, False if auto-stopped by system
+        """
+        global _auto_started, _manual_override
+        
+        # Track manual override for auto-detect logic
+        if manual:
+            _manual_override = True   # User took control - don't auto-start
+            _auto_started = False
+        
         # Clear runtime flag so main loop stops checking for audio rec immediately
         try:
             from system_utils.metadata import set_audio_rec_runtime_enabled
@@ -639,3 +664,163 @@ async def init_reaper_source(
     )
     
     logger.info(f"Reaper audio source initialized (enabled={enabled}, auto_detect={auto_detect})")
+
+
+# =============================================================================
+# Reaper Auto-Detect Background Task
+# =============================================================================
+
+REAPER_CHECK_INTERVAL = 30  # Seconds between Reaper window checks
+
+
+def _is_other_source_playing() -> bool:
+    """
+    Check if another source (Spotify/Windows/Spicetify) is actively playing music.
+    
+    This is a lightweight check that doesn't trigger heavy imports.
+    Returns True if we should NOT start audio recognition.
+    """
+    try:
+        # Check the last metadata result without fetching new data
+        from system_utils.metadata import get_current_song_meta_data
+        
+        # Access cached result if available
+        if hasattr(get_current_song_meta_data, '_last_result'):
+            last_result = get_current_song_meta_data._last_result
+            if last_result:
+                source = last_result.get('source', '')
+                is_playing = last_result.get('is_playing', False)
+                
+                # If another source is actively playing, don't start audio recognition
+                if source and source != 'audio_recognition' and is_playing:
+                    logger.debug(f"Other source active: {source} (playing={is_playing})")
+                    return True
+        
+        return False
+    except Exception as e:
+        logger.debug(f"Error checking other sources: {e}")
+        return False
+
+
+async def _reaper_auto_detect_loop():
+    """
+    Background task that checks for Reaper every 30 seconds.
+    
+    Logic:
+    - If Reaper window is open AND no other music playing → start engine
+    - If Reaper window closes AND we auto-started → stop engine
+    - If user manually started/stopped → respect their choice
+    """
+    global _auto_started, _manual_override, _last_reaper_state, _shutting_down
+    
+    logger.info(f"Reaper auto-detect started (checking every {REAPER_CHECK_INTERVAL}s)")
+    
+    while not _shutting_down:
+        try:
+            await asyncio.sleep(REAPER_CHECK_INTERVAL)
+            
+            if _shutting_down:
+                break
+            
+            # Check if Reaper window is open (pure ctypes - instant, no imports)
+            reaper_open = ReaperAudioSource.is_reaper_running()
+            
+            # Log state changes
+            if reaper_open != _last_reaper_state:
+                logger.debug(f"Reaper window state changed: {'open' if reaper_open else 'closed'}")
+                _last_reaper_state = reaper_open
+                
+                # Reset manual override when Reaper state changes
+                # This allows auto-detect to work again after Reaper is closed and reopened
+                if not reaper_open:
+                    # Reaper just closed - reset override so next open can auto-start
+                    _manual_override = False
+            
+            source = get_reaper_source()
+            
+            if reaper_open:
+                # Reaper is open - should we start the engine?
+                
+                if source.is_active:
+                    # Engine already running - nothing to do
+                    continue
+                
+                if _manual_override:
+                    # User manually stopped - don't auto-start
+                    logger.debug("Reaper open but manual override active - not auto-starting")
+                    continue
+                
+                if _is_other_source_playing():
+                    # Other music is playing (Spotify/Windows) - don't interrupt
+                    continue
+                
+                # All conditions met - auto-start the engine
+                logger.info("Reaper detected, no other sources active - auto-starting audio recognition")
+                try:
+                    await source.start(manual=False)  # manual=False marks this as auto-started
+                    _auto_started = True
+                    
+                    # Set runtime flag so metadata uses audio recognition
+                    from system_utils.metadata import set_audio_rec_runtime_enabled
+                    set_audio_rec_runtime_enabled(True, True)
+                except Exception as e:
+                    logger.error(f"Failed to auto-start audio recognition: {e}")
+            
+            else:
+                # Reaper is closed - should we stop the engine?
+                
+                if not source.is_active:
+                    # Engine not running - nothing to do
+                    continue
+                
+                if not _auto_started:
+                    # User manually started - don't auto-stop
+                    logger.debug("Reaper closed but engine was manually started - not auto-stopping")
+                    continue
+                
+                # We auto-started and Reaper is now closed - stop the engine
+                logger.info("Reaper closed - auto-stopping audio recognition")
+                try:
+                    await source.stop(manual=False)  # manual=False marks this as auto-stopped
+                    _auto_started = False
+                except Exception as e:
+                    logger.error(f"Failed to auto-stop audio recognition: {e}")
+        
+        except asyncio.CancelledError:
+            logger.debug("Reaper auto-detect task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in Reaper auto-detect loop: {e}")
+
+
+async def start_reaper_auto_detect():
+    """
+    Start the Reaper auto-detect background task.
+    
+    Call this at app startup if reaper_auto_detect is enabled.
+    Safe to call even if already running.
+    """
+    global _auto_detect_task
+    
+    if _auto_detect_task is not None and not _auto_detect_task.done():
+        logger.debug("Reaper auto-detect already running")
+        return
+    
+    _auto_detect_task = asyncio.create_task(_reaper_auto_detect_loop())
+    logger.debug("Reaper auto-detect task started")
+
+
+def stop_reaper_auto_detect():
+    """
+    Stop the Reaper auto-detect background task.
+    
+    Call this on app shutdown. Safe to call even if not running.
+    """
+    global _auto_detect_task, _shutting_down
+    
+    _shutting_down = True
+    
+    if _auto_detect_task is not None:
+        _auto_detect_task.cancel()
+        _auto_detect_task = None
+        logger.debug("Reaper auto-detect task stopped")

@@ -318,7 +318,8 @@ ARTIST_IMAGE = {
 # Uses ShazamIO for song identification with latency-compensated position tracking
 AUDIO_RECOGNITION = {
     "enabled": conf("audio_recognition.enabled", False),
-    "reaper_auto_detect": conf("audio_recognition.reaper_auto_detect", False),
+    # ENV override: REAPER_AUTO_DETECT=true in .env takes priority over settings.json
+    "reaper_auto_detect": os.getenv("REAPER_AUTO_DETECT", "").lower() == "true" or conf("audio_recognition.reaper_auto_detect", False),
     "device_id": conf("audio_recognition.device_id"),  # None = auto-detect
     "device_name": conf("audio_recognition.device_name", ""),
     "capture_duration": conf("audio_recognition.capture_duration", 5.0),

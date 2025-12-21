@@ -225,11 +225,14 @@ async def cleanup() -> None:
     logger.debug("CLEANUP: Stopping audio recognition...")
     if 'system_utils.reaper' in sys.modules:
         try:
-            from system_utils.reaper import get_reaper_source
+            from system_utils.reaper import get_reaper_source, stop_reaper_auto_detect
             import system_utils.reaper as reaper_module
             
             # Set shutdown flag to prevent auto-restart race condition during cleanup
             reaper_module._shutting_down = True
+            
+            # Stop the auto-detect background task
+            stop_reaper_auto_detect()
             
             source = get_reaper_source()
             if source and source.is_active:
@@ -513,6 +516,17 @@ async def main() -> NoReturn:
             from system_utils.metadata import set_audio_rec_runtime_enabled
             set_audio_rec_runtime_enabled(False, False)
             logger.info("Audio recognition disabled for this session")
+    
+    # Start Reaper auto-detect background task if enabled in settings
+    # This is SEPARATE from --reaper flag - runs a lightweight check every 30s
+    from config import AUDIO_RECOGNITION
+    if AUDIO_RECOGNITION.get("reaper_auto_detect", False):
+        try:
+            from system_utils.reaper import start_reaper_auto_detect
+            await start_reaper_auto_detect()
+            logger.info("Reaper auto-detect enabled (checking every 30s)")
+        except Exception as e:
+            logger.error(f"Failed to start Reaper auto-detect: {e}")
 
     # Get active display methods
     # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key
