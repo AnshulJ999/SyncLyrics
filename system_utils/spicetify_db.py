@@ -34,6 +34,9 @@ def _get_db_path(artist: str, title: str) -> Optional[str]:
     """
     Generate safe filename for spicetify data.
     
+    Uses lowercase for case-insensitive matching:
+    - "ERRA" and "Erra" both resolve to "erra - shadow autonomous.json"
+    
     Args:
         artist: Artist name
         title: Track title
@@ -42,9 +45,9 @@ def _get_db_path(artist: str, title: str) -> Optional[str]:
         Full path to JSON file, or None if invalid
     """
     try:
-        # Remove illegal characters for filenames
-        safe_artist = "".join([c for c in artist if c.isalnum() or c in " -_"]).strip()
-        safe_title = "".join([c for c in title if c.isalnum() or c in " -_"]).strip()
+        # Lowercase for case-insensitive matching, then remove illegal characters
+        safe_artist = "".join([c for c in artist.lower() if c.isalnum() or c in " -_"]).strip()
+        safe_title = "".join([c for c in title.lower() if c.isalnum() or c in " -_"]).strip()
         
         if not safe_artist or not safe_title:
             return None

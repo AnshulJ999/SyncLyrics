@@ -427,13 +427,23 @@ async def get_audio_analysis():
         - waveform: List of {start, amp} where amp is normalized 0-1
         - segments: List of {start, duration, pitches} for spectrum visualizer
         - beats: List of {start, duration, confidence} for beat-reactive effects
+        - sections: List of sections for energy scaling
         - duration: Track duration in seconds
+        - analysis_track_id: Normalized track ID for frontend validation
     """
+    import asyncio
     from system_utils.spicetify import _spicetify_state
     from system_utils.spicetify_db import load_from_db
+    from system_utils.helpers import _normalize_track_id
+    
+    analysis = None
+    analysis_track_id = None
     
     # 1. Try live Spicetify state first
     analysis = _spicetify_state.get('audio_analysis')
+    if analysis:
+        # Use the track ID from Spicetify state
+        analysis_track_id = _spicetify_state.get('audio_analysis_track_id')
     
     # 2. If not in memory, try database cache (works for any source)
     if not analysis:
@@ -442,9 +452,13 @@ async def get_audio_analysis():
             artist = metadata.get('artist', '')
             title = metadata.get('title', '')
             if artist and title:
-                cached = load_from_db(artist, title)
+                # Non-blocking file I/O using thread pool
+                cached = await asyncio.to_thread(load_from_db, artist, title)
                 if cached and cached.get('audio_analysis'):
                     analysis = cached['audio_analysis']
+                    # Compute track ID from the metadata we used to load
+                    # This ensures frontend validation works correctly
+                    analysis_track_id = _normalize_track_id(artist, title)
                     logger.debug(f"Loaded audio analysis from cache: {artist} - {title}")
     
     if not analysis:
@@ -497,7 +511,7 @@ async def get_audio_analysis():
         'sections': sections,  # For section-level energy scaling
         'duration': duration,
         'segment_count': len(segments),
-        'analysis_track_id': _spicetify_state.get('audio_analysis_track_id')  # For validation
+        'analysis_track_id': analysis_track_id  # Correctly computed for cache loads
     })
 
 
