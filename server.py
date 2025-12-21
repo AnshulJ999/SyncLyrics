@@ -419,6 +419,10 @@ async def get_audio_analysis():
     Get audio analysis for current track (waveform + spectrum data).
     Used by frontend for waveform seekbar and spectrum visualizer.
     
+    Data sources (in priority order):
+    1. Live Spicetify state (when Spicetify is active)
+    2. Cached database (for previously-played songs from any source)
+    
     Returns:
         - waveform: List of {start, amp} where amp is normalized 0-1
         - segments: List of {start, duration, pitches} for spectrum visualizer
@@ -426,10 +430,25 @@ async def get_audio_analysis():
         - duration: Track duration in seconds
     """
     from system_utils.spicetify import _spicetify_state
+    from system_utils.spicetify_db import load_from_db
     
+    # 1. Try live Spicetify state first
     analysis = _spicetify_state.get('audio_analysis')
+    
+    # 2. If not in memory, try database cache (works for any source)
     if not analysis:
-        return jsonify({"error": "No audio analysis available (Spicetify only)"}), 404
+        metadata = await get_current_song_meta_data()
+        if metadata:
+            artist = metadata.get('artist', '')
+            title = metadata.get('title', '')
+            if artist and title:
+                cached = load_from_db(artist, title)
+                if cached and cached.get('audio_analysis'):
+                    analysis = cached['audio_analysis']
+                    logger.debug(f"Loaded audio analysis from cache: {artist} - {title}")
+    
+    if not analysis:
+        return jsonify({"error": "No audio analysis available"}), 404
     
     segments = analysis.get('segments', [])
     beats = analysis.get('beats', [])

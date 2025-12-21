@@ -290,5 +290,21 @@ async def _handle_track_data(data: dict):
     
     # Log track change (outside lock)
     track = data.get('track', {})
-    logger.debug(f"Spicetify track: {track.get('artist')} - {track.get('name')}")
+    artist = track.get('artist', '')
+    title = track.get('name', '')
+    logger.debug(f"Spicetify track: {artist} - {title}")
+    
+    # Save to database (background, non-blocking)
+    # This caches audio_analysis for waveform/spectrum visualizers
+    if artist and title and data.get('audio_analysis'):
+        from .spicetify_db import save_to_db
+        from . import create_tracked_task
+        create_tracked_task(save_to_db(
+            artist=artist,
+            title=title,
+            track_uri=data.get('track_uri', ''),
+            audio_analysis=data.get('audio_analysis'),
+            colors=data.get('colors'),
+            track_metadata=track
+        ))
 

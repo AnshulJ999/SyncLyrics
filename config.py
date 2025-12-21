@@ -62,10 +62,11 @@ RESOURCES_DIR = ROOT_DIR / "resources"
 DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
 CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
 ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
+SPICETIFY_DB_DIR = Path(os.getenv("SYNCLYRICS_SPICETIFY_DB", str(ROOT_DIR / "spicetify_database")))
 CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(ROOT_DIR / "certs")))
 
 # FIX: Wrap directory creation in try-except for permission errors
-for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, CERTS_DIR]:
+for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, SPICETIFY_DB_DIR, CERTS_DIR]:
     try:
         d.mkdir(parents=True, exist_ok=True)
     except (OSError, PermissionError) as e:
@@ -292,6 +293,7 @@ FEATURES = {
     "album_art_db": conf("features.album_art_db", True),
     "word_sync_auto_switch": conf("features.word_sync_auto_switch", True),  # Auto-switch to provider with word-sync
     "word_sync_default_enabled": conf("features.word_sync_default_enabled", True),  # Word-sync ON by default
+    "spicetify_database": conf("features.spicetify_database", True),  # Cache audio analysis from Spicetify
 }
 
 ALBUM_ART = {

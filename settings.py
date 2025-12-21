@@ -202,6 +202,7 @@ class SettingsManager:
             "features.album_art_db": Setting("Album Art Database", bool, True, False, "Features", "Enable album art database", "switch"),
             "features.word_sync_auto_switch": Setting("Word-Sync Auto-Switch", bool, True, False, "Features", "Auto-switch to provider with word-sync even if another is preferred", "switch"),
             "features.word_sync_default_enabled": Setting("Word-Sync Default On", bool, True, False, "Features", "Enable word-sync by default (frontend can still toggle)", "switch"),
+            "features.spicetify_database": Setting("Spicetify Database", bool, True, False, "Features", "Cache audio analysis for waveform/spectrum", "switch"),
             
             # Features - Deprecated (not wired up)
             "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Deprecated", "Enable minimal mode", "switch", deprecated=True),
