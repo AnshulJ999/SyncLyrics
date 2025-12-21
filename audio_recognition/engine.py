@@ -9,6 +9,7 @@ Features:
 """
 
 import asyncio
+import math
 import time
 from enum import Enum
 from typing import Optional, Callable, Dict, Any
@@ -239,7 +240,12 @@ class RecognitionEngine:
         
         # Fallback to raw recognition data
         # Use duration from RecognitionResult if available (ACRCloud provides this)
-        duration_ms = int(self._last_result.duration * 1000) if self._last_result.duration else 0
+        # Handle NaN from Shazam (Shazam doesn't provide duration)
+        raw_duration = self._last_result.duration
+        if raw_duration and not math.isnan(raw_duration) and raw_duration > 0:
+            duration_ms = int(raw_duration * 1000)
+        else:
+            duration_ms = 0
         
         return {
             "artist": self._last_result.artist,

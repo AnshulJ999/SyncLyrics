@@ -54,7 +54,7 @@ class ACRCloudRecognizer:
         self._enabled = bool(self._host and self._access_key and self._access_secret)
         
         if self._enabled:
-            logger.info(f"ACRCloud initialized (host: {self._host}, daily limit: {self._daily_limit})")
+            logger.info(f"ACRCloud initialized (host: {self._host}, daily limit: {self._daily_limit}, cooldown: {self._cooldown_seconds}s)")
         else:
             logger.debug("ACRCloud not configured (missing credentials in .env)")
     
