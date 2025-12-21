@@ -1815,7 +1815,7 @@ body.soft-mode .background-overlay {
     margin-left: auto;
     margin-right: auto;
     opacity: 1;
-z-index: 100;  /* Above background layers, below controls */
+    z-index: 1009;  /* Above background layers, below controls */
 }
 
 .waveform-container canvas {

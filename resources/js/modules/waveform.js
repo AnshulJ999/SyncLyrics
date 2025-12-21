@@ -162,6 +162,10 @@ function renderWaveform(canvas, waveform, currentPosition) {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
 
+    // Reset context state to prevent stale values
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
     if (!waveform || waveform.length === 0) return;
 
     // Calculate bar width based on number of segments and canvas width
@@ -170,9 +174,9 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const barGap = Math.max(0.5, barWidth * 0.1); // Small gap between bars
     const effectiveBarWidth = barWidth - barGap;
 
-    // Colors - Maximum Brightness
-    const unplayedColor = 'rgba(150, 150, 160, 1)';   // Light grey
-    const playedColor = 'rgba(255, 255, 255, 1)';     // Pure white
+    // Colors - MusicBee style
+    const unplayedColor = 'rgba(90, 90, 100, 1)';     // Dark grey (unplayed)
+    const playedColor = 'rgba(200, 200, 210, 1)';     // Off-white (played)
 
     // Center line for waveform
     const centerY = height / 2;
