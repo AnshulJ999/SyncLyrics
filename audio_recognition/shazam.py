@@ -135,25 +135,35 @@ class RecognitionResult:
 
 class ShazamRecognizer:
     """
-    Handles song recognition via ShazamIO.
+    Handles song recognition via ShazamIO with ACRCloud fallback.
     
     Features:
     - Converts audio using stdlib wave (no FFmpeg dependency)
     - Automatic latency compensation in results
     - Silence detection to avoid unnecessary API calls
+    - ACRCloud fallback when Shazamio fails (if configured)
     """
     
     MIN_AUDIO_LEVEL = 100  # Minimum amplitude for valid audio
     
     def __init__(self):
-        """Initialize Shazam client."""
+        """Initialize Shazam client and optional ACRCloud fallback."""
         self._no_match_count = 0  # For throttled logging
+        self._wav_bytes_cache: bytes = b''  # Cache WAV for ACRCloud fallback
         
         if Shazam is None:
             logger.error("shazamio not installed. Song recognition unavailable.")
             self._shazam = None
         else:
             self._shazam = Shazam()
+        
+        # Initialize ACRCloud fallback (auto-disabled if not configured)
+        try:
+            from .acrcloud import ACRCloudRecognizer
+            self._acrcloud = ACRCloudRecognizer()
+        except ImportError:
+            self._acrcloud = None
+            logger.debug("ACRCloud module not available")
             
     @staticmethod
     def is_available() -> bool:
@@ -227,9 +237,19 @@ class ShazamRecognizer:
                 self._no_match_count += 1
                 # Throttled INFO logging: 1st and every 4th
                 if self._no_match_count == 1 or self._no_match_count % 4 == 0:
-                    logger.info(f"No matches found (attempt #{self._no_match_count})")
+                    logger.info(f"Shazamio: No matches found (attempt #{self._no_match_count})")
                 else:
-                    logger.debug(f"No matches found (attempt #{self._no_match_count})")
+                    logger.debug(f"Shazamio: No matches found (attempt #{self._no_match_count})")
+                
+                # Try ACRCloud fallback if available
+                if self._acrcloud and self._acrcloud.is_available():
+                    logger.info("Trying ACRCloud fallback...")
+                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    if acrcloud_result:
+                        self._no_match_count = 0  # Reset on ACRCloud success
+                        return acrcloud_result
+                    logger.debug("ACRCloud fallback: No match")
+                
                 return None
             
             # Extract track info
