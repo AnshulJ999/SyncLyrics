@@ -53,6 +53,8 @@ class RecognitionResult:
         background_image_url: Background image for visual modes
         genre: Primary genre
         shazam_lyrics_text: Raw lyrics text from Shazam (unsynced)
+        source: Recognition provider ("shazam" or "acrcloud")
+        duration: Song duration in seconds (if available)
     """
     title: str
     artist: str
@@ -71,6 +73,8 @@ class RecognitionResult:
     background_image_url: Optional[str] = None
     genre: Optional[str] = None
     shazam_lyrics_text: Optional[str] = None
+    source: str = "shazam"  # "shazam" or "acrcloud"
+    duration: Optional[float] = None  # Song duration in seconds
     
     def get_current_position(self) -> float:
         """
@@ -341,6 +345,20 @@ class ShazamRecognizer:
             shazam_lyrics_text = self._extract_lyrics(track)
             
             # Build result with latency compensation and all metadata
+            time_skew_val = match.get('timeskew', 0.0)
+            freq_skew_val = match.get('frequencyskew', 0.0)
+            
+            # Quality check: High timeskew/frequencyskew may indicate false positive
+            # Based on research: values close to 0 = good match, high values = suspicious
+            TIMESKEW_WARNING_THRESHOLD = 0.015  # Log warning if above this
+            TIMESKEW_REJECT_THRESHOLD = 0.05    # Could reject if above this (future)
+            
+            if abs(time_skew_val) > TIMESKEW_WARNING_THRESHOLD:
+                logger.warning(
+                    f"Shazamio: High timeskew detected ({time_skew_val:.6f}) - "
+                    f"possible false positive for '{artist} - {title}'"
+                )
+            
             recognition = RecognitionResult(
                 title=title,
                 artist=artist,
@@ -348,8 +366,8 @@ class ShazamRecognizer:
                 capture_start_time=audio.capture_start_time,
                 recognition_time=recognition_time,
                 confidence=1.0,  # Shazam doesn't expose confidence directly
-                time_skew=match.get('timeskew', 0.0),
-                frequency_skew=match.get('frequencyskew', 0.0),
+                time_skew=time_skew_val,
+                frequency_skew=freq_skew_val,
                 track_id=track.get('key'),
                 album=album,
                 album_art_url=album_art_url,
@@ -358,7 +376,8 @@ class ShazamRecognizer:
                 spotify_url=spotify_url,
                 background_image_url=background_image_url,
                 genre=genre,
-                shazam_lyrics_text=shazam_lyrics_text
+                shazam_lyrics_text=shazam_lyrics_text,
+                source="shazam"
             )
             
             latency = recognition.get_latency()

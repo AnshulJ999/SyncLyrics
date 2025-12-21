@@ -212,6 +212,10 @@ class ACRCloudRecognizer:
                 if spotify_id:
                     spotify_url = f"https://open.spotify.com/track/{spotify_id}"
             
+            # Duration (ACRCloud provides this)
+            duration_ms = track.get('duration_ms', 0)
+            duration = duration_ms / 1000.0 if duration_ms else None
+            
             # Build result (same format as Shazamio)
             recognition = RecognitionResult(
                 title=title,
@@ -230,7 +234,9 @@ class ACRCloudRecognizer:
                 spotify_url=spotify_url,
                 background_image_url=None,
                 genre=genre,
-                shazam_lyrics_text=None
+                shazam_lyrics_text=None,
+                source="acrcloud",
+                duration=duration
             )
             
             latency = recognition.get_latency()

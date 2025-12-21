@@ -36,7 +36,7 @@
     "features.show_lyrics_source": true,
     "features.word_sync_auto_switch": false,
     "features.word_sync_default_enabled": true,
-    "lyrics.display.audio_recognition_latency_compensation": 0.3,
+    "lyrics.display.audio_recognition_latency_compensation": 0.1,
     "lyrics.display.buffer_size": 6,
     "lyrics.display.idle_interval": 3.0,
     "lyrics.display.idle_wait_time": 3.0,

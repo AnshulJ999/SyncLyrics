@@ -229,13 +229,18 @@ class RecognitionEngine:
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
                 "album_art_url": self._enriched_metadata.get("album_art_url") or self._last_result.album_art_url,
+                # Recognition source (shazam or acrcloud)
+                "source": self._last_result.source,
                 # Debug fields
                 "_shazam_artist": self._last_result.artist,
                 "_shazam_title": self._last_result.title,
                 "_spotify_enriched": True,
             }
         
-        # Fallback to Shazam data
+        # Fallback to raw recognition data
+        # Use duration from RecognitionResult if available (ACRCloud provides this)
+        duration_ms = int(self._last_result.duration * 1000) if self._last_result.duration else 0
+        
         return {
             "artist": self._last_result.artist,
             "title": self._last_result.title,
@@ -248,7 +253,9 @@ class RecognitionEngine:
             "genre": self._last_result.genre,
             "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
             "track_id": None,
-            "duration_ms": 0,
+            "duration_ms": duration_ms,
+            # Recognition source (shazam or acrcloud)
+            "source": self._last_result.source,
             "_spotify_enriched": False,
         }
     
