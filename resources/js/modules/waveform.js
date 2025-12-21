@@ -345,12 +345,12 @@ export function resetWaveform() {
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     }
 }
-
 // ========== SEEK INTERACTION ==========
 
 /**
  * Initialize seek interaction on the waveform canvas
  * Supports click-to-seek and drag-to-scrub with debouncing
+ * Works with both mouse and touch events for tablet/mobile support
  * 
  * @param {HTMLCanvasElement} canvas - The waveform canvas element
  */
@@ -361,83 +361,165 @@ function initSeekInteraction(canvas) {
         seekTooltip.className = 'seek-tooltip';
         seekTooltip.style.cssText = `
             position: fixed;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.9);
             color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
             pointer-events: none;
             z-index: 10000;
             display: none;
             transform: translateX(-50%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
         `;
         document.body.appendChild(seekTooltip);
     }
     
     // Set cursor to pointer
     canvas.style.cursor = 'pointer';
+    // Enable touch scrolling prevention on the canvas
+    canvas.style.touchAction = 'none';
     
-    // Calculate seek position from mouse event
-    const calculateSeekPosition = (e) => {
+    // Get client position from mouse or touch event
+    const getClientPos = (e) => {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    };
+    
+    // Calculate seek position from client coordinates
+    const calculateSeekPosition = (clientX) => {
         const rect = canvas.getBoundingClientRect();
-        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         return percent * waveformDuration * 1000; // Return in ms
     };
     
-    // Mouse down - start drag
-    canvas.addEventListener('mousedown', (e) => {
-        if (!waveformDuration) return;
-        isDragging = true;
-        previewPositionMs = calculateSeekPosition(e);
-        updateVisualFeedback();
-    });
-    
-    // Mouse move - update tooltip and preview
-    canvas.addEventListener('mousemove', (e) => {
-        if (!waveformDuration) return;
-        
-        hoverPositionMs = calculateSeekPosition(e);
-        
-        // Show tooltip
-        const timeStr = formatTime(hoverPositionMs / 1000);
+    // Show tooltip at position
+    const showTooltip = (clientX, clientY, positionMs) => {
+        const timeStr = formatTime(positionMs / 1000);
         seekTooltip.textContent = timeStr;
         seekTooltip.style.display = 'block';
-        seekTooltip.style.left = `${e.clientX}px`;
-        seekTooltip.style.top = `${e.clientY - 30}px`;
+        seekTooltip.style.left = `${clientX}px`;
+        // Position tooltip above the touch/cursor, with more clearance for touch
+        const offset = isDragging ? 50 : 35;
+        seekTooltip.style.top = `${clientY - offset}px`;
+    };
+    
+    // Hide tooltip
+    const hideTooltip = () => {
+        seekTooltip.style.display = 'none';
+    };
+    
+    // Track if we already sought (to prevent click from also firing after drag)
+    let didSeek = false;
+    
+    // ========== POINTER START (mousedown / touchstart) ==========
+    const handlePointerStart = (e) => {
+        if (!waveformDuration) return;
+        e.preventDefault(); // Prevent scrolling on touch
+        
+        const pos = getClientPos(e);
+        isDragging = true;
+        didSeek = false;
+        previewPositionMs = calculateSeekPosition(pos.x);
+        showTooltip(pos.x, pos.y, previewPositionMs);
+        updateVisualFeedback();
+    };
+    
+    // ========== POINTER MOVE (mousemove / touchmove) ==========
+    const handlePointerMove = (e) => {
+        if (!waveformDuration) return;
+        
+        const pos = getClientPos(e);
+        hoverPositionMs = calculateSeekPosition(pos.x);
+        
+        // Always show tooltip on move (hover or drag)
+        showTooltip(pos.x, pos.y, hoverPositionMs);
         
         // Update visual preview if dragging
         if (isDragging) {
+            e.preventDefault(); // Prevent scrolling during drag
             previewPositionMs = hoverPositionMs;
             updateVisualFeedback();
         }
-    });
+    };
     
-    // Mouse up - perform seek
-    canvas.addEventListener('mouseup', (e) => {
-        if (!waveformDuration || !isDragging) return;
-        
-        const finalPositionMs = calculateSeekPosition(e);
-        debouncedSeek(finalPositionMs);
-        
-        isDragging = false;
-        previewPositionMs = null;
-    });
-    
-    // Mouse leave - hide tooltip, cancel drag
-    canvas.addEventListener('mouseleave', () => {
-        seekTooltip.style.display = 'none';
-        isDragging = false;
-        previewPositionMs = null;
-    });
-    
-    // Click handler for simple click-to-seek (fallback)
-    canvas.addEventListener('click', (e) => {
+    // ========== POINTER END (mouseup / touchend) ==========
+    const handlePointerEnd = (e) => {
         if (!waveformDuration) return;
         
-        const positionMs = calculateSeekPosition(e);
+        if (isDragging && previewPositionMs !== null) {
+            // Seek to the drag end position
+            debouncedSeek(previewPositionMs);
+            didSeek = true;
+        }
+        
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== POINTER CANCEL (touchcancel) ==========
+    const handlePointerCancel = () => {
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== MOUSE LEAVE ==========
+    const handleMouseLeave = () => {
+        if (!isDragging) {
+            hideTooltip();
+        }
+        // Don't cancel drag - wait for mouseup on document
+    };
+    
+    // ========== CLICK (for simple tap/click without drag) ==========
+    const handleClick = (e) => {
+        if (!waveformDuration) return;
+        
+        // Skip if we already seeked via drag
+        if (didSeek) {
+            didSeek = false;
+            return;
+        }
+        
+        const pos = getClientPos(e);
+        const positionMs = calculateSeekPosition(pos.x);
         debouncedSeek(positionMs);
+    };
+    
+    // ========== ATTACH CANVAS EVENTS ==========
+    // Mouse events
+    canvas.addEventListener('mousedown', handlePointerStart);
+    canvas.addEventListener('mousemove', handlePointerMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+    canvas.addEventListener('click', handleClick);
+    
+    // Touch events
+    canvas.addEventListener('touchstart', handlePointerStart, { passive: false });
+    canvas.addEventListener('touchmove', handlePointerMove, { passive: false });
+    canvas.addEventListener('touchend', handlePointerEnd);
+    canvas.addEventListener('touchcancel', handlePointerCancel);
+    
+    // ========== GLOBAL END EVENTS (for drag completion outside canvas) ==========
+    document.addEventListener('mouseup', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
     });
+    
+    document.addEventListener('touchend', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
+    }, { passive: true });
 }
 
 /**
@@ -480,3 +562,4 @@ function updateVisualFeedback() {
     // Re-render with preview position
     renderWaveform(canvas, waveformData.waveform, previewPositionMs / 1000);
 }
+
