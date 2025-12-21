@@ -367,11 +367,12 @@ function renderSpectrum(canvas, pitchData) {
         currentBarHeights = new Array(CONFIG.barCount).fill(0);
     }
 
-    // Get brightness factor from timbre
-    const brightness = getBrightnessFactor();
+    // Get brightness factor (disabled - using fixed value)
+    // const brightness = getBrightnessFactor();
+    const brightness = 0.5;  // Fixed value, timbre adjustment disabled
     
-    // Interpolate between base and bright colors based on beat pulse
-    const alpha = 0.3 + beatPulse * 0.25 + brightness * 0.15;
+    // Fixed alpha - beat pulse disabled to prevent flickering
+    const alpha = 0.4;  // Solid, no flickering
 
     for (let i = 0; i < CONFIG.barCount; i++) {
         const targetHeight = pitchData[i] * maxBarHeight;
