@@ -482,9 +482,19 @@ export function findCurrentWordSyncLine(position) {
  *                                  (for gap/outro where current shows ♪ or is empty)
  */
 function updateSurroundingLines(idx, justFinished = false) {
+    // Helper: Clean contraction text by removing spaces around apostrophes
+    // Fixes "I ' m" → "I'm", "can ' t" → "can't", etc.
+    // Handles both straight (') and curly (') apostrophes (U+2019)
+    const cleanContractionText = (text) => {
+        if (!text) return "";
+        // Remove space before apostrophe followed by contraction suffix
+        // Pattern: "word ' suffix" → "word'suffix" (uses \u2019 for curly apostrophe)
+        return text.replace(/ ['\u2019] ([msdt]|re|ve|ll)\b/gi, '\u2019$1');
+    };
+    
     const getText = (i) => {
         if (!wordSyncedLyrics || i < 0 || i >= wordSyncedLyrics.length) return "";
-        return wordSyncedLyrics[i]?.text || "";
+        return cleanContractionText(wordSyncedLyrics[i]?.text || "");
     };
     
     const prev2 = document.getElementById('prev-2');
