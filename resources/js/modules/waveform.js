@@ -126,23 +126,43 @@ export async function updateWaveform(trackInfo) {
         initWaveform();
     }
 
-    // Render waveform with current progress
+    // Get the regular progress container
+    const progressContainer = document.getElementById('progress-container');
+
+    // Render waveform with current progress OR fallback to real progress bar
     if (waveformData && waveformData.waveform) {
+        // Has audio data - show waveform, hide progress bar
+        container.style.display = 'block';
+        if (progressContainer) progressContainer.style.display = 'none';
+        
         const currentPosition = trackInfo.position || 0; // Position in seconds
         renderWaveform(canvas, waveformData.waveform, currentPosition);
+        
+        // Update waveform time display
+        const currentTimeEl = document.getElementById('waveform-current-time');
+        const totalTimeEl = document.getElementById('waveform-total-time');
+        if (currentTimeEl) {
+            currentTimeEl.textContent = formatTime(trackInfo.position || 0);
+        }
+        if (totalTimeEl) {
+            totalTimeEl.textContent = formatTime(trackInfo.duration_ms / 1000);
+        }
     } else {
-        // No waveform data - show fallback progress bar style
-        renderFallback(canvas, trackInfo);
-    }
-
-    // Update time display
-    const currentTimeEl = document.getElementById('waveform-current-time');
-    const totalTimeEl = document.getElementById('waveform-total-time');
-    if (currentTimeEl) {
-        currentTimeEl.textContent = formatTime(trackInfo.position || 0);
-    }
-    if (totalTimeEl) {
-        totalTimeEl.textContent = formatTime(trackInfo.duration_ms / 1000);
+        // No audio data - hide waveform, show real progress bar
+        container.style.display = 'none';
+        if (progressContainer) progressContainer.style.display = 'block';
+        
+        // Manually update the real progress bar (since showProgress might be false)
+        const fill = document.getElementById('progress-fill');
+        const currentTime = document.getElementById('current-time');
+        const totalTime = document.getElementById('total-time');
+        
+        if (trackInfo.duration_ms && trackInfo.position !== undefined) {
+            const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
+            if (fill) fill.style.width = `${percent}%`;
+            if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
+            if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+        }
     }
 }
 
