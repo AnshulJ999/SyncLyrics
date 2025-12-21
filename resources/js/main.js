@@ -138,6 +138,7 @@ const IDLE_POLL_INTERVAL = 1000; // 1 second when in slow polling mode
  */
 async function updateLoop() {
     let lastTrackId = null;
+    let lastSource = null;  // Track audio source for reset on source change
     let isIdleState = false;
     let currentPollInterval = updateInterval;
     let idleStartTime = null;
@@ -262,6 +263,19 @@ async function updateLoop() {
                 console.log('[Main] Track changed, refreshing queue...');
                 fetchAndRenderQueue();
             }
+        }
+
+        // Detect source change (e.g., Spicetify -> MusicBee)
+        // Reset waveform/spectrum since audio analysis data changes
+        const currentSource = trackInfo?.source;
+        if (currentSource && currentSource !== lastSource) {
+            console.log(`[Main] Source changed: ${lastSource} -> ${currentSource}`);
+            lastSource = currentSource;
+            
+            // Reset waveform and spectrum on source change
+            // (audio analysis data is source-specific)
+            resetWaveform();
+            resetSpectrum();
         }
 
         // Update track info

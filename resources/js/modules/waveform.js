@@ -208,6 +208,7 @@ function renderWaveform(canvas, waveform, currentPosition) {
 
 /**
  * Render fallback progress bar when waveform data is unavailable
+ * Matches the regular progress bar styling (6px height, white colors)
  * 
  * @param {HTMLCanvasElement} canvas - The canvas element
  * @param {Object} trackInfo - Current track information
@@ -226,17 +227,39 @@ function renderFallback(canvas, trackInfo) {
     const position = trackInfo.position || 0;
     const progress = Math.min(1, position / duration);
 
-    // Draw simple progress bar
-    const barHeight = height * 0.3;
+    // Match regular progress bar: 6px height, centered
+    const barHeight = 6;
     const y = (height - barHeight) / 2;
+    const radius = 3;  // Rounded corners
 
-    // Unplayed portion
-    ctx.fillStyle = 'rgba(60, 60, 60, 0.8)';
-    ctx.fillRect(0, y, width, barHeight);
+    // Background (unplayed) - matches .progress-bar
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    drawRoundedBar(ctx, 0, y, width, barHeight, radius);
 
-    // Played portion
-    ctx.fillStyle = 'rgba(180, 180, 180, 0.95)';
-    ctx.fillRect(0, y, width * progress, barHeight);
+    // Played portion - matches .progress-fill
+    if (progress > 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        drawRoundedBar(ctx, 0, y, width * progress, barHeight, radius);
+    }
+}
+
+/**
+ * Draw a rounded rectangle bar
+ */
+function drawRoundedBar(ctx, x, y, width, height, radius) {
+    if (width < radius * 2) radius = width / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
 }
 
 /**
