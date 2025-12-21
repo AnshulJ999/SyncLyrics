@@ -288,36 +288,43 @@ async def save_song_word_sync_offset(artist: str, title: str, offset: float) -> 
     """
     Save per-song word-sync offset (seconds).
     Creates or updates the song's JSON file with the offset.
+    File I/O runs in thread pool to avoid blocking the event loop.
     Returns True on success.
     """
     db_path = _get_db_path(artist, title)
     if not db_path:
         return False
     
+    # Clamp offset to reasonable range before file I/O
+    clamped_offset = max(-5.0, min(5.0, offset))
+    
+    def _do_file_io():
+        """Blocking file I/O - runs in thread pool."""
+        # Load existing data or create minimal valid schema
+        if os.path.exists(db_path):
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            # Create minimal valid schema to prevent partial DB files
+            data = {
+                "artist": artist,
+                "title": title,
+                "saved_lyrics": {},
+                "word_synced_lyrics": {}
+            }
+        
+        data["word_sync_offset"] = clamped_offset
+        
+        # Write atomically via temp file
+        temp_path = db_path + ".tmp"
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(temp_path, db_path)
+        return True
+    
     async with _db_lock:
         try:
-            # Load existing data or create minimal valid schema
-            if os.path.exists(db_path):
-                with open(db_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            else:
-                # Create minimal valid schema to prevent partial DB files
-                data = {
-                    "artist": artist,
-                    "title": title,
-                    "saved_lyrics": {},
-                    "word_synced_lyrics": {}
-                }
-            
-            # Clamp offset to reasonable range
-            data["word_sync_offset"] = max(-1.0, min(1.0, offset))
-            
-            # Write atomically via temp file
-            temp_path = db_path + ".tmp"
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(temp_path, db_path)
-            
+            await asyncio.to_thread(_do_file_io)
             logger.debug(f"Saved word-sync offset {offset:.3f}s for {artist} - {title}")
             return True
         except Exception as e:
@@ -419,6 +426,7 @@ def _is_cached_instrumental(artist: str, title: str) -> bool:
 async def set_manual_instrumental(artist: str, title: str, is_instrumental: bool) -> bool:
     """
     Marks or unmarks a song as instrumental manually.
+    File I/O runs in thread pool to avoid blocking the event loop.
     Returns True if successful, False otherwise.
     """
     if not FEATURES.get("save_lyrics_locally", False):
@@ -428,45 +436,49 @@ async def set_manual_instrumental(artist: str, title: str, is_instrumental: bool
     if not db_path:
         return False
     
+    def _do_file_io():
+        """Blocking file I/O - runs in thread pool."""
+        # Load existing file if it exists
+        data = {
+            "artist": artist,
+            "title": title,
+            "saved_lyrics": {}
+        }
+        
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                # Preserve existing structure
+                if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                    data = existing
+                elif "lyrics" in existing:
+                    # Legacy format - migrate
+                    legacy_source = existing.get("source", "Unknown")
+                    legacy_lyrics = existing.get("lyrics", [])
+                    if legacy_lyrics:
+                        data["saved_lyrics"][legacy_source] = legacy_lyrics
+            except Exception as e:
+                logger.warning(f"Could not load existing DB for instrumental marking: {e}")
+        
+        # Set or remove the manual flag
+        if is_instrumental:
+            data["is_instrumental_manual"] = True
+        else:
+            # Remove the flag if unmarking
+            data.pop("is_instrumental_manual", None)
+        
+        # Save using atomic write pattern
+        dir_path = os.path.dirname(db_path)
+        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        os.replace(temp_path, db_path)
+        return True
+    
     async with _db_lock:
         try:
-            # Load existing file if it exists
-            data = {
-                "artist": artist,
-                "title": title,
-                "saved_lyrics": {}
-            }
-            
-            if os.path.exists(db_path):
-                try:
-                    with open(db_path, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                    # Preserve existing structure
-                    if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
-                        data = existing
-                    elif "lyrics" in existing:
-                        # Legacy format - migrate
-                        legacy_source = existing.get("source", "Unknown")
-                        legacy_lyrics = existing.get("lyrics", [])
-                        if legacy_lyrics:
-                            data["saved_lyrics"][legacy_source] = legacy_lyrics
-                except Exception as e:
-                    logger.warning(f"Could not load existing DB for instrumental marking: {e}")
-            
-            # Set or remove the manual flag
-            if is_instrumental:
-                data["is_instrumental_manual"] = True
-            else:
-                # Remove the flag if unmarking
-                data.pop("is_instrumental_manual", None)
-            
-            # Save using atomic write pattern
-            dir_path = os.path.dirname(db_path)
-            fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
-            os.replace(temp_path, db_path)
-            
+            await asyncio.to_thread(_do_file_io)
             logger.info(f"Marked {artist} - {title} as {'instrumental' if is_instrumental else 'NOT instrumental'} (manual)")
             return True
         except Exception as e:
@@ -482,6 +494,8 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str,
                       word_synced: Optional[List[Dict[str, Any]]] = None) -> None:
     """Saves found lyrics to disk with multi-provider support (merge mode).
     
+    File I/O runs in thread pool to avoid blocking the event loop.
+    
     Args:
         artist: Artist name
         title: Song title
@@ -495,74 +509,80 @@ async def _save_to_db(artist: str, title: str, lyrics: list, source: str,
     db_path = _get_db_path(artist, title)
     if not db_path: return
 
+    def _do_file_io():
+        """Blocking file I/O - runs in thread pool."""
+        # Start with base structure
+        data = {
+            "artist": artist,
+            "title": title,
+            "saved_lyrics": {}  # Multi-provider storage
+        }
+        
+        # Load existing file if it exists (for merging)
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                    
+                # Check if it's the NEW format (has "saved_lyrics" dict)
+                if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
+                    data = existing  # Keep all existing providers and preferred_provider if present
+                    
+                # Migrate LEGACY format (single provider) to NEW format
+                elif "lyrics" in existing and "source" in existing:
+                    legacy_source = existing.get("source", "Unknown")
+                    legacy_lyrics = existing.get("lyrics", [])
+                    if legacy_lyrics:
+                        data["saved_lyrics"][legacy_source] = legacy_lyrics
+                        logger.info(f"Migrated legacy DB entry from {legacy_source}")
+                        
+            except Exception as e:
+                logger.warning(f"Could not load existing DB, creating new: {e}")
+        
+        # Add/Update this provider's lyrics
+        # Note: preferred_provider field is preserved from existing data (if present)
+        # It should only be modified via set_provider_preference(), not during automatic saves
+        data["saved_lyrics"][source] = lyrics
+        if metadata:
+            data.setdefault("metadata", {})
+            data["metadata"][source] = metadata
+        
+        # NEW: Store word-synced lyrics if available
+        if word_synced:
+            data.setdefault("word_synced_lyrics", {})
+            data["word_synced_lyrics"][source] = word_synced
+            logger.debug(f"Stored {len(word_synced)} word-synced lines from {source}")
+        
+        # Save merged data using atomic write pattern
+        # This prevents corruption if app crashes during write:
+        # 1. Write to temp file first
+        # 2. Use os.replace() to atomically swap (this is atomic on all platforms)
+        dir_path = os.path.dirname(db_path)
+        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            # Atomic replace - if this fails, original file is untouched
+            os.replace(temp_path, db_path)
+        except Exception as write_err:
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+            raise write_err
+        
+        return len(data['saved_lyrics'])
+
     async with _db_lock:
         try:
-            # Start with base structure
-            data = {
-                "artist": artist,
-                "title": title,
-                "saved_lyrics": {}  # Multi-provider storage
-            }
-            
-            # Load existing file if it exists (for merging)
-            if os.path.exists(db_path):
-                try:
-                    with open(db_path, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                        
-                    # Check if it's the NEW format (has "saved_lyrics" dict)
-                    if "saved_lyrics" in existing and isinstance(existing["saved_lyrics"], dict):
-                        data = existing  # Keep all existing providers and preferred_provider if present
-                        
-                    # Migrate LEGACY format (single provider) to NEW format
-                    elif "lyrics" in existing and "source" in existing:
-                        legacy_source = existing.get("source", "Unknown")
-                        legacy_lyrics = existing.get("lyrics", [])
-                        if legacy_lyrics:
-                            data["saved_lyrics"][legacy_source] = legacy_lyrics
-                            logger.info(f"Migrated legacy DB entry from {legacy_source}")
-                            
-                except Exception as e:
-                    logger.warning(f"Could not load existing DB, creating new: {e}")
-            
-            # Add/Update this provider's lyrics
-            # Note: preferred_provider field is preserved from existing data (if present)
-            # It should only be modified via set_provider_preference(), not during automatic saves
-            data["saved_lyrics"][source] = lyrics
-            if metadata:
-                data.setdefault("metadata", {})
-                data["metadata"][source] = metadata
-            
-            # NEW: Store word-synced lyrics if available
-            if word_synced:
-                data.setdefault("word_synced_lyrics", {})
-                data["word_synced_lyrics"][source] = word_synced
-                logger.debug(f"Stored {len(word_synced)} word-synced lines from {source}")
-            
-            # Save merged data using atomic write pattern
-            # This prevents corruption if app crashes during write:
-            # 1. Write to temp file first
-            # 2. Use os.replace() to atomically swap (this is atomic on all platforms)
-            dir_path = os.path.dirname(db_path)
-            try:
-                # Create temp file in same directory (required for atomic rename)
-                fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-                # Atomic replace - if this fails, original file is untouched
-                os.replace(temp_path, db_path)
-            except Exception as write_err:
-                # Clean up temp file if it exists
-                if 'temp_path' in locals() and os.path.exists(temp_path):
-                    try:
-                        os.unlink(temp_path)
-                    except:
-                        pass
-                raise write_err
+            # Run blocking file I/O in thread pool
+            provider_count = await asyncio.to_thread(_do_file_io)
             
             # Log what we saved
             word_sync_status = f", word-sync from {source}" if word_synced else ""
-            logger.info(f"Saved {source} lyrics to DB (now has {len(data['saved_lyrics'])} providers{word_sync_status})")
+            logger.info(f"Saved {source} lyrics to DB (now has {provider_count} providers{word_sync_status})")
         except Exception as e:
             logger.error(f"Failed to save to DB: {e}")
 
