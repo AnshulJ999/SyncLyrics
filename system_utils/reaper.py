@@ -8,6 +8,7 @@ This integrates with system_utils/metadata.py as a media source.
 """
 
 import asyncio
+import os
 import platform
 import time
 from typing import Optional, Dict, Any
@@ -670,7 +671,8 @@ async def init_reaper_source(
 # Reaper Auto-Detect Background Task
 # =============================================================================
 
-REAPER_CHECK_INTERVAL = 30  # Seconds between Reaper window checks
+# ENV override: REAPER_CHECK_INTERVAL=10 in .env for faster detection (default: 30s)
+REAPER_CHECK_INTERVAL = int(os.getenv("REAPER_CHECK_INTERVAL", "30"))
 
 
 def _is_other_source_playing() -> bool:
