@@ -26,6 +26,7 @@ let currentConfig = null;
 let isActive = false;
 let isFrontendCapture = false; // True if currently using frontend mic capture
 let currentTrackSource = 'Spotify'; // Default display
+let lastKnownProvider = null; // Last known recognition provider (prevents flashing)
 
 // DOM Elements (cached on init)
 let elements = {};
@@ -416,15 +417,27 @@ function updateStatusDisplay(status) {
                 elements.sourceName.textContent = 'Mic';
             } else {
                 // Use recognition_provider from current_song if available
+                // Only update if we have explicit provider info - don't default to Shazam
                 const provider = status.current_song?.recognition_provider;
                 if (provider === 'acrcloud') {
                     elements.sourceName.textContent = 'ACRCloud';
-                } else {
+                    lastKnownProvider = 'ACRCloud';
+                } else if (provider === 'shazam') {
                     elements.sourceName.textContent = 'Shazam';
+                    lastKnownProvider = 'Shazam';
+                } else if (lastKnownProvider) {
+                    // No provider in current response - keep showing last known
+                    elements.sourceName.textContent = lastKnownProvider;
+                } else {
+                    // No provider ever known - show generic
+                    elements.sourceName.textContent = 'Audio';
                 }
             }
         } else {
-            // Audio recognition not active - show current track source
+            // Audio recognition not active - reset provider tracking
+            lastKnownProvider = null;
+            
+            // Show current track source
             const sourceMap = {
                 'spotify': 'Spotify',
                 'spotify_hybrid': 'Hybrid',
@@ -628,6 +641,9 @@ async function handleStop() {
         if (result.error) {
             console.error('Failed to stop backend recognition:', result.error);
         }
+
+        // Reset provider tracking for next session
+        lastKnownProvider = null;
 
         await refreshStatus();
 
