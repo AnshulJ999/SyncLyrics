@@ -732,14 +732,19 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         
                         if db_result:
                             cached_url, cached_path = db_result
-                            if cached_url:
-                                result["album_art_url"] = cached_url
-                                result["background_image_url"] = cached_url
-                                enriched["album_art_url"] = cached_url
                             if cached_path:
-                                result["album_art_path"] = str(cached_path)
-                                result["background_image_path"] = str(cached_path)
-                                enriched["album_art_path"] = str(cached_path)
+                                # FIX: Use local /cover-art URL like Windows/Spotify sources (not remote URL)
+                                # This ensures album art displays even if remote URL is broken (e.g., spotify:image: URIs)
+                                local_art_path = Path(cached_path)
+                                if local_art_path.exists():
+                                    mtime = int(local_art_path.stat().st_mtime)
+                                    local_url = f"/cover-art?id={track_id}&t={mtime}"
+                                    result["album_art_url"] = local_url
+                                    result["background_image_url"] = local_url
+                                    enriched["album_art_url"] = local_url
+                                    result["album_art_path"] = str(cached_path)
+                                    result["background_image_path"] = str(cached_path)
+                                    enriched["album_art_path"] = str(cached_path)
                         
                         # Color extraction
                         if result.get("album_art_path"):

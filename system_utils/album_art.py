@@ -179,6 +179,14 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     """
     import requests
     
+    # FIX: Convert spotify:image:xxx URIs to proper HTTPS URLs
+    # Spicetify sometimes sends spotify:image:xxx format instead of HTTPS URLs
+    # Format: spotify:image:ab67616d00001e023cea3f53137fcb2cc86a481c -> https://i.scdn.co/image/ab67616d00001e023cea3f53137fcb2cc86a481c
+    if url and url.startswith('spotify:image:'):
+        image_id = url.replace('spotify:image:', '')
+        url = f'https://i.scdn.co/image/{image_id}'
+        logger.debug(f"Converted spotify:image URI to HTTPS: {url}")
+    
     # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
     # Use same User-Agent as ArtistImageProvider for consistency
     # Referer header prevents hotlinking protection and reduces 403 errors
