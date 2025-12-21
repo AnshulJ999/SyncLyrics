@@ -410,6 +410,59 @@ async def reload_settings():
         logger.error(f"Failed to reload settings: {e}")
         return {"success": False, "error": str(e)}
 
+
+# --- Audio Analysis API (for waveform and spectrum visualizer) ---
+
+@app.route('/api/playback/audio-analysis')
+async def get_audio_analysis():
+    """
+    Get audio analysis for current track (waveform + spectrum data).
+    Used by frontend for waveform seekbar and spectrum visualizer.
+    
+    Returns:
+        - waveform: List of {start, amp} where amp is normalized 0-1
+        - duration: Track duration in seconds
+    """
+    from system_utils.spicetify import _spicetify_state
+    
+    analysis = _spicetify_state.get('audio_analysis')
+    if not analysis:
+        return jsonify({"error": "No audio analysis available (Spicetify only)"}), 404
+    
+    segments = analysis.get('segments', [])
+    duration = analysis.get('duration', 0)
+    
+    if not segments:
+        return jsonify({"error": "No segments in audio analysis"}), 404
+    
+    # Process waveform: average loudness per segment (RMS-like)
+    # Formula: (loudness_start + loudness_max) / 2, then convert dB to linear
+    waveform = []
+    max_amp = 0
+    
+    for seg in segments:
+        loud_start = max(seg.get('loudness_start', -60), -60)  # Floor at -60dB
+        loud_max = max(seg.get('loudness_max', -60), -60)
+        avg_db = (loud_start + loud_max) / 2
+        amp = pow(10, avg_db / 20)  # dB to linear amplitude
+        max_amp = max(max_amp, amp)
+        waveform.append({
+            'start': round(seg['start'], 3),
+            'amp': amp  # Will normalize after
+        })
+    
+    # Normalize waveform amplitudes to 0-1 range
+    if max_amp > 0:
+        for w in waveform:
+            w['amp'] = round(w['amp'] / max_amp, 3)
+    
+    return jsonify({
+        'waveform': waveform,
+        'duration': duration,
+        'segment_count': len(segments)
+    })
+
+
 # --- PWA Routes ---
 
 @app.route('/manifest.json')

@@ -1804,3 +1804,59 @@ body.soft-mode .background-overlay {
     font-weight: 600;
 }
 
+/* ========== WAVEFORM SEEKBAR ========== */
+.waveform-container {
+    position: relative;
+    width: clamp(300px, 60%, 500px);
+    height: 50px;  /* Taller than progress bar for waveform display */
+    text-align: center;
+    margin-bottom: 10px;
+    pointer-events: auto;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.waveform-container canvas {
+    width: 100%;
+    height: 40px;
+    display: block;
+    border-radius: 4px;
+}
+
+.waveform-container .progress-time {
+    margin-top: 4px;
+}
+
+/* ========== SPECTRUM VISUALIZER ========== */
+/* Full-width ambient visualizer behind content, centered around seekbar */
+.spectrum-container {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 60px;  /* Centered around the player UI area */
+    height: 200px;  /* Configurable height */
+    z-index: 1;  /* Behind content but above background */
+    pointer-events: none;  /* Don't block clicks */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.spectrum-container canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Hide spectrum when bottom nav is hidden - adjust position */
+body.hide-nav .spectrum-container {
+    bottom: 10px;
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .spectrum-container,
+body[data-minimal="true"] .waveform-container {
+    display: none !important;
+}
+

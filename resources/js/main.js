@@ -88,6 +88,10 @@ import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, upda
 // Latency (Level 3)
 import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay } from './modules/latency.js';
 
+// Waveform & Spectrum Visualizers (Level 2)
+import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './modules/waveform.js';
+import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -224,6 +228,10 @@ async function updateLoop() {
             // Reset word-sync state on track change (stops animation, clears logged flag)
             resetWordSyncState();
 
+            // Reset waveform and spectrum on track change
+            resetWaveform();
+            resetSpectrum();
+
             // Reset manual overrides on track change
             setManualVisualModeOverride(false);
             setManualStyleOverride(false);
@@ -293,6 +301,20 @@ async function updateLoop() {
         updateProgress(trackInfo);
         updateControlState(trackInfo);
 
+        // Update waveform seekbar (if enabled)
+        if (displayConfig.showWaveform) {
+            updateWaveform(trackInfo);
+        } else {
+            hideWaveform();
+        }
+
+        // Update spectrum visualizer (if enabled)
+        if (displayConfig.showSpectrum) {
+            updateSpectrum(trackInfo);
+        } else {
+            hideSpectrum();
+        }
+
         // Update lyrics
         if (data && data.lyrics && data.lyrics.length > 0) {
             if (areLyricsDifferent(lastLyrics, data.lyrics)) {
@@ -343,6 +365,10 @@ async function main() {
 
     // Initialize audio source module
     audioSource.init();
+
+    // Initialize waveform and spectrum visualizers
+    initWaveform();
+    initSpectrum();
 
     // Apply initial background
     updateBackground();

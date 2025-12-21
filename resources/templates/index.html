@@ -8,6 +8,11 @@
 <div id="background-layer" class="background-layer"></div>
 <div id="background-overlay" class="background-overlay"></div>
 
+<!-- Spectrum Visualizer (full-width behind content, centered around seekbar area) -->
+<div id="spectrum-container" class="spectrum-container" style="display: none;">
+    <canvas id="spectrum-canvas"></canvas>
+</div>
+
 <!-- Spotify Login Overlay (shown when authentication is needed) -->
 {% if spotify_needs_auth and spotify_auth_url %}
 <div id="spotify-login-overlay" class="spotify-login-overlay">
@@ -230,6 +235,8 @@
         <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
         <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
         <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
+        <label><input type="checkbox" id="opt-waveform"> Waveform Seekbar</label>
+        <label><input type="checkbox" id="opt-spectrum"> Spectrum Visualizer</label>
         <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
         <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
         <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
@@ -370,6 +377,14 @@
         </div>
         <div class="progress-time">
             <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+        </div>
+    </div>
+
+    <!-- Waveform Seekbar (replaces progress bar when enabled) -->
+    <div id="waveform-container" class="waveform-container" style="display: none;">
+        <canvas id="waveform-canvas"></canvas>
+        <div class="progress-time">
+            <span id="waveform-current-time">0:00</span> / <span id="waveform-total-time">0:00</span>
         </div>
     </div>
 

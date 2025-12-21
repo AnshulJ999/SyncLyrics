@@ -64,7 +64,9 @@ export let displayConfig = {
     useAlbumColors: false,
     artBackground: false,
     softAlbumArt: false,  // Soft album art background (medium blur, no scaling, balanced)
-    sharpAlbumArt: false  // Sharp album art background (no blur, no scaling, super sharp and clear)
+    sharpAlbumArt: false, // Sharp album art background (no blur, no scaling, super sharp and clear)
+    showWaveform: false,  // Waveform seekbar (mutually exclusive with showProgress)
+    showSpectrum: false   // Spectrum analyzer visualizer (full-width behind content)
 };
 
 // ========== VISUAL MODE STATE ==========

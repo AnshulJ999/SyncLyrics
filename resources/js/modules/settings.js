@@ -77,6 +77,17 @@ export function initializeDisplay() {
     if (params.has('showVisualModeToggle')) {
         displayConfig.showVisualModeToggle = params.get('showVisualModeToggle') === 'true';
     }
+    if (params.has('showWaveform')) {
+        displayConfig.showWaveform = params.get('showWaveform') === 'true';
+    }
+    if (params.has('showSpectrum')) {
+        displayConfig.showSpectrum = params.get('showSpectrum') === 'true';
+    }
+
+    // Enforce mutual exclusivity: Waveform <-> Progress (can't have both)
+    if (displayConfig.showWaveform) {
+        displayConfig.showProgress = false;
+    }
 
     // Word-sync toggle (enabled by default, can be disabled via URL)
     if (params.has('wordSync')) {
@@ -228,7 +239,9 @@ export function setupSettingsPanel() {
         'opt-sharp-art-bg': 'sharpAlbumArt',
         'opt-show-provider': 'showProvider',
         'opt-audio-source': 'showAudioSource',
-        'opt-visual-mode-toggle': 'showVisualModeToggle'
+        'opt-visual-mode-toggle': 'showVisualModeToggle',
+        'opt-waveform': 'showWaveform',
+        'opt-spectrum': 'showSpectrum'
     };
 
     // Initialize checkboxes
@@ -371,6 +384,31 @@ function handleCheckboxChange(id, checked) {
         }
     }
 
+    // Handle mutually exclusive waveform/progress bar options
+    if (id === 'opt-waveform') {
+        displayConfig.showWaveform = checked;
+        if (checked) {
+            // Waveform replaces standard progress bar
+            displayConfig.showProgress = false;
+            const progressCheckbox = document.getElementById('opt-progress');
+            if (progressCheckbox) progressCheckbox.checked = false;
+        }
+    }
+    if (id === 'opt-progress') {
+        displayConfig.showProgress = checked;
+        if (checked) {
+            // Standard progress bar replaces waveform
+            displayConfig.showWaveform = false;
+            const waveformCheckbox = document.getElementById('opt-waveform');
+            if (waveformCheckbox) waveformCheckbox.checked = false;
+        }
+    }
+
+    // Spectrum visualizer (independent setting)
+    if (id === 'opt-spectrum') {
+        displayConfig.showSpectrum = checked;
+    }
+
     applyDisplayConfig();
     applySoftMode();
     applySharpMode();
@@ -423,6 +461,10 @@ export function generateCurrentUrl() {
     } else if (displayConfig.artBackground) {
         params.set('artBackground', 'true');
     }
+
+    // Waveform and spectrum visualizer settings
+    if (displayConfig.showWaveform) params.set('showWaveform', 'true');
+    if (displayConfig.showSpectrum) params.set('showSpectrum', 'true');
 
     return params.toString() ? `${base}?${params.toString()}` : base;
 }
