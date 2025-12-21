@@ -15,6 +15,7 @@ import { seekToPosition } from './api.js';
 let waveformData = null;       // Cached waveform data from API
 let waveformDuration = 0;      // Track duration in seconds
 let waveformTrackId = null;    // Track ID to detect song changes
+let waveformSource = null;     // Source to detect source changes (Spotify -> MusicBee)
 let isCanvasInitialized = false;
 
 // ========== SEEK STATE ==========
@@ -22,7 +23,7 @@ let isDragging = false;        // True when user is dragging to scrub
 let seekTimeout = null;        // Debounce timer for seek
 let hoverPositionMs = null;    // Position at cursor in ms
 let previewPositionMs = null;  // Position to preview during drag
-const SEEK_DEBOUNCE_MS = 300;  // Trailing edge debounce delay
+const SEEK_DEBOUNCE_MS = 150;  // Trailing edge debounce delay (faster since drag prevents spam)
 
 // Tooltip element (created once)
 let seekTooltip = null;
@@ -119,11 +120,16 @@ export async function updateWaveform(trackInfo) {
     // Show/hide container based on config
     container.style.display = 'block';
 
-    // Check if track changed (need to re-fetch waveform)
+    // Check if track OR source changed (need to re-fetch waveform)
     const currentTrackId = trackInfo?.track_id;
-    if (currentTrackId && currentTrackId !== waveformTrackId) {
+    const currentSource = trackInfo?.source;
+    const trackChanged = currentTrackId && currentTrackId !== waveformTrackId;
+    const sourceChanged = currentSource && currentSource !== waveformSource;
+    
+    if (trackChanged || sourceChanged) {
         waveformTrackId = currentTrackId;
-        console.debug('[Waveform] Track changed, fetching new waveform data');
+        waveformSource = currentSource;
+        console.debug(`[Waveform] ${trackChanged ? 'Track' : 'Source'} changed, fetching new waveform data`);
         
         const data = await fetchWaveformData();
         if (data && data.waveform) {
@@ -149,10 +155,14 @@ export async function updateWaveform(trackInfo) {
         container.style.display = 'block';
         if (progressContainer) progressContainer.style.display = 'none';
         
-        const currentPosition = trackInfo.position || 0; // Position in seconds
-        renderWaveform(canvas, waveformData.waveform, currentPosition);
+        // IMPORTANT: Skip render if user is dragging (prevents flicker)
+        // The visual feedback is handled by updateVisualFeedback() during drag
+        if (!isDragging) {
+            const currentPosition = trackInfo.position || 0; // Position in seconds
+            renderWaveform(canvas, waveformData.waveform, currentPosition);
+        }
         
-        // Update waveform time display
+        // Update waveform time display (always, even during drag)
         const currentTimeEl = document.getElementById('waveform-current-time');
         const totalTimeEl = document.getElementById('waveform-total-time');
         if (currentTimeEl) {
@@ -331,12 +341,13 @@ export function hideWaveform() {
 }
 
 /**
- * Reset waveform state (e.g., when switching tracks)
+ * Reset waveform state (e.g., when switching tracks or sources)
  */
 export function resetWaveform() {
     waveformData = null;
     waveformDuration = 0;
     waveformTrackId = null;
+    waveformSource = null;
     
     const canvas = document.getElementById('waveform-canvas');
     if (canvas) {
