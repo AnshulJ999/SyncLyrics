@@ -433,6 +433,7 @@ async def get_audio_analysis():
     
     segments = analysis.get('segments', [])
     beats = analysis.get('beats', [])
+    sections = analysis.get('sections', [])  # For section-level energy scaling
     duration = analysis.get('duration', 0)
     
     if not segments:
@@ -473,7 +474,8 @@ async def get_audio_analysis():
     return jsonify({
         'waveform': waveform,
         'segments': spectrum_segments,
-        'beats': beats,  # Include beats for beat-reactive effects
+        'beats': beats,
+        'sections': sections,  # For section-level energy scaling
         'duration': duration,
         'segment_count': len(segments)
     })

@@ -84,9 +84,9 @@ function resizeCanvas(canvas) {
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
 
-    // Scale context to match
+    // FIX: Use setTransform instead of scale to prevent accumulation on resize
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 /**

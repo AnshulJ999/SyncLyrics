@@ -2,58 +2,70 @@
  * spectrum.js - Spectrum Analyzer Visualizer (60 FPS)
  * 
  * Renders a full-width spectrum visualizer behind content.
- * Uses pitch and timbre data from Spotify's audio analysis segments.
+ * Uses pitch, loudness, and beat data from Spotify's audio analysis.
  * Runs at 60 FPS using requestAnimationFrame with position estimation.
+ * 
+ * Features:
+ * - Beat-synced bar jumps (filtered by confidence)
+ * - Section-level energy scaling (quiet sections = smaller bars)
+ * - Self-calibrating per-track loudness range
+ * - Toggle between linear and true dB conversion
  * 
  * Level 2 - Imports: state
  */
 
 import { displayConfig } from './state.js';
 
-// ========== SPECTRUM CONFIGURATION ==========
+// ========== CONFIGURATION (All tunables at top) ==========
 const CONFIG = {
-    // Visual appearance
-    barCount: 12,                    // Number of frequency bars (matches pitches array)
+    // === Visual Appearance ===
+    barCount: 12,                    // Number of bars (matches 12 pitch classes)
     barGap: 6,                       // Gap between bars in pixels
     minBarHeight: 3,                 // Minimum bar height in pixels
     maxHeightPercent: 0.85,          // Max bar height as % of container
+    barAlpha: 0.45,                  // Bar opacity (0-1)
     
-    // Animation (tuned for 60 FPS)
-    smoothingFactor: 0.25,           // 0-1, lower = faster response
-    decayRate: 0.92,                 // How fast bars decay (higher = slower decay)
+    // === Animation ===
+    decayRate: 0.90,                 // How fast bars decay between beats (0.85=fast, 0.95=slow)
     
-    // Colors (more visible)
-    barColor: 'rgba(255, 255, 255, 0.35)',       // Base bar color
-    barColorBright: 'rgba(255, 255, 255, 0.55)', // Brighter on beats
-    gradientStart: 'rgba(255, 255, 255, 0.25)', // Gradient bottom
-    gradientEnd: 'rgba(255, 255, 255, 0.05)',   // Gradient top (fade out)
+    // === Beat Detection ===
+    beatConfidenceThreshold: 0.1,    // Ignore beats with confidence below this
     
-    // Beat pulse
-    beatPulseMultiplier: 0.6,        // How much beats boost the bars (0-1)
-    beatDecay: 0.88                   // How fast beat pulse decays
+    // === Energy Scaling ===
+    useLinearScaling: true,          // true = linear, false = true dB (Math.pow(10, db/20))
+    // No minimum energy clamp - quiet sections can be truly quiet
+    
+    // === Debug ===
+    logSectionChanges: false,
+    logBeatHits: false
 };
 
-// ========== SPECTRUM STATE ==========
+// ========== STATE ==========
 let spectrumData = null;           // Cached audio analysis data
 let spectrumDuration = 0;          // Track duration
 let spectrumTrackId = null;        // Track ID for change detection
-let currentBarHeights = null;      // Current animated bar heights (for smoothing)
+let currentBarHeights = null;      // Current animated bar heights
 let animationFrameId = null;       // Animation frame ID for cleanup
 let isSpectrumInitialized = false;
-let isAnimating = false;           // Is the animation loop running?
+let isAnimating = false;
 
-// Position estimation state
-let lastKnownPosition = 0;         // Last position from main loop (seconds)
-let lastPositionTime = 0;          // Timestamp when position was updated
-let isPlaying = true;              // Whether playback is active
+// Position estimation
+let lastKnownPosition = 0;
+let lastPositionTime = 0;
+let isPlaying = true;
 
-// Beat detection state
-let lastBeatIndex = -1;            // Last beat we crossed
-let beatJustHit = false;            // Flag: did we just cross a beat this frame?
+// Beat detection
+let lastBeatIndex = -1;
+let beatJustHit = false;
+let currentBeatConfidence = 0;
 
-// Current segment cache
-let currentSegmentIndex = 0;       // Index of current segment (for faster lookup)
-let targetPitches = null;          // Target pitch values (updated each segment)
+// Section/segment tracking
+let currentSegmentIndex = 0;
+let currentSectionIndex = 0;
+
+// Self-calibrating energy range (calculated per track)
+let trackMinLoudness = -60;        // Quietest section in this track
+let trackMaxLoudness = 0;          // Loudest section in this track
 
 /**
  * Fetch audio analysis data for spectrum visualization
@@ -83,13 +95,9 @@ export function initSpectrum() {
         return;
     }
 
-    // Initialize bar heights array
     currentBarHeights = new Array(CONFIG.barCount).fill(0);
-
-    // Set canvas size
     resizeSpectrumCanvas(canvas);
 
-    // Handle window resize
     window.addEventListener('resize', () => {
         resizeSpectrumCanvas(canvas);
     });
@@ -100,6 +108,7 @@ export function initSpectrum() {
 
 /**
  * Resize spectrum canvas to fit container
+ * Uses setTransform to avoid scaling accumulation bug
  */
 function resizeSpectrumCanvas(canvas) {
     const container = canvas.parentElement;
@@ -113,8 +122,9 @@ function resizeSpectrumCanvas(canvas) {
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
 
+    // FIX: Use setTransform instead of scale to prevent accumulation
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 /**
@@ -124,12 +134,8 @@ function getEstimatedPosition() {
     if (!isPlaying) {
         return lastKnownPosition;
     }
-    
     const elapsed = (performance.now() - lastPositionTime) / 1000;
-    const estimated = lastKnownPosition + elapsed;
-    
-    // Clamp to track duration
-    return Math.min(estimated, spectrumDuration);
+    return Math.min(lastKnownPosition + elapsed, spectrumDuration);
 }
 
 /**
@@ -153,19 +159,20 @@ function startAnimationLoop() {
             return;
         }
         
-        // Get estimated position
         const position = getEstimatedPosition();
         
-        // Check if we crossed a beat this frame
+        // Check beat crossing (sets beatJustHit flag)
         checkBeatCrossing(position);
         
-        // Get pitch data for current position
+        // Get pitch data and current segment
         const pitchData = getCurrentPitchData(position);
         
-        // Render
-        renderSpectrum(canvas, pitchData);
+        // Get section energy scale
+        const sectionEnergy = getSectionEnergy(position);
         
-        // Schedule next frame
+        // Render with energy scaling
+        renderSpectrum(canvas, pitchData, sectionEnergy);
+        
         animationFrameId = requestAnimationFrame(animate);
     }
     
@@ -184,8 +191,170 @@ function stopAnimationLoop() {
 }
 
 /**
- * Update spectrum with current track info (called from main loop at 10 FPS)
- * This syncs position and fetches data, not for rendering
+ * Calibrate energy range from this track's sections
+ * Called once when track data is loaded
+ */
+function calibrateEnergyRange() {
+    if (!spectrumData || !spectrumData.sections || spectrumData.sections.length === 0) {
+        trackMinLoudness = -60;
+        trackMaxLoudness = 0;
+        return;
+    }
+    
+    const loudnesses = spectrumData.sections.map(s => s.loudness);
+    trackMinLoudness = Math.min(...loudnesses);
+    trackMaxLoudness = Math.max(...loudnesses);
+    
+    console.debug(`[Spectrum] Track loudness range: ${trackMinLoudness.toFixed(1)}dB to ${trackMaxLoudness.toFixed(1)}dB`);
+}
+
+/**
+ * Get current section and calculate energy scale (0 to 1)
+ * Uses self-calibrated min/max from this track
+ */
+function getSectionEnergy(position) {
+    if (!spectrumData || !spectrumData.sections || spectrumData.sections.length === 0) {
+        return 1.0;  // No sections = full energy
+    }
+    
+    const sections = spectrumData.sections;
+    let currentSection = null;
+    
+    // Find current section
+    for (let i = 0; i < sections.length; i++) {
+        const section = sections[i];
+        const sectionEnd = section.start + section.duration;
+        
+        if (position >= section.start && position < sectionEnd) {
+            currentSection = section;
+            
+            // Log section changes
+            if (CONFIG.logSectionChanges && i !== currentSectionIndex) {
+                console.debug(`[Spectrum] Section changed: index ${i}, loudness ${section.loudness}dB`);
+            }
+            currentSectionIndex = i;
+            break;
+        }
+    }
+    
+    if (!currentSection) {
+        return 1.0;
+    }
+    
+    const sectionLoudness = currentSection.loudness;
+    
+    // Calculate energy based on scaling mode
+    if (CONFIG.useLinearScaling) {
+        // Linear normalization within track's range
+        const range = trackMaxLoudness - trackMinLoudness;
+        if (range <= 0) return 1.0;
+        return (sectionLoudness - trackMinLoudness) / range;
+    } else {
+        // True dB to linear conversion
+        // Clamp to reasonable range first
+        const clampedDb = Math.max(-60, Math.min(0, sectionLoudness));
+        return Math.pow(10, clampedDb / 20);
+    }
+}
+
+/**
+ * Check if we crossed a beat - uses confidence filtering
+ */
+function checkBeatCrossing(position) {
+    beatJustHit = false;
+    currentBeatConfidence = 0;
+    
+    if (!spectrumData || !spectrumData.beats || spectrumData.beats.length === 0) {
+        return;
+    }
+    
+    const beats = spectrumData.beats;
+    
+    // Binary search for current beat
+    let lo = 0, hi = beats.length - 1;
+    let beatIndex = -1;
+    
+    while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (beats[mid].start <= position) {
+            beatIndex = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    
+    // Check if we crossed to a new beat
+    if (beatIndex !== lastBeatIndex && beatIndex >= 0) {
+        const beat = beats[beatIndex];
+        currentBeatConfidence = beat.confidence || 0;
+        
+        // Only trigger if confidence meets threshold
+        if (currentBeatConfidence >= CONFIG.beatConfidenceThreshold) {
+            beatJustHit = true;
+            
+            if (CONFIG.logBeatHits) {
+                console.debug(`[Spectrum] Beat hit: index ${beatIndex}, confidence ${currentBeatConfidence.toFixed(2)}`);
+            }
+        }
+        
+        lastBeatIndex = beatIndex;
+    }
+}
+
+/**
+ * Get pitch data for current position
+ */
+function getCurrentPitchData(position) {
+    if (!spectrumData || !spectrumData.segments || spectrumData.segments.length === 0) {
+        return new Array(CONFIG.barCount).fill(0);
+    }
+
+    const segments = spectrumData.segments;
+    let currentSegment = null;
+    
+    // Check cached segment first
+    if (currentSegmentIndex < segments.length) {
+        const cached = segments[currentSegmentIndex];
+        if (position >= cached.start && position < cached.start + cached.duration) {
+            currentSegment = cached;
+        }
+    }
+    
+    // Search forward if not in cache
+    if (!currentSegment) {
+        for (let i = currentSegmentIndex; i < segments.length; i++) {
+            const seg = segments[i];
+            if (position >= seg.start && position < seg.start + seg.duration) {
+                currentSegment = seg;
+                currentSegmentIndex = i;
+                break;
+            }
+            if (seg.start > position) {
+                // Search backward
+                for (let j = currentSegmentIndex - 1; j >= 0; j--) {
+                    const seg2 = segments[j];
+                    if (position >= seg2.start && position < seg2.start + seg2.duration) {
+                        currentSegment = seg2;
+                        currentSegmentIndex = j;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    if (currentSegment && currentSegment.pitches && currentSegment.pitches.length === 12) {
+        return currentSegment.pitches;
+    }
+    
+    return new Array(CONFIG.barCount).fill(0);
+}
+
+/**
+ * Update spectrum with current track info (called from main loop at ~10 FPS)
+ * This syncs position and fetches data when track changes
  */
 export async function updateSpectrum(trackInfo) {
     if (!displayConfig.showSpectrum) {
@@ -204,8 +373,9 @@ export async function updateSpectrum(trackInfo) {
         spectrumTrackId = currentTrackId;
         console.debug('[Spectrum] Track changed, fetching new data');
         
-        // Reset segment search index
+        // Reset state
         currentSegmentIndex = 0;
+        currentSectionIndex = 0;
         lastBeatIndex = -1;
         beatJustHit = false;
         
@@ -213,14 +383,17 @@ export async function updateSpectrum(trackInfo) {
         if (data && data.segments) {
             spectrumData = data;
             spectrumDuration = data.duration || trackInfo.duration_ms / 1000;
-            console.debug(`[Spectrum] Loaded ${data.segments.length} segments, ${data.beats?.length || 0} beats`);
+            
+            // Self-calibrate energy range for this track
+            calibrateEnergyRange();
+            
+            console.debug(`[Spectrum] Loaded ${data.segments.length} segments, ${data.beats?.length || 0} beats, ${data.sections?.length || 0} sections`);
         } else {
             spectrumData = null;
             spectrumDuration = 0;
         }
     }
 
-    // Initialize if needed
     if (!isSpectrumInitialized) {
         initSpectrum();
     }
@@ -237,114 +410,13 @@ export async function updateSpectrum(trackInfo) {
 }
 
 /**
- * Check if we crossed a beat - sets beatJustHit flag
- */
-function checkBeatCrossing(position) {
-    // Reset flag each frame
-    beatJustHit = false;
-    
-    if (!spectrumData || !spectrumData.beats || spectrumData.beats.length === 0) {
-        return;
-    }
-    
-    const beats = spectrumData.beats;
-    
-    // Binary search for current beat
-    let lo = 0, hi = beats.length - 1;
-    let currentBeatIndex = -1;
-    
-    while (lo <= hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        if (beats[mid].start <= position) {
-            currentBeatIndex = mid;
-            lo = mid + 1;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    
-    // If we crossed a new beat, set the flag!
-    if (currentBeatIndex !== lastBeatIndex && currentBeatIndex >= 0) {
-        beatJustHit = true;
-        lastBeatIndex = currentBeatIndex;
-    }
-}
-
-/**
- * Get pitch data for the current playback position
- * Uses binary search for efficiency
- */
-function getCurrentPitchData(position) {
-    if (!spectrumData || !spectrumData.segments || spectrumData.segments.length === 0) {
-        return new Array(CONFIG.barCount).fill(0);
-    }
-
-    const segments = spectrumData.segments;
-    
-    // Start search from last known segment (optimization)
-    let currentSegment = null;
-    
-    // Check if position is still in cached segment
-    if (currentSegmentIndex < segments.length) {
-        const cached = segments[currentSegmentIndex];
-        if (position >= cached.start && position < cached.start + cached.duration) {
-            currentSegment = cached;
-        }
-    }
-    
-    // If not in cached segment, search forward (most common case)
-    if (!currentSegment) {
-        for (let i = currentSegmentIndex; i < segments.length; i++) {
-            const seg = segments[i];
-            if (position >= seg.start && position < seg.start + seg.duration) {
-                currentSegment = seg;
-                currentSegmentIndex = i;
-                break;
-            }
-            if (seg.start > position) {
-                // Position is before this segment, search backward
-                for (let j = currentSegmentIndex - 1; j >= 0; j--) {
-                    const seg2 = segments[j];
-                    if (position >= seg2.start && position < seg2.start + seg2.duration) {
-                        currentSegment = seg2;
-                        currentSegmentIndex = j;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    if (currentSegment && currentSegment.pitches && currentSegment.pitches.length === 12) {
-        // Store target pitches for rendering
-        targetPitches = currentSegment.pitches;
-        return currentSegment.pitches;
-    }
-    
-    return new Array(CONFIG.barCount).fill(0);
-}
-
-/**
- * Get brightness factor from timbre (0-1)
- * Uses timbre[1] which represents brightness/spectral centroid
- */
-function getBrightnessFactor() {
-    if (!currentTimbre || currentTimbre.length < 2) {
-        return 0.5;
-    }
-    
-    // Timbre[1] typically ranges from -100 to +150 (roughly)
-    // Normalize to 0-1 range
-    const brightness = currentTimbre[1];
-    const normalized = (brightness + 100) / 250;
-    return Math.max(0, Math.min(1, normalized));
-}
-
-/**
  * Render the spectrum visualization
+ * 
+ * @param {HTMLCanvasElement} canvas
+ * @param {Array} pitchData - 12 pitch values (0-1)
+ * @param {number} sectionEnergy - Section energy scale (0-1)
  */
-function renderSpectrum(canvas, pitchData) {
+function renderSpectrum(canvas, pitchData, sectionEnergy) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.width / dpr;
@@ -356,26 +428,28 @@ function renderSpectrum(canvas, pitchData) {
 
     const totalBarSpace = width - (CONFIG.barGap * (CONFIG.barCount + 1));
     const barWidth = totalBarSpace / CONFIG.barCount;
-    const maxBarHeight = height * CONFIG.maxHeightPercent;
+    
+    // Apply section energy to max height (no minimum clamp)
+    const maxBarHeight = height * CONFIG.maxHeightPercent * sectionEnergy;
 
     if (!currentBarHeights) {
         currentBarHeights = new Array(CONFIG.barCount).fill(0);
     }
 
-    // Fixed alpha
-    const alpha = 0.45;
+    const alpha = CONFIG.barAlpha;
 
     for (let i = 0; i < CONFIG.barCount; i++) {
         const targetHeight = pitchData[i] * maxBarHeight;
         
         if (beatJustHit) {
-            // BEAT HIT: Jump instantly to target height
+            // BEAT: Jump instantly to target
             currentBarHeights[i] = targetHeight;
         } else {
-            // BETWEEN BEATS: Decay smoothly toward minimum
+            // BETWEEN BEATS: Decay smoothly
             currentBarHeights[i] = currentBarHeights[i] * CONFIG.decayRate;
         }
         
+        // Apply minimum height
         currentBarHeights[i] = Math.max(CONFIG.minBarHeight, currentBarHeights[i]);
     }
 
@@ -385,7 +459,7 @@ function renderSpectrum(canvas, pitchData) {
         const x = CONFIG.barGap + i * (barWidth + CONFIG.barGap);
         const barHeight = currentBarHeights[i];
 
-        // Create gradient with dynamic alpha based on beat and brightness
+        // Gradient from bottom (solid) to top (fade)
         const gradient = ctx.createLinearGradient(x, bottomY, x, bottomY - barHeight);
         gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
         gradient.addColorStop(1, `rgba(255, 255, 255, ${alpha * 0.15})`);
@@ -423,7 +497,6 @@ export function hideSpectrum() {
     if (container) {
         container.style.display = 'none';
     }
-    
     stopAnimationLoop();
 }
 
@@ -436,12 +509,15 @@ export function resetSpectrum() {
     spectrumTrackId = null;
     currentBarHeights = new Array(CONFIG.barCount).fill(0);
     currentSegmentIndex = 0;
-    targetPitches = null;
+    currentSectionIndex = 0;
     
     lastBeatIndex = -1;
     beatJustHit = false;
     lastKnownPosition = 0;
     lastPositionTime = 0;
+    
+    trackMinLoudness = -60;
+    trackMaxLoudness = 0;
     
     stopAnimationLoop();
     
