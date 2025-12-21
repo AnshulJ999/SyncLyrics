@@ -477,7 +477,8 @@ async def get_audio_analysis():
         'beats': beats,
         'sections': sections,  # For section-level energy scaling
         'duration': duration,
-        'segment_count': len(segments)
+        'segment_count': len(segments),
+        'analysis_track_id': _spicetify_state.get('audio_analysis_track_id')  # For validation
     })
 
 

@@ -32,6 +32,7 @@ _spicetify_state: Dict[str, Any] = {
     'track_uri': None,
     'track': None,              # {name, artist, artists, album, album_art_url}
     'audio_analysis': None,     # For future visualizer features
+    'audio_analysis_track_id': None,  # Normalized track ID for validation
     'colors': None,             # May be null (Spotify blocks API)
 }
 
@@ -267,6 +268,16 @@ async def _handle_track_data(data: dict):
         _spicetify_state['audio_analysis'] = data.get('audio_analysis')
         _spicetify_state['colors'] = data.get('colors')
         _spicetify_state['track_uri'] = data.get('track_uri')
+        
+        # Store normalized track ID for audio analysis validation
+        # This allows frontend to verify analysis matches current track
+        track = data.get('track', {})
+        if track and data.get('audio_analysis'):
+            analysis_track_id = _normalize_track_id(
+                track.get('artist', ''),
+                track.get('name', '')
+            )
+            _spicetify_state['audio_analysis_track_id'] = analysis_track_id
         
         # Also update last_update timestamp for freshness
         _spicetify_state['last_update'] = time.time() * 1000

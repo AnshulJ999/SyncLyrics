@@ -133,8 +133,17 @@ export async function updateWaveform(trackInfo) {
         
         const data = await fetchWaveformData();
         if (data && data.waveform) {
-            waveformData = data;
-            waveformDuration = data.duration || trackInfo.duration_ms / 1000;
+            // CRITICAL: Validate analysis belongs to current track
+            // This prevents stale Spotify waveform from showing over MusicBee songs
+            // The analysis_track_id is a normalized "artist_title" string
+            if (data.analysis_track_id && currentTrackId && data.analysis_track_id !== currentTrackId) {
+                console.debug(`[Waveform] Analysis track mismatch (${data.analysis_track_id} vs ${currentTrackId}), ignoring`);
+                waveformData = null;
+                waveformDuration = 0;
+            } else {
+                waveformData = data;
+                waveformDuration = data.duration || trackInfo.duration_ms / 1000;
+            }
         } else {
             waveformData = null;
             waveformDuration = 0;
