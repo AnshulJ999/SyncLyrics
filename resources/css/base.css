@@ -1808,9 +1808,9 @@ body.soft-mode .background-overlay {
 .waveform-container {
     position: relative;
     width: clamp(300px, 60%, 500px);
-    height: 50px;  /* Taller than progress bar for waveform display */
+    height: 60px;  /* Increased height for canvas + time display */
     text-align: center;
-    margin-bottom: 20px;  /* More space above controls */
+    margin-bottom: 30px;  /* Ensure time display doesn't overlap controls */
     pointer-events: auto;
     margin-left: auto;
     margin-right: auto;
@@ -1824,7 +1824,8 @@ body.soft-mode .background-overlay {
 }
 
 .waveform-container .progress-time {
-    margin-top: 4px;
+    margin-top: 6px;
+    font-size: 0.85rem;
 }
 
 /* ========== SPECTRUM VISUALIZER ========== */

@@ -41,6 +41,10 @@ let currentBarHeights = null;      // Current animated bar heights (for smoothin
 let animationFrameId = null;       // Animation frame ID for cleanup
 let isSpectrumInitialized = false;
 
+// Beat detection state
+let lastBeatIndex = -1;            // Last beat we crossed
+let beatPulse = 0;                 // Current beat pulse intensity (0-1)
+
 /**
  * Fetch audio analysis data for spectrum visualization
  * 
@@ -161,6 +165,40 @@ export async function updateSpectrum(trackInfo) {
 }
 
 /**
+ * Check if we crossed a beat and update beat pulse
+ * 
+ * @param {number} position - Current position in seconds
+ */
+function updateBeatPulse(position) {
+    // Decay the pulse quickly
+    beatPulse *= 0.85;
+    
+    if (!spectrumData || !spectrumData.beats || spectrumData.beats.length === 0) {
+        return;
+    }
+    
+    // Find current beat index
+    const beats = spectrumData.beats;
+    let currentBeatIndex = -1;
+    
+    for (let i = 0; i < beats.length; i++) {
+        if (position >= beats[i].start) {
+            currentBeatIndex = i;
+        } else {
+            break;
+        }
+    }
+    
+    // If we crossed a new beat, pulse!
+    if (currentBeatIndex !== lastBeatIndex && currentBeatIndex >= 0) {
+        const beat = beats[currentBeatIndex];
+        // Pulse intensity based on beat confidence
+        beatPulse = 0.3 + (beat.confidence || 0.5) * 0.7;
+        lastBeatIndex = currentBeatIndex;
+    }
+}
+
+/**
  * Get pitch data for the current playback position
  * Uses REAL pitch data from Spotify's audio analysis segments
  * 
@@ -168,6 +206,9 @@ export async function updateSpectrum(trackInfo) {
  * @returns {Array} 12-element array of pitch values (0-1)
  */
 function getCurrentPitchData(position) {
+    // Update beat pulse
+    updateBeatPulse(position);
+    
     // Use real segments with pitch data
     if (!spectrumData || !spectrumData.segments || spectrumData.segments.length === 0) {
         return new Array(CONFIG.barCount).fill(0);
@@ -187,10 +228,11 @@ function getCurrentPitchData(position) {
         }
     }
 
-    // If we found a segment with real pitch data, return it
+    // If we found a segment with real pitch data, return it with beat scaling
     if (currentSegment && currentSegment.pitches && currentSegment.pitches.length === 12) {
-        // Return the real 12 pitch classes (C, C#, D, D#, E, F, F#, G, G#, A, A#, B)
-        return currentSegment.pitches;
+        // Scale pitches by beat pulse (adds energy on beats)
+        const scaleFactor = 1 + beatPulse * 0.5;  // Up to 1.5x on strong beats
+        return currentSegment.pitches.map(p => Math.min(1, p * scaleFactor));
     }
     
     // Fallback: no segment found for this position
@@ -311,6 +353,10 @@ export function resetSpectrum() {
     spectrumDuration = 0;
     spectrumTrackId = null;
     currentBarHeights = new Array(CONFIG.barCount).fill(0);
+    
+    // Reset beat tracking
+    lastBeatIndex = -1;
+    beatPulse = 0;
     
     const canvas = document.getElementById('spectrum-canvas');
     if (canvas) {
