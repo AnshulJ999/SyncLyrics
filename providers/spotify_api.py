@@ -987,6 +987,32 @@ class SpotifyAPI:
             logger.error(f"Failed to go to previous track: {e}")
             return False
     
+    async def seek_to_position(self, position_ms: int) -> bool:
+        """Seek to position in current playback. Tracks API call for statistics.
+        
+        Args:
+            position_ms: Position to seek to in milliseconds
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            # Track this API call (endpoint-specific, total counted by CountingSession)
+            self.request_stats['api_calls']['playback_control'] += 1
+            
+            logger.info(f"Seeking to position {position_ms}ms")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: self.sp.seek_track(position_ms))
+            return True
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to seek: {e}")
+            return False
+    
     async def get_artist_images(self, artist_id: str) -> list:
         """
         Fetch artist images from Spotify API.

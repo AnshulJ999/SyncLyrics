@@ -1711,6 +1711,57 @@ async def previous_track():
     await client.previous_track()
     return jsonify({"status": "success", "message": "Previous"})
 
+@app.route("/api/playback/seek", methods=['POST'])
+async def seek_playback():
+    """Seek to position - routes to Windows or Spotify based on current source."""
+    data = await request.get_json()
+    position_ms = data.get('position_ms')
+    
+    if position_ms is None:
+        return jsonify({"error": "position_ms required"}), 400
+    
+    # Ensure position_ms is an integer
+    try:
+        position_ms = int(position_ms)
+    except (ValueError, TypeError):
+        return jsonify({"error": "position_ms must be a number"}), 400
+    
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    # Debug logging for routing decisions
+    logger.debug(f"Seek to {position_ms}ms - source: {source}")
+    
+    # Windows source uses Windows playback controls
+    if source == 'windows_media':
+        from system_utils.windows import windows_seek
+        success = await windows_seek(position_ms)
+        if success:
+            return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Windows)"})
+        else:
+            return jsonify({"error": "Windows seek failed"}), 500
+    
+    # HYBRID MODE + SPICETIFY: Windows SMTC first (fast, no rate limits), Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
+        from system_utils.windows import windows_seek
+        success = await windows_seek(position_ms)
+        if success:
+            return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Windows)"})
+        
+        # Windows failed - fall back to Spotify API
+        logger.debug("Windows seek failed for hybrid, falling back to Spotify API")
+        # Fall through to Spotify logic below
+    
+    # Spotify source (and hybrid fallback) uses Spotify API
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    success = await client.seek_to_position(position_ms)
+    if success:
+        return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Spotify)"})
+    return jsonify({"error": "Seek failed"}), 500
+
 @app.route("/api/artist/images", methods=['GET'])
 async def get_artist_images():
     """

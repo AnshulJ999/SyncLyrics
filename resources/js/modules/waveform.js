@@ -9,12 +9,23 @@
 
 import { displayConfig } from './state.js';
 import { formatTime } from './utils.js';
+import { seekToPosition } from './api.js';
 
 // ========== WAVEFORM STATE ==========
 let waveformData = null;       // Cached waveform data from API
 let waveformDuration = 0;      // Track duration in seconds
 let waveformTrackId = null;    // Track ID to detect song changes
 let isCanvasInitialized = false;
+
+// ========== SEEK STATE ==========
+let isDragging = false;        // True when user is dragging to scrub
+let seekTimeout = null;        // Debounce timer for seek
+let hoverPositionMs = null;    // Position at cursor in ms
+let previewPositionMs = null;  // Position to preview during drag
+const SEEK_DEBOUNCE_MS = 300;  // Trailing edge debounce delay
+
+// Tooltip element (created once)
+let seekTooltip = null;
 
 /**
  * Fetch waveform data from the backend API
@@ -58,6 +69,9 @@ export function initWaveform() {
             renderWaveform(canvas, waveformData.waveform, 0); // Re-render on resize
         }
     });
+
+    // Initialize seek interaction (click/drag to seek)
+    initSeekInteraction(canvas);
 
     isCanvasInitialized = true;
     console.debug('[Waveform] Canvas initialized');
@@ -330,4 +344,139 @@ export function resetWaveform() {
         const dpr = window.devicePixelRatio || 1;
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     }
+}
+
+// ========== SEEK INTERACTION ==========
+
+/**
+ * Initialize seek interaction on the waveform canvas
+ * Supports click-to-seek and drag-to-scrub with debouncing
+ * 
+ * @param {HTMLCanvasElement} canvas - The waveform canvas element
+ */
+function initSeekInteraction(canvas) {
+    // Create tooltip element if it doesn't exist
+    if (!seekTooltip) {
+        seekTooltip = document.createElement('div');
+        seekTooltip.className = 'seek-tooltip';
+        seekTooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            pointer-events: none;
+            z-index: 10000;
+            display: none;
+            transform: translateX(-50%);
+        `;
+        document.body.appendChild(seekTooltip);
+    }
+    
+    // Set cursor to pointer
+    canvas.style.cursor = 'pointer';
+    
+    // Calculate seek position from mouse event
+    const calculateSeekPosition = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        return percent * waveformDuration * 1000; // Return in ms
+    };
+    
+    // Mouse down - start drag
+    canvas.addEventListener('mousedown', (e) => {
+        if (!waveformDuration) return;
+        isDragging = true;
+        previewPositionMs = calculateSeekPosition(e);
+        updateVisualFeedback();
+    });
+    
+    // Mouse move - update tooltip and preview
+    canvas.addEventListener('mousemove', (e) => {
+        if (!waveformDuration) return;
+        
+        hoverPositionMs = calculateSeekPosition(e);
+        
+        // Show tooltip
+        const timeStr = formatTime(hoverPositionMs / 1000);
+        seekTooltip.textContent = timeStr;
+        seekTooltip.style.display = 'block';
+        seekTooltip.style.left = `${e.clientX}px`;
+        seekTooltip.style.top = `${e.clientY - 30}px`;
+        
+        // Update visual preview if dragging
+        if (isDragging) {
+            previewPositionMs = hoverPositionMs;
+            updateVisualFeedback();
+        }
+    });
+    
+    // Mouse up - perform seek
+    canvas.addEventListener('mouseup', (e) => {
+        if (!waveformDuration || !isDragging) return;
+        
+        const finalPositionMs = calculateSeekPosition(e);
+        debouncedSeek(finalPositionMs);
+        
+        isDragging = false;
+        previewPositionMs = null;
+    });
+    
+    // Mouse leave - hide tooltip, cancel drag
+    canvas.addEventListener('mouseleave', () => {
+        seekTooltip.style.display = 'none';
+        isDragging = false;
+        previewPositionMs = null;
+    });
+    
+    // Click handler for simple click-to-seek (fallback)
+    canvas.addEventListener('click', (e) => {
+        if (!waveformDuration) return;
+        
+        const positionMs = calculateSeekPosition(e);
+        debouncedSeek(positionMs);
+    });
+}
+
+/**
+ * Debounced seek - only sends API call after user stops interacting
+ * Uses trailing edge: waits SEEK_DEBOUNCE_MS after last call before executing
+ * 
+ * @param {number} positionMs - Position to seek to in milliseconds
+ */
+function debouncedSeek(positionMs) {
+    // Clear any pending seek
+    if (seekTimeout) {
+        clearTimeout(seekTimeout);
+    }
+    
+    // Set new debounce timer (trailing edge)
+    seekTimeout = setTimeout(async () => {
+        console.log(`[Waveform] Seeking to ${formatTime(positionMs / 1000)} (${positionMs}ms)`);
+        
+        try {
+            const result = await seekToPosition(positionMs);
+            if (result.error) {
+                console.error('[Waveform] Seek failed:', result.error);
+            }
+        } catch (error) {
+            console.error('[Waveform] Seek error:', error);
+        }
+    }, SEEK_DEBOUNCE_MS);
+}
+
+/**
+ * Update visual feedback during drag (preview seek position)
+ * Re-renders waveform with the preview position instead of actual position
+ */
+function updateVisualFeedback() {
+    if (previewPositionMs === null || !waveformData || !waveformData.waveform) return;
+    
+    const canvas = document.getElementById('waveform-canvas');
+    if (!canvas) return;
+    
+    // Re-render with preview position
+    renderWaveform(canvas, waveformData.waveform, previewPositionMs / 1000);
 }

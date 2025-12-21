@@ -489,6 +489,16 @@ export async function playbackCommand(action) {
     return apiFetch(`/api/playback/${action}`, { method: 'POST' });
 }
 
+/**
+ * Seek to position in current playback
+ * 
+ * @param {number} positionMs - Position in milliseconds
+ * @returns {Promise<Object>} Result
+ */
+export async function seekToPosition(positionMs) {
+    return postJson('/api/playback/seek', { position_ms: positionMs });
+}
+
 // ========== QUEUE ==========
 
 /**

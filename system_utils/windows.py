@@ -158,28 +158,26 @@ async def windows_previous() -> bool:
             logger.warning(f"Windows previous failed: {e}")
     return False
 
-
-# DISABLED: Seek functionality - backend ready, frontend not implemented yet
-# async def windows_seek(position_ms: int) -> bool:
-#     """Seek to position in current Windows media session.
-#     
-#     Args:
-#         position_ms: Position in milliseconds
-#         
-#     Returns:
-#         True if successful, False otherwise
-#     """
-#     session = await _get_current_session()
-#     if session:
-#         try:
-#             # Windows uses 100-nanosecond units (10,000 per millisecond)
-#             position_100ns = position_ms * 10000
-#             await session.try_change_playback_position_async(position_100ns)
-#             logger.debug(f"Windows playback: seek to {position_ms}ms")
-#             return True
-#         except Exception as e:
-#             logger.warning(f"Windows seek failed: {e}")
-#     return False
+async def windows_seek(position_ms: int) -> bool:
+    """Seek to position in current Windows media session.
+    
+    Args:
+        position_ms: Position in milliseconds
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    session = await _get_current_session()
+    if session:
+        try:
+            # Windows uses 100-nanosecond units (10,000 per millisecond)
+            position_100ns = position_ms * 10000
+            await session.try_change_playback_position_async(position_100ns)
+            logger.debug(f"Windows playback: seek to {position_ms}ms")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows seek failed: {e}")
+    return False
 
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:

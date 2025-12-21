@@ -30,8 +30,33 @@ import {
     getCurrentTrack,
     fetchQueue,
     checkLikedStatus as apiCheckLikedStatus,
-    toggleLikeStatus
+    toggleLikeStatus,
+    seekToPosition
 } from './api.js';
+
+// ========== SEEK DEBOUNCING ==========
+let seekTimeout = null;
+const SEEK_DEBOUNCE_MS = 300;
+
+/**
+ * Debounced seek - only sends API call after user stops interacting
+ * 
+ * @param {number} positionMs - Position to seek to in milliseconds
+ */
+function debouncedSeek(positionMs) {
+    if (seekTimeout) clearTimeout(seekTimeout);
+    
+    seekTimeout = setTimeout(async () => {
+        try {
+            const result = await seekToPosition(positionMs);
+            if (result.error) {
+                showToast('Seek failed', 'error');
+            }
+        } catch (error) {
+            console.error('Seek error:', error);
+        }
+    }, SEEK_DEBOUNCE_MS);
+}
 
 // ========== PLAYBACK CONTROLS ==========
 
@@ -170,6 +195,30 @@ export function updateProgress(trackInfo) {
 
     if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
     if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+}
+
+/**
+ * Attach seek handler to progress bar
+ * Enables click-to-seek on the regular progress bar
+ */
+export function attachProgressBarSeek() {
+    const progressBar = document.getElementById('progress-bar');
+    if (!progressBar) return;
+    
+    // Make it clickable
+    progressBar.style.cursor = 'pointer';
+    
+    progressBar.addEventListener('click', (e) => {
+        const rect = progressBar.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        
+        // Need duration from lastTrackInfo
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        const positionMs = Math.floor(percent * duration);
+        debouncedSeek(positionMs);
+    });
 }
 
 // ========== TRACK INFO ==========

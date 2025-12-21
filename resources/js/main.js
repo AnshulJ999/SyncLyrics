@@ -58,7 +58,8 @@ import {
     fetchAndRenderQueue,
     checkLikedStatus,
     toggleLike,
-    setupTouchControls
+    setupTouchControls,
+    attachProgressBarSeek
 } from './modules/controls.js';
 
 // Background (Level 2)
@@ -373,6 +374,7 @@ async function main() {
 
     // Setup UI components
     attachControlHandlers(enterVisualMode, exitVisualMode);
+    attachProgressBarSeek();  // Enable click-to-seek on progress bar
     setupProviderUI();
     setupQueueInteractions();
     setupTouchControls();
