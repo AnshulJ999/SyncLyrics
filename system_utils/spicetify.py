@@ -278,6 +278,9 @@ async def _handle_track_data(data: dict):
                 track.get('name', '')
             )
             _spicetify_state['audio_analysis_track_id'] = analysis_track_id
+        else:
+            # Clear stale track ID if no analysis provided
+            _spicetify_state['audio_analysis_track_id'] = None
         
         # Also update last_update timestamp for freshness
         _spicetify_state['last_update'] = time.time() * 1000
