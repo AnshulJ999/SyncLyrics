@@ -42,7 +42,7 @@
     "lyrics.display.idle_wait_time": 3.0,
     "lyrics.display.latency_compensation": -0.1,
     "lyrics.display.musixmatch_word_sync_offset": -0.4,
-    "lyrics.display.netease_word_sync_offset": -0.4,
+    "lyrics.display.netease_word_sync_offset": -0.3,
     "lyrics.display.smart_race_timeout": 4.0,
     "lyrics.display.spotify_latency_compensation": -0.5,
     "lyrics.display.spicetify_latency_compensation": 0.0,
