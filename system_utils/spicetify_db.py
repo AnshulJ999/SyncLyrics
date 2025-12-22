@@ -197,6 +197,7 @@ async def save_to_db(
         elif existing_has_data:
             # Preserve existing good data (don't overwrite with empty)
             data["audio_analysis"] = existing["audio_analysis"]
+            logger.info(f"Preserved existing audio analysis for: {artist} - {title} (new data was empty)")
         elif audio_analysis is not None:
             # Both are empty, use new (for consistency)
             data["audio_analysis"] = audio_analysis

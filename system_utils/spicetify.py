@@ -300,11 +300,11 @@ async def _handle_track_data(data: dict):
     has_colors = bool(data.get('colors'))
     
     if has_analysis:
-        # INFO level for tracks with audio analysis (important)
+        # INFO level for tracks with audio analysis (saved)
         logger.info(f"Spicetify track data: {artist} - {title} (analysis: ✓, colors: {'✓' if has_colors else '✗'})")
     else:
-        # DEBUG for tracks without analysis (less important)
-        logger.debug(f"Spicetify track: {artist} - {title} (no audio analysis)")
+        # INFO level for skipped tracks so user knows
+        logger.info(f"Spicetify track: {artist} - {title} (skipped - no audio analysis from Spotify)")
     
     # Save to database (background, non-blocking)
     # This caches audio_analysis for waveform/spectrum visualizers
