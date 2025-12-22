@@ -439,11 +439,13 @@ async def get_audio_analysis():
     analysis = None
     analysis_track_id = None
     
-    # 1. Try live Spicetify state first (ONLY if Spicetify data is fresh)
+    # 1. Try live Spicetify state first (ONLY if Spicetify data is fresh AND has actual data)
     # If Spicetify is stale, the old data in memory is for a different track
     if is_spicetify_fresh():
-        analysis = _spicetify_state.get('audio_analysis')
-        if analysis:
+        live_analysis = _spicetify_state.get('audio_analysis')
+        # Check if it has actual segment data (not just empty arrays)
+        if live_analysis and live_analysis.get('segments'):
+            analysis = live_analysis
             # Use the track ID from Spicetify state
             analysis_track_id = _spicetify_state.get('audio_analysis_track_id')
             # Get track info for logging
