@@ -62,6 +62,7 @@
     // Shared state (not per-connection)
     let lastPositionSend = 0;
     let currentTrackUri = null;
+    let lastReportedPosition = 0;  // For seek detection while paused
     
     // Caches (cleared on song change)
     let audioDataCache = null;
@@ -344,8 +345,18 @@
         const now = Date.now();
         if (now - lastPositionSend >= CONFIG.POSITION_THROTTLE_MS) {
             lastPositionSend = now;
+            lastReportedPosition = Spicetify.Player.getProgress();  // Track for seek detection
             sendPositionUpdate('progress');
         }
+    }
+    
+    /**
+     * Check if position jumped significantly (seek detection while paused)
+     * Returns true if position changed by more than 1 second since last report
+     */
+    function hasPositionJumped() {
+        const currentPos = Spicetify.Player.getProgress();
+        return Math.abs(currentPos - lastReportedPosition) > 1000;  // >1 second = seek
     }
 
     // ======== TRACK DATA (Audio Analysis + Colors) ========
@@ -619,8 +630,9 @@
         
         // FALLBACK 1: setInterval (throttled when minimized, but still helps)
         // Some Spicetify versions don't fire onprogress reliably
+        // Also detects seeks while paused (position jump > 1 second)
         fallbackIntervalId = setInterval(() => {
-            if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
+            if (isAnyConnected() && (Spicetify?.Player?.isPlaying() || hasPositionJumped())) {
                 sendThrottledPositionUpdate();
             }
         }, 500);  // Every 500ms as fallback
@@ -653,8 +665,8 @@
             
             heartbeatWorker.onmessage = (e) => {
                 if (e.data?.type === 'tick') {
-                    // Worker tick received - send position if connected and playing
-                    if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
+                    // Worker tick received - send position if connected and playing (or seek detected)
+                    if (isAnyConnected() && (Spicetify?.Player?.isPlaying() || hasPositionJumped())) {
                         sendThrottledPositionUpdate();
                     }
                 }
@@ -678,8 +690,8 @@
             messageChannel = new MessageChannel();
             
             messageChannel.port1.onmessage = () => {
-                // Send position if connected and playing
-                if (isAnyConnected() && Spicetify?.Player?.isPlaying()) {
+                // Send position if connected and playing (or seek detected while paused)
+                if (isAnyConnected() && (Spicetify?.Player?.isPlaying() || hasPositionJumped())) {
                     sendThrottledPositionUpdate();
                 }
                 
