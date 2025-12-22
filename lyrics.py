@@ -1652,6 +1652,10 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
         # Default -0.5s means lyrics appear 500ms later to compensate for API polling latency
         # Users on HAOS or with fast connections may want to adjust this
         adaptive_delta = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
+    elif source == "spicetify":
+        # Spicetify mode: Use configurable spicetify_latency_compensation
+        # Default 0.0s since Spicetify provides real-time position via WebSocket (like Windows SMTC)
+        adaptive_delta = LYRICS.get("display", {}).get("spicetify_latency_compensation", 0.0)
     elif source == "audio_recognition":
         # Audio recognition: Use configurable audio_recognition_latency_compensation
         # Positive = lyrics earlier, Negative = lyrics later

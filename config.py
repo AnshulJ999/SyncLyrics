@@ -141,6 +141,7 @@ LYRICS = {
         "latency_compensation": conf("lyrics.display.latency_compensation", 0.0),
         "spotify_latency_compensation": conf("lyrics.display.spotify_latency_compensation", -0.5),
         "audio_recognition_latency_compensation": conf("lyrics.display.audio_recognition_latency_compensation", 0.0),
+        "spicetify_latency_compensation": conf("lyrics.display.spicetify_latency_compensation", 0.0),
         "word_sync_latency_compensation": conf("lyrics.display.word_sync_latency_compensation", 0.0),
         "musixmatch_word_sync_offset": conf("lyrics.display.musixmatch_word_sync_offset", 0.0),
         "netease_word_sync_offset": conf("lyrics.display.netease_word_sync_offset", 0.0),

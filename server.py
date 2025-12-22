@@ -326,6 +326,9 @@ async def current_track() -> dict:
             if source == "spotify":
                 # Spotify-only mode (e.g., HAOS without Windows)
                 latency_comp = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
+            elif source == "spicetify":
+                # Spicetify mode (Spotify Desktop via WebSocket)
+                latency_comp = LYRICS.get("display", {}).get("spicetify_latency_compensation", 0.0)
             elif source == "audio_recognition":
                 # Audio recognition mode
                 latency_comp = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
