@@ -186,11 +186,20 @@ async def save_to_db(
             "last_updated": now_iso,
         }
         
-        # Merge audio analysis (preserve existing if new is None)
-        if audio_analysis is not None:
+        # Merge audio analysis (preserve existing if new has no actual data)
+        # Check for actual segments, not just a dict with empty arrays
+        new_has_data = audio_analysis and audio_analysis.get('segments')
+        existing_has_data = existing.get('audio_analysis', {}).get('segments')
+        
+        if new_has_data:
+            # New data has actual segments - use it
             data["audio_analysis"] = audio_analysis
-        elif "audio_analysis" in existing:
+        elif existing_has_data:
+            # Preserve existing good data (don't overwrite with empty)
             data["audio_analysis"] = existing["audio_analysis"]
+        elif audio_analysis is not None:
+            # Both are empty, use new (for consistency)
+            data["audio_analysis"] = audio_analysis
         
         # Merge colors
         if colors is not None:
