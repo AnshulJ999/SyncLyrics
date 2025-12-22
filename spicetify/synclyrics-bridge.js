@@ -135,7 +135,7 @@
     function getPlayerData() {
         try {
             return Spicetify?.Player?.data || null;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -282,7 +282,7 @@
                 default:
                     log('Unknown message type:', msg.type);
             }
-        } catch (e) {
+        } catch {
             // Ignore invalid JSON
         }
     }
@@ -391,54 +391,123 @@
             colorCache = await fetchColors(trackUri, item?.album?.uri);
         }
 
-        // Build and send track data message
+        // Build and send track data message with ALL available metadata
+        const metadata = item?.metadata || {};
+        
         const msg = {
             type: 'track_data',
             timestamp: Date.now(),
             track_uri: trackUri,
             
-            // Track metadata
+            // ======== TRACK METADATA ========
             track: {
+                // Core identification
                 name: item?.name || null,
                 artist: item?.artists?.[0]?.name || null,
                 artists: item?.artists?.map(a => a.name) || [],
                 album: item?.album?.name || null,
                 album_uri: item?.album?.uri || null,
                 album_art_url: item?.album?.images?.[0]?.url || null,
-                // Artist info for Visual Mode
                 artist_uri: item?.artists?.[0]?.uri || null,
                 artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
-                // Spotify URL for 'open in Spotify' feature
                 url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null,
                 
-                // === NEW METADATA FIELDS ===
                 // Track info
                 duration_ms: item?.duration?.milliseconds || item?.duration_ms || Spicetify.Player.getDuration() || null,
                 popularity: item?.popularity ?? null,
-                is_explicit: item?.explicit ?? item?.is_explicit ?? null,
+                is_explicit: (item?.explicit ?? (metadata?.is_explicit === 'true')) || null,
                 is_local: item?.is_local ?? (trackUri?.startsWith('spotify:local:') || false),
-                has_lyrics: item?.has_lyrics ?? null,
-                isrc: item?.external_ids?.isrc || item?.linked_from?.external_ids?.isrc || null,
+                has_lyrics: (metadata?.has_lyrics === 'true') || null,
+                isrc: item?.external_ids?.isrc || metadata?.isrc || null,
                 
                 // Album info
-                album_type: item?.album?.album_type || null,
-                release_date: item?.album?.release_date || null,
-                disc_number: item?.disc_number ?? null,
-                track_number: item?.track_number ?? null,
-                total_tracks: item?.album?.total_tracks ?? null,
-                
-                // Context (what playlist/album is playing)
-                context_uri: playerData?.context?.uri || null,
-                context_type: playerData?.context?.metadata?.context_description || null,
+                album_type: item?.album?.album_type || metadata?.album_type || null,
+                release_date: item?.album?.release_date || metadata?.release_date || null,
+                disc_number: item?.disc_number ?? (parseInt(metadata?.album_disc_number, 10) || null),
+                track_number: item?.track_number ?? (parseInt(metadata?.album_track_number, 10) || null),
+                total_tracks: item?.album?.total_tracks ?? (parseInt(metadata?.album_track_count, 10) || null),
+                total_discs: parseInt(metadata?.album_disc_count, 10) || null,
                 
                 // Linked track (for market-specific versions)
                 linked_from_uri: item?.linked_from?.uri || null
             },
             
-            // Audio analysis
+            // ======== CANVAS (Animated Video Loops) ========
+            canvas: {
+                url: metadata?.['canvas.url'] || null,
+                type: metadata?.['canvas.type'] || null,  // VIDEO or IMAGE
+                file_id: metadata?.['canvas.fileId'] || null,
+                entity_uri: metadata?.['canvas.entityUri'] || null,
+                artist_name: metadata?.['canvas.artist.name'] || null,
+                artist_uri: metadata?.['canvas.artist.uri'] || null,
+                explicit: metadata?.['canvas.explicit'] === 'true',
+                uploaded_by: metadata?.['canvas.uploadedBy'] || null
+            },
+            
+            // ======== PLAYER STATE ========
+            player_state: {
+                // Playback
+                shuffle: Spicetify.Player.getShuffle?.() ?? playerData?.options?.shuffling_context ?? null,
+                repeat: Spicetify.Player.getRepeat?.() ?? null,  // 0=off, 1=context, 2=track
+                repeat_context: playerData?.options?.repeating_context ?? null,
+                repeat_track: playerData?.options?.repeating_track ?? null,
+                
+                // Volume
+                volume: Spicetify.Player.getVolume?.() ?? null,  // 0.0 - 1.0
+                is_muted: Spicetify.Player.getMute?.() ?? null,
+                
+                // Track status
+                is_liked: Spicetify.Player.getHeart?.() ?? null,
+                progress_percent: Spicetify.Player.getProgressPercent?.() ?? null,
+                
+                // Session
+                playback_id: playerData?.playback_id || null,
+                session_id: playerData?.session_id || null,
+                playback_speed: playerData?.playback_speed ?? null
+            },
+            
+            // ======== PLAYBACK QUALITY ========
+            playback_quality: playerData?.playback_quality ? {
+                bitrate_level: playerData.playback_quality.bitrate_level || null,
+                hifi_status: playerData.playback_quality.hifi_status || null,
+                strategy: playerData.playback_quality.strategy || null,
+                target_bitrate_level: playerData.playback_quality.target_bitrate_level || null
+            } : null,
+            
+            // ======== CONTEXT (Playlist/Album/Radio) ========
+            context: {
+                uri: playerData?.context?.uri || playerData?.context_uri || null,
+                url: playerData?.context?.url || playerData?.context_url || null,
+                type: playerData?.context?.metadata?.context_description || null,
+                
+                // Queue position
+                track_index: playerData?.index?.track ?? null,
+                page_index: playerData?.index?.page ?? null,
+                
+                // Play origin (how playback started)
+                origin_feature: playerData?.play_origin?.feature_identifier || null,
+                origin_view: playerData?.play_origin?.view_uri || null,
+                origin_referrer: playerData?.play_origin?.referrer_identifier || null
+            },
+            
+            // ======== COLLECTION STATUS ========
+            collection: {
+                can_add: metadata?.['collection.can_add'] === 'true',
+                can_ban: metadata?.['collection.can_ban'] === 'true',
+                in_collection: metadata?.['collection.in_collection'] === 'true',
+                is_banned: metadata?.['collection.is_banned'] === 'true'
+            },
+            
+            // ======== RAW METADATA (for future use) ========
+            // Forward full metadata objects for any fields we might have missed
+            raw_metadata: metadata,
+            context_metadata: playerData?.context?.metadata || null,
+            page_metadata: playerData?.page_metadata || null,
+            
+            // ======== AUDIO ANALYSIS ========
             audio_analysis: audioDataCache,
             
-            // Colors (property names match Spicetify API exactly)
+            // ======== COLORS ========
             colors: colorCache
         };
 
@@ -458,47 +527,108 @@
         
         if (!trackUri) return;
         
-        // Build message with whatever cache we have
+        // Build message with ALL available metadata
+        const metadata = item?.metadata || {};
+        
         const msg = {
             type: 'track_data',
             timestamp: Date.now(),
             track_uri: trackUri,
+            
+            // ======== TRACK METADATA ========
             track: {
+                // Core identification
                 name: item?.name || null,
                 artist: item?.artists?.[0]?.name || null,
                 artists: item?.artists?.map(a => a.name) || [],
                 album: item?.album?.name || null,
                 album_uri: item?.album?.uri || null,
                 album_art_url: item?.album?.images?.[0]?.url || null,
-                // Artist info for Visual Mode
                 artist_uri: item?.artists?.[0]?.uri || null,
                 artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
-                // Spotify URL for 'open in Spotify' feature
                 url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null,
                 
-                // === NEW METADATA FIELDS ===
                 // Track info
                 duration_ms: item?.duration?.milliseconds || item?.duration_ms || Spicetify.Player.getDuration() || null,
                 popularity: item?.popularity ?? null,
-                is_explicit: item?.explicit ?? item?.is_explicit ?? null,
+                is_explicit: (item?.explicit ?? (metadata?.is_explicit === 'true')) || null,
                 is_local: item?.is_local ?? (trackUri?.startsWith('spotify:local:') || false),
-                has_lyrics: item?.has_lyrics ?? null,
-                isrc: item?.external_ids?.isrc || item?.linked_from?.external_ids?.isrc || null,
+                has_lyrics: (metadata?.has_lyrics === 'true') || null,
+                isrc: item?.external_ids?.isrc || metadata?.isrc || null,
                 
                 // Album info
-                album_type: item?.album?.album_type || null,
-                release_date: item?.album?.release_date || null,
-                disc_number: item?.disc_number ?? null,
-                track_number: item?.track_number ?? null,
-                total_tracks: item?.album?.total_tracks ?? null,
-                
-                // Context (what playlist/album is playing)
-                context_uri: playerData?.context?.uri || null,
-                context_type: playerData?.context?.metadata?.context_description || null,
+                album_type: item?.album?.album_type || metadata?.album_type || null,
+                release_date: item?.album?.release_date || metadata?.release_date || null,
+                disc_number: item?.disc_number ?? (parseInt(metadata?.album_disc_number, 10) || null),
+                track_number: item?.track_number ?? (parseInt(metadata?.album_track_number, 10) || null),
+                total_tracks: item?.album?.total_tracks ?? (parseInt(metadata?.album_track_count, 10) || null),
+                total_discs: parseInt(metadata?.album_disc_count, 10) || null,
                 
                 // Linked track (for market-specific versions)
                 linked_from_uri: item?.linked_from?.uri || null
             },
+            
+            // ======== CANVAS (Animated Video Loops) ========
+            canvas: {
+                url: metadata?.['canvas.url'] || null,
+                type: metadata?.['canvas.type'] || null,
+                file_id: metadata?.['canvas.fileId'] || null,
+                entity_uri: metadata?.['canvas.entityUri'] || null,
+                artist_name: metadata?.['canvas.artist.name'] || null,
+                artist_uri: metadata?.['canvas.artist.uri'] || null,
+                explicit: metadata?.['canvas.explicit'] === 'true',
+                uploaded_by: metadata?.['canvas.uploadedBy'] || null
+            },
+            
+            // ======== PLAYER STATE ========
+            player_state: {
+                shuffle: Spicetify.Player.getShuffle?.() ?? playerData?.options?.shuffling_context ?? null,
+                repeat: Spicetify.Player.getRepeat?.() ?? null,
+                repeat_context: playerData?.options?.repeating_context ?? null,
+                repeat_track: playerData?.options?.repeating_track ?? null,
+                volume: Spicetify.Player.getVolume?.() ?? null,
+                is_muted: Spicetify.Player.getMute?.() ?? null,
+                is_liked: Spicetify.Player.getHeart?.() ?? null,
+                progress_percent: Spicetify.Player.getProgressPercent?.() ?? null,
+                playback_id: playerData?.playback_id || null,
+                session_id: playerData?.session_id || null,
+                playback_speed: playerData?.playback_speed ?? null
+            },
+            
+            // ======== PLAYBACK QUALITY ========
+            playback_quality: playerData?.playback_quality ? {
+                bitrate_level: playerData.playback_quality.bitrate_level || null,
+                hifi_status: playerData.playback_quality.hifi_status || null,
+                strategy: playerData.playback_quality.strategy || null,
+                target_bitrate_level: playerData.playback_quality.target_bitrate_level || null
+            } : null,
+            
+            // ======== CONTEXT (Playlist/Album/Radio) ========
+            context: {
+                uri: playerData?.context?.uri || playerData?.context_uri || null,
+                url: playerData?.context?.url || playerData?.context_url || null,
+                type: playerData?.context?.metadata?.context_description || null,
+                track_index: playerData?.index?.track ?? null,
+                page_index: playerData?.index?.page ?? null,
+                origin_feature: playerData?.play_origin?.feature_identifier || null,
+                origin_view: playerData?.play_origin?.view_uri || null,
+                origin_referrer: playerData?.play_origin?.referrer_identifier || null
+            },
+            
+            // ======== COLLECTION STATUS ========
+            collection: {
+                can_add: metadata?.['collection.can_add'] === 'true',
+                can_ban: metadata?.['collection.can_ban'] === 'true',
+                in_collection: metadata?.['collection.in_collection'] === 'true',
+                is_banned: metadata?.['collection.is_banned'] === 'true'
+            },
+            
+            // ======== RAW METADATA ========
+            raw_metadata: metadata,
+            context_metadata: playerData?.context?.metadata || null,
+            page_metadata: playerData?.page_metadata || null,
+            
+            // ======== AUDIO & COLORS ========
             audio_analysis: audioDataCache,
             colors: colorCache
         };
@@ -622,7 +752,7 @@
                     return colors;
                 }
             }
-        } catch (e) {
+        } catch {
             // Silently fail - 403 is expected
         }
 
@@ -811,7 +941,7 @@
         }
         
         // Close all WebSocket connections
-        connections.forEach((conn, url) => {
+        connections.forEach((conn, _url) => {
             if (conn.ws) {
                 conn.ws.close(1000, 'Extension cleanup');
             }
@@ -853,7 +983,7 @@
             try {
                 audioKeepAlive.oscillator.stop();
                 audioKeepAlive.ctx.close();
-            } catch (e) {
+            } catch {
                 // Ignore errors during cleanup
             }
             audioKeepAlive = null;

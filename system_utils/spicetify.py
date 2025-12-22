@@ -317,6 +317,15 @@ async def _handle_track_data(data: dict):
             track_uri=data.get('track_uri', ''),
             audio_analysis=data.get('audio_analysis'),
             colors=data.get('colors'),
-            track_metadata=track
+            track_metadata=track,
+            # New extended metadata
+            canvas=data.get('canvas'),
+            player_state=data.get('player_state'),
+            playback_quality=data.get('playback_quality'),
+            context=data.get('context'),
+            collection=data.get('collection'),
+            raw_metadata=data.get('raw_metadata'),
+            context_metadata=data.get('context_metadata'),
+            page_metadata=data.get('page_metadata')
         ))
 

@@ -137,7 +137,16 @@ async def save_to_db(
     track_uri: str,
     audio_analysis: Optional[Dict[str, Any]] = None,
     colors: Optional[Dict[str, Any]] = None,
-    track_metadata: Optional[Dict[str, Any]] = None
+    track_metadata: Optional[Dict[str, Any]] = None,
+    # Extended metadata
+    canvas: Optional[Dict[str, Any]] = None,
+    player_state: Optional[Dict[str, Any]] = None,
+    playback_quality: Optional[Dict[str, Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
+    collection: Optional[Dict[str, Any]] = None,
+    raw_metadata: Optional[Dict[str, Any]] = None,
+    context_metadata: Optional[Dict[str, Any]] = None,
+    page_metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
     Save Spicetify data to disk with atomic writes.
@@ -152,6 +161,14 @@ async def save_to_db(
         audio_analysis: Audio analysis data (tempo, segments, beats, etc.)
         colors: Extracted color palette from album art
         track_metadata: Basic track info (name, artist, album, etc.)
+        canvas: Canvas data (animated video loops)
+        player_state: Player state (shuffle, repeat, volume, etc.)
+        playback_quality: Playback quality info (bitrate, hifi, etc.)
+        context: Context info (playlist/album/radio)
+        collection: Collection status (in library, can add, etc.)
+        raw_metadata: Raw Spicetify metadata object
+        context_metadata: Context metadata from Spicetify
+        page_metadata: Page metadata from Spicetify
         
     Returns:
         True if save successful
@@ -213,6 +230,47 @@ async def save_to_db(
             data["track_metadata"] = track_metadata
         elif "track_metadata" in existing:
             data["track_metadata"] = existing["track_metadata"]
+        
+        # === EXTENDED METADATA ===
+        # Canvas (animated video loops) - only save if has actual URL
+        if canvas and canvas.get('url'):
+            data["canvas"] = canvas
+        elif "canvas" in existing and existing["canvas"].get('url'):
+            data["canvas"] = existing["canvas"]
+        
+        # Player state (shuffle, repeat, volume, etc.) - always use latest
+        if player_state is not None:
+            data["player_state"] = player_state
+        
+        # Playback quality - always use latest
+        if playback_quality is not None:
+            data["playback_quality"] = playback_quality
+        
+        # Context (playlist/album info)
+        if context is not None:
+            data["context"] = context
+        elif "context" in existing:
+            data["context"] = existing["context"]
+        
+        # Collection status - always use latest
+        if collection is not None:
+            data["collection"] = collection
+        
+        # Raw metadata - always use latest (for future-proofing)
+        if raw_metadata is not None:
+            data["raw_metadata"] = raw_metadata
+        
+        # Context metadata
+        if context_metadata is not None:
+            data["context_metadata"] = context_metadata
+        elif "context_metadata" in existing:
+            data["context_metadata"] = existing["context_metadata"]
+        
+        # Page metadata
+        if page_metadata is not None:
+            data["page_metadata"] = page_metadata
+        elif "page_metadata" in existing:
+            data["page_metadata"] = existing["page_metadata"]
         
         # Atomic write pattern (same as lyrics.py):
         # 1. Write to temp file in same directory
