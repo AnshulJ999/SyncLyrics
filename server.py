@@ -432,7 +432,7 @@ async def get_audio_analysis():
         - analysis_track_id: Normalized track ID for frontend validation
     """
     import asyncio
-    from system_utils.spicetify import _spicetify_state, is_spicetify_fresh
+    from system_utils.spicetify import _spicetify_state, is_connected as is_spicetify_fresh
     from system_utils.spicetify_db import load_from_db
     from system_utils.helpers import _normalize_track_id
     
