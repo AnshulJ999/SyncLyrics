@@ -50,7 +50,7 @@
         // No max attempts - keeps trying forever (caps at RECONNECT_MAX_MS delay)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
-        DEBUG: false                                  // Enable console logging
+        DEBUG: true                                  // Enable console logging
     };
 
     // ======== STATE ========
@@ -906,17 +906,40 @@
                 return null;
             }
 
-            // Spread full track object to get ALL fields including:
-            // - tempo, tempo_confidence, key, key_confidence, mode, mode_confidence
-            // - time_signature, time_signature_confidence, loudness, duration
-            // - end_of_fade_in, start_of_fade_out
-            // - energy, danceability, speechiness, acousticness, instrumentalness, liveness, valence
-            // - analysis_sample_rate, analysis_channels, num_samples
-            // - codestring, echoprintstring, synchstring, rhythmstring (fingerprints)
+            const track = data.track || {};
+            
+            // Extract only useful fields, excluding massive fingerprint strings
+            // (codestring, echoprintstring, synchstring, rhythmstring are ~100KB+ and unused)
             return {
-                // Full track analysis object (includes all audio features)
-                // Use (data.track || {}) to prevent crash if track is undefined
-                ...(data.track || {}),
+                // Core analysis
+                tempo: track.tempo,
+                tempo_confidence: track.tempo_confidence,
+                key: track.key,
+                key_confidence: track.key_confidence,
+                mode: track.mode,  // 0=minor, 1=major
+                mode_confidence: track.mode_confidence,
+                time_signature: track.time_signature,
+                time_signature_confidence: track.time_signature_confidence,
+                loudness: track.loudness,
+                duration: track.duration,
+                
+                // Fade info (for visualizations)
+                end_of_fade_in: track.end_of_fade_in,
+                start_of_fade_out: track.start_of_fade_out,
+                
+                // Analysis metadata
+                num_samples: track.num_samples,
+                analysis_sample_rate: track.analysis_sample_rate,
+                analysis_channels: track.analysis_channels,
+                
+                // Audio features (mood-based visualizations)
+                energy: track.energy,
+                danceability: track.danceability,
+                speechiness: track.speechiness,
+                acousticness: track.acousticness,
+                instrumentalness: track.instrumentalness,
+                liveness: track.liveness,
+                valence: track.valence,
                 
                 // Timing arrays (for beat-sync features)
                 beats: data.beats || [],
@@ -957,7 +980,7 @@
      * Fetch colors using GraphQL (fixes 403 Forbidden from colorExtractor)
      * 
      * Tries multiple methods:
-     * 1. GraphQL API with HTTPS image URL (modern, what Spotify client uses)
+     * 1. GraphQL API with image URI (modern, what Spotify client uses)
      * 2. Local metadata (sometimes cached)
      * 3. Legacy colorExtractor (fallback for older versions)
      * 
@@ -969,44 +992,58 @@
         const track = Spicetify.Player.data?.item;
         const metadata = track?.metadata || {};
         
-        // Method 1: Try GraphQL API with proper image URL
+        // Debug: Log available image sources
+        log('Color extraction - track:', track?.name);
+        log('Color extraction - album images:', track?.album?.images);
+        log('Color extraction - metadata image_url:', metadata?.image_url);
+        
+        // Method 1: Try GraphQL API
         try {
             if (Spicetify.GraphQL?.Definitions?.fetchExtractedColors) {
-                // Try multiple image sources
+                // Collect all possible image URIs (GraphQL wants spotify:image: format OR https://)
                 const imageSources = [
-                    track?.album?.images?.[0]?.url,           // HTTPS URL from album images
-                    track?.album?.images?.[0]?.uri,           // spotify:image:xxx format
+                    track?.album?.images?.[0]?.uri,           // spotify:image:xxx format (preferred)
+                    track?.album?.images?.[0]?.url,           // HTTPS URL
                     metadata?.image_url,                       // Metadata image URL
                     metadata?.image_xlarge_url,               // Large image URL
+                    metadata?.image_large_url,                // Medium image URL
+                    metadata?.image_small_url,                // Small image URL
                 ];
                 
-                // Find first valid image and convert to URL
-                let imageUrl = null;
-                for (const src of imageSources) {
-                    imageUrl = spotifyImageToUrl(src);
-                    if (imageUrl) break;
-                }
+                log('Color extraction - image sources:', imageSources.filter(Boolean));
                 
-                if (imageUrl) {
-                    log('Attempting GraphQL color extraction with:', imageUrl);
-                    const response = await Spicetify.GraphQL.Request(
-                        Spicetify.GraphQL.Definitions.fetchExtractedColors,
-                        { uris: [imageUrl] }
-                    );
+                // Try each image source
+                for (const imageUri of imageSources) {
+                    if (!imageUri) continue;
+                    
+                    try {
+                        log('Color extraction - trying:', imageUri);
+                        const response = await Spicetify.GraphQL.Request(
+                            Spicetify.GraphQL.Definitions.fetchExtractedColors,
+                            { uris: [imageUri] }
+                        );
+                        
+                        log('Color extraction - response:', response);
 
-                    if (response?.data?.extractedColors?.[0]) {
-                        const c = response.data.extractedColors[0];
-                        log('Colors extracted via GraphQL');
-                        return {
-                            VIBRANT: c.colorRaw?.hex,
-                            DARK_VIBRANT: c.colorDark?.hex,
-                            LIGHT_VIBRANT: c.colorLight?.hex,
-                            PROMINENT: c.colorRaw?.hex,
-                            DESATURATED: c.colorDark?.hex,
-                            VIBRANT_NON_ALARMING: c.colorLight?.hex
-                        };
+                        if (response?.data?.extractedColors?.[0]) {
+                            const c = response.data.extractedColors[0];
+                            log('Colors extracted via GraphQL:', c);
+                            return {
+                                VIBRANT: c.colorRaw?.hex,
+                                DARK_VIBRANT: c.colorDark?.hex,
+                                LIGHT_VIBRANT: c.colorLight?.hex,
+                                PROMINENT: c.colorRaw?.hex,
+                                DESATURATED: c.colorDark?.hex,
+                                VIBRANT_NON_ALARMING: c.colorLight?.hex
+                            };
+                        }
+                    } catch (innerErr) {
+                        log('Color extraction - failed for', imageUri, ':', innerErr.message);
+                        // Continue to next image source
                     }
                 }
+            } else {
+                log('Color extraction - GraphQL.Definitions.fetchExtractedColors not available');
             }
         } catch (e) {
             log('GraphQL color extraction failed:', e.message);
