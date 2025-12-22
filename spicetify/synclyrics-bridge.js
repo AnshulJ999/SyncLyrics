@@ -278,6 +278,76 @@
                 case 'request_track_data':
                     sendTrackDataTo(ws);
                     break;
+                
+                // ======== PLAYBACK CONTROLS ========
+                case 'play':
+                    Spicetify.Player.play();
+                    sendMessageTo(ws, { type: 'control_ack', command: 'play', success: true });
+                    break;
+                    
+                case 'pause':
+                    Spicetify.Player.pause();
+                    sendMessageTo(ws, { type: 'control_ack', command: 'pause', success: true });
+                    break;
+                    
+                case 'toggle_play':
+                    Spicetify.Player.togglePlay();
+                    sendMessageTo(ws, { type: 'control_ack', command: 'toggle_play', success: true });
+                    break;
+                    
+                case 'skip_next':
+                    Spicetify.Player.next();
+                    sendMessageTo(ws, { type: 'control_ack', command: 'skip_next', success: true });
+                    break;
+                    
+                case 'skip_prev':
+                    Spicetify.Player.back();
+                    sendMessageTo(ws, { type: 'control_ack', command: 'skip_prev', success: true });
+                    break;
+                    
+                case 'seek':
+                    if (typeof msg.position_ms === 'number') {
+                        Spicetify.Player.seek(msg.position_ms);
+                        sendMessageTo(ws, { type: 'control_ack', command: 'seek', success: true, position_ms: msg.position_ms });
+                    }
+                    break;
+                    
+                case 'set_volume':
+                    if (typeof msg.volume === 'number') {
+                        Spicetify.Player.setVolume(Math.max(0, Math.min(1, msg.volume)));
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_volume', success: true, volume: msg.volume });
+                    }
+                    break;
+                    
+                case 'set_mute':
+                    if (typeof msg.muted === 'boolean') {
+                        Spicetify.Player.setMute(msg.muted);
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_mute', success: true, muted: msg.muted });
+                    }
+                    break;
+                    
+                case 'set_shuffle':
+                    if (typeof msg.shuffle === 'boolean') {
+                        Spicetify.Player.setShuffle(msg.shuffle);
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_shuffle', success: true, shuffle: msg.shuffle });
+                    }
+                    break;
+                    
+                case 'set_repeat':
+                    // 0 = off, 1 = context (playlist/album), 2 = track
+                    if (typeof msg.repeat === 'number' && msg.repeat >= 0 && msg.repeat <= 2) {
+                        Spicetify.Player.setRepeat(msg.repeat);
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_repeat', success: true, repeat: msg.repeat });
+                    }
+                    break;
+                    
+                case 'set_heart':
+                    // Like/unlike current track
+                    if (typeof msg.liked === 'boolean') {
+                        Spicetify.Player.toggleHeart();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_heart', success: true });
+                    }
+                    break;
                     
                 default:
                     log('Unknown message type:', msg.type);
@@ -661,15 +731,27 @@
                 return null;
             }
 
-            // Extract key information
+            // Extract key information including confidence values
             return {
                 // Track-level analysis
                 tempo: data.track?.tempo,
+                tempo_confidence: data.track?.tempo_confidence,
                 key: data.track?.key,
+                key_confidence: data.track?.key_confidence,
                 mode: data.track?.mode,  // 0=minor, 1=major
+                mode_confidence: data.track?.mode_confidence,
                 time_signature: data.track?.time_signature,
+                time_signature_confidence: data.track?.time_signature_confidence,
                 loudness: data.track?.loudness,
                 duration: data.track?.duration,
+                
+                // Fade info (useful for visualizations)
+                end_of_fade_in: data.track?.end_of_fade_in,
+                start_of_fade_out: data.track?.start_of_fade_out,
+                
+                // Analysis metadata
+                analysis_sample_rate: data.track?.analysis_sample_rate,
+                analysis_channels: data.track?.analysis_channels,
                 
                 // Timing arrays (for beat-sync features)
                 beats: data.beats || [],
@@ -685,10 +767,32 @@
     }
 
     /**
+     * Convert Spotify image URI to HTTPS URL
+     * Handles both spotify:image:xxx format and https:// URLs
+     * @param {string} uri - Image URI or URL
+     * @returns {string|null} HTTPS URL or null
+     */
+    function spotifyImageToUrl(uri) {
+        if (!uri) return null;
+        
+        // Already an HTTPS URL
+        if (uri.startsWith('https://')) return uri;
+        if (uri.startsWith('http://')) return uri;
+        
+        // Convert spotify:image:xxx to https://i.scdn.co/image/xxx
+        if (uri.startsWith('spotify:image:')) {
+            const imageId = uri.replace('spotify:image:', '');
+            return `https://i.scdn.co/image/${imageId}`;
+        }
+        
+        return null;
+    }
+
+    /**
      * Fetch colors using GraphQL (fixes 403 Forbidden from colorExtractor)
      * 
      * Tries multiple methods:
-     * 1. GraphQL API (modern, what Spotify client uses)
+     * 1. GraphQL API with HTTPS image URL (modern, what Spotify client uses)
      * 2. Local metadata (sometimes cached)
      * 3. Legacy colorExtractor (fallback for older versions)
      * 
@@ -697,28 +801,46 @@
      * @returns {Object|null} Color palette or null on error
      */
     async function fetchColors(trackUri, albumUri) {
-        // Method 1: Try GraphQL API (Official modern way)
+        const track = Spicetify.Player.data?.item;
+        const metadata = track?.metadata || {};
+        
+        // Method 1: Try GraphQL API with proper image URL
         try {
-            const track = Spicetify.Player.data?.item;
-            const imageUri = track?.album?.images?.[0]?.uri;
-            
-            if (imageUri && Spicetify.GraphQL?.Definitions?.fetchExtractedColors) {
-                const response = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.fetchExtractedColors,
-                    { uris: [imageUri] }
-                );
+            if (Spicetify.GraphQL?.Definitions?.fetchExtractedColors) {
+                // Try multiple image sources
+                const imageSources = [
+                    track?.album?.images?.[0]?.url,           // HTTPS URL from album images
+                    track?.album?.images?.[0]?.uri,           // spotify:image:xxx format
+                    metadata?.image_url,                       // Metadata image URL
+                    metadata?.image_xlarge_url,               // Large image URL
+                ];
+                
+                // Find first valid image and convert to URL
+                let imageUrl = null;
+                for (const src of imageSources) {
+                    imageUrl = spotifyImageToUrl(src);
+                    if (imageUrl) break;
+                }
+                
+                if (imageUrl) {
+                    log('Attempting GraphQL color extraction with:', imageUrl);
+                    const response = await Spicetify.GraphQL.Request(
+                        Spicetify.GraphQL.Definitions.fetchExtractedColors,
+                        { uris: [imageUrl] }
+                    );
 
-                if (response?.data?.extractedColors?.[0]) {
-                    const c = response.data.extractedColors[0];
-                    log('Colors extracted via GraphQL');
-                    return {
-                        VIBRANT: c.colorRaw?.hex,
-                        DARK_VIBRANT: c.colorDark?.hex,
-                        LIGHT_VIBRANT: c.colorLight?.hex,
-                        PROMINENT: c.colorRaw?.hex,
-                        DESATURATED: c.colorDark?.hex,
-                        VIBRANT_NON_ALARMING: c.colorLight?.hex
-                    };
+                    if (response?.data?.extractedColors?.[0]) {
+                        const c = response.data.extractedColors[0];
+                        log('Colors extracted via GraphQL');
+                        return {
+                            VIBRANT: c.colorRaw?.hex,
+                            DARK_VIBRANT: c.colorDark?.hex,
+                            LIGHT_VIBRANT: c.colorLight?.hex,
+                            PROMINENT: c.colorRaw?.hex,
+                            DESATURATED: c.colorDark?.hex,
+                            VIBRANT_NON_ALARMING: c.colorLight?.hex
+                        };
+                    }
                 }
             }
         } catch (e) {
@@ -727,8 +849,7 @@
 
         // Method 2: Check local metadata (sometimes cached by Spotify)
         try {
-            const metadata = Spicetify.Player.data?.item?.metadata;
-            if (metadata && metadata['extracted-color-dark']) {
+            if (metadata['extracted-color-dark']) {
                 log('Colors found in local metadata');
                 return {
                     VIBRANT: metadata['extracted-color-raw'] || null,
