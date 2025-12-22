@@ -478,13 +478,14 @@ async def get_audio_analysis():
     if not analysis:
         return jsonify({"error": "No audio analysis available"}), 404
     
+    # Validate we have segment data
+    if not analysis.get('segments'):
+        return jsonify({"error": "No segments in audio analysis"}), 404
+    
     segments = analysis.get('segments', [])
     beats = analysis.get('beats', [])
-    sections = analysis.get('sections', [])  # For section-level energy scaling
+    sections = analysis.get('sections', [])
     duration = analysis.get('duration', 0)
-    
-    if not segments:
-        return jsonify({"error": "No segments in audio analysis"}), 404
     
     # Process waveform: average loudness per segment (RMS-like)
     # Formula: (loudness_start + loudness_max) / 2, then convert dB to linear
@@ -513,19 +514,23 @@ async def get_audio_analysis():
         spectrum_segments.append({
             'start': round(seg.get('start', 0), 3),
             'duration': round(seg.get('duration', 0), 3),
-            'pitches': seg.get('pitches', [0] * 12),  # 12 pitch classes (C to B)
-            'timbre': seg.get('timbre', [0] * 12),    # 12 timbral coefficients
+            'pitches': seg.get('pitches', [0] * 12),
+            'timbre': seg.get('timbre', [0] * 12),
             'loudness': round(seg.get('loudness_max', -60), 1)
         })
     
+    # Return BOTH raw audio_analysis AND processed fields for backward compatibility
     return jsonify({
+        # NEW: Full raw audio analysis (tempo, key, bars, tatums, etc.)
+        'audio_analysis': analysis,
+        'analysis_track_id': analysis_track_id,
+        # BACKWARD COMPATIBILITY: Processed fields for existing code
         'waveform': waveform,
         'segments': spectrum_segments,
         'beats': beats,
-        'sections': sections,  # For section-level energy scaling
+        'sections': sections,
         'duration': duration,
-        'segment_count': len(segments),
-        'analysis_track_id': analysis_track_id  # Correctly computed for cache loads
+        'segment_count': len(segments)
     })
 
 

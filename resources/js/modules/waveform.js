@@ -50,6 +50,41 @@ async function fetchWaveformData() {
 }
 
 /**
+ * Process raw segments into waveform data (amplitude per segment)
+ * Converts loudness dB to normalized 0-1 amplitude values
+ * 
+ * @param {Array} segments - Raw segments from audio analysis
+ * @returns {Array} Waveform array with {start, duration, amp} objects
+ */
+function processSegmentsToWaveform(segments) {
+    if (!segments || segments.length === 0) return [];
+    
+    // Calculate amplitude from loudness (dB to linear)
+    let maxAmp = 0;
+    const waveform = segments.map(seg => {
+        const loudStart = Math.max(seg.loudness_start || -60, -60);  // Floor at -60dB
+        const loudMax = Math.max(seg.loudness_max || -60, -60);
+        const avgDb = (loudStart + loudMax) / 2;
+        const amp = Math.pow(10, avgDb / 20);  // dB to linear amplitude
+        maxAmp = Math.max(maxAmp, amp);
+        return {
+            start: seg.start,
+            duration: seg.duration || 0,
+            amp: amp  // Will normalize after
+        };
+    });
+    
+    // Normalize amplitudes to 0-1 range
+    if (maxAmp > 0) {
+        for (const w of waveform) {
+            w.amp = w.amp / maxAmp;
+        }
+    }
+    
+    return waveform;
+}
+
+/**
  * Initialize the waveform canvas
  * Sets up canvas sizing and event listeners
  */
@@ -133,7 +168,8 @@ export async function updateWaveform(trackInfo) {
         console.debug(`[Waveform] ${trackChanged ? 'Track' : 'Source'} changed, fetching new waveform data`);
         
         const data = await fetchWaveformData();
-        if (data && data.waveform) {
+        const analysis = data?.audio_analysis;
+        if (data && analysis && analysis.segments) {
             // CRITICAL: Validate analysis belongs to current track
             // This prevents stale Spotify waveform from showing over MusicBee songs
             // The analysis_track_id is a normalized "artist_title" string
@@ -142,8 +178,17 @@ export async function updateWaveform(trackInfo) {
                 waveformData = null;
                 waveformDuration = 0;
             } else {
-                waveformData = data;
-                waveformDuration = data.duration || trackInfo.duration_ms / 1000;
+                // Process segments into waveform locally
+                const waveform = processSegmentsToWaveform(analysis.segments);
+                waveformData = {
+                    waveform: waveform,
+                    duration: analysis.duration || trackInfo.duration_ms / 1000,
+                    analysis_track_id: data.analysis_track_id,
+                    // Store full analysis for potential future use
+                    audio_analysis: analysis
+                };
+                waveformDuration = waveformData.duration;
+                console.debug(`[Waveform] Processed ${waveform.length} segments, duration: ${waveformData.duration.toFixed(1)}s`);
             }
         } else {
             waveformData = null;

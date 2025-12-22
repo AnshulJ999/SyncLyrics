@@ -380,14 +380,24 @@ export async function updateSpectrum(trackInfo) {
         beatJustHit = false;
         
         const data = await fetchSpectrumData();
-        if (data && data.segments) {
-            spectrumData = data;
-            spectrumDuration = data.duration || trackInfo.duration_ms / 1000;
+        const analysis = data?.audio_analysis;
+        if (data && analysis && analysis.segments) {
+            // Store the audio_analysis for use by other functions
+            spectrumData = {
+                segments: analysis.segments,
+                beats: analysis.beats || [],
+                sections: analysis.sections || [],
+                duration: analysis.duration,
+                tempo: analysis.tempo,
+                // Store full analysis for future visualizer features
+                audio_analysis: analysis
+            };
+            spectrumDuration = analysis.duration || trackInfo.duration_ms / 1000;
             
             // Self-calibrate energy range for this track
             calibrateEnergyRange();
             
-            console.debug(`[Spectrum] Loaded ${data.segments.length} segments, ${data.beats?.length || 0} beats, ${data.sections?.length || 0} sections`);
+            console.debug(`[Spectrum] Loaded ${analysis.segments.length} segments, ${analysis.beats?.length || 0} beats, ${analysis.sections?.length || 0} sections, tempo: ${analysis.tempo}bpm`);
         } else {
             spectrumData = null;
             spectrumDuration = 0;
