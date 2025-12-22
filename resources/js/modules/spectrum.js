@@ -469,10 +469,10 @@ function renderSpectrum(canvas, pitchData, sectionEnergy) {
         const x = CONFIG.barGap + i * (barWidth + CONFIG.barGap);
         const barHeight = currentBarHeights[i];
 
-        // Gradient from bottom (solid) to top (fade)
+        // Gradient from bottom (solid) to top (soft fade) - muted grey, not harsh white
         const gradient = ctx.createLinearGradient(x, bottomY, x, bottomY - barHeight);
-        gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-        gradient.addColorStop(1, `rgba(255, 255, 255, ${alpha * 0.15})`);
+        gradient.addColorStop(0, `rgba(160, 160, 160, ${alpha})`);     // Soft grey base
+        gradient.addColorStop(1, `rgba(160, 160, 160, ${alpha * 0.3})`);  // Visible fade at top
 
         ctx.fillStyle = gradient;
         
