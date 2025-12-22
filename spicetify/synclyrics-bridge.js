@@ -50,7 +50,7 @@
         // No max attempts - keeps trying forever (caps at RECONNECT_MAX_MS delay)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
-        DEBUG: true                                  // Enable console logging
+        DEBUG: false                                  // Enable console logging
     };
 
     // ======== STATE ========
