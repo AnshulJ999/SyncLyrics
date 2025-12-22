@@ -295,7 +295,7 @@ async def _handle_track_data(data: dict):
     
     # Detailed logging for track data
     # Check if audio_analysis has ACTUAL data (not just empty arrays)
-    audio_analysis = data.get('audio_analysis', {})
+    audio_analysis = data.get('audio_analysis') or {}
     has_analysis = bool(audio_analysis.get('segments'))  # segments is the key field
     has_colors = bool(data.get('colors'))
     
