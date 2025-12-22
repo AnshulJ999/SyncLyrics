@@ -1000,27 +1000,34 @@
         // Method 1: Try GraphQL API
         try {
             if (Spicetify.GraphQL?.Definitions?.fetchExtractedColors) {
-                // Collect all possible image URIs (GraphQL wants spotify:image: format OR https://)
+                // Collect all possible image URIs
                 const imageSources = [
-                    track?.album?.images?.[0]?.uri,           // spotify:image:xxx format (preferred)
-                    track?.album?.images?.[0]?.url,           // HTTPS URL
+                    track?.album?.images?.[0]?.url,           // HTTPS URL (most reliable)
+                    track?.album?.images?.[0]?.uri,           // spotify:image:xxx format
                     metadata?.image_url,                       // Metadata image URL
                     metadata?.image_xlarge_url,               // Large image URL
                     metadata?.image_large_url,                // Medium image URL
                     metadata?.image_small_url,                // Small image URL
                 ];
                 
-                log('Color extraction - image sources:', imageSources.filter(Boolean));
+                log('Color extraction - raw image sources:', imageSources.filter(Boolean));
                 
-                // Try each image source
-                for (const imageUri of imageSources) {
-                    if (!imageUri) continue;
-                    
+                // Convert all URIs to HTTPS URLs (GraphQL expects https://i.scdn.co/image/xxx format)
+                const httpsUrls = imageSources
+                    .map(uri => spotifyImageToUrl(uri))
+                    .filter(Boolean);
+                
+                // Remove duplicates
+                const uniqueUrls = [...new Set(httpsUrls)];
+                log('Color extraction - HTTPS URLs to try:', uniqueUrls);
+                
+                // Try each HTTPS URL
+                for (const imageUrl of uniqueUrls) {
                     try {
-                        log('Color extraction - trying:', imageUri);
+                        log('Color extraction - trying:', imageUrl);
                         const response = await Spicetify.GraphQL.Request(
                             Spicetify.GraphQL.Definitions.fetchExtractedColors,
-                            { uris: [imageUri] }
+                            { uris: [imageUrl] }
                         );
                         
                         log('Color extraction - response:', response);
@@ -1038,10 +1045,12 @@
                             };
                         }
                     } catch (innerErr) {
-                        log('Color extraction - failed for', imageUri, ':', innerErr.message);
-                        // Continue to next image source
+                        log('Color extraction - failed for', imageUrl, ':', innerErr.message);
+                        // Continue to next URL
                     }
                 }
+                
+                log('Color extraction - GraphQL failed for all URLs');
             } else {
                 log('Color extraction - GraphQL.Definitions.fetchExtractedColors not available');
             }
