@@ -228,7 +228,7 @@ async def save_to_db(
         try:
             # Run blocking file I/O in thread pool
             result = await asyncio.to_thread(_do_file_io)
-            logger.debug(f"Saved Spicetify data to cache: {artist} - {title}")
+            logger.info(f"Saved Spicetify data to cache: {artist} - {title}")
             return result
             
         except Exception as e:

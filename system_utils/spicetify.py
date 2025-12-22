@@ -292,11 +292,21 @@ async def _handle_track_data(data: dict):
     track = data.get('track', {})
     artist = track.get('artist', '')
     title = track.get('name', '')
-    logger.debug(f"Spicetify track: {artist} - {title}")
+    
+    # Detailed logging for track data
+    has_analysis = bool(data.get('audio_analysis'))
+    has_colors = bool(data.get('colors'))
+    
+    if has_analysis:
+        # INFO level for tracks with audio analysis (important)
+        logger.info(f"Spicetify track data: {artist} - {title} (analysis: ✓, colors: {'✓' if has_colors else '✗'})")
+    else:
+        # DEBUG for tracks without analysis (less important)
+        logger.debug(f"Spicetify track: {artist} - {title} (no audio analysis)")
     
     # Save to database (background, non-blocking)
     # This caches audio_analysis for waveform/spectrum visualizers
-    if artist and title and data.get('audio_analysis'):
+    if artist and title and has_analysis:
         from .spicetify_db import save_to_db
         from . import create_tracked_task
         create_tracked_task(save_to_db(

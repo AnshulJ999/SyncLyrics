@@ -459,7 +459,9 @@ async def get_audio_analysis():
                     # Compute track ID from the metadata we used to load
                     # This ensures frontend validation works correctly
                     analysis_track_id = _normalize_track_id(artist, title)
-                    logger.debug(f"Loaded audio analysis from cache: {artist} - {title}")
+                    logger.info(f"Loaded audio analysis from Spicetify cache: {artist} - {title}")
+                else:
+                    logger.debug(f"No cached audio analysis for: {artist} - {title}")
     
     if not analysis:
         return jsonify({"error": "No audio analysis available"}), 404
