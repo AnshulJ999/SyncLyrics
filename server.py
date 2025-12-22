@@ -432,18 +432,25 @@ async def get_audio_analysis():
         - analysis_track_id: Normalized track ID for frontend validation
     """
     import asyncio
-    from system_utils.spicetify import _spicetify_state
+    from system_utils.spicetify import _spicetify_state, is_spicetify_fresh
     from system_utils.spicetify_db import load_from_db
     from system_utils.helpers import _normalize_track_id
     
     analysis = None
     analysis_track_id = None
     
-    # 1. Try live Spicetify state first
-    analysis = _spicetify_state.get('audio_analysis')
-    if analysis:
-        # Use the track ID from Spicetify state
-        analysis_track_id = _spicetify_state.get('audio_analysis_track_id')
+    # 1. Try live Spicetify state first (ONLY if Spicetify data is fresh)
+    # If Spicetify is stale, the old data in memory is for a different track
+    if is_spicetify_fresh():
+        analysis = _spicetify_state.get('audio_analysis')
+        if analysis:
+            # Use the track ID from Spicetify state
+            analysis_track_id = _spicetify_state.get('audio_analysis_track_id')
+            # Get track info for logging
+            track_info = _spicetify_state.get('track', {})
+            artist = track_info.get('artist', 'Unknown')
+            title = track_info.get('name', 'Unknown')
+            logger.debug(f"Using live Spicetify audio analysis: {artist} - {title}")
     
     # 2. If not in memory, try database cache (works for any source)
     if not analysis:
