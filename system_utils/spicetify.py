@@ -303,12 +303,12 @@ async def _handle_track_data(data: dict):
         # INFO level for tracks with audio analysis (saved)
         logger.info(f"Spicetify track data: {artist} - {title} (analysis: ✓, colors: {'✓' if has_colors else '✗'})")
     else:
-        # INFO level for skipped tracks so user knows
-        logger.info(f"Spicetify track: {artist} - {title} (skipped - no audio analysis from Spotify)")
+        # INFO level for tracks without audio analysis (still saves metadata)
+        logger.info(f"Spicetify track: {artist} - {title} (no waveform data from Spotify)")
     
     # Save to database (background, non-blocking)
-    # This caches audio_analysis for waveform/spectrum visualizers
-    if artist and title and has_analysis:
+    # Always save track metadata, even without audio analysis - other fields are still useful
+    if artist and title:
         from .spicetify_db import save_to_db
         from . import create_tracked_task
         create_tracked_task(save_to_db(
