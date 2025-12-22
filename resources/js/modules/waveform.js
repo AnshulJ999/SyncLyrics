@@ -222,11 +222,7 @@ function renderWaveform(canvas, waveform, currentPosition) {
     if (!waveform || waveform.length === 0) return;
 
     // Fixed bar count for consistent appearance across all songs
-    // Increase this number for smoother waveforms (e.g., 300, 500)
     const TARGET_BAR_COUNT = 220;
-    
-    // Calculate how many source segments per target bar
-    const segmentSize = waveform.length / TARGET_BAR_COUNT;
     
     // Bar dimensions
     const barWidth = width / TARGET_BAR_COUNT;
@@ -241,34 +237,39 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const centerY = height / 2;
     const maxBarHeight = height * 0.9;  // 90% of height for max amplitude
 
-    // Track duration for played/unplayed calculation
+    // Track duration from last segment's start time
     const trackDuration = waveform[waveform.length - 1].start;
+
+    /**
+     * Find segment at a given time using binary search
+     * Returns the segment where segment.start <= time < next_segment.start
+     */
+    function findSegmentAtTime(time) {
+        let lo = 0, hi = waveform.length - 1;
+        while (lo < hi) {
+            const mid = Math.floor((lo + hi + 1) / 2);
+            if (waveform[mid].start <= time) lo = mid;
+            else hi = mid - 1;
+        }
+        return waveform[lo];
+    }
 
     for (let i = 0; i < TARGET_BAR_COUNT; i++) {
         const x = i * barWidth;
         
-        // Calculate which source segments this bar covers
-        const startIdx = Math.floor(i * segmentSize);
-        const endIdx = Math.min(Math.floor((i + 1) * segmentSize), waveform.length);
+        // Bar represents this TIME position (uniform distribution for smooth playback)
+        const barTime = (i / TARGET_BAR_COUNT) * trackDuration;
         
-        // Average amplitude across grouped segments
-        let ampSum = 0;
-        const count = Math.max(1, endIdx - startIdx);
-        
-        for (let j = startIdx; j < endIdx; j++) {
-            ampSum += waveform[j].amp || 0;
-        }
-        
-        const avgAmp = ampSum / count;
+        // Find segment at this time and get its amplitude (fixes position accuracy)
+        const segment = findSegmentAtTime(barTime);
+        const amp = segment.amp || 0;
         
         // Calculate bar height (bidirectional from center)
-        const barHeight = avgAmp * maxBarHeight;
+        const barHeight = amp * maxBarHeight;
         const halfBarHeight = barHeight / 2;
 
-        // Even distribution: bar i represents (i / TARGET_BAR_COUNT) of total duration
-        // This ensures smooth, consistent progression regardless of segment distribution
-        const barTimePosition = (i / TARGET_BAR_COUNT) * trackDuration;
-        const isPlayed = barTimePosition <= currentPosition;
+        // Played/unplayed based on current playback position
+        const isPlayed = barTime <= currentPosition;
 
         // Set color based on played status
         ctx.fillStyle = isPlayed ? playedColor : unplayedColor;
