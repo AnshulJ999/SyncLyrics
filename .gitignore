@@ -15,7 +15,7 @@ features.md
 .kiro
 backups
 certs/
-
+spicetify_database
 
 backups/
 # share_project.py
