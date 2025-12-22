@@ -409,7 +409,30 @@
                 artist_uri: item?.artists?.[0]?.uri || null,
                 artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
                 // Spotify URL for 'open in Spotify' feature
-                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null
+                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null,
+                
+                // === NEW METADATA FIELDS ===
+                // Track info
+                duration_ms: item?.duration?.milliseconds || item?.duration_ms || Spicetify.Player.getDuration() || null,
+                popularity: item?.popularity ?? null,
+                is_explicit: item?.explicit ?? item?.is_explicit ?? null,
+                is_local: item?.is_local ?? (trackUri?.startsWith('spotify:local:') || false),
+                has_lyrics: item?.has_lyrics ?? null,
+                isrc: item?.external_ids?.isrc || item?.linked_from?.external_ids?.isrc || null,
+                
+                // Album info
+                album_type: item?.album?.album_type || null,
+                release_date: item?.album?.release_date || null,
+                disc_number: item?.disc_number ?? null,
+                track_number: item?.track_number ?? null,
+                total_tracks: item?.album?.total_tracks ?? null,
+                
+                // Context (what playlist/album is playing)
+                context_uri: playerData?.context?.uri || null,
+                context_type: playerData?.context?.metadata?.context_description || null,
+                
+                // Linked track (for market-specific versions)
+                linked_from_uri: item?.linked_from?.uri || null
             },
             
             // Audio analysis
@@ -451,7 +474,30 @@
                 artist_uri: item?.artists?.[0]?.uri || null,
                 artist_id: extractSpotifyId(item?.artists?.[0]?.uri),
                 // Spotify URL for 'open in Spotify' feature
-                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null
+                url: trackUri ? `https://open.spotify.com/track/${extractSpotifyId(trackUri)}` : null,
+                
+                // === NEW METADATA FIELDS ===
+                // Track info
+                duration_ms: item?.duration?.milliseconds || item?.duration_ms || Spicetify.Player.getDuration() || null,
+                popularity: item?.popularity ?? null,
+                is_explicit: item?.explicit ?? item?.is_explicit ?? null,
+                is_local: item?.is_local ?? (trackUri?.startsWith('spotify:local:') || false),
+                has_lyrics: item?.has_lyrics ?? null,
+                isrc: item?.external_ids?.isrc || item?.linked_from?.external_ids?.isrc || null,
+                
+                // Album info
+                album_type: item?.album?.album_type || null,
+                release_date: item?.album?.release_date || null,
+                disc_number: item?.disc_number ?? null,
+                track_number: item?.track_number ?? null,
+                total_tracks: item?.album?.total_tracks ?? null,
+                
+                // Context (what playlist/album is playing)
+                context_uri: playerData?.context?.uri || null,
+                context_type: playerData?.context?.metadata?.context_description || null,
+                
+                // Linked track (for market-specific versions)
+                linked_from_uri: item?.linked_from?.uri || null
             },
             audio_analysis: audioDataCache,
             colors: colorCache
