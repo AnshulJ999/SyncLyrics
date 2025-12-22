@@ -511,6 +511,54 @@ export function hideSpectrum() {
 }
 
 /**
+ * Show the spectrum container and start animation
+ * Call this when spectrum is enabled via settings toggle
+ */
+export async function showSpectrum() {
+    const container = document.getElementById('spectrum-container');
+    if (container) {
+        container.style.display = 'block';
+    }
+    
+    // If we don't have data yet, fetch it
+    if (!spectrumData) {
+        console.debug('[Spectrum] No data, fetching...');
+        const data = await fetchSpectrumData();
+        const analysis = data?.audio_analysis;
+        if (data && analysis && analysis.segments) {
+            spectrumData = {
+                segments: analysis.segments,
+                beats: analysis.beats || [],
+                sections: analysis.sections || [],
+                duration: analysis.duration,
+                tempo: analysis.tempo,
+                audio_analysis: analysis
+            };
+            spectrumDuration = analysis.duration || 0;
+            calibrateEnergyRange();
+            console.debug(`[Spectrum] Loaded ${analysis.segments.length} segments on toggle`);
+        }
+    }
+    
+    // Initialize canvas if needed
+    if (!isSpectrumInitialized) {
+        initSpectrum();
+    }
+    
+    // CRITICAL: Resize canvas after container is visible
+    // If container was display:none during init, canvas has 0x0 dimensions
+    const canvas = document.getElementById('spectrum-canvas');
+    if (canvas) {
+        resizeSpectrumCanvas(canvas);
+    }
+    
+    // Start animation loop if we have data
+    if (spectrumData && !isAnimating) {
+        startAnimationLoop();
+    }
+}
+
+/**
  * Reset spectrum state (e.g., when switching tracks)
  */
 export function resetSpectrum() {

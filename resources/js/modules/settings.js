@@ -16,6 +16,7 @@ import {
 import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
 import { applySoftMode, applySharpMode, updateBackground } from './background.js';
+import { showSpectrum, hideSpectrum } from './spectrum.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -421,6 +422,12 @@ function handleCheckboxChange(id, checked) {
     // Spectrum visualizer (independent setting)
     if (id === 'opt-spectrum') {
         displayConfig.showSpectrum = checked;
+        // Manually start/stop animation to avoid needing page reload
+        if (checked) {
+            showSpectrum();
+        } else {
+            hideSpectrum();
+        }
     }
 
     applyDisplayConfig();
