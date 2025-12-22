@@ -67,7 +67,8 @@ export function initWaveform() {
     window.addEventListener('resize', () => {
         resizeCanvas(canvas);
         if (waveformData) {
-            renderWaveform(canvas, waveformData.waveform, 0); // Re-render on resize
+            const duration = waveformData.duration || waveformDuration;
+            renderWaveform(canvas, waveformData.waveform, 0, duration); // Re-render on resize
         }
     });
 
@@ -168,7 +169,8 @@ export async function updateWaveform(trackInfo) {
         // The visual feedback is handled by updateVisualFeedback() during drag
         if (!isDragging) {
             const currentPosition = trackInfo.position || 0; // Position in seconds
-            renderWaveform(canvas, waveformData.waveform, currentPosition);
+            const duration = waveformData.duration || trackInfo.duration_ms / 1000;
+            renderWaveform(canvas, waveformData.waveform, currentPosition, duration);
         }
         
         // Update waveform time display (always, even during drag)
@@ -205,8 +207,9 @@ export async function updateWaveform(trackInfo) {
  * @param {HTMLCanvasElement} canvas - The canvas element
  * @param {Array} waveform - Array of {start, amp} objects
  * @param {number} currentPosition - Current playback position in seconds
+ * @param {number} trackDuration - Total track duration in seconds
  */
-function renderWaveform(canvas, waveform, currentPosition) {
+function renderWaveform(canvas, waveform, currentPosition, trackDuration) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.width / dpr;
@@ -237,8 +240,9 @@ function renderWaveform(canvas, waveform, currentPosition) {
     const centerY = height / 2;
     const maxBarHeight = height * 0.9;  // 90% of height for max amplitude
 
-    // Track duration from last segment's start time
-    const trackDuration = waveform[waveform.length - 1].start;
+    // Use provided duration (from audio analysis API) - more accurate than last segment's start
+    // Fallback to last segment's start if duration not provided
+    const duration = trackDuration || waveform[waveform.length - 1].start;
 
     /**
      * Find segment at a given time using binary search
@@ -258,7 +262,7 @@ function renderWaveform(canvas, waveform, currentPosition) {
         const x = i * barWidth;
         
         // Bar represents this TIME position (uniform distribution for smooth playback)
-        const barTime = (i / TARGET_BAR_COUNT) * trackDuration;
+        const barTime = (i / TARGET_BAR_COUNT) * duration;
         
         // Find segment at this time and get its amplitude (fixes position accuracy)
         const segment = findSegmentAtTime(barTime);
@@ -581,6 +585,7 @@ function updateVisualFeedback() {
     if (!canvas) return;
     
     // Re-render with preview position
-    renderWaveform(canvas, waveformData.waveform, previewPositionMs / 1000);
+    const duration = waveformData.duration || waveformDuration;
+    renderWaveform(canvas, waveformData.waveform, previewPositionMs / 1000, duration);
 }
 
