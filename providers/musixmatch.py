@@ -16,6 +16,9 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Global rate limiting - shared across all instances/concurrent calls
+_last_request_time: float = 0
+
 
 class MusixmatchProvider(LyricsProvider):
     """
@@ -44,8 +47,8 @@ class MusixmatchProvider(LyricsProvider):
     DEFAULT_TOKEN = "2203269256ff7abcb649269df00e14c833dbf4ddfb5b36a1aae8b0"
     
     # Rate limiting: Musixmatch can captcha-block rapid requests
-    # 10 seconds is conservative but prevents rate limiting issues
-    MIN_REQUEST_INTERVAL = 10.0
+    # 12 seconds is conservative but prevents rate limiting issues
+    MIN_REQUEST_INTERVAL = 12.0
     
     def __init__(self):
         """Initialize Musixmatch provider with config settings"""
@@ -125,12 +128,15 @@ class MusixmatchProvider(LyricsProvider):
         """
         Apply rate limiting to avoid captcha blocks.
         Sleeps if called too soon after the last request.
+        Uses module-level timestamp to enforce across ALL concurrent calls.
         """
-        time_since_last = time.time() - self._last_request_time
+        global _last_request_time
+        time_since_last = time.time() - _last_request_time
         if time_since_last < self.MIN_REQUEST_INTERVAL:
             sleep_time = self.MIN_REQUEST_INTERVAL - time_since_last
             logger.debug(f"Musixmatch - Rate limiting: sleeping {sleep_time:.1f}s")
             time.sleep(sleep_time)
+        _last_request_time = time.time()
     
     def get_lyrics(self, artist: str, title: str, album: str = None, 
                    duration: int = None, _retry: bool = True) -> Optional[Dict[str, Any]]:
