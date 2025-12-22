@@ -280,72 +280,240 @@
                     break;
                 
                 // ======== PLAYBACK CONTROLS ========
+                // All controls wrapped in try/catch for robust error handling
+                
                 case 'play':
-                    Spicetify.Player.play();
-                    sendMessageTo(ws, { type: 'control_ack', command: 'play', success: true });
+                    try {
+                        Spicetify.Player.play();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'play', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'play', success: false, error: e.message });
+                    }
                     break;
                     
                 case 'pause':
-                    Spicetify.Player.pause();
-                    sendMessageTo(ws, { type: 'control_ack', command: 'pause', success: true });
+                    try {
+                        Spicetify.Player.pause();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'pause', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'pause', success: false, error: e.message });
+                    }
                     break;
                     
                 case 'toggle_play':
-                    Spicetify.Player.togglePlay();
-                    sendMessageTo(ws, { type: 'control_ack', command: 'toggle_play', success: true });
+                    try {
+                        Spicetify.Player.togglePlay();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_play', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_play', success: false, error: e.message });
+                    }
                     break;
                     
                 case 'skip_next':
-                    Spicetify.Player.next();
-                    sendMessageTo(ws, { type: 'control_ack', command: 'skip_next', success: true });
+                    try {
+                        Spicetify.Player.next();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'skip_next', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'skip_next', success: false, error: e.message });
+                    }
                     break;
                     
                 case 'skip_prev':
-                    Spicetify.Player.back();
-                    sendMessageTo(ws, { type: 'control_ack', command: 'skip_prev', success: true });
+                    try {
+                        Spicetify.Player.back();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'skip_prev', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'skip_prev', success: false, error: e.message });
+                    }
                     break;
                     
                 case 'seek':
-                    if (typeof msg.position_ms === 'number') {
-                        Spicetify.Player.seek(msg.position_ms);
-                        sendMessageTo(ws, { type: 'control_ack', command: 'seek', success: true, position_ms: msg.position_ms });
+                    try {
+                        if (typeof msg.position_ms === 'number') {
+                            Spicetify.Player.seek(msg.position_ms);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'seek', success: true, position_ms: msg.position_ms });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'seek', success: false, error: 'position_ms required' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'seek', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'seek_by':
+                    // Relative seek: positive = forward, negative = backward
+                    try {
+                        if (typeof msg.offset_ms === 'number') {
+                            const currentPos = Spicetify.Player.getProgress();
+                            const newPos = Math.max(0, currentPos + msg.offset_ms);
+                            Spicetify.Player.seek(newPos);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'seek_by', success: true, offset_ms: msg.offset_ms, new_position: newPos });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'seek_by', success: false, error: 'offset_ms required' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'seek_by', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'play_uri':
+                    // Play a specific track by URI
+                    try {
+                        if (msg.uri) {
+                            Spicetify.Player.playUri(msg.uri, msg.context || {}, msg.options || {});
+                            sendMessageTo(ws, { type: 'control_ack', command: 'play_uri', success: true, uri: msg.uri });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'play_uri', success: false, error: 'uri required' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'play_uri', success: false, error: e.message });
                     }
                     break;
                     
                 case 'set_volume':
-                    if (typeof msg.volume === 'number') {
-                        Spicetify.Player.setVolume(Math.max(0, Math.min(1, msg.volume)));
-                        sendMessageTo(ws, { type: 'control_ack', command: 'set_volume', success: true, volume: msg.volume });
+                    try {
+                        if (typeof msg.volume === 'number') {
+                            Spicetify.Player.setVolume(Math.max(0, Math.min(1, msg.volume)));
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_volume', success: true, volume: msg.volume });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_volume', success: false, error: 'volume required (0-1)' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_volume', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'increase_volume':
+                    try {
+                        Spicetify.Player.increaseVolume();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'increase_volume', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'increase_volume', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'decrease_volume':
+                    try {
+                        Spicetify.Player.decreaseVolume();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'decrease_volume', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'decrease_volume', success: false, error: e.message });
                     }
                     break;
                     
                 case 'set_mute':
-                    if (typeof msg.muted === 'boolean') {
-                        Spicetify.Player.setMute(msg.muted);
-                        sendMessageTo(ws, { type: 'control_ack', command: 'set_mute', success: true, muted: msg.muted });
+                    try {
+                        if (typeof msg.muted === 'boolean') {
+                            Spicetify.Player.setMute(msg.muted);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_mute', success: true, muted: msg.muted });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_mute', success: false, error: 'muted required (boolean)' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_mute', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'toggle_mute':
+                    try {
+                        Spicetify.Player.toggleMute();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_mute', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_mute', success: false, error: e.message });
                     }
                     break;
                     
                 case 'set_shuffle':
-                    if (typeof msg.shuffle === 'boolean') {
-                        Spicetify.Player.setShuffle(msg.shuffle);
-                        sendMessageTo(ws, { type: 'control_ack', command: 'set_shuffle', success: true, shuffle: msg.shuffle });
+                    try {
+                        if (typeof msg.shuffle === 'boolean') {
+                            Spicetify.Player.setShuffle(msg.shuffle);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_shuffle', success: true, shuffle: msg.shuffle });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_shuffle', success: false, error: 'shuffle required (boolean)' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_shuffle', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'toggle_shuffle':
+                    try {
+                        Spicetify.Player.toggleShuffle();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_shuffle', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_shuffle', success: false, error: e.message });
                     }
                     break;
                     
                 case 'set_repeat':
                     // 0 = off, 1 = context (playlist/album), 2 = track
-                    if (typeof msg.repeat === 'number' && msg.repeat >= 0 && msg.repeat <= 2) {
-                        Spicetify.Player.setRepeat(msg.repeat);
-                        sendMessageTo(ws, { type: 'control_ack', command: 'set_repeat', success: true, repeat: msg.repeat });
+                    try {
+                        if (typeof msg.repeat === 'number' && msg.repeat >= 0 && msg.repeat <= 2) {
+                            Spicetify.Player.setRepeat(msg.repeat);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_repeat', success: true, repeat: msg.repeat });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_repeat', success: false, error: 'repeat required (0/1/2)' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_repeat', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'toggle_repeat':
+                    // Cycles through: off -> context -> track -> off
+                    try {
+                        Spicetify.Player.toggleRepeat();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_repeat', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_repeat', success: false, error: e.message });
                     }
                     break;
                     
                 case 'set_heart':
-                    // Like/unlike current track
-                    if (typeof msg.liked === 'boolean') {
+                    // Explicitly set like status (not toggle)
+                    try {
+                        if (typeof msg.liked === 'boolean') {
+                            Spicetify.Player.setHeart(msg.liked);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_heart', success: true, liked: msg.liked });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'set_heart', success: false, error: 'liked required (boolean)' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'set_heart', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'toggle_heart':
+                    try {
                         Spicetify.Player.toggleHeart();
-                        sendMessageTo(ws, { type: 'control_ack', command: 'set_heart', success: true });
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_heart', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'toggle_heart', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'add_to_queue':
+                    // Add track(s) to queue
+                    try {
+                        if (msg.uri || msg.uris) {
+                            const uris = msg.uris || [msg.uri];
+                            const tracks = uris.map(uri => ({ uri }));
+                            Spicetify.Platform.PlayerAPI.addToQueue(tracks);
+                            sendMessageTo(ws, { type: 'control_ack', command: 'add_to_queue', success: true, uris });
+                        } else {
+                            sendMessageTo(ws, { type: 'control_ack', command: 'add_to_queue', success: false, error: 'uri or uris required' });
+                        }
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'add_to_queue', success: false, error: e.message });
+                    }
+                    break;
+                
+                case 'clear_queue':
+                    try {
+                        Spicetify.Platform.PlayerAPI.clearQueue();
+                        sendMessageTo(ws, { type: 'control_ack', command: 'clear_queue', success: true });
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'control_ack', command: 'clear_queue', success: false, error: e.message });
                     }
                     break;
                     
@@ -387,7 +555,14 @@
             
             // Internal timing (for advanced sync)
             position_as_of_timestamp: playerData?.position_as_of_timestamp,
-            spotify_timestamp: playerData?.timestamp
+            spotify_timestamp: playerData?.timestamp,
+            
+            // Player state (for real-time UI updates)
+            shuffle: Spicetify.Player.getShuffle?.() ?? playerData?.options?.shuffling_context ?? null,
+            repeat: Spicetify.Player.getRepeat?.() ?? null,
+            volume: Spicetify.Player.getVolume?.() ?? null,
+            is_muted: Spicetify.Player.getMute?.() ?? null,
+            is_liked: Spicetify.Player.getHeart?.() ?? null
         };
     }
     
@@ -731,27 +906,17 @@
                 return null;
             }
 
-            // Extract key information including confidence values
+            // Spread full track object to get ALL fields including:
+            // - tempo, tempo_confidence, key, key_confidence, mode, mode_confidence
+            // - time_signature, time_signature_confidence, loudness, duration
+            // - end_of_fade_in, start_of_fade_out
+            // - energy, danceability, speechiness, acousticness, instrumentalness, liveness, valence
+            // - analysis_sample_rate, analysis_channels, num_samples
+            // - codestring, echoprintstring, synchstring, rhythmstring (fingerprints)
             return {
-                // Track-level analysis
-                tempo: data.track?.tempo,
-                tempo_confidence: data.track?.tempo_confidence,
-                key: data.track?.key,
-                key_confidence: data.track?.key_confidence,
-                mode: data.track?.mode,  // 0=minor, 1=major
-                mode_confidence: data.track?.mode_confidence,
-                time_signature: data.track?.time_signature,
-                time_signature_confidence: data.track?.time_signature_confidence,
-                loudness: data.track?.loudness,
-                duration: data.track?.duration,
-                
-                // Fade info (useful for visualizations)
-                end_of_fade_in: data.track?.end_of_fade_in,
-                start_of_fade_out: data.track?.start_of_fade_out,
-                
-                // Analysis metadata
-                analysis_sample_rate: data.track?.analysis_sample_rate,
-                analysis_channels: data.track?.analysis_channels,
+                // Full track analysis object (includes all audio features)
+                // Use (data.track || {}) to prevent crash if track is undefined
+                ...(data.track || {}),
                 
                 // Timing arrays (for beat-sync features)
                 beats: data.beats || [],
