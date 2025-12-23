@@ -9,7 +9,7 @@ a = Analysis(
     datas=[
         ('resources', 'resources'),
         ('.env.example', '.'),
-        ('certs', 'certs'),  # HTTPS certificates directory
+        # Note: certs folder is generated at runtime when HTTPS is enabled
     ],
     hiddenimports=[
         # === Windows SDK & System Tray ===
@@ -62,6 +62,7 @@ a = Analysis(
         'audio_recognition.shazam',
         'audio_recognition.engine',
         'audio_recognition.buffer',
+        'audio_recognition.acrcloud',
         
         # === System Utils Package (Refactored) ===
         'system_utils',
@@ -76,6 +77,8 @@ a = Analysis(
         'system_utils.gnome',
         'system_utils.reaper',
         'system_utils.session_config',
+        'system_utils.spicetify',
+        'system_utils.spicetify_db',
         
         # === Providers Package ===
         'providers',
