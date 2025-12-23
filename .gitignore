@@ -13,7 +13,11 @@ tests/
 full_project_code.txt
 features.md
 .kiro
+backups
+certs/
+spicetify_database
 
+backups/
 # share_project.py
 .cursor
 
@@ -124,3 +128,4 @@ check_devices.py
 run - Reaper.bat
 certs/server.crt
 certs/server.key
+spicylyrics full_project_code.txt
