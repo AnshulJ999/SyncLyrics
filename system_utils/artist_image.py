@@ -322,6 +322,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     
     Note: iTunes is NOT used for artist images (it rarely works for artists).
     """
+    # Check if feature is enabled (respects album_art_db setting for both loading AND downloading)
+    if not FEATURES.get("album_art_db", True):
+        return []
+    
     # Import here to avoid circular import
     from .metadata import get_current_song_meta_data
     
