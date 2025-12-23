@@ -95,6 +95,22 @@ async def add_cache_headers(response):
 
 # --- Routes ---
 
+@app.route("/health")
+async def health():
+    """
+    Health check endpoint for Docker/Kubernetes.
+    Returns basic status info for container orchestration.
+    """
+    # Check Spotify authentication status
+    client = get_spotify_client()
+    spotify_status = "authenticated" if client else "not_configured"
+    
+    return {
+        "status": "ok",
+        "uptime_seconds": int(time.time() - APP_START_TIME),
+        "spotify": spotify_status
+    }, 200
+
 @app.route("/")
 async def index() -> str:
     """Main page - pass Spotify auth URL if not authenticated"""

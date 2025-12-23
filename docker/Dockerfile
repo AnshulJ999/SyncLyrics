@@ -85,6 +85,6 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE 9012
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9012/current_track')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9012/health')" || exit 1
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
