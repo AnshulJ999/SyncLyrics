@@ -5,18 +5,18 @@ echo "============================================"
 echo "  SyncLyrics Docker Container Starting"
 echo "============================================"
 
-# Validate required environment variables
+# Check for Spotify credentials (warn if missing, but don't exit)
 if [ -z "$SPOTIFY_CLIENT_ID" ] || [ -z "$SPOTIFY_CLIENT_SECRET" ]; then
     echo ""
-    echo "ERROR: Spotify credentials not configured!"
+    echo "⚠️  WARNING: Spotify credentials not configured!"
     echo ""
-    echo "Required environment variables:"
-    echo "  - SPOTIFY_CLIENT_ID"
-    echo "  - SPOTIFY_CLIENT_SECRET"
+    echo "   The app will start, but Spotify features won't work."
+    echo "   Set these environment variables:"
+    echo "     - SPOTIFY_CLIENT_ID"
+    echo "     - SPOTIFY_CLIENT_SECRET"
     echo ""
-    echo "Get your credentials at: https://developer.spotify.com/dashboard"
+    echo "   Get credentials at: https://developer.spotify.com/dashboard"
     echo ""
-    exit 1
 fi
 
 # Create persistent storage directories
