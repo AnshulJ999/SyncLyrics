@@ -220,8 +220,12 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
         const stableFallback = `${trackInfo.artist || ''}_${trackInfo.title || ''}`.replace(/\s+/g, '_');
         const cacheBuster = trackInfo.track_id || trackInfo.id || stableFallback;
         targetUrl = targetUrl.includes('?')
-            ? `${targetUrl}&cb=${cacheBuster}`
-            : `${targetUrl}?cb=${cacheBuster}`;
+            ? `${targetUrl}&cb=${encodeURIComponent(cacheBuster)}`
+            : `${targetUrl}?cb=${encodeURIComponent(cacheBuster)}`;
+        
+        // CRITICAL: Normalize URL to ensure consistent comparison with albumArt.src
+        // The browser URL-encodes albumArt.src, so we must do the same for comparison
+        targetUrl = new URL(targetUrl, window.location.href).href;
 
         if (albumArt.src !== targetUrl) {
             if (pendingArtUrl !== targetUrl) {

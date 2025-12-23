@@ -1276,6 +1276,16 @@ async def toggle_playback():
         logger.debug("Windows toggle failed for hybrid, falling back to Spotify API")
         # Fall through to Spotify logic below
     
+    # FALLBACK: When source is None (session expired after paused_timeout, e.g. 10+ mins idle),
+    # try Windows SMTC anyway before falling through to Spotify API.
+    # This handles the case where the app (e.g., Spotify Desktop) is still paused and can be resumed.
+    if source is None:
+        from system_utils.windows import windows_toggle_playback
+        success = await windows_toggle_playback()
+        if success:
+            return jsonify({"status": "success", "message": "Toggled (Windows - Expired Session Fallback)"})
+        logger.debug("Windows toggle fallback failed (no session), trying Spotify API")
+    
     # Spotify source (and hybrid fallback) uses Spotify API
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
@@ -1329,6 +1339,14 @@ async def next_track():
             return jsonify({"status": "success", "message": "Skipped (Windows)"})
         logger.debug("Windows next failed for hybrid, falling back to Spotify API")
     
+    # FALLBACK: When source is None (session expired), try Windows SMTC anyway
+    if source is None:
+        from system_utils.windows import windows_next
+        success = await windows_next()
+        if success:
+            return jsonify({"status": "success", "message": "Skipped (Windows - Expired Session Fallback)"})
+        logger.debug("Windows next fallback failed (no session), trying Spotify API")
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1358,6 +1376,14 @@ async def previous_track():
         if success:
             return jsonify({"status": "success", "message": "Previous (Windows)"})
         logger.debug("Windows previous failed for hybrid, falling back to Spotify API")
+    
+    # FALLBACK: When source is None (session expired), try Windows SMTC anyway
+    if source is None:
+        from system_utils.windows import windows_previous
+        success = await windows_previous()
+        if success:
+            return jsonify({"status": "success", "message": "Previous (Windows - Expired Session Fallback)"})
+        logger.debug("Windows previous fallback failed (no session), trying Spotify API")
     
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503

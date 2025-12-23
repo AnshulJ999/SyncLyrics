@@ -31,6 +31,9 @@ logger = get_logger(__name__)
 class QQMusicProvider(LyricsProvider):
     """QQ Music lyrics provider"""
     
+    # Minimum score threshold for confident match (title must match)
+    MIN_CONFIDENCE_THRESHOLD = 40
+    
     def __init__(self) -> None:
         """Initialize QQ Music provider with config settings"""
         super().__init__(provider_name="qq")
@@ -48,6 +51,78 @@ class QQMusicProvider(LyricsProvider):
             'Origin': 'https://y.qq.com'
         }
         self.session.headers.update(self.headers)
+    
+    def _score_result(self, song: Dict[str, Any], target_artist: str, target_title: str, 
+                      target_album: str = None, target_duration: int = None) -> int:
+        """
+        Score a search result based on how well it matches the target song.
+        Higher score = better match.
+        
+        Scoring:
+        - Title exact match: +80
+        - Title contains target: +50
+        - Artist match: +30
+        - Album match: +15
+        - Duration within 5s: +10
+        """
+        score = 0
+        
+        # Normalize for comparison
+        song_title = song.get('name', '').lower().strip()
+        # QQ uses 'singer' instead of 'artists'
+        song_artists = [s.get('name', '').lower().strip() for s in song.get('singer', [])]
+        song_album = song.get('album', {}).get('name', '').lower().strip()
+        # QQ duration is in seconds (interval field)
+        song_duration_s = song.get('interval', 0)
+        
+        target_title_lower = target_title.lower().strip()
+        target_artist_lower = target_artist.lower().strip()
+        
+        # Title scoring (most important)
+        if song_title == target_title_lower:
+            score += 80  # Exact match
+        elif target_title_lower in song_title or song_title in target_title_lower:
+            score += 50  # Partial match
+        
+        # Artist scoring
+        if any(target_artist_lower in artist or artist in target_artist_lower for artist in song_artists):
+            score += 30
+        
+        # Album scoring (if provided)
+        if target_album:
+            target_album_lower = target_album.lower().strip()
+            if target_album_lower in song_album or song_album in target_album_lower:
+                score += 15
+        
+        # Duration scoring (if provided, within 5 second tolerance)
+        if target_duration and song_duration_s:
+            if abs(song_duration_s - target_duration) <= 5:
+                score += 10
+        
+        return score
+    
+    def _find_best_match(self, songs: list, artist: str, title: str, 
+                         album: str = None, duration: int = None) -> tuple:
+        """
+        Find the best matching song from search results.
+        
+        Returns:
+            tuple: (best_song, best_score) or (None, 0) if no songs
+        """
+        if not songs:
+            return None, 0
+        
+        best_song = None
+        best_score = 0
+        
+        for song in songs:
+            score = self._score_result(song, artist, title, album, duration)
+            if score > best_score:
+                best_score = score
+                best_song = song
+        
+        return best_song, best_score
+
 
     def _make_request(self, method: str, url: str, **kwargs) -> Optional[Dict]:
         """
@@ -197,13 +272,15 @@ class QQMusicProvider(LyricsProvider):
         
         return sorted(processed_lyrics, key=lambda x: x[0])
 
-    def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+    def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
         """
         Get synchronized lyrics for a song
         
         Args:
             artist (str): Artist name
             title (str): Song title
+            album (str): Album name (optional, used for scoring)
+            duration (int): Track duration in seconds (optional, used for scoring)
             
         Returns:
             Optional[Dict[str, Any]]: Dictionary with synced lyrics and metadata or None
@@ -222,11 +299,26 @@ class QQMusicProvider(LyricsProvider):
                 logger.info(f"QQ - No songs found for: {search_term}")
                 return None
             
-            # Get the first matching song
-            song = songs[0]
-            logger.info(f"QQ - Found song: {song['name']} - {song['singer'][0]['name']}")
+            # Find best matching song using multi-factor scoring
+            best_song, best_score = self._find_best_match(songs, artist, title, album, duration)
             
-            # Get lyrics
+            # Use best match if confident, otherwise fall back to first result
+            if best_score >= self.MIN_CONFIDENCE_THRESHOLD:
+                song = best_song
+                song_name = song.get('name', 'Unknown')
+                song_artist = song['singer'][0]['name'] if song.get('singer') and len(song['singer']) > 0 else 'Unknown'
+                logger.info(f"QQ - Selected '{song_name}' by '{song_artist}' (score: {best_score})")
+            else:
+                # Fallback to first result (preserves existing behavior)
+                song = songs[0]
+                song_name = song.get('name', 'Unknown')
+                song_artist = song['singer'][0]['name'] if song.get('singer') and len(song['singer']) > 0 else 'Unknown'
+                logger.warning(f"QQ - Low confidence match (score: {best_score}), falling back to first result: '{song_name}' by '{song_artist}'")
+            
+            # Get lyrics - ensure song has 'mid' field
+            if 'mid' not in song:
+                logger.warning(f"QQ - Song missing 'mid' field: {song_name}")
+                return None
             lyrics_text = self._get_raw_lyrics(song['mid'])
             if not lyrics_text:
                 logger.info(f"QQ - No lyrics found for: {search_term}")

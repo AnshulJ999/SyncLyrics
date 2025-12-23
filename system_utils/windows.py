@@ -459,10 +459,10 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     try:
                         stream = await asyncio.wait_for(
                             thumbnail_ref.open_read_async(),
-                            timeout=3.0
+                            timeout=2.0
                         )
                     except asyncio.TimeoutError:
-                        logger.warning("TRACE: Windows thumbnail open_read_async timed out")
+                        logger.debug("TRACE: Windows thumbnail open_read_async timed out")
                         stream = None
                         # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
                         # We won't retry thumbnail extraction for this track until it changes
@@ -473,10 +473,10 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                         try:
                             await asyncio.wait_for(
                                 reader.load_async(stream.size),
-                                timeout=3.0
+                                timeout=2.0
                             )
                         except asyncio.TimeoutError:
-                            logger.warning("TRACE: Windows thumbnail load_async timed out")
+                            logger.debug("TRACE: Windows thumbnail load_async timed out")
                             stream = None
                             # Also mark as processed on load timeout
                             state._last_windows_track_id = current_track_id
@@ -502,7 +502,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():
-                    album_art_url = f"/cover-art?id={current_track_id}&t={int(time.time())}"
+                    # Use file's mtime for stable URL (not time.time() which changes every second)
+                    thumb_mtime = int(thumb_path.stat().st_mtime)
+                    album_art_url = f"/cover-art?id={current_track_id}&t={thumb_mtime}"
                     result_extra_fields = {"album_art_path": str(thumb_path)}
             except Exception as e:
                 pass
