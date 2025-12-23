@@ -15,6 +15,7 @@ from quart import websocket
 from . import state
 from .helpers import _normalize_track_id
 from logging_config import get_logger
+from providers.spotify_api import enhance_spotify_image_url_async
 
 logger = get_logger(__name__)
 
@@ -148,6 +149,12 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             elapsed_ms = min(elapsed_ms, 5000)
             position_ms = position_ms + elapsed_ms
         
+        # Convert spotify:image: URI -> HTTPS, then enhance to 1400px (same as Spotify API source)
+        # This ensures high-res album art even when album_art_db is OFF
+        # Compute once and reuse for both album_art_url and background_image_url
+        raw_album_art_url = _convert_spotify_image_uri(track.get('album_art_url'))
+        enhanced_album_art_url = await enhance_spotify_image_url_async(raw_album_art_url)
+        
         return {
             'track_id': current_track_id,
             'id': spotify_id,  # Spotify track ID for like button
@@ -161,9 +168,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'is_playing': is_playing,
             'is_buffering': _spicetify_state['is_buffering'],
             'colors': colors,
-            'album_art_url': _convert_spotify_image_uri(track.get('album_art_url')),
+            'album_art_url': enhanced_album_art_url,
             'album_art_path': None,  # Set during enrichment in metadata.py
-            'background_image_url': _convert_spotify_image_uri(track.get('album_art_url')),  # Default bg to album art
+            'background_image_url': enhanced_album_art_url,  # Default bg to album art
             'background_image_path': None,  # Set during enrichment in metadata.py
             'audio_analysis': _spicetify_state.get('audio_analysis'),
             'last_active_time': _spicetify_last_active_time,
