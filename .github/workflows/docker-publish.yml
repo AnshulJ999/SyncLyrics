@@ -49,6 +49,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual run: use the input tag
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "is_manual=true" >> $GITHUB_OUTPUT
+          else
+            # Tag push: extract from GITHUB_REF
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "is_manual=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
@@ -57,10 +70,14 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE }}
             ${{ env.GHCR_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            # For tag pushes: generate semver tags (1.4.0, 1.4, 1)
+            type=semver,pattern={{version}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            # For manual runs: use the exact tag entered
+            type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
+            # Latest tag only on main branch releases
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.title=SyncLyrics
             org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
@@ -72,7 +89,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
