@@ -18,6 +18,21 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+def _convert_spotify_image_uri(url: str) -> str:
+    """
+    Convert spotify:image:xxx URI to HTTPS URL.
+    
+    Spicetify sometimes sends spotify:image:xxx format instead of HTTPS URLs.
+    Format: spotify:image:ab67616d00001e02xxx -> https://i.scdn.co/image/ab67616d00001e02xxx
+    
+    This is defense-in-depth (bridge also converts, but this catches edge cases).
+    """
+    if url and url.startswith('spotify:image:'):
+        image_id = url.replace('spotify:image:', '')
+        return f'https://i.scdn.co/image/{image_id}'
+    return url
+
 # =============================================================================
 # SHARED STATE
 # =============================================================================
@@ -146,9 +161,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'is_playing': is_playing,
             'is_buffering': _spicetify_state['is_buffering'],
             'colors': colors,
-            'album_art_url': track.get('album_art_url'),
+            'album_art_url': _convert_spotify_image_uri(track.get('album_art_url')),
             'album_art_path': None,  # Set during enrichment in metadata.py
-            'background_image_url': track.get('album_art_url'),  # Default bg to album art
+            'background_image_url': _convert_spotify_image_uri(track.get('album_art_url')),  # Default bg to album art
             'background_image_path': None,  # Set during enrichment in metadata.py
             'audio_analysis': _spicetify_state.get('audio_analysis'),
             'last_active_time': _spicetify_last_active_time,
