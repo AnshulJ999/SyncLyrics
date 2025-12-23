@@ -7,7 +7,6 @@ FROM python:3.12-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    gfortran \
     libc-dev \
     libjpeg-dev \
     zlib1g-dev \
@@ -24,12 +23,15 @@ WORKDIR /app
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
-# Remove Windows-only dependencies and install Python packages
+# Remove Windows-only and heavy optional dependencies for Docker
 RUN sed -i '/winsdk/d' requirements.txt && \
     sed -i '/pywin32/d' requirements.txt && \
     sed -i '/pystray/d' requirements.txt && \
     sed -i '/desktop-notifier/d' requirements.txt && \
     sed -i '/pyinstaller/d' requirements.txt && \
+    sed -i '/matplotlib/d' requirements.txt && \
+    sed -i '/scipy/d' requirements.txt && \
+    sed -i '/psutil/d' requirements.txt && \
     pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

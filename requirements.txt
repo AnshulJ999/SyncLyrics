@@ -22,7 +22,7 @@ itsdangerous>=2.1.2
 
 # Image Processing
 numpy>=1.26.4
-matplotlib>=3.8.0
+# matplotlib>=3.8.0  # Not used - was kept for potential future use
 
 # Utilities
 colorama>=0.4.6
