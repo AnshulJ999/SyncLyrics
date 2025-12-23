@@ -3,9 +3,11 @@
 
 FROM python:3.12-slim-bookworm AS builder
 
-# Install build dependencies
+# Install build dependencies (including g++ and gfortran for NumPy/SciPy on ARM)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
+    gfortran \
     libc-dev \
     libjpeg-dev \
     zlib1g-dev \
@@ -14,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libportaudio2 \
     portaudio19-dev \
     ffmpeg \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -74,12 +77,16 @@ ENV PYTHONUNBUFFERED=1 \
     SERVER_PORT=9012 \
     DEBUG_ENABLED=false \
     DEBUG_LOG_LEVEL=INFO \
+    SPOTIFY_REDIRECT_URI=http://127.0.0.1:9012/callback \
+    SPOTIFY_POLLING_FAST_INTERVAL=2.0 \
+    SPOTIFY_POLLING_SLOW_INTERVAL=6.0 \
     SYNCLYRICS_SETTINGS_FILE=/data/settings.json \
     SYNCLYRICS_STATE_FILE=/data/state.json \
     SYNCLYRICS_LYRICS_DB=/data/lyrics_database \
     SYNCLYRICS_ALBUM_ART_DB=/data/album_art_database \
     SYNCLYRICS_CACHE_DIR=/data/cache \
     SYNCLYRICS_LOGS_DIR=/data/logs \
+    SYNCLYRICS_CERTS_DIR=/data/certs \
     SPOTIPY_CACHE_PATH=/data/.spotify_cache
 
 EXPOSE 9012
