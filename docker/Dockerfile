@@ -1,7 +1,7 @@
 # SyncLyrics Standalone Docker Image
 # https://github.com/AnshulJ999/SyncLyrics
 
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,7 +33,7 @@ RUN sed -i '/winsdk/d' requirements.txt && \
 # -----------------------------------
 # Final stage - slim runtime image
 # -----------------------------------
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
