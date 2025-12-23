@@ -34,9 +34,12 @@ import {
     seekToPosition
 } from './api.js';
 
-// ========== SEEK DEBOUNCING ==========
+// ========== SEEK STATE ==========
 let seekTimeout = null;
-const SEEK_DEBOUNCE_MS = 300;
+let isDragging = false;
+let previewPositionMs = null;
+let seekTooltip = null;
+const SEEK_DEBOUNCE_MS = 150;  // Match waveform (faster since drag prevents spam)
 
 /**
  * Debounced seek - only sends API call after user stops interacting
@@ -47,13 +50,14 @@ function debouncedSeek(positionMs) {
     if (seekTimeout) clearTimeout(seekTimeout);
     
     seekTimeout = setTimeout(async () => {
+        console.log(`[ProgressBar] Seeking to ${formatTime(positionMs / 1000)} (${positionMs}ms)`);
         try {
             const result = await seekToPosition(positionMs);
             if (result.error) {
                 showToast('Seek failed', 'error');
             }
         } catch (error) {
-            console.error('Seek error:', error);
+            console.error('[ProgressBar] Seek error:', error);
         }
     }, SEEK_DEBOUNCE_MS);
 }
@@ -199,26 +203,193 @@ export function updateProgress(trackInfo) {
 
 /**
  * Attach seek handler to progress bar
- * Enables click-to-seek on the regular progress bar
+ * Full-featured implementation matching waveform.js:
+ * - Click-to-seek
+ * - Drag-to-scrub with visual preview
+ * - Touch support for mobile/tablet
+ * - Time tooltip during hover/drag
  */
 export function attachProgressBarSeek() {
     const progressBar = document.getElementById('progress-bar');
+    const progressFill = document.getElementById('progress-fill');
     if (!progressBar) return;
+    
+    // Create tooltip element if it doesn't exist
+    if (!seekTooltip) {
+        seekTooltip = document.createElement('div');
+        seekTooltip.className = 'seek-tooltip';
+        seekTooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            pointer-events: none;
+            z-index: 10000;
+            display: none;
+            transform: translateX(-50%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        `;
+        document.body.appendChild(seekTooltip);
+    }
     
     // Make it clickable
     progressBar.style.cursor = 'pointer';
+    progressBar.style.touchAction = 'none';  // Prevent touch scrolling on the bar
     
-    progressBar.addEventListener('click', (e) => {
+    // Get client position from mouse or touch event
+    const getClientPos = (e) => {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    };
+    
+    // Calculate seek position from client coordinates
+    const calculateSeekPosition = (clientX) => {
         const rect = progressBar.getBoundingClientRect();
-        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const duration = lastTrackInfo?.duration_ms || 0;
+        return percent * duration;  // Return in ms
+    };
+    
+    // Show tooltip at position
+    const showTooltip = (clientX, clientY, positionMs) => {
+        const timeStr = formatTime(positionMs / 1000);
+        seekTooltip.textContent = timeStr;
+        seekTooltip.style.display = 'block';
+        seekTooltip.style.left = `${clientX}px`;
+        // Position tooltip above the touch/cursor
+        const offset = isDragging ? 50 : 35;
+        seekTooltip.style.top = `${clientY - offset}px`;
+    };
+    
+    // Hide tooltip
+    const hideTooltip = () => {
+        seekTooltip.style.display = 'none';
+    };
+    
+    // Update visual preview during drag
+    const updateVisualPreview = (positionMs) => {
+        if (!progressFill) return;
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        const percent = Math.min(100, (positionMs / duration) * 100);
+        progressFill.style.width = `${percent}%`;
+    };
+    
+    // Track if we already sought (to prevent click from also firing after drag)
+    let didSeek = false;
+    
+    // ========== POINTER START (mousedown / touchstart) ==========
+    const handlePointerStart = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        e.preventDefault();
         
-        // Need duration from lastTrackInfo
+        const pos = getClientPos(e);
+        isDragging = true;
+        didSeek = false;
+        previewPositionMs = calculateSeekPosition(pos.x);
+        showTooltip(pos.x, pos.y, previewPositionMs);
+        updateVisualPreview(previewPositionMs);
+    };
+    
+    // ========== POINTER MOVE (mousemove / touchmove) ==========
+    const handlePointerMove = (e) => {
         const duration = lastTrackInfo?.duration_ms || 0;
         if (!duration) return;
         
-        const positionMs = Math.floor(percent * duration);
+        const pos = getClientPos(e);
+        const hoverPositionMs = calculateSeekPosition(pos.x);
+        
+        // Always show tooltip on move (hover or drag)
+        showTooltip(pos.x, pos.y, hoverPositionMs);
+        
+        // Update visual preview if dragging
+        if (isDragging) {
+            e.preventDefault();
+            previewPositionMs = hoverPositionMs;
+            updateVisualPreview(previewPositionMs);
+        }
+    };
+    
+    // ========== POINTER END (mouseup / touchend) ==========
+    const handlePointerEnd = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        if (isDragging && previewPositionMs !== null) {
+            debouncedSeek(previewPositionMs);
+            didSeek = true;
+        }
+        
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== POINTER CANCEL (touchcancel) ==========
+    const handlePointerCancel = () => {
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== MOUSE LEAVE ==========
+    const handleMouseLeave = () => {
+        if (!isDragging) {
+            hideTooltip();
+        }
+    };
+    
+    // ========== CLICK (for simple tap/click without drag) ==========
+    const handleClick = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        // Skip if we already seeked via drag
+        if (didSeek) {
+            didSeek = false;
+            return;
+        }
+        
+        const pos = getClientPos(e);
+        const positionMs = calculateSeekPosition(pos.x);
         debouncedSeek(positionMs);
+    };
+    
+    // ========== ATTACH PROGRESS BAR EVENTS ==========
+    // Mouse events
+    progressBar.addEventListener('mousedown', handlePointerStart);
+    progressBar.addEventListener('mousemove', handlePointerMove);
+    progressBar.addEventListener('mouseleave', handleMouseLeave);
+    progressBar.addEventListener('click', handleClick);
+    
+    // Touch events
+    progressBar.addEventListener('touchstart', handlePointerStart, { passive: false });
+    progressBar.addEventListener('touchmove', handlePointerMove, { passive: false });
+    progressBar.addEventListener('touchend', handlePointerEnd);
+    progressBar.addEventListener('touchcancel', handlePointerCancel);
+    
+    // ========== GLOBAL END EVENTS (for drag completion outside bar) ==========
+    document.addEventListener('mouseup', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
     });
+    
+    document.addEventListener('touchend', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
+    }, { passive: true });
 }
 
 // ========== TRACK INFO ==========
