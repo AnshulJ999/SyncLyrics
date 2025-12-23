@@ -186,6 +186,15 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
         image_id = url.replace('spotify:image:', '')
         url = f'https://i.scdn.co/image/{image_id}'
         logger.debug(f"Converted spotify:image URI to HTTPS: {url}")
+        
+        # FIX: Also enhance to 1400px after conversion
+        # The URI often contains low-res quality codes (e.g., 00001e02 = 300px)
+        # Enhancement function is idempotent and cached, so safe to call multiple times
+        from providers.spotify_api import enhance_spotify_image_url_sync
+        enhanced_url = enhance_spotify_image_url_sync(url)
+        if enhanced_url != url:
+            logger.debug(f"Enhanced Spotify URL to 1400px: {enhanced_url}")
+            url = enhanced_url
     
     # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
     # Use same User-Agent as ArtistImageProvider for consistency
