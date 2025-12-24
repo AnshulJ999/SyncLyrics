@@ -16,7 +16,7 @@ on:
         type: string
 
 env:
-  DOCKERHUB_IMAGE: anshulj999/synclyrics
+  DOCKERHUB_IMAGE: anshulj99/synclyrics
   GHCR_IMAGE: ghcr.io/anshulj999/synclyrics
 
 jobs:
@@ -131,7 +131,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: anshulj999/synclyrics
+          repository: anshulj99/synclyrics
           readme-filepath: ./docker/DOCKER.md
           short-description: "Real-time synchronized lyrics for Spotify 🎵"
 
