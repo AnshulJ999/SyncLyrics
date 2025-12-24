@@ -23,6 +23,15 @@ from .capture import AudioChunk
 
 logger = get_logger(__name__)
 
+# Module-level reference for stats access from helpers.py
+_active_instance: Optional['ACRCloudRecognizer'] = None
+
+def get_acrcloud_stats() -> Optional[tuple[int, int]]:
+    """Get ACRCloud daily usage stats (requests_today, daily_limit)."""
+    if _active_instance and _active_instance._enabled:
+        return (_active_instance._requests_today, _active_instance._daily_limit)
+    return None
+
 
 class ACRCloudRecognizer:
     """
@@ -55,6 +64,9 @@ class ACRCloudRecognizer:
         
         if self._enabled:
             logger.info(f"ACRCloud initialized (host: {self._host}, daily limit: {self._daily_limit}, cooldown: {self._cooldown_seconds}s)")
+            # Set module-level reference for stats access
+            global _active_instance
+            _active_instance = self
         else:
             logger.debug("ACRCloud not configured (missing credentials in .env)")
     

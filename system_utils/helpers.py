@@ -234,6 +234,20 @@ def _log_app_state() -> None:
             f"|  |- Windows Media: {state._metadata_fetch_counters['windows_media']}\n"
             f"|  `- Spicetify: {state._metadata_fetch_counters['spicetify']}\n"
         )
+        
+        # Add ACRCloud stats if available
+        try:
+            from audio_recognition.acrcloud import get_acrcloud_stats
+            stats = get_acrcloud_stats()
+            if stats:
+                requests_today, daily_limit = stats
+                state_summary += (
+                    f"|- ACRCloud:\n"
+                    f"|  `- Requests Today: {requests_today}/{daily_limit}\n"
+                )
+        except ImportError:
+            pass  # ACRCloud not available
+        
         logger.info(state_summary)
 
         # Log Spotify API stats if available (this is the important one for rate limits)

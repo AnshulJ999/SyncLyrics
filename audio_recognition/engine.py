@@ -215,13 +215,15 @@ class RecognitionEngine:
         
         # Use Spotify enriched data if available
         if self._enriched_metadata:
+            # Use Spotify duration (reliable) - Shazam doesn't provide accurate duration
+            spotify_duration = self._enriched_metadata.get("duration_ms", 0)
             return {
                 # Canonical metadata from Spotify
                 "artist": self._enriched_metadata["artist"],
                 "title": self._enriched_metadata["title"],
                 "album": self._enriched_metadata.get("album"),
                 "track_id": self._enriched_metadata.get("track_id"),
-                "duration_ms": self._enriched_metadata.get("duration_ms", 0),
+                "duration_ms": spotify_duration if spotify_duration > 0 else 0,
                 # Shazam-only fields (preserved)
                 "isrc": self._last_result.isrc,
                 "shazam_url": self._last_result.shazam_url,
@@ -604,6 +606,8 @@ class RecognitionEngine:
             # Fire-and-forget: Don't block recognition loop waiting for Spotify API
             asyncio.create_task(self._enrich_metadata_async(result))
         
+        # Fix: Update recognition_provider on EVERY match (not just song changes)
+        # This ensures the badge updates correctly when switching between Shazam/ACRCloud
         self._last_result = result
         self._set_state(EngineState.ACTIVE)
     
