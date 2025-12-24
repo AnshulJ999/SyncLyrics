@@ -702,6 +702,24 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     # Failed - allow retry on next poll
                                     state._db_checked_tracks.pop(captured_checked_key, None)
                                 else:
+                                    # Success - update the cached result so next poll picks it up
+                                    cached_url, cached_path = db_result
+                                    if cached_path:
+                                        local_art_path = Path(cached_path)
+                                        if local_art_path.exists():
+                                            mtime = int(local_art_path.stat().st_mtime)
+                                            local_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                                            
+                                            # Update _last_result if still the same song
+                                            cached_result = getattr(get_current_song_meta_data, '_last_result', None)
+                                            if cached_result and cached_result.get('source') == 'audio_recognition':
+                                                cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
+                                                current_song = f"{captured_artist} - {captured_title}"
+                                                if cached_song == current_song:
+                                                    cached_result["album_art_url"] = local_url
+                                                    cached_result["album_art_path"] = str(cached_path)
+                                                    cached_result["background_image_url"] = local_url
+                                                    cached_result["background_image_path"] = str(cached_path)
                                     logger.debug(f"Audio rec: Background enrichment complete for {captured_artist} - {captured_title}")
                             except Exception as e:
                                 logger.error(f"Audio rec: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
