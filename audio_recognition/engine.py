@@ -670,7 +670,12 @@ class RecognitionEngine:
             if not enriched and self.title_search_enricher:
                 try:
                     logger.debug(f"Trying title search: {result.artist} - {result.title}")
-                    enriched = await self.title_search_enricher(result.artist, result.title)
+                    # Pass album for validation (if available from Shazam/ACRCloud)
+                    enriched = await self.title_search_enricher(
+                        result.artist, 
+                        result.title, 
+                        result.album  # For validation against Spotify result
+                    )
                     if enriched:
                         enrichment_source = "Artist+Title search"
                 except Exception as e:

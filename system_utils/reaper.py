@@ -412,25 +412,95 @@ class ReaperAudioSource:
                 metadata_enricher = spotify_enricher
                 
                 # NEW: Create async wrapper for artist+title search (fallback)
-                async def title_enricher(artist: str, title: str):
+                # Includes validation to prevent wrong song enrichment
+                async def title_enricher(artist: str, title: str, album: str = None):
                     loop = asyncio.get_running_loop()
                     result = await loop.run_in_executor(
                         None,
                         spotify_client.search_track,
                         artist, title
                     )
+                    
+                    if not result:
+                        return None
+                    
+                    # VALIDATION: Ensure Spotify result matches Shazam/ACRCloud detection
+                    # This prevents enriching with wrong song metadata
+                    result_artist = (result.get('artist') or '').lower().strip()
+                    result_title = (result.get('title') or '').lower().strip()
+                    result_album = (result.get('album') or '').lower().strip()
+                    input_artist = (artist or '').lower().strip()
+                    input_title = (title or '').lower().strip()
+                    input_album = (album or '').lower().strip()
+                    
+                    # Artist match: Must have significant overlap
+                    # Handles cases like "ERRA" vs "Erra", "Plini" vs "plini"
+                    artist_match = (
+                        input_artist in result_artist or 
+                        result_artist in input_artist or
+                        _fuzzy_match(input_artist, result_artist)
+                    )
+                    
+                    # Title match: Must have significant overlap
+                    # Handles cases like "Drift" vs "Drift (Deluxe Version)"
+                    title_match = (
+                        input_title in result_title or 
+                        result_title in input_title or
+                        _fuzzy_match(input_title, result_title)
+                    )
+                    
+                    # Album match: Optional (different regions may have different album names)
+                    # But if both exist and match, it's a strong signal
+                    album_match = True  # Default to true (optional)
+                    if input_album and result_album:
+                        album_match = (
+                            input_album in result_album or 
+                            result_album in input_album or
+                            _fuzzy_match(input_album, result_album)
+                        )
+                    
+                    # REQUIRE: Artist AND Title must match
+                    # Album is a bonus validation but not required
+                    if not (artist_match and title_match):
+                        logger.warning(
+                            f"Title search REJECTED - mismatch detected: "
+                            f"wanted '{artist} - {title}' (album: {album}), "
+                            f"got '{result.get('artist')} - {result.get('title')}' (album: {result.get('album')})"
+                        )
+                        return None
+                    
+                    if not album_match:
+                        logger.debug(
+                            f"Title search: album mismatch ('{input_album}' vs '{result_album}') "
+                            f"but proceeding since artist+title match"
+                        )
+                    
+                    logger.info(f"Title search ACCEPTED: {artist} - {title}")
+                    
                     # search_track returns slightly different format, normalize it
-                    if result:
-                        return {
-                            'artist': result.get('artist', artist),
-                            'title': result.get('title', title),
-                            'album': result.get('album'),
-                            'track_id': None,  # search_track doesn't return this
-                            'duration_ms': result.get('duration_ms', 0),
-                            'album_art_url': result.get('album_art'),
-                            'url': result.get('url'),
-                        }
-                    return None
+                    return {
+                        'artist': result.get('artist', artist),
+                        'title': result.get('title', title),
+                        'album': result.get('album'),
+                        'track_id': None,  # search_track doesn't return this
+                        'duration_ms': result.get('duration_ms', 0),
+                        'album_art_url': result.get('album_art'),
+                        'url': result.get('url'),
+                        '_enrichment_source': 'title_search',
+                    }
+                
+                def _fuzzy_match(str1: str, str2: str, threshold: float = 0.7) -> bool:
+                    """Simple fuzzy match based on word overlap."""
+                    if not str1 or not str2:
+                        return False
+                    words1 = set(str1.split())
+                    words2 = set(str2.split())
+                    if not words1 or not words2:
+                        return False
+                    overlap = len(words1 & words2)
+                    total = min(len(words1), len(words2))
+                    return (overlap / total) >= threshold if total > 0 else False
+                
                 title_search_enricher = title_enricher
                 
                 logger.debug("Spotify metadata enricher configured (ISRC + title search)")
