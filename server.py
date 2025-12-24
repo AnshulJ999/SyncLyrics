@@ -143,7 +143,13 @@ async def lyrics() -> dict:
     Called by the frontend JavaScript to fetch lyrics updates.
     """
     lyrics_data = await get_timed_lyrics_previous_and_next()
-    metadata = await get_current_song_meta_data()
+    
+    # FIX 2: Use lyrics_module.current_song_data instead of redundant get_current_song_meta_data() call
+    # _update_song() (called by get_timed_lyrics_previous_and_next) already fetched and stored metadata
+    # This avoids acquiring _meta_data_lock twice per poll, reducing lock contention
+    metadata = lyrics_module.current_song_data
+    if not metadata:  # Defensive fallback (shouldn't happen in normal operation)
+        metadata = await get_current_song_meta_data()
     
     # Remove the early return for string type so we can wrap it properly
     # if isinstance(lyrics_data, str):
@@ -194,7 +200,11 @@ async def lyrics() -> dict:
             "is_instrumental_manual": is_instrumental_manual,
             "word_synced_lyrics": None,
             "has_word_sync": False,
-            "word_sync_provider": None
+            "word_sync_provider": None,
+            # FIX 4: Add track identification for frontend stale-response guard
+            "track_id": metadata.get("track_id") if metadata else None,
+            "artist": metadata.get("artist", "") if metadata else "",
+            "title": metadata.get("title", "") if metadata else ""
         }
     
     # Check if lyrics are actually empty or just [...]
@@ -246,12 +256,17 @@ async def lyrics() -> dict:
             # Song changed - invalidate cache and extract markers from disk
             instrumental_symbols = {'♪', '♫', '♬', '🎵', '🎶'}
             
+            # FIX 3: Helper for async file I/O (avoids blocking event loop)
+            def _read_json_sync(path: str) -> dict:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            
             try:
                 # Get the db path and read cached providers
                 db_path = lyrics_module._get_db_path(artist, title)
                 if db_path and os.path.exists(db_path):
-                    with open(db_path, 'r', encoding='utf-8') as f:
-                        cached_data = json.load(f)
+                    # FIX 3: Wrap sync file I/O in thread pool to avoid blocking event loop
+                    cached_data = await asyncio.to_thread(_read_json_sync, db_path)
                     
                     saved_lyrics = cached_data.get("saved_lyrics", {})
                     
@@ -297,7 +312,11 @@ async def lyrics() -> dict:
         # Flag for toggle availability: true if ANY cached provider has word-sync
         "any_provider_has_word_sync": any_provider_has_word_sync,
         # Instrumental markers for gap detection (timestamps where ♪ appears in line-sync)
-        "instrumental_markers": instrumental_markers if instrumental_markers else None
+        "instrumental_markers": instrumental_markers if instrumental_markers else None,
+        # FIX 4: Add track identification for frontend stale-response guard
+        "track_id": metadata.get("track_id") if metadata else None,
+        "artist": metadata.get("artist", "") if metadata else "",
+        "title": metadata.get("title", "") if metadata else ""
     }
 
 @app.route("/current-track")

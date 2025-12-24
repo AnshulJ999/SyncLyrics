@@ -159,11 +159,14 @@ async function updateLoop() {
             continue;
         }
 
-        // Fetch track info and lyrics in parallel
-        const [trackInfo, data] = await Promise.all([
-            getCurrentTrack(),
-            getLyrics(updateBackground, updateThemeColor, updateProviderDisplay)
-        ]);
+        // FIX 1: Decouple track UI from lyrics fetch
+        // Start BOTH requests in parallel (saves network time)
+        // But await track FIRST so UI updates immediately
+        const trackPromise = getCurrentTrack();
+        const lyricsPromise = getLyrics(updateBackground, updateThemeColor, updateProviderDisplay);
+
+        // Wait for track info first (usually fast from Spicetify/Windows cache)
+        const trackInfo = await trackPromise;
 
         setLastCheckTime(Date.now());
 
@@ -323,6 +326,8 @@ async function updateLoop() {
             }
         }
 
+        // FIX 1: Update track UI IMMEDIATELY (before waiting for lyrics)
+        // This ensures track title/art/progress update in ~100ms, not 5-10s
         updateTrackInfo(trackInfo);
         updateAlbumArt(trackInfo, updateBackground);
         updateProgress(trackInfo);
@@ -342,26 +347,42 @@ async function updateLoop() {
             hideSpectrum();
         }
 
-        // Update lyrics
-        if (data && data.lyrics && data.lyrics.length > 0) {
-            if (areLyricsDifferent(lastLyrics, data.lyrics)) {
-                setLyricsInDom(data.lyrics);
-            }
-        } else if (data && typeof data === 'object') {
-            setLyricsInDom(data);
-        }
+        // FIX 1: Now wait for lyrics (may be slow on first fetch for new song)
+        const data = await lyricsPromise;
 
-        // Check for visual mode
-        checkForVisualMode(data, trackId);
-
-        // Start word-sync animation loop if word-sync is available
-        // The rAF loop runs at display refresh rate (60-144fps) for smooth animation
-        // Position is interpolated between polls using anchor + elapsed time
-        startWordSyncAnimation();
+        // FIX 4: Guard against stale lyrics response (from a different song)
+        // If user skipped tracks while lyrics were loading, don't apply old lyrics
+        const lyricsTrackId = data?.track_id?.trim() || 
+            normalizeTrackId(data?.artist || '', data?.title || '');
+        const currentTrackId = trackId; // trackId was computed earlier for current track
         
-        // Update word-sync toggle button UI state (icon, unavailable class)
-        // This ensures button reflects current hasWordSync state after each poll
-        updateWordSyncToggleUI();
+        // Only apply lyrics if they match the current track
+        const lyricsMatchCurrentTrack = !lyricsTrackId || lyricsTrackId === currentTrackId;
+        
+        if (!lyricsMatchCurrentTrack) {
+            console.log(`[Main] Skipping stale lyrics (was for ${lyricsTrackId}, current is ${currentTrackId})`);
+        } else {
+            // Update lyrics
+            if (data && data.lyrics && data.lyrics.length > 0) {
+                if (areLyricsDifferent(lastLyrics, data.lyrics)) {
+                    setLyricsInDom(data.lyrics);
+                }
+            } else if (data && typeof data === 'object') {
+                setLyricsInDom(data);
+            }
+
+            // Check for visual mode
+            checkForVisualMode(data, trackId);
+
+            // Start word-sync animation loop if word-sync is available
+            // The rAF loop runs at display refresh rate (60-144fps) for smooth animation
+            // Position is interpolated between polls using anchor + elapsed time
+            startWordSyncAnimation();
+            
+            // Update word-sync toggle button UI state (icon, unavailable class)
+            // This ensures button reflects current hasWordSync state after each poll
+            updateWordSyncToggleUI();
+        }
 
         await sleep(currentPollInterval);
     }
