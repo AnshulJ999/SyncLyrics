@@ -254,9 +254,11 @@ class ACRCloudRecognizer:
             latency = recognition.get_latency()
             current_pos = recognition.get_current_position()
             
+            duration_str = f"{duration:.1f}s ({duration_ms}ms)" if duration else "MISSING"
             logger.info(
                 f"ACRCloud recognized: {artist} - {title} | "
                 f"Offset: {offset:.1f}s | "
+                f"Duration: {duration_str} | "
                 f"Latency: {latency:.1f}s | "
                 f"Current: {current_pos:.1f}s | "
                 f"Requests today: {self._requests_today}/{self._daily_limit}"

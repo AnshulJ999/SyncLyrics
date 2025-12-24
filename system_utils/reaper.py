@@ -648,6 +648,11 @@ class ReaperAudioSource:
         duration_ms = song.get("duration_ms", 0) or 0
         duration_sec = duration_ms // 1000 if duration_ms else 0
         
+        # DEBUG: Trace values for progress bar debugging
+        # provider = song.get("recognition_provider", "unknown")
+        # if provider == "acrcloud":
+         #   logger.debug(f"ACRCloud metadata: position={position:.1f}s, duration_ms={duration_ms}, duration_sec={duration_sec}, enriched={song.get('_spotify_enriched', False)}")
+        
         # Return in standard system_utils format
         # Now includes enriched Spotify/Spicetify metadata when available
         
