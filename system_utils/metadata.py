@@ -247,8 +247,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             cached_song = f"{cached_result.get('artist', '')} - {cached_result.get('title', '')}"
                             current_song = f"{result.get('artist', '')} - {result.get('title', '')}"
                             
-                            # If same song, return cached result (works for both playing and paused)
-                            if cached_song == current_song:
+                            # If same song AND enrichment already ran, return cached result
+                            # Flag ensures we don't return pre-enrichment data (stale album art fix)
+                            if cached_song == current_song and cached_result.get('_audio_rec_enriched'):
                                 # Update position and playing state from fresh result
                                 cached_result['position'] = result.get('position', 0)
                                 cached_result['is_playing'] = result.get('is_playing', False)
@@ -673,6 +674,9 @@ async def get_current_song_meta_data() -> Optional[dict]:
                      if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
                           # Only extract if we have default colors
                           result["colors"] = await extract_dominant_colors(local_art_path)
+                
+                # Mark as enriched so cache check knows this result is complete
+                result['_audio_rec_enriched'] = True
                           
             except Exception as e:
                 logger.error(f"Audio recognition enrichment failed: {e}")
