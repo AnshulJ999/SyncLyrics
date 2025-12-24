@@ -731,12 +731,21 @@ class RecognitionEngine:
                 image_id = album_art_url.replace('spotify:image:', '')
                 album_art_url = f'https://i.scdn.co/image/{image_id}'
             
+            # Duration: prefer track_metadata, fallback to audio_analysis
+            duration_ms = track_meta.get('duration_ms', 0)
+            if not duration_ms:
+                # Fallback: audio_analysis.duration is in seconds
+                audio_analysis = cached.get('audio_analysis', {})
+                duration_sec = audio_analysis.get('duration', 0)
+                if duration_sec:
+                    duration_ms = int(duration_sec * 1000)
+            
             return {
                 'artist': track_meta.get('artist', ''),
                 'title': track_meta.get('name', ''),
                 'album': track_meta.get('album'),
                 'track_id': track_id,
-                'duration_ms': track_meta.get('duration_ms', 0),
+                'duration_ms': duration_ms,
                 'album_art_url': album_art_url,
                 'url': track_meta.get('url'),
                 'artist_id': track_meta.get('artist_id'),
