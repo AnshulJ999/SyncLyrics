@@ -735,6 +735,21 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             state._running_art_upgrade_tasks.pop(audio_rec_track_id, None)
                             logger.debug(f"Failed to create audio rec enrichment task: {e}")
                 
+                # D. Artist Image Backfill (like Windows/Spotify/Spicetify sources)
+                # Ensures all artist image sources are populated for selection menu
+                from .artist_image import ensure_artist_image_db
+                if artist and artist not in state._artist_download_tracker:
+                    captured_artist_for_backfill = artist
+                    
+                    async def background_artist_images_backfill():
+                        """Background task to fetch artist images from all enabled sources"""
+                        try:
+                            await ensure_artist_image_db(captured_artist_for_backfill, None)  # No artist_id for audio rec
+                        except Exception as e:
+                            logger.debug(f"Audio rec: Background artist image backfill failed for {captured_artist_for_backfill}: {e}")
+                    
+                    create_tracked_task(background_artist_images_backfill())
+                
                 # Mark as enriched (even if background task is running - we have base data)
                 result['_audio_rec_enriched'] = True
                 result.pop('_enrichment_in_progress', None)
