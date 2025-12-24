@@ -394,6 +394,7 @@ class ReaperAudioSource:
         
         # Create metadata enricher callback using Spotify API
         metadata_enricher = None
+        title_search_enricher = None
         try:
             from providers.spotify_api import get_shared_spotify_client
             spotify_client = get_shared_spotify_client()
@@ -409,7 +410,30 @@ class ReaperAudioSource:
                         isrc
                     )
                 metadata_enricher = spotify_enricher
-                logger.debug("Spotify metadata enricher configured")
+                
+                # NEW: Create async wrapper for artist+title search (fallback)
+                async def title_enricher(artist: str, title: str):
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        spotify_client.search_track,
+                        artist, title
+                    )
+                    # search_track returns slightly different format, normalize it
+                    if result:
+                        return {
+                            'artist': result.get('artist', artist),
+                            'title': result.get('title', title),
+                            'album': result.get('album'),
+                            'track_id': None,  # search_track doesn't return this
+                            'duration_ms': result.get('duration_ms', 0),
+                            'album_art_url': result.get('album_art'),
+                            'url': result.get('url'),
+                        }
+                    return None
+                title_search_enricher = title_enricher
+                
+                logger.debug("Spotify metadata enricher configured (ISRC + title search)")
             else:
                 logger.debug("Spotify not available for metadata enrichment")
         except Exception as e:
@@ -426,6 +450,7 @@ class ReaperAudioSource:
             capture_duration=self._capture_duration,
             latency_offset=self._latency_offset,
             metadata_enricher=metadata_enricher,
+            title_search_enricher=title_search_enricher,
             on_song_change=self._on_song_change
         )
         
@@ -554,7 +579,13 @@ class ReaperAudioSource:
         duration_sec = duration_ms // 1000 if duration_ms else 0
         
         # Return in standard system_utils format
-        # Now includes enriched Spotify metadata when available
+        # Now includes enriched Spotify/Spicetify metadata when available
+        
+        # Use colors from enrichment if available, otherwise default
+        colors = song.get("colors")
+        if not colors or (isinstance(colors, dict) and not colors):
+            colors = ("#24273a", "#363b54")  # Default theme colors
+        
         return {
             "artist": song["artist"],  # From Spotify if enriched, else Shazam
             "title": song["title"],    # From Spotify if enriched, else Shazam
@@ -566,8 +597,15 @@ class ReaperAudioSource:
             "source": "audio_recognition",  # For internal routing
             # Recognition provider (shazam or acrcloud) for display
             "recognition_provider": song.get("recognition_provider", "shazam"),
+            # NEW: Spotify ID for Like button
+            "id": song.get("id") or song.get("track_id"),
             # Track ID from Spotify enrichment (for album art cache busting, etc.)
             "track_id": song.get("track_id"),
+            # NEW: Artist fields for Visual Mode
+            "artist_id": song.get("artist_id"),
+            "artist_name": song.get("artist_name") or song.get("artist"),
+            # NEW: Spotify URL for clicking album art
+            "url": song.get("url") or song.get("spotify_url"),
             # Shazam/Spotify metadata fields
             "isrc": song.get("isrc"),
             "shazam_url": song.get("shazam_url"),
@@ -577,13 +615,16 @@ class ReaperAudioSource:
             "shazam_lyrics_text": song.get("shazam_lyrics_text"),
             # Album art URL (enriched from Spotify or fallback to Shazam)
             "album_art_url": song.get("album_art_url"),
-            # Default colors (will be overridden by album art extraction)
-            "colors": ("#24273a", "#363b54"),
+            # Colors from enrichment or default
+            "colors": colors,
+            # NEW: Audio analysis from Spicetify DB (for waveform/spectrum)
+            "audio_analysis": song.get("audio_analysis"),
             # Debug metadata
             "_audio_rec_mode": self.mode,
             "_audio_rec_state": self._engine.state.value if self._engine else None,
             "_reaper_detected": self._reaper_running,
             "_spotify_enriched": song.get("_spotify_enriched", False),
+            "_enrichment_source": song.get("_enrichment_source"),
             "_shazam_artist": song.get("_shazam_artist"),  # Original Shazam artist
             "_shazam_title": song.get("_shazam_title"),    # Original Shazam title
         }

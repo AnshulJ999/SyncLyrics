@@ -62,6 +62,7 @@ class RecognitionEngine:
         capture_duration: float = DEFAULT_CAPTURE_DURATION,
         latency_offset: float = 0.0,
         metadata_enricher: Optional[Callable[[str], Any]] = None,
+        title_search_enricher: Optional[Callable[[str, str], Any]] = None,
         on_song_change: Optional[Callable[[RecognitionResult], None]] = None,
         on_state_change: Optional[Callable[[EngineState], None]] = None
     ):
@@ -77,6 +78,9 @@ class RecognitionEngine:
             metadata_enricher: Optional async callback to enrich metadata using ISRC.
                                Signature: async (isrc: str) -> Optional[Dict]
                                Returns dict with canonical metadata (artist, title, etc.)
+            title_search_enricher: Optional async callback to search by artist+title.
+                                   Signature: async (artist: str, title: str) -> Optional[Dict]
+                                   Used as fallback when ISRC lookup fails.
             on_song_change: Callback when song changes (sync, wrapped in try/except)
             on_state_change: Callback when state changes (sync)
         """
@@ -90,6 +94,7 @@ class RecognitionEngine:
         self.on_song_change = on_song_change
         self.on_state_change = on_state_change
         self.metadata_enricher = metadata_enricher
+        self.title_search_enricher = title_search_enricher
         
         # State
         self._state = EngineState.IDLE
@@ -218,17 +223,27 @@ class RecognitionEngine:
             # Use Spotify duration (reliable) - Shazam doesn't provide accurate duration
             spotify_duration = self._enriched_metadata.get("duration_ms", 0)
             return {
-                # Canonical metadata from Spotify
+                # Canonical metadata from Spotify/Spicetify DB
                 "artist": self._enriched_metadata["artist"],
                 "title": self._enriched_metadata["title"],
                 "album": self._enriched_metadata.get("album"),
                 "track_id": self._enriched_metadata.get("track_id"),
-                 # "duration_ms": self._enriched_metadata.get("duration_ms", 0),
-                "duration_ms": spotify_duration if spotify_duration > 0 else self._enriched_metadata.get("duration_ms", 0),
+                "duration_ms": spotify_duration if spotify_duration > 0 else 0,
+                # NEW: Spotify ID for Like button (extracted from track_id or track_uri)
+                "id": self._enriched_metadata.get("track_id"),
+                # NEW: Artist fields for Visual Mode
+                "artist_id": self._enriched_metadata.get("artist_id"),
+                "artist_name": self._enriched_metadata.get("artist_name") or self._enriched_metadata.get("artist"),
+                # NEW: Spotify URL for clicking album art
+                "url": self._enriched_metadata.get("url"),
+                # NEW: Colors from Spicetify DB (for background)
+                "colors": self._enriched_metadata.get("colors"),
+                # NEW: Audio analysis from Spicetify DB (for waveform/spectrum)
+                "audio_analysis": self._enriched_metadata.get("audio_analysis"),
                 # Shazam-only fields (preserved)
                 "isrc": self._last_result.isrc,
                 "shazam_url": self._last_result.shazam_url,
-                "spotify_url": self._last_result.spotify_url,
+                "spotify_url": self._last_result.spotify_url or self._enriched_metadata.get("url"),
                 "background_image_url": self._last_result.background_image_url,
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
@@ -239,6 +254,7 @@ class RecognitionEngine:
                 "_shazam_artist": self._last_result.artist,
                 "_shazam_title": self._last_result.title,
                 "_spotify_enriched": True,
+                "_enrichment_source": self._enriched_metadata.get("_enrichment_source", "spotify_api"),
             }
         
         # Fallback to raw recognition data
@@ -614,31 +630,120 @@ class RecognitionEngine:
     
     async def _enrich_metadata_async(self, result: 'RecognitionResult'):
         """
-        Background task to enrich metadata with Spotify.
+        Background task to enrich metadata with priority chain.
+        
+        Priority order (fastest first):
+        1. Spicetify DB (local file lookup, ~1-5ms)
+        2. ISRC lookup via Spotify API (~200ms)
+        3. Artist+Title search via Spotify API (~300ms, fallback)
         
         Runs in background via create_task to avoid blocking recognition loop.
         Checks if result is still current before applying to avoid race conditions.
         """
+        enriched = None
+        enrichment_source = None
+        
         try:
-            logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
-            enriched = await self.metadata_enricher(result.isrc)
+            # Priority 1: Spicetify DB (fastest - local file read)
+            try:
+                from system_utils.spicetify_db import load_from_db
+                cached = load_from_db(result.artist, result.title)
+                if cached and cached.get('track_metadata'):
+                    enriched = self._format_spicetify_to_enriched(cached)
+                    if enriched:
+                        enrichment_source = "Spicetify DB"
+                        logger.debug(f"Spicetify DB hit for: {result.artist} - {result.title}")
+            except Exception as e:
+                logger.debug(f"Spicetify DB lookup failed: {e}")
+            
+            # Priority 2: ISRC lookup via Spotify API (existing behavior)
+            if not enriched and result.isrc and self.metadata_enricher:
+                try:
+                    logger.debug(f"Trying ISRC lookup: {result.isrc}")
+                    enriched = await self.metadata_enricher(result.isrc)
+                    if enriched:
+                        enrichment_source = "ISRC"
+                except Exception as e:
+                    logger.debug(f"ISRC lookup failed: {e}")
+            
+            # Priority 3: Artist+Title search via Spotify API (fallback)
+            if not enriched and self.title_search_enricher:
+                try:
+                    logger.debug(f"Trying title search: {result.artist} - {result.title}")
+                    enriched = await self.title_search_enricher(result.artist, result.title)
+                    if enriched:
+                        enrichment_source = "Artist+Title search"
+                except Exception as e:
+                    logger.debug(f"Title search failed: {e}")
             
             # Race guard: Check if this result is still the current song
-            # If song changed while enriching, discard this stale result
-            if self._last_result and self._last_result.isrc == result.isrc:
-                if enriched:
-                    self._enriched_metadata = enriched
-                    logger.info(f"Spotify enrichment: {result.artist} → {enriched['artist']}")
+            # Use artist+title comparison since ISRC may not always be available
+            if self._last_result:
+                current_match = (
+                    self._last_result.artist.lower() == result.artist.lower() and 
+                    self._last_result.title.lower() == result.title.lower()
+                )
+                if current_match:
+                    if enriched:
+                        self._enriched_metadata = enriched
+                        logger.info(f"Enrichment via {enrichment_source}: {result.artist} - {result.title}")
+                    else:
+                        self._enriched_metadata = None
+                        logger.debug("All enrichment methods failed, using raw recognition data")
                 else:
-                    self._enriched_metadata = None
-                    logger.debug("Spotify enrichment failed, using Shazam metadata")
+                    logger.debug(f"Enrichment completed but song changed, discarding")
             else:
-                logger.debug(f"Enrichment completed but song changed (was {result.isrc}, now {self._last_result.isrc if self._last_result else 'None'}), discarding")
+                logger.debug("No current result, discarding enrichment")
+                
         except Exception as e:
             logger.debug(f"Metadata enrichment error: {e}")
             # Only clear if still current song
-            if self._last_result and self._last_result.isrc == result.isrc:
+            if self._last_result and self._last_result.artist.lower() == result.artist.lower():
                 self._enriched_metadata = None
+    
+    def _format_spicetify_to_enriched(self, cached: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert Spicetify DB format to enriched metadata format.
+        
+        Spicetify DB has rich metadata from Spotify Desktop client.
+        """
+        try:
+            track_meta = cached.get('track_metadata', {})
+            if not track_meta:
+                return None
+            
+            # Extract Spotify track ID from track_uri (spotify:track:xxx -> xxx)
+            track_uri = cached.get('track_uri', '')
+            track_id = None
+            if track_uri and ':' in track_uri:
+                parts = track_uri.split(':')
+                if len(parts) >= 3 and parts[1] == 'track':
+                    track_id = parts[2]
+            
+            # Convert spotify:image: URI to HTTPS URL if needed
+            album_art_url = track_meta.get('album_art_url', '')
+            if album_art_url and album_art_url.startswith('spotify:image:'):
+                image_id = album_art_url.replace('spotify:image:', '')
+                album_art_url = f'https://i.scdn.co/image/{image_id}'
+            
+            return {
+                'artist': track_meta.get('artist', ''),
+                'title': track_meta.get('name', ''),
+                'album': track_meta.get('album'),
+                'track_id': track_id,
+                'duration_ms': track_meta.get('duration_ms', 0),
+                'album_art_url': album_art_url,
+                'url': track_meta.get('url'),
+                'artist_id': track_meta.get('artist_id'),
+                'artist_name': track_meta.get('artist'),
+                # Extra fields from Spicetify
+                'colors': cached.get('colors'),
+                'audio_analysis': cached.get('audio_analysis'),
+                '_enrichment_source': 'spicetify_db',
+            }
+        except Exception as e:
+            logger.debug(f"Failed to format Spicetify data: {e}")
+            return None
     
     def _handle_failed_recognition(self):
         """Handle a failed recognition attempt."""
