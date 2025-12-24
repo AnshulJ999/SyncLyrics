@@ -237,11 +237,20 @@ export async function updateWaveform(trackInfo) {
         const currentTime = document.getElementById('current-time');
         const totalTime = document.getElementById('total-time');
         
-        if (trackInfo.duration_ms && trackInfo.position !== undefined) {
-            const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
-            if (fill) fill.style.width = `${percent}%`;
+        if (trackInfo.position !== undefined) {
+            // Always update current time (even if duration unknown)
             if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
-            if (totalTime) totalTime.textContent = formatTime((trackInfo.duration_ms || 0) / 1000);
+            
+            if (trackInfo.duration_ms) {
+                // Duration known - update progress bar and total time
+                const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
+                if (fill) fill.style.width = `${percent}%`;
+                if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+            } else {
+                // Duration unknown - show 0% progress, placeholder for total time
+                if (fill) fill.style.width = '0%';
+                if (totalTime) totalTime.textContent = '--:--';
+            }
         }
     }
 }
