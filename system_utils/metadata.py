@@ -254,11 +254,22 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 cached_result['position'] = result.get('position', 0)
                                 cached_result['is_playing'] = result.get('is_playing', False)
                                 return cached_result
+                            
+                            # NEW: If enrichment is already in progress, skip redundant enrichment
+                            # but still return fresh position data. This prevents 3x ensure_album_art_db calls
+                            # when multiple polls arrive before enrichment completes.
+                            if cached_song == current_song and cached_result.get('_enrichment_in_progress'):
+                                # Update position from fresh result, return cached (enrichment will finish soon)
+                                cached_result['position'] = result.get('position', 0)
+                                cached_result['is_playing'] = result.get('is_playing', False)
+                                return cached_result
                         
                         # Fix C5: When paused, clear result to allow fallback to Spotify/Windows
                         if result.get('is_playing', False):
                             # New song or not yet enriched - store and proceed to enrichment
                             get_current_song_meta_data._last_result = result
+                            # Mark enrichment as starting BEFORE it runs (prevents concurrent enrichment)
+                            result['_enrichment_in_progress'] = True
                             get_current_song_meta_data._last_check_time = time.time()
                             song_name = f"{result.get('artist', '')} - {result.get('title', '')}"
                             get_current_song_meta_data._last_song = song_name
@@ -677,9 +688,13 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 
                 # Mark as enriched so cache check knows this result is complete
                 result['_audio_rec_enriched'] = True
+                # Clear in-progress flag (enrichment complete)
+                result.pop('_enrichment_in_progress', None)
                           
             except Exception as e:
                 logger.error(f"Audio recognition enrichment failed: {e}")
+                # Clear in-progress flag on failure to prevent blocking future enrichment
+                result.pop('_enrichment_in_progress', None)
         
         # 4. SPICETIFY ENRICHMENT
         # Cache album art to DB and extract colors (similar to audio_recognition)
