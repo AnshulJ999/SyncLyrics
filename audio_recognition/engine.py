@@ -223,7 +223,8 @@ class RecognitionEngine:
                 "title": self._enriched_metadata["title"],
                 "album": self._enriched_metadata.get("album"),
                 "track_id": self._enriched_metadata.get("track_id"),
-                "duration_ms": spotify_duration if spotify_duration > 0 else 0,
+                 # "duration_ms": self._enriched_metadata.get("duration_ms", 0),
+                "duration_ms": spotify_duration if spotify_duration > 0 else self._enriched_metadata.get("duration_ms", 0),
                 # Shazam-only fields (preserved)
                 "isrc": self._last_result.isrc,
                 "shazam_url": self._last_result.shazam_url,
