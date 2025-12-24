@@ -621,79 +621,108 @@ async def get_current_song_meta_data() -> Optional[dict]:
 
         # 3. AUDIO RECOGNITION ENRICHMENT
         # Similar to Hybrid/Windows, we need to check the Album Art DB and extract colors
+        # FIXED: Use background task pattern (like Windows/Spotify) to avoid blocking response
         if result and result.get("source") == "audio_recognition":
             try:
-                # A. Album Art DB Check (User Preferences & Caching)
                 art_url = result.get("album_art_url")
                 artist = result.get("artist", "")
                 title = result.get("title", "")
                 album = result.get("album", "")
                 
-                # Generate track_id for consistent URL generation
+                # Generate track_id for consistent URL generation and deduplication
                 audio_rec_track_id = _normalize_track_id(artist, title)
+                checked_key = f"audiorec::{audio_rec_track_id}"
                 
-                # Check DB/Cache - this also gives us saved preferences like background_style
-                db_result = await ensure_album_art_db(
-                    artist, 
-                    album, 
-                    title, 
-                    art_url
-                )
-                
-                # Also load from DB to get background_style (ensure_album_art_db doesn't return it)
-                # FIX: Run in executor to avoid blocking the event loop during file I/O
+                # A. First check if we already have data in DB (fast path - no network)
                 from .album_art import load_album_art_from_db
                 loop = asyncio.get_running_loop()
                 album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
+                
+                album_art_found_in_db = False
                 if album_art_db:
+                    # Found in DB - use cached data immediately (no blocking)
+                    album_art_found_in_db = True
+                    db_path = album_art_db.get("path")
+                    if db_path and db_path.exists():
+                        mtime = int(db_path.stat().st_mtime)
+                        local_url = f"/cover-art?id={audio_rec_track_id}&t={mtime}"
+                        result["album_art_url"] = local_url
+                        result["album_art_path"] = str(db_path)
+                        result["background_image_url"] = local_url
+                        result["background_image_path"] = str(db_path)
+                    
+                    # Load background_style preference
                     saved_background_style = album_art_db.get("background_style")
                     if saved_background_style:
                         result["background_style"] = saved_background_style
-                
-                if db_result:
-                    cached_url, cached_path = db_result
                     
-                    # If DB has a different URL (user override), use it
-                    # Or if it's the same but now we have a local path
-                    if cached_url:
-                        result["album_art_url"] = cached_url
-                        # Default background to album art (may be overridden by artist image below)
-                        result["background_image_url"] = cached_url
-                    if cached_path:
-                        result["album_art_path"] = str(cached_path)
-                        # Also set background_image_path for local serving
-                        result["background_image_path"] = str(cached_path)
+                    # Extract colors if we have default colors and a local path
+                    if result.get("album_art_path"):
+                        local_art_path = Path(result["album_art_path"])
+                        if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
+                            result["colors"] = await extract_dominant_colors(local_art_path)
                 
-                # B. Check for Artist Image Preference (like Windows/Spotify sources)
-                # If user selected an artist image for background, use it instead of album art
-                # FIX: Run in executor to avoid blocking the event loop during file I/O
+                # B. Check for Artist Image Preference (use cached, don't block)
                 from .artist_image import load_artist_image_from_db
                 artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
                 if artist_image_result:
                     artist_image_path = artist_image_result["path"]
                     if artist_image_path.exists():
                         mtime = int(artist_image_path.stat().st_mtime)
-                        # Use artist image for background (keep album art for top-left display)
                         result["background_image_url"] = f"/cover-art?id={audio_rec_track_id}&t={mtime}&type=background"
                         result["background_image_path"] = str(artist_image_path)
                         logger.debug(f"Audio rec: Using preferred artist image for background: {artist}")
                 
-                # C. Color Extraction
-                # If we have a local path now (from DB/Cache), we can extract colors
-                if result.get("album_art_path"):
-                     local_art_path = Path(result["album_art_path"])
-                     if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
-                          # Only extract if we have default colors
-                          result["colors"] = await extract_dominant_colors(local_art_path)
+                # C. Background fetch (like Windows/Spotify pattern) - only if not already in DB
+                if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+                    if audio_rec_track_id not in state._running_art_upgrade_tasks:
+                        # Mark as checked to prevent duplicate tasks
+                        state._db_checked_tracks[checked_key] = time.time()
+                        if len(state._db_checked_tracks) > state._MAX_DB_CHECKED_SIZE:
+                            state._db_checked_tracks.popitem(last=False)  # FIFO eviction
+                        
+                        # Capture variables for closure
+                        captured_artist = artist
+                        captured_album = album
+                        captured_title = title
+                        captured_art_url = art_url
+                        captured_track_id = audio_rec_track_id
+                        captured_checked_key = checked_key
+                        
+                        async def background_audio_rec_enrich():
+                            """Background task to fetch album art and extract colors"""
+                            try:
+                                db_result = await ensure_album_art_db(
+                                    captured_artist, 
+                                    captured_album, 
+                                    captured_title, 
+                                    captured_art_url
+                                )
+                                if not db_result:
+                                    # Failed - allow retry on next poll
+                                    state._db_checked_tracks.pop(captured_checked_key, None)
+                                else:
+                                    logger.debug(f"Audio rec: Background enrichment complete for {captured_artist} - {captured_title}")
+                            except Exception as e:
+                                logger.error(f"Audio rec: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
+                                state._db_checked_tracks.pop(captured_checked_key, None)
+                            finally:
+                                state._running_art_upgrade_tasks.pop(captured_track_id, None)
+                        
+                        # Start background task (non-blocking)
+                        try:
+                            task = create_tracked_task(background_audio_rec_enrich())
+                            state._running_art_upgrade_tasks[audio_rec_track_id] = task
+                        except Exception as e:
+                            state._running_art_upgrade_tasks.pop(audio_rec_track_id, None)
+                            logger.debug(f"Failed to create audio rec enrichment task: {e}")
                 
-                # Mark as enriched so cache check knows this result is complete
+                # Mark as enriched (even if background task is running - we have base data)
                 result['_audio_rec_enriched'] = True
-                # Clear in-progress flag (enrichment complete)
                 result.pop('_enrichment_in_progress', None)
-                          
+                           
             except Exception as e:
                 logger.error(f"Audio recognition enrichment failed: {e}")
-                # Clear in-progress flag on failure to prevent blocking future enrichment
                 result.pop('_enrichment_in_progress', None)
         
         # 4. SPICETIFY ENRICHMENT
@@ -730,78 +759,131 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             result["background_image_url"] = cached["album_art_url"]
                             result["background_image_path"] = cached.get("album_art_path")
                 else:
-                    # New song - run enrichment
+                    # New song - check DB first, then run heavy enrichment in background
                     art_url = result.get("album_art_url")
                     album = result.get("album", "")
+                    checked_key = f"spicetify::{track_id}"
+                    
+                    # A. First check if we already have data in DB (fast path - no network)
+                    from .album_art import load_album_art_from_db
+                    loop = asyncio.get_running_loop()
+                    album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
                     
                     enriched = {}
-                    if artist and title:
-                        db_result = await ensure_album_art_db(artist, album, title, art_url)
+                    album_art_found_in_db = False
+                    
+                    if album_art_db:
+                        # Found in DB - use cached data immediately (no blocking)
+                        album_art_found_in_db = True
+                        db_path = album_art_db.get("path")
+                        if db_path and db_path.exists():
+                            mtime = int(db_path.stat().st_mtime)
+                            local_url = f"/cover-art?id={track_id}&t={mtime}"
+                            result["album_art_url"] = local_url
+                            result["album_art_path"] = str(db_path)
+                            result["background_image_url"] = local_url
+                            result["background_image_path"] = str(db_path)
+                            enriched["album_art_url"] = local_url
+                            enriched["album_art_path"] = str(db_path)
                         
-                        # Load from DB to get background_style (ensure_album_art_db doesn't return it)
-                        # FIX: Run in executor to avoid blocking the event loop during file I/O
-                        from .album_art import load_album_art_from_db
-                        loop = asyncio.get_running_loop()
-                        album_art_db = await loop.run_in_executor(None, load_album_art_from_db, artist, album, title)
-                        if album_art_db:
-                            saved_background_style = album_art_db.get("background_style")
-                            if saved_background_style:
-                                result["background_style"] = saved_background_style
-                                enriched["background_style"] = saved_background_style
+                        # Load background_style preference
+                        saved_background_style = album_art_db.get("background_style")
+                        if saved_background_style:
+                            result["background_style"] = saved_background_style
+                            enriched["background_style"] = saved_background_style
                         
-                        if db_result:
-                            cached_url, cached_path = db_result
-                            if cached_path:
-                                # FIX: Use local /cover-art URL like Windows/Spotify sources (not remote URL)
-                                # This ensures album art displays even if remote URL is broken (e.g., spotify:image: URIs)
-                                local_art_path = Path(cached_path)
-                                if local_art_path.exists():
-                                    mtime = int(local_art_path.stat().st_mtime)
-                                    local_url = f"/cover-art?id={track_id}&t={mtime}"
-                                    result["album_art_url"] = local_url
-                                    result["background_image_url"] = local_url
-                                    enriched["album_art_url"] = local_url
-                                    result["album_art_path"] = str(cached_path)
-                                    result["background_image_path"] = str(cached_path)
-                                    enriched["album_art_path"] = str(cached_path)
-                        
-                        # Color extraction
+                        # Extract colors if we have default colors and a local path
                         if result.get("album_art_path"):
                             local_art_path = Path(result["album_art_path"])
                             if local_art_path.exists() and result.get("colors") == ("#24273a", "#363b54"):
                                 result["colors"] = await extract_dominant_colors(local_art_path)
                                 enriched["colors"] = result["colors"]
-                        
-                        # Check for Artist Image Preference (like audio_recognition source)
-                        # If user selected an artist image for background, use it instead of album art
-                        from .artist_image import load_artist_image_from_db, ensure_artist_image_db
-                        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
-                        if artist_image_result:
-                            artist_image_path = artist_image_result["path"]
-                            if artist_image_path.exists():
-                                mtime = int(artist_image_path.stat().st_mtime)
-                                # Use artist image for background (keep album art for top-left display)
-                                result["background_image_url"] = f"/cover-art?id={track_id}&t={mtime}&type=background"
-                                result["background_image_path"] = str(artist_image_path)
-                                enriched["background_image_url"] = result["background_image_url"]
-                                enriched["background_image_path"] = result["background_image_path"]
-                                logger.debug(f"Spicetify: Using preferred artist image for background: {artist}")
-                        
-                        # Artist Image Backfill (like Windows/Spotify sources)
-                        # Ensures all artist image sources are populated for selection menu
-                        if artist and artist not in state._artist_download_tracker:
-                            # Get Spotify artist ID from track (if available via Spicetify)
-                            spotify_artist_id = result.get("artist_id")
+                    
+                    # B. Check for Artist Image Preference (use cached, don't block)
+                    from .artist_image import load_artist_image_from_db, ensure_artist_image_db
+                    artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+                    if artist_image_result:
+                        artist_image_path = artist_image_result["path"]
+                        if artist_image_path.exists():
+                            mtime = int(artist_image_path.stat().st_mtime)
+                            result["background_image_url"] = f"/cover-art?id={track_id}&t={mtime}&type=background"
+                            result["background_image_path"] = str(artist_image_path)
+                            enriched["background_image_url"] = result["background_image_url"]
+                            enriched["background_image_path"] = result["background_image_path"]
+                            logger.debug(f"Spicetify: Using preferred artist image for background: {artist}")
+                    
+                    # C. Background fetch (like Windows/Spotify pattern) - only if not already in DB
+                    if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+                        if track_id not in state._running_art_upgrade_tasks:
+                            # Mark as checked to prevent duplicate tasks
+                            state._db_checked_tracks[checked_key] = time.time()
+                            if len(state._db_checked_tracks) > state._MAX_DB_CHECKED_SIZE:
+                                state._db_checked_tracks.popitem(last=False)  # FIFO eviction
                             
-                            async def background_artist_images_backfill():
-                                """Background task to fetch artist images from all enabled sources"""
+                            # Capture variables for closure
+                            captured_artist = artist
+                            captured_album = album
+                            captured_title = title
+                            captured_art_url = art_url
+                            captured_track_id = track_id
+                            captured_checked_key = checked_key
+                            
+                            async def background_spicetify_enrich():
+                                """Background task to fetch album art and extract colors"""
                                 try:
-                                    await ensure_artist_image_db(artist, spotify_artist_id)
+                                    db_result = await ensure_album_art_db(
+                                        captured_artist, 
+                                        captured_album, 
+                                        captured_title, 
+                                        captured_art_url
+                                    )
+                                    if not db_result:
+                                        # Failed - allow retry on next poll
+                                        state._db_checked_tracks.pop(captured_checked_key, None)
+                                    else:
+                                        # Success - update the cached enrichment result
+                                        cached_url, cached_path = db_result
+                                        if cached_path:
+                                            local_art_path = Path(cached_path)
+                                            if local_art_path.exists():
+                                                mtime = int(local_art_path.stat().st_mtime)
+                                                local_url = f"/cover-art?id={captured_track_id}&t={mtime}"
+                                                new_enriched = {
+                                                    "album_art_url": local_url,
+                                                    "album_art_path": str(cached_path),
+                                                }
+                                                # Update the cached result so next poll picks it up
+                                                if get_current_song_meta_data._spicetify_enriched_track == captured_track_id:
+                                                    existing = get_current_song_meta_data._spicetify_enriched_result or {}
+                                                    existing.update(new_enriched)
+                                                    get_current_song_meta_data._spicetify_enriched_result = existing
+                                        logger.debug(f"Spicetify: Background enrichment complete for {captured_artist} - {captured_title}")
                                 except Exception as e:
-                                    logger.debug(f"Spicetify: Background artist image backfill failed for {artist}: {e}")
+                                    logger.error(f"Spicetify: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
+                                    state._db_checked_tracks.pop(captured_checked_key, None)
+                                finally:
+                                    state._running_art_upgrade_tasks.pop(captured_track_id, None)
                             
-                            # Use tracked task to prevent silent failures
-                            create_tracked_task(background_artist_images_backfill())
+                            # Start background task (non-blocking)
+                            try:
+                                task = create_tracked_task(background_spicetify_enrich())
+                                state._running_art_upgrade_tasks[track_id] = task
+                            except Exception as e:
+                                state._running_art_upgrade_tasks.pop(track_id, None)
+                                logger.debug(f"Failed to create Spicetify enrichment task: {e}")
+                    
+                    # D. Artist Image Backfill (already non-blocking, just copied from old code)
+                    if artist and artist not in state._artist_download_tracker:
+                        spotify_artist_id = result.get("artist_id")
+                        
+                        async def background_artist_images_backfill():
+                            """Background task to fetch artist images from all enabled sources"""
+                            try:
+                                await ensure_artist_image_db(artist, spotify_artist_id)
+                            except Exception as e:
+                                logger.debug(f"Spicetify: Background artist image backfill failed for {artist}: {e}")
+                        
+                        create_tracked_task(background_artist_images_backfill())
                     
                     # Cache the enrichment result for this track
                     get_current_song_meta_data._spicetify_enriched_track = track_id
