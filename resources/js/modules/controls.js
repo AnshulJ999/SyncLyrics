@@ -190,19 +190,24 @@ export function updateProgress(trackInfo) {
     const totalTime = document.getElementById('total-time');
     const progressContainer = document.getElementById('progress-container');
 
-    // Handle null duration gracefully
-    if (!trackInfo.duration_ms || trackInfo.position === undefined) {
+    // Only hide if position is undefined (no data at all)
+    // Still show progress bar when duration is 0 - at least position is visible
+    if (trackInfo.position === undefined) {
         if (progressContainer) progressContainer.style.display = 'none';
         return;
     }
 
     if (progressContainer) progressContainer.style.display = 'block';
 
-    const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
+    // Calculate percent (handle duration_ms = 0 gracefully)
+    const durationMs = trackInfo.duration_ms || 0;
+    const percent = durationMs > 0 
+        ? Math.min(100, (trackInfo.position * 1000 / durationMs) * 100)
+        : 0;  // No progress if duration unknown
     if (fill) fill.style.width = `${percent}%`;
 
     if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
-    if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+    if (totalTime) totalTime.textContent = formatTime(durationMs / 1000);
 }
 
 /**

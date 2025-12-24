@@ -225,7 +225,7 @@ export async function updateWaveform(trackInfo) {
             currentTimeEl.textContent = formatTime(trackInfo.position || 0);
         }
         if (totalTimeEl) {
-            totalTimeEl.textContent = formatTime(trackInfo.duration_ms / 1000);
+            totalTimeEl.textContent = formatTime((trackInfo.duration_ms || 0) / 1000);
         }
     } else {
         // No audio data - hide waveform, show real progress bar
@@ -241,7 +241,7 @@ export async function updateWaveform(trackInfo) {
             const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
             if (fill) fill.style.width = `${percent}%`;
             if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
-            if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+            if (totalTime) totalTime.textContent = formatTime((trackInfo.duration_ms || 0) / 1000);
         }
     }
 }
