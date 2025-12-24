@@ -14,10 +14,12 @@ import {
     queuePollInterval,
     isLiked,
     pendingArtUrl,
+    lastAlbumArtUrl,
     visualModeActive,
     manualVisualModeOverride,
     setLastTrackInfo,
     setPendingArtUrl,
+    setLastAlbumArtUrl,
     setQueueDrawerOpen,
     setQueuePollInterval,
     setIsLiked,
@@ -434,64 +436,70 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        // Add cache buster to force reload when song changes
-        // Uses track_id (unique per song) or stable artist+title fallback
-        let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
-        // Stable fallback: use artist_title instead of Date.now() to prevent reload spam
-        const stableFallback = `${trackInfo.artist || ''}_${trackInfo.title || ''}`.replace(/\s+/g, '_');
-        const cacheBuster = trackInfo.track_id || trackInfo.id || stableFallback;
-        targetUrl = targetUrl.includes('?')
-            ? `${targetUrl}&cb=${encodeURIComponent(cacheBuster)}`
-            : `${targetUrl}?cb=${encodeURIComponent(cacheBuster)}`;
+        // Compare raw backend URL to detect actual album art changes
+        // This prevents unnecessary reloads when different songs share the same album art
+        const rawAlbumArtUrl = trackInfo.album_art_url;
         
-        // CRITICAL: Normalize URL to ensure consistent comparison with albumArt.src
-        // The browser URL-encodes albumArt.src, so we must do the same for comparison
+        // If the raw URL hasn't changed, the art is the same - skip reload entirely
+        if (rawAlbumArtUrl === lastAlbumArtUrl) {
+            albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+            return;
+        }
+        
+        // Art changed - build URL with cache buster to bypass browser disk cache
+        let targetUrl = new URL(rawAlbumArtUrl, window.location.href).href;
+        const cacheBuster = Date.now();  // Use timestamp since we only get here when art changes
+        targetUrl = targetUrl.includes('?')
+            ? `${targetUrl}&cb=${cacheBuster}`
+            : `${targetUrl}?cb=${cacheBuster}`;
+        
+        // Normalize URL for consistent comparison
         targetUrl = new URL(targetUrl, window.location.href).href;
 
-        if (albumArt.src !== targetUrl) {
-            if (pendingArtUrl !== targetUrl) {
-                setPendingArtUrl(targetUrl);
+        // Prevent duplicate loads if already loading this URL
+        if (pendingArtUrl !== targetUrl) {
+            setPendingArtUrl(targetUrl);
 
-                const img = new Image();
+            const img = new Image();
 
-                img.onload = () => {
-                    if (pendingArtUrl === targetUrl) {
-                        const currentSrc = albumArt.src || '';
-                        const hasExistingImage = currentSrc &&
-                            currentSrc !== window.location.href &&
-                            currentSrc !== '' &&
-                            currentSrc !== targetUrl;
+            img.onload = () => {
+                if (pendingArtUrl === targetUrl) {
+                    const currentSrc = albumArt.src || '';
+                    const hasExistingImage = currentSrc &&
+                        currentSrc !== window.location.href &&
+                        currentSrc !== '' &&
+                        currentSrc !== targetUrl;
 
-                        if (hasExistingImage) {
-                            albumArt.style.opacity = '0';
-                            setTimeout(() => {
-                                albumArt.src = targetUrl;
-                                setTimeout(() => {
-                                    albumArt.style.opacity = '1';
-                                }, 10);
-                            }, 150);
-                        } else {
+                    if (hasExistingImage) {
+                        albumArt.style.opacity = '0';
+                        setTimeout(() => {
                             albumArt.src = targetUrl;
-                            albumArt.style.opacity = '1';
-                        }
-
-                        if (updateBackgroundFn && (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt)) {
-                            updateBackgroundFn();
-                        }
-
-                        albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
-                        setPendingArtUrl(null);
+                            setTimeout(() => {
+                                albumArt.style.opacity = '1';
+                            }, 10);
+                        }, 150);
+                    } else {
+                        albumArt.src = targetUrl;
+                        albumArt.style.opacity = '1';
                     }
-                };
 
-                img.onerror = () => {
-                    if (pendingArtUrl === targetUrl) setPendingArtUrl(null);
-                };
+                    // Store the raw URL after successful load for future comparison
+                    setLastAlbumArtUrl(rawAlbumArtUrl);
 
-                img.src = targetUrl;
-            }
-        } else {
-            albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+                    if (updateBackgroundFn && (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt)) {
+                        updateBackgroundFn();
+                    }
+
+                    albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+                    setPendingArtUrl(null);
+                }
+            };
+
+            img.onerror = () => {
+                if (pendingArtUrl === targetUrl) setPendingArtUrl(null);
+            };
+
+            img.src = targetUrl;
         }
     } else {
         if (!pendingArtUrl) {

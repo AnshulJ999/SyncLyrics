@@ -524,7 +524,7 @@ async def main() -> NoReturn:
         try:
             from system_utils.reaper import start_reaper_auto_detect
             await start_reaper_auto_detect()
-            logger.info("Reaper auto-detect enabled (checking every 30s)")
+            logger.info("Reaper auto-detect enabled")
         except Exception as e:
             logger.error(f"Failed to start Reaper auto-detect: {e}")
 
