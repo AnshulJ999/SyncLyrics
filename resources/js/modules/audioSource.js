@@ -416,20 +416,18 @@ function updateStatusDisplay(status) {
             if (status.capture_mode === 'frontend') {
                 elements.sourceName.textContent = 'Mic';
             } else {
-                // Use recognition_provider from current_song if available
-                // Only update if we have explicit provider info - don't default to Shazam
+                // Use recognition_provider from current_song
+                // IMPORTANT: Always use current provider, don't cache stale values
                 const provider = status.current_song?.recognition_provider;
                 if (provider === 'acrcloud') {
                     elements.sourceName.textContent = 'ACRCloud';
-                    lastKnownProvider = 'ACRCloud';
                 } else if (provider === 'shazam') {
                     elements.sourceName.textContent = 'Shazam';
-                    lastKnownProvider = 'Shazam';
-                } else if (lastKnownProvider) {
-                    // No provider in current response - keep showing last known
-                    elements.sourceName.textContent = lastKnownProvider;
+                } else if (status.current_song) {
+                    // Have a song but no provider - default to Shazam (the primary recognizer)
+                    elements.sourceName.textContent = 'Shazam';
                 } else {
-                    // No provider ever known - show generic
+                    // No song yet - show generic
                     elements.sourceName.textContent = 'Audio';
                 }
             }

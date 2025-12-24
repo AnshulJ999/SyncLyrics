@@ -179,7 +179,7 @@ async function updateLoop() {
                     } else if (provider === 'shazam') {
                         sourceBtn.textContent = 'Shazam';
                     } else {
-                        // Fallback if no provider specified
+                        // Fallback: Shazam is the primary recognizer
                         sourceBtn.textContent = 'Audio';
                     }
                 } else {

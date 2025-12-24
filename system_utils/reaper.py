@@ -548,6 +548,11 @@ class ReaperAudioSource:
         if position is None:
             position = 0
         
+        # Calculate duration in both formats for frontend compatibility
+        # Frontend expects duration_ms for progress bar/waveform
+        duration_ms = song.get("duration_ms", 0) or 0
+        duration_sec = duration_ms // 1000 if duration_ms else 0
+        
         # Return in standard system_utils format
         # Now includes enriched Spotify metadata when available
         return {
@@ -555,7 +560,8 @@ class ReaperAudioSource:
             "title": song["title"],    # From Spotify if enriched, else Shazam
             "album": song.get("album"),
             "position": position,
-            "duration": song.get("duration_ms", 0) // 1000 if song.get("duration_ms") else 0,
+            "duration": duration_sec,      # Seconds for backend compatibility
+            "duration_ms": duration_ms,    # Milliseconds for frontend (progress bar/waveform)
             "is_playing": self._engine.is_playing,
             "source": "audio_recognition",  # For internal routing
             # Recognition provider (shazam or acrcloud) for display
