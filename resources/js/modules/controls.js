@@ -15,11 +15,13 @@ import {
     isLiked,
     pendingArtUrl,
     lastAlbumArtUrl,
+    lastAlbumArtPath,
     visualModeActive,
     manualVisualModeOverride,
     setLastTrackInfo,
     setPendingArtUrl,
     setLastAlbumArtUrl,
+    setLastAlbumArtPath,
     setQueueDrawerOpen,
     setQueuePollInterval,
     setIsLiked,
@@ -436,12 +438,14 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        // Compare raw backend URL to detect actual album art changes
-        // This prevents unnecessary reloads when different songs share the same album art
-        const rawAlbumArtUrl = trackInfo.album_art_url;
+        // SOLUTION 3: Compare by path first (most stable), fall back to URL
+        // Path is stable across enrichment (remote->local transition), URL changes format
+        // This prevents flicker when enrichment replaces remote URL with local /cover-art URL
+        const currentArtKey = trackInfo.album_art_path || trackInfo.album_art_url;
+        const lastArtKey = lastAlbumArtPath || lastAlbumArtUrl;
         
         // Check if the art is the same - if so, skip reload but still run visibility logic
-        const artUnchanged = (rawAlbumArtUrl === lastAlbumArtUrl);
+        const artUnchanged = (currentArtKey && currentArtKey === lastArtKey);
         
         if (artUnchanged) {
             // FIX 1: Cancel any pending loads from intermediate skips (e.g. A -> B -> A)
@@ -454,7 +458,7 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
             // NOTE: Don't return here - we still need to run visibility logic below
         } else {
             // Art changed - build URL with cache buster to bypass browser disk cache
-            let targetUrl = new URL(rawAlbumArtUrl, window.location.href).href;
+            let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
             const cacheBuster = Date.now();  // Use timestamp since we only get here when art changes
             targetUrl = targetUrl.includes('?')
                 ? `${targetUrl}&cb=${cacheBuster}`
@@ -490,8 +494,10 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
                             albumArt.style.opacity = '1';
                         }
 
-                        // Store the raw URL after successful load for future comparison
-                        setLastAlbumArtUrl(rawAlbumArtUrl);
+                        // Store path and URL after successful load for future comparison
+                        // Path is primary (stable), URL is fallback
+                        setLastAlbumArtPath(trackInfo.album_art_path || null);
+                        setLastAlbumArtUrl(trackInfo.album_art_url);
 
                         if (updateBackgroundFn && (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt)) {
                             updateBackgroundFn();
@@ -514,7 +520,8 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
         if (!pendingArtUrl) {
             albumArt.style.display = 'none';
         }
-        // FIX 3: Clear lastAlbumArtUrl when no art, for cleanliness
+        // FIX 3: Clear both path and URL when no art, for cleanliness
+        setLastAlbumArtPath(null);
         setLastAlbumArtUrl(null);
     }
 

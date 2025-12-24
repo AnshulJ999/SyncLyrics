@@ -49,7 +49,8 @@ export let debugBadSamples = 0;        // Count of ignored bad samples
 
 export let lastTrackInfo = null;
 export let pendingArtUrl = null;
-export let lastAlbumArtUrl = null;  // Raw backend URL of last loaded album art (for change detection)
+export let lastAlbumArtUrl = null;   // Raw backend URL of last loaded album art (for change detection)
+export let lastAlbumArtPath = null;  // File path of last loaded album art (most stable identifier)
 
 // ========== DISPLAY CONFIGURATION ==========
 export let displayConfig = {
@@ -125,6 +126,7 @@ export function setLastCheckTime(value) { lastCheckTime = value; }
 export function setLastTrackInfo(value) { lastTrackInfo = value; }
 export function setPendingArtUrl(value) { pendingArtUrl = value; }
 export function setLastAlbumArtUrl(value) { lastAlbumArtUrl = value; }
+export function setLastAlbumArtPath(value) { lastAlbumArtPath = value; }
 export function setVisualModeActive(value) { visualModeActive = value; }
 export function setVisualModeTimer(value) { visualModeTimer = value; }
 export function setVisualModeDebounceTimer(value) { visualModeDebounceTimer = value; }
