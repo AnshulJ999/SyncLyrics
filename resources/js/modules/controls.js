@@ -462,15 +462,11 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
             albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
             // NOTE: Don't return here - we still need to run visibility logic below
         } else {
-            // Art changed - build URL with cache buster to bypass browser disk cache
+            // Art changed - normalize URL for consistent comparison
+            // NOTE: No cache buster needed! Backend provides t=mtime param for cache invalidation.
+            // Adding Date.now() cache buster caused a race condition where each 100ms poll
+            // created a different URL, causing in-flight loads to be orphaned.
             let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
-            const cacheBuster = Date.now();  // Use timestamp since we only get here when art changes
-            targetUrl = targetUrl.includes('?')
-                ? `${targetUrl}&cb=${cacheBuster}`
-                : `${targetUrl}?cb=${cacheBuster}`;
-            
-            // Normalize URL for consistent comparison
-            targetUrl = new URL(targetUrl, window.location.href).href;
 
             // Prevent duplicate loads if already loading this URL
             if (pendingArtUrl !== targetUrl) {
