@@ -28,6 +28,7 @@ import {
     setManualVisualModeOverride
 } from './state.js';
 import { showToast } from './dom.js';
+import { enableArtZoom, disableArtZoom, resetArtZoom } from './artZoom.js';
 import { formatTime } from './utils.js';
 import {
     playbackCommand,
@@ -137,6 +138,8 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
                 document.body.classList.remove('art-only-mode');
                 // Clear manual override when exiting
                 setManualVisualModeOverride(false);
+                // Disable zoom/pan and reset transform
+                disableArtZoom();
             } else {
                 // Set manual override FIRST (prevents auto-exit)
                 setManualVisualModeOverride(true);
@@ -146,8 +149,10 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
                 }
                 // Then enter art-only mode (hides all UI including visual mode UI)
                 document.body.classList.add('art-only-mode');
+                // Enable zoom/pan
+                enableArtZoom();
                 // Brief toast (1.5s instead of default 3s)
-                showToast('Art mode (long-press to exit)', 'success', 1500);
+                showToast('Art mode (pinch to zoom, long-press to exit)', 'success', 1500);
             }
         };
 

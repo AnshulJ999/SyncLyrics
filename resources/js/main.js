@@ -93,6 +93,9 @@ import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDispl
 import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './modules/waveform.js';
 import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
 
+// Art Zoom (Level 2)
+import { resetArtZoom } from './modules/artZoom.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -372,6 +375,9 @@ async function updateLoop() {
             // Reset waveform and spectrum on track change
             resetWaveform();
             resetSpectrum();
+
+            // Reset zoom/pan on track change (prevents old zoom carrying over)
+            resetArtZoom();
 
             // Reset manual overrides on track change
             setManualVisualModeOverride(false);
