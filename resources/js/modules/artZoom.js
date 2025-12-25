@@ -44,11 +44,17 @@ let lastTapTime = 0;
  */
 function updateTransform() {
     const bg = document.getElementById('background-layer');
-    if (!bg) return;
+    if (!bg) {
+        console.warn('[ArtZoom] Background layer not found');
+        return;
+    }
     
-    // Use transform-origin: center for intuitive zoom behavior
-    bg.style.transformOrigin = 'center center';
-    bg.style.transform = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
+    // Use setProperty with 'important' to override CSS transform: none
+    const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
+    bg.style.setProperty('transform-origin', 'center center', 'important');
+    bg.style.setProperty('transform', transformValue, 'important');
+    
+    // console.log(`[ArtZoom] Transform: scale=${zoomLevel.toFixed(2)}, pan=(${panX.toFixed(0)}, ${panY.toFixed(0)})`);
 }
 
 /**

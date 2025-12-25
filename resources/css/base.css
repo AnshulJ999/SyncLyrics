@@ -1888,9 +1888,12 @@ body.art-only-mode .queue-drawer {
     pointer-events: none !important;
 }
 
-/* Keep background visible in art-only mode */
+/* Keep background visible in art-only mode and enable zoom/pan */
 body.art-only-mode .background-layer {
     display: block !important;
+    z-index: 900 !important;  /* Above everything except modals/toast so it receives events */
+    pointer-events: auto !important;  /* Ensure it receives touch/mouse events */
+    /* transform is set by artZoom.js - don't override here */
 }
 
 /* ========== NEXT-UP PREVIEW CARD ========== */
