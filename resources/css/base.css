@@ -1896,10 +1896,10 @@ body.art-only-mode .background-layer {
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;
-    bottom: 90px;
+    bottom: 110px;                              /* Was: 90px - moved higher */
     right: 16px;
     z-index: 150;
-    background: rgba(20, 22, 30, 0.9);
+    background: transparent;                    /* Was: rgba(20, 22, 30, 0.9) - now transparent */
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-radius: 10px;
@@ -1929,14 +1929,16 @@ body.art-only-mode .background-layer {
 }
 
 .next-up-card:hover {
-    background: rgba(30, 33, 45, 0.95);
+    background: rgba(30, 33, 45, 0.5);          /* Was: 0.95 - lighter on hover */
     transform: scale(1.02);
 }
 
+/* Label hidden - context is clear from position */
 .next-up-label {
+    display: none;                              /* Hidden - was visible before */
     font-size: 0.6rem;
     text-transform: uppercase;
-    letter-spacing: 0.7px;
+    letter-spacing: 0.8px;
     color: rgba(255, 255, 255, 0.4);
     margin-bottom: 6px;
 }
