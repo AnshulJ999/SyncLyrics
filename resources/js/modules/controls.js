@@ -190,7 +190,7 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
 
         // Global handler to exit art-only mode on long-press anywhere
         document.addEventListener('mousedown', (e) => {
-            if (document.body.classList.contains('art-only-mode') && e.target === document.body) {
+            if (document.body.classList.contains('art-only-mode')) {
                 let exitTimer = setTimeout(() => {
                     if (document.body.classList.contains('art-only-mode')) {
                         toggleArtOnlyMode();
@@ -202,6 +202,21 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
                 }, { once: true });
             }
         });
+
+        // Touch support for exiting art-only mode
+        document.addEventListener('touchstart', (e) => {
+            if (document.body.classList.contains('art-only-mode')) {
+                let exitTimer = setTimeout(() => {
+                    if (document.body.classList.contains('art-only-mode')) {
+                        toggleArtOnlyMode();
+                    }
+                }, LONG_PRESS_DURATION);
+                
+                const clearExitTimer = () => clearTimeout(exitTimer);
+                document.addEventListener('touchend', clearExitTimer, { once: true });
+                document.addEventListener('touchcancel', clearExitTimer, { once: true });
+            }
+        }, { passive: true });
     }
 }
 

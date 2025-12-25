@@ -38,7 +38,7 @@ import {
 import { normalizeTrackId, sleep, areLyricsDifferent } from './modules/utils.js';
 
 // API (Level 1)
-import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages } from './modules/api.js';
+import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages, fetchQueue } from './modules/api.js';
 
 // DOM (Level 1)
 import { setLyricsInDom, updateThemeColor } from './modules/dom.js';
@@ -175,13 +175,21 @@ async function updateNextUpCard(trackInfo) {
                     card.classList.remove('hidden');
                     nextUpCardVisible = true;
                     nextUpTrackId = trackInfo.track_id;
+                    console.log('[NextUp] Showing card for next track:', nextTrack.name);
                 } else {
-                    // No next track in queue
+                    // No next track in queue - only log once
+                    if (nextUpCardVisible) {
+                        console.log('[NextUp] Queue empty, hiding card');
+                    }
                     card.classList.add('hidden');
                     nextUpCardVisible = false;
                 }
             } catch (e) {
-                console.error('[NextUp] Failed to fetch queue:', e);
+                // Only log error once per song to avoid spam
+                if (!nextUpCardVisible && nextUpTrackId !== trackInfo.track_id) {
+                    console.error('[NextUp] Failed to fetch queue:', e);
+                    nextUpTrackId = trackInfo.track_id; // Prevent repeated logs
+                }
             }
         }
     } else {
