@@ -133,19 +133,17 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
         const toggleArtOnlyMode = () => {
             const isArtOnly = document.body.classList.contains('art-only-mode');
             if (isArtOnly) {
-                // Exit art-only mode
+                // Exit art-only mode (no toast - silent exit)
                 document.body.classList.remove('art-only-mode');
-                showToast('Exited art-only mode');
             } else {
-                // Enter art-only mode - force sharp background
-                document.body.classList.add('art-only-mode');
-                // Trigger sharp background
-                const bgLayer = document.getElementById('background-layer');
-                if (bgLayer) {
-                    bgLayer.style.setProperty('--blur-strength', '0px');
-                    bgLayer.style.display = 'block';
+                // Enter visual mode FIRST (triggers auto-sharp background)
+                if (!visualModeActive) {
+                    enterVisualModeFn();
                 }
-                showToast('Art-only mode (long-press to exit)');
+                // Then enter art-only mode (hides all UI including visual mode UI)
+                document.body.classList.add('art-only-mode');
+                // Brief, low toast (will be overridden by CSS positioning)
+                showToast('Art mode (long-press to exit)');
             }
         };
 

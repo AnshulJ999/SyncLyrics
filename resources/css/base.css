@@ -1896,20 +1896,32 @@ body.art-only-mode .background-layer {
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;
-    bottom: 80px;
-    right: 20px;
+    bottom: 90px;
+    right: 16px;
     z-index: 150;
-    background: rgba(26, 27, 38, 0.85);
-    backdrop-filter: blur(15px);
-    border-radius: 12px;
-    padding: 12px 16px;
-    min-width: 200px;
-    max-width: 280px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(20, 22, 30, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 10px;
+    padding: 10px 12px;
+    min-width: 180px;
+    max-width: 260px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     cursor: pointer;
-    transition: all 0.3s ease, transform 0.3s ease;
-    transform: translateX(0);
+    /* Slide-in animation */
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .next-up-card.hidden {
@@ -1917,30 +1929,31 @@ body.art-only-mode .background-layer {
 }
 
 .next-up-card:hover {
-    background: rgba(26, 27, 38, 0.95);
+    background: rgba(30, 33, 45, 0.95);
     transform: scale(1.02);
 }
 
 .next-up-label {
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 8px;
+    letter-spacing: 0.7px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 6px;
 }
 
 .next-up-content {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 }
 
 .next-up-art {
-    width: 48px;
-    height: 48px;
+    width: 64px;
+    height: 64px;
     border-radius: 6px;
     object-fit: cover;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
 }
 
 .next-up-art:not([src]),
@@ -1990,27 +2003,28 @@ a.settings-header-btn {
 }
 
 /* ========== FILL MODE BUTTONS ========== */
+/* Match style-btn for consistent look */
 .fill-btn {
-    flex: 1;
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.08);
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.2s;
+    color: rgba(255, 255, 255, 0.7);
 }
 
 .fill-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.1);
     color: white;
 }
 
 .fill-btn.active {
-    background: rgba(255, 255, 255, 0.2);
+    background: #3b82f6;
+    border-color: #3b82f6;
     color: white;
-    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
 }
 
 /* ========== BACKGROUND FILL MODES ========== */

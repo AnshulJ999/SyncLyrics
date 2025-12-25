@@ -305,7 +305,11 @@ export function checkForVisualMode(data, trackId) {
             setVisualModeTrackId(null);
         }
 
-        if (visualModeActive && !manualVisualModeOverride) {
+        // Check if we're in outro (lyrics show "End") - don't auto-exit during outro
+        const lyrics = data?.lyrics || data;
+        const isInOutro = Array.isArray(lyrics) && lyrics.length >= 2 && lyrics[1] === 'End';
+
+        if (visualModeActive && !manualVisualModeOverride && !isInOutro) {
             console.log('[Visual Mode] Lyrics available, exiting');
             exitVisualMode();
         }
