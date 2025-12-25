@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Optional, Callable, Dict, Any
 
 from logging_config import get_logger
+from system_utils.helpers import _normalize_track_id
 from .capture import AudioCaptureManager
 from .shazam import ShazamRecognizer, RecognitionResult
 from .buffer import FrontendAudioQueue
@@ -227,9 +228,10 @@ class RecognitionEngine:
                 "artist": self._enriched_metadata["artist"],
                 "title": self._enriched_metadata["title"],
                 "album": self._enriched_metadata.get("album"),
-                "track_id": self._enriched_metadata.get("track_id"),
+                # FIX: Use normalized artist_title for frontend change detection (matches other sources)
+                "track_id": _normalize_track_id(self._enriched_metadata["artist"], self._enriched_metadata["title"]),
                 "duration_ms": spotify_duration if spotify_duration > 0 else 0,
-                # NEW: Spotify ID for Like button (extracted from track_id or track_uri)
+                # Spotify ID for Like button (extracted from track_id or track_uri)
                 "id": self._enriched_metadata.get("track_id"),
                 # NEW: Artist fields for Visual Mode
                 "artist_id": self._enriched_metadata.get("artist_id"),
@@ -277,7 +279,8 @@ class RecognitionEngine:
             "background_image_url": self._last_result.background_image_url,
             "genre": self._last_result.genre,
             "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
-            "track_id": None,
+            # FIX: Use normalized track_id for frontend change detection (consistent with enriched path)
+            "track_id": _normalize_track_id(self._last_result.artist, self._last_result.title),
             "duration_ms": duration_ms,
             # Recognition provider (shazam or acrcloud)
             "recognition_provider": self._last_result.recognition_provider,
