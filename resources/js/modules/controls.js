@@ -135,15 +135,19 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
             if (isArtOnly) {
                 // Exit art-only mode (no toast - silent exit)
                 document.body.classList.remove('art-only-mode');
+                // Clear manual override when exiting
+                setManualVisualModeOverride(false);
             } else {
-                // Enter visual mode FIRST (triggers auto-sharp background)
+                // Set manual override FIRST (prevents auto-exit)
+                setManualVisualModeOverride(true);
+                // Enter visual mode (triggers auto-sharp background)
                 if (!visualModeActive) {
                     enterVisualModeFn();
                 }
                 // Then enter art-only mode (hides all UI including visual mode UI)
                 document.body.classList.add('art-only-mode');
-                // Brief, low toast (will be overridden by CSS positioning)
-                showToast('Art mode (long-press to exit)');
+                // Brief toast (1.5s instead of default 3s)
+                showToast('Art mode (long-press to exit)', 'success', 1500);
             }
         };
 

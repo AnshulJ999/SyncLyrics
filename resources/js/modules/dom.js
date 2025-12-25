@@ -130,8 +130,9 @@ export function updateThemeColor(color) {
  * 
  * @param {string} message - Message to display
  * @param {string} type - 'success' or 'error'
+ * @param {number} durationMs - Duration in milliseconds (default 3000)
  */
-export function showToast(message, type = 'success') {
+export function showToast(message, type = 'success', durationMs = 3000) {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
@@ -144,7 +145,7 @@ export function showToast(message, type = 'success') {
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, durationMs);
 }
 
 // ========== UTILITY DOM FUNCTIONS ==========
