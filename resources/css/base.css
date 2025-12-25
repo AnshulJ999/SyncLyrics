@@ -1904,8 +1904,8 @@ body.art-only-mode .background-layer {
     -webkit-backdrop-filter: blur(20px);
     border-radius: 10px;
     padding: 10px 12px;
-    min-width: 180px;
-    max-width: 260px;
+    min-width: 160px;
+    max-width: 280px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.08);
     cursor: pointer;
