@@ -195,35 +195,61 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
         visualModeBtn.addEventListener('touchend', handlePressEnd);
         visualModeBtn.addEventListener('touchcancel', handlePressEnd);
 
-        // Global handler to exit art-only mode on long-press anywhere
-        document.addEventListener('mousedown', (e) => {
-            if (document.body.classList.contains('art-only-mode')) {
-                let exitTimer = setTimeout(() => {
-                    if (document.body.classList.contains('art-only-mode')) {
-                        toggleArtOnlyMode();
-                    }
-                }, LONG_PRESS_DURATION);
-                
-                document.addEventListener('mouseup', () => {
-                    clearTimeout(exitTimer);
-                }, { once: true });
-            }
-        });
+        // Corner-based exit for art-only mode
+        // Long-press (750ms) in any corner to exit - no conflict with pan/zoom
+        const CORNER_SIZE = 80;           // pixels from corner
+        const CORNER_HOLD_DURATION = 750; // ms
+        const EDGE_TAP_SIZE = 50;         // pixels from left/right edge for image switching
+        
+        let cornerExitTimer = null;
 
-        // Touch support for exiting art-only mode
-        document.addEventListener('touchstart', (e) => {
-            if (document.body.classList.contains('art-only-mode')) {
-                let exitTimer = setTimeout(() => {
+        const isInCorner = (x, y) => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const inLeft = x < CORNER_SIZE;
+            const inRight = x > w - CORNER_SIZE;
+            const inTop = y < CORNER_SIZE;
+            const inBottom = y > h - CORNER_SIZE;
+            return (inLeft || inRight) && (inTop || inBottom);
+        };
+
+        const isOnLeftEdge = (x) => x < EDGE_TAP_SIZE;
+        const isOnRightEdge = (x) => x > window.innerWidth - EDGE_TAP_SIZE;
+
+        const clearCornerTimer = () => {
+            if (cornerExitTimer) {
+                clearTimeout(cornerExitTimer);
+                cornerExitTimer = null;
+            }
+        };
+
+        const handleCornerPress = (x, y) => {
+            if (!document.body.classList.contains('art-only-mode')) return;
+            
+            if (isInCorner(x, y)) {
+                cornerExitTimer = setTimeout(() => {
                     if (document.body.classList.contains('art-only-mode')) {
                         toggleArtOnlyMode();
                     }
-                }, LONG_PRESS_DURATION);
-                
-                const clearExitTimer = () => clearTimeout(exitTimer);
-                document.addEventListener('touchend', clearExitTimer, { once: true });
-                document.addEventListener('touchcancel', clearExitTimer, { once: true });
+                }, CORNER_HOLD_DURATION);
+            }
+        };
+
+        // Mouse events for corner exit
+        document.addEventListener('mousedown', (e) => {
+            handleCornerPress(e.clientX, e.clientY);
+        });
+        document.addEventListener('mouseup', clearCornerTimer);
+        document.addEventListener('mouseleave', clearCornerTimer);
+
+        // Touch events for corner exit
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                handleCornerPress(e.touches[0].clientX, e.touches[0].clientY);
             }
         }, { passive: true });
+        document.addEventListener('touchend', clearCornerTimer);
+        document.addEventListener('touchcancel', clearCornerTimer);
     }
 }
 

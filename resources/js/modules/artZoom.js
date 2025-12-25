@@ -11,12 +11,14 @@
  */
 
 import { showToast } from './dom.js';
+import { currentArtistImages } from './state.js';
 
 // ========== CONSTANTS ==========
-const MIN_ZOOM = 1;      // 100% - no zoom out beyond original
+const MIN_ZOOM = 0.1;    // 10% - allow zooming out to see cropped parts
 const MAX_ZOOM = 8;      // 800% - max zoom for high-res images
 const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
+const EDGE_TAP_SIZE = 50; // pixels from edge for image switching
 
 // ========== STATE ==========
 let zoomLevel = 1;
@@ -37,7 +39,43 @@ let lastMouseY = 0;
 let tapCount = 0;
 let lastTapTime = 0;
 
-// ========== CORE FUNCTIONS ==========
+// Image switching state
+let currentImageIndex = 0;
+let touchStartTime = 0;
+
+// ========== IMAGE SWITCHING ==========
+
+/**
+ * Switch to next artist image
+ */
+function nextImage() {
+    if (currentArtistImages.length === 0) return;
+    currentImageIndex = (currentImageIndex + 1) % currentArtistImages.length;
+    applyCurrentImage();
+    resetArtZoom();
+}
+
+/**
+ * Switch to previous artist image
+ */
+function prevImage() {
+    if (currentArtistImages.length === 0) return;
+    currentImageIndex = (currentImageIndex - 1 + currentArtistImages.length) % currentArtistImages.length;
+    applyCurrentImage();
+    resetArtZoom();
+}
+
+/**
+ * Apply current image to background
+ */
+function applyCurrentImage() {
+    const bg = document.getElementById('background-layer');
+    if (!bg || currentArtistImages.length === 0) return;
+    
+    const imageUrl = currentArtistImages[currentImageIndex];
+    bg.style.backgroundImage = `url('${imageUrl}')`;
+    showToast(`Image ${currentImageIndex + 1}/${currentArtistImages.length}`, 'success', 800);
+}
 
 /**
  * Apply current zoom and pan to background layer
@@ -76,8 +114,15 @@ export function resetArtZoom() {
 
 // ========== TOUCH HANDLERS ==========
 
+let touchStartX = 0;
+let touchStartY = 0;
+let touchMoved = false;
+
 function handleTouchStart(e) {
     if (!isEnabled) return;
+    
+    touchStartTime = Date.now();
+    touchMoved = false;
     
     if (e.touches.length === 2) {
         // Pinch start - calculate initial distance between fingers
@@ -90,6 +135,8 @@ function handleTouchStart(e) {
         isDragging = true;
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
         
         // Triple-tap detection
         const now = Date.now();
@@ -110,6 +157,8 @@ function handleTouchStart(e) {
 function handleTouchMove(e) {
     if (!isEnabled) return;
     
+    touchMoved = true;  // Mark that we moved (not just a tap)
+    
     if (e.touches.length === 2 && initialPinchDistance > 0) {
         // Pinch zoom
         e.preventDefault();
@@ -120,8 +169,8 @@ function handleTouchMove(e) {
         const scale = currentDistance / initialPinchDistance;
         zoomLevel = clampZoom(initialZoomLevel * scale);
         updateTransform();
-    } else if (e.touches.length === 1 && isDragging && zoomLevel > 1) {
-        // Pan (only when zoomed in)
+    } else if (e.touches.length === 1 && isDragging) {
+        // Pan - allow at any zoom level for image exploration
         e.preventDefault();
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
@@ -142,7 +191,23 @@ function handleTouchEnd(e) {
     if (e.touches.length < 2) {
         initialPinchDistance = 0;
     }
-    if (e.touches.length === 0) {
+    
+    // Check for edge tap (quick tap, minimal movement)
+    if (e.touches.length === 0 && isDragging) {
+        const tapDuration = Date.now() - touchStartTime;
+        const dx = Math.abs(lastTouchX - touchStartX);
+        const dy = Math.abs(lastTouchY - touchStartY);
+        const isQuickTap = tapDuration < 300 && dx < 20 && dy < 20;
+        
+        if (isQuickTap && currentArtistImages.length > 1) {
+            // Check if tap was on left or right edge
+            if (touchStartX < EDGE_TAP_SIZE) {
+                prevImage();
+            } else if (touchStartX > window.innerWidth - EDGE_TAP_SIZE) {
+                nextImage();
+            }
+        }
+        
         isDragging = false;
     }
 }
