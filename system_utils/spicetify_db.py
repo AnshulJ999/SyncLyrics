@@ -30,6 +30,65 @@ logger = get_logger(__name__)
 _db_lock = asyncio.Lock()
 
 
+# =============================================================================
+# DATA VALIDATION HELPERS
+# =============================================================================
+
+def _has_valid_colors(colors: dict) -> bool:
+    """
+    Check if colors dict contains actual hex color values.
+    
+    Returns False for None, empty dict, or dict with only null/empty values.
+    This prevents empty color data from overwriting previously extracted colors.
+    
+    Args:
+        colors: Color palette dict (e.g., {'VIBRANT': '#ff5500', ...})
+        
+    Returns:
+        True if at least one valid hex color exists
+    """
+    if not colors or not isinstance(colors, dict):
+        return False
+    return any(
+        isinstance(v, str) and v.startswith('#') and len(v) >= 4
+        for v in colors.values()
+    )
+
+
+def _merge_metadata(existing: Optional[Dict[str, Any]], new: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Merge track metadata field-by-field, preserving non-null values.
+    
+    Strategy: Start with existing data, overlay new non-null values.
+    This ensures we never lose data - only add or update fields.
+    
+    Args:
+        existing: Previously saved track metadata (may be None)
+        new: Incoming track metadata (may be None)
+        
+    Returns:
+        Merged metadata dict, or None if both inputs are None
+    """
+    if not existing and not new:
+        return None
+    
+    # Start with existing data as base
+    merged = dict(existing) if existing else {}
+    
+    # Overlay new values (but only if they're not None/empty)
+    if new:
+        for key, value in new.items():
+            # Only update if new value is meaningful
+            # Handles None, empty string, empty list
+            if value is not None and value != '' and value != []:
+                merged[key] = value
+            elif key not in merged:
+                # Key doesn't exist in merged, add even if None (for completeness)
+                merged[key] = value
+    
+    return merged if merged else None
+
+
 def _get_db_path(artist: str, title: str) -> Optional[str]:
     """
     Generate safe filename for spicetify data.
@@ -219,17 +278,28 @@ async def save_to_db(
             # Both are empty, use new (for consistency)
             data["audio_analysis"] = audio_analysis
         
-        # Merge colors
-        if colors is not None:
-            data["colors"] = colors
-        elif "colors" in existing:
-            data["colors"] = existing["colors"]
+        # Merge colors (only update if new has actual hex values)
+        new_has_colors = _has_valid_colors(colors)
+        existing_has_colors = _has_valid_colors(existing.get("colors"))
         
-        # Merge track metadata
-        if track_metadata is not None:
-            data["track_metadata"] = track_metadata
-        elif "track_metadata" in existing:
-            data["track_metadata"] = existing["track_metadata"]
+        if new_has_colors:
+            data["colors"] = colors
+        elif existing_has_colors:
+            data["colors"] = existing["colors"]
+            if colors is not None:
+                # New data was sent but was empty/invalid - log preservation
+                logger.debug(f"Preserved existing colors for: {artist} - {title} (new colors were empty)")
+        elif colors is not None:
+            # Neither has valid colors, but new was explicitly sent - save it
+            data["colors"] = colors
+        
+        # Merge track metadata (field-by-field merge to preserve data)
+        merged_metadata = _merge_metadata(
+            existing.get("track_metadata"),
+            track_metadata
+        )
+        if merged_metadata:
+            data["track_metadata"] = merged_metadata
         
         # === EXTENDED METADATA ===
         # Canvas (animated video loops) - only save if has actual URL
