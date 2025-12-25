@@ -717,23 +717,39 @@ export function setupProviderUI() {
     // Fill mode buttons (Cover/Contain/Stretch/Original)
     const fillModeButtons = document.getElementById('fill-mode-buttons');
     if (fillModeButtons) {
+        // Load saved fill mode from localStorage on init
+        const savedFillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+        const backgroundLayer = document.getElementById('background-layer');
+        if (backgroundLayer) {
+            backgroundLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
+            backgroundLayer.classList.add(`fill-${savedFillMode}`);
+        }
+        // Update button states to match saved value
+        const allFillBtns = fillModeButtons.querySelectorAll('.fill-btn');
+        allFillBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.fill === savedFillMode);
+        });
+
         fillModeButtons.addEventListener('click', (e) => {
             const fillBtn = e.target.closest('.fill-btn');
             if (!fillBtn) return;
 
             const fillMode = fillBtn.dataset.fill;
-            const backgroundLayer = document.getElementById('background-layer');
+            const bgLayer = document.getElementById('background-layer');
             
-            if (backgroundLayer) {
+            if (bgLayer) {
                 // Remove all fill mode classes
-                backgroundLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
+                bgLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
                 // Add the selected one
-                backgroundLayer.classList.add(`fill-${fillMode}`);
+                bgLayer.classList.add(`fill-${fillMode}`);
             }
 
+            // Save to localStorage (persists across reloads, applies to all songs)
+            localStorage.setItem('backgroundFillMode', fillMode);
+
             // Update button states
-            const allFillBtns = fillModeButtons.querySelectorAll('.fill-btn');
-            allFillBtns.forEach(btn => btn.classList.remove('active'));
+            const btns = fillModeButtons.querySelectorAll('.fill-btn');
+            btns.forEach(btn => btn.classList.remove('active'));
             fillBtn.classList.add('active');
 
             showToast(`Background fill: ${fillMode}`);

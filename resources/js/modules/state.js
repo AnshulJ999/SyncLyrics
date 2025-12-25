@@ -139,7 +139,11 @@ export function setSlideshowInterval(value) { slideshowInterval = value; }
 export function setCurrentSlideIndex(value) { currentSlideIndex = value; }
 export function setSlideshowEnabled(value) { slideshowEnabled = value; }
 export function setSavedBackgroundState(value) { savedBackgroundState = value; }
-export function setManualStyleOverride(value) { manualStyleOverride = value; }
+export function setManualStyleOverride(value) { 
+    // DISABLED: manualStyleOverride always stays false now
+    // This means style changes don't "stick" - they reset on track change
+    // Original: manualStyleOverride = value;
+}
 export function setQueueDrawerOpen(value) { queueDrawerOpen = value; }
 export function setQueuePollInterval(value) { queuePollInterval = value; }
 export function setIsLiked(value) { isLiked = value; }
