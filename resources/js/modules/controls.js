@@ -124,13 +124,82 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
     // Visual Mode Toggle Button
     const visualModeBtn = document.getElementById('btn-lyrics-toggle');
     if (visualModeBtn && enterVisualModeFn && exitVisualModeFn) {
-        visualModeBtn.addEventListener('click', () => {
+        // Long-press state
+        let longPressTimer = null;
+        let isLongPress = false;
+        const LONG_PRESS_DURATION = 500; // ms
+
+        // Art-only mode handler
+        const toggleArtOnlyMode = () => {
+            const isArtOnly = document.body.classList.contains('art-only-mode');
+            if (isArtOnly) {
+                // Exit art-only mode
+                document.body.classList.remove('art-only-mode');
+                showToast('Exited art-only mode');
+            } else {
+                // Enter art-only mode - force sharp background
+                document.body.classList.add('art-only-mode');
+                // Trigger sharp background
+                const bgLayer = document.getElementById('background-layer');
+                if (bgLayer) {
+                    bgLayer.style.setProperty('--blur-strength', '0px');
+                    bgLayer.style.display = 'block';
+                }
+                showToast('Art-only mode (long-press to exit)');
+            }
+        };
+
+        // Handle long-press to enter art-only mode
+        const handlePressStart = (e) => {
+            isLongPress = false;
+            longPressTimer = setTimeout(() => {
+                isLongPress = true;
+                toggleArtOnlyMode();
+            }, LONG_PRESS_DURATION);
+        };
+
+        const handlePressEnd = (e) => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+
+        // Regular click handler (only fires if NOT long-press)
+        visualModeBtn.addEventListener('click', (e) => {
+            if (isLongPress) {
+                isLongPress = false;
+                return; // Ignore click after long-press
+            }
             if (visualModeActive) {
                 setManualVisualModeOverride(false);
                 exitVisualModeFn();
             } else {
                 setManualVisualModeOverride(true);
                 enterVisualModeFn();
+            }
+        });
+
+        // Long-press events (mouse + touch)
+        visualModeBtn.addEventListener('mousedown', handlePressStart);
+        visualModeBtn.addEventListener('mouseup', handlePressEnd);
+        visualModeBtn.addEventListener('mouseleave', handlePressEnd);
+        visualModeBtn.addEventListener('touchstart', handlePressStart, { passive: true });
+        visualModeBtn.addEventListener('touchend', handlePressEnd);
+        visualModeBtn.addEventListener('touchcancel', handlePressEnd);
+
+        // Global handler to exit art-only mode on long-press anywhere
+        document.addEventListener('mousedown', (e) => {
+            if (document.body.classList.contains('art-only-mode') && e.target === document.body) {
+                let exitTimer = setTimeout(() => {
+                    if (document.body.classList.contains('art-only-mode')) {
+                        toggleArtOnlyMode();
+                    }
+                }, LONG_PRESS_DURATION);
+                
+                document.addEventListener('mouseup', () => {
+                    clearTimeout(exitTimer);
+                }, { once: true });
             }
         });
     }

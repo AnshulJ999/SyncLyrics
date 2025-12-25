@@ -132,6 +132,122 @@ function updateWordSyncToggleUI() {
 const IDLE_THRESHOLD = 20000; // 20 seconds before switching to slow polling
 const IDLE_POLL_INTERVAL = 1000; // 1 second when in slow polling mode
 
+// ========== NEXT-UP CARD CONSTANTS ==========
+const NEXT_UP_SHOW_THRESHOLD_MS = 30000; // Show card in last 30 seconds
+let nextUpCardVisible = false;
+let nextUpTrackId = null; // Cache to avoid redundant fetches
+
+/**
+ * Update next-up preview card based on track position
+ * Shows card in the last 30 seconds of a song
+ * 
+ * @param {Object} trackInfo - Current track information
+ */
+async function updateNextUpCard(trackInfo) {
+    const card = document.getElementById('next-up-card');
+    if (!card) return;
+
+    const positionMs = (trackInfo.position || 0) * 1000;
+    const durationMs = trackInfo.duration_ms || 0;
+    const remainingMs = durationMs - positionMs;
+
+    // Check if we're in the last 30 seconds
+    if (durationMs > 0 && remainingMs <= NEXT_UP_SHOW_THRESHOLD_MS && remainingMs > 0) {
+        // Fetch queue if not already visible or new song
+        if (!nextUpCardVisible || nextUpTrackId !== trackInfo.track_id) {
+            try {
+                const queueData = await fetchQueue();
+                if (queueData && queueData.queue && queueData.queue.length > 0) {
+                    const nextTrack = queueData.queue[0];
+                    
+                    // Populate card
+                    const artEl = document.getElementById('next-up-art');
+                    const titleEl = document.getElementById('next-up-title');
+                    const artistEl = document.getElementById('next-up-artist');
+                    
+                    if (artEl && nextTrack.album && nextTrack.album.images) {
+                        const artUrl = nextTrack.album.images[1]?.url || nextTrack.album.images[0]?.url || '';
+                        artEl.src = artUrl;
+                    }
+                    if (titleEl) titleEl.textContent = nextTrack.name || 'Unknown';
+                    if (artistEl) artistEl.textContent = nextTrack.artists?.[0]?.name || 'Unknown';
+                    
+                    card.classList.remove('hidden');
+                    nextUpCardVisible = true;
+                    nextUpTrackId = trackInfo.track_id;
+                } else {
+                    // No next track in queue
+                    card.classList.add('hidden');
+                    nextUpCardVisible = false;
+                }
+            } catch (e) {
+                console.error('[NextUp] Failed to fetch queue:', e);
+            }
+        }
+    } else {
+        // Hide card when not in the last 30 seconds
+        if (nextUpCardVisible) {
+            card.classList.add('hidden');
+            nextUpCardVisible = false;
+            nextUpTrackId = null;
+        }
+    }
+}
+
+// ========== LINE-SYNC OUTRO VISUAL MODE ==========
+const OUTRO_VISUAL_MODE_DELAY_SEC = 6.0; // Configurable delay before entering visual mode
+let outroVisualModeTriggered = false;
+let outroVisualModeTimer = null;
+
+/**
+ * Check for line-sync outro and trigger visual mode after delay
+ * Called when lyrics.prev-1 shows "End"
+ * 
+ * @param {Object|Array} lyricsData - Lyrics data from API
+ */
+function checkForLineSyncOutro(lyricsData) {
+    if (!visualModeConfig.enabled) return;
+    if (visualModeActive) return; // Already in visual mode
+    
+    // Check if lyrics show "End" (outro state)
+    const lyrics = lyricsData?.lyrics || lyricsData;
+    const isOutro = Array.isArray(lyrics) && 
+                    lyrics.length >= 2 && 
+                    lyrics[1] === 'End';
+    
+    if (isOutro && !outroVisualModeTriggered) {
+        console.log(`[Main] Line-sync outro detected, scheduling visual mode in ${OUTRO_VISUAL_MODE_DELAY_SEC}s`);
+        outroVisualModeTriggered = true;
+        
+        outroVisualModeTimer = setTimeout(() => {
+            if (!visualModeActive) {
+                console.log('[Main] Line-sync outro delay elapsed, entering visual mode');
+                enterVisualMode();
+            }
+        }, OUTRO_VISUAL_MODE_DELAY_SEC * 1000);
+    } else if (!isOutro && outroVisualModeTriggered) {
+        // Reset if no longer in outro (e.g., seeked back)
+        outroVisualModeTriggered = false;
+        if (outroVisualModeTimer) {
+            clearTimeout(outroVisualModeTimer);
+            outroVisualModeTimer = null;
+        }
+    }
+}
+
+// Reset outro state on track change (called from updateLoop when track changes)
+function resetOutroState() {
+    outroVisualModeTriggered = false;
+    if (outroVisualModeTimer) {
+        clearTimeout(outroVisualModeTimer);
+        outroVisualModeTimer = null;
+    }
+    nextUpCardVisible = false;
+    nextUpTrackId = null;
+    const card = document.getElementById('next-up-card');
+    if (card) card.classList.add('hidden');
+}
+
 // ========== MAIN UPDATE LOOP ==========
 
 /**
@@ -239,6 +355,9 @@ async function updateLoop() {
             // Reset visual mode on track change
             resetVisualModeState();
 
+            // Reset outro state (line-sync visual mode timer + next-up card)
+            resetOutroState();
+
             // Reset word-sync state on track change (stops animation, clears logged flag)
             resetWordSyncState();
 
@@ -328,6 +447,9 @@ async function updateLoop() {
         updateProgress(trackInfo);
         updateControlState(trackInfo);
 
+        // Next-up preview card - show in last 30 seconds of song
+        updateNextUpCard(trackInfo);
+
         // Update waveform seekbar (if enabled)
         if (displayConfig.showWaveform) {
             updateWaveform(trackInfo);
@@ -353,6 +475,9 @@ async function updateLoop() {
 
         // Check for visual mode
         checkForVisualMode(data, trackId);
+
+        // Check for line-sync outro (triggers visual mode after 6s delay)
+        checkForLineSyncOutro(data);
 
         // Start word-sync animation loop if word-sync is available
         // The rAF loop runs at display refresh rate (60-144fps) for smooth animation
@@ -416,6 +541,15 @@ async function main() {
     const queueCloseBtn = document.getElementById('queue-close');
     if (queueCloseBtn) {
         queueCloseBtn.addEventListener('click', toggleQueueDrawer);
+    }
+
+    // Setup next-up card tap-to-dismiss
+    const nextUpCard = document.getElementById('next-up-card');
+    if (nextUpCard) {
+        nextUpCard.addEventListener('click', () => {
+            nextUpCard.classList.add('hidden');
+            nextUpCardVisible = false;
+        });
     }
 
     // Setup word-sync toggle button

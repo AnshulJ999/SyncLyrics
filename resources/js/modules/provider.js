@@ -714,6 +714,32 @@ export function setupProviderUI() {
         });
     }
 
+    // Fill mode buttons (Cover/Contain/Stretch/Original)
+    const fillModeButtons = document.getElementById('fill-mode-buttons');
+    if (fillModeButtons) {
+        fillModeButtons.addEventListener('click', (e) => {
+            const fillBtn = e.target.closest('.fill-btn');
+            if (!fillBtn) return;
+
+            const fillMode = fillBtn.dataset.fill;
+            const backgroundLayer = document.getElementById('background-layer');
+            
+            if (backgroundLayer) {
+                // Remove all fill mode classes
+                backgroundLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
+                // Add the selected one
+                backgroundLayer.classList.add(`fill-${fillMode}`);
+            }
+
+            // Update button states
+            const allFillBtns = fillModeButtons.querySelectorAll('.fill-btn');
+            allFillBtns.forEach(btn => btn.classList.remove('active'));
+            fillBtn.classList.add('active');
+
+            showToast(`Background fill: ${fillMode}`);
+        });
+    }
+
     // Provider selection (event delegation)
     const providerList = document.getElementById('provider-list');
     if (providerList) {

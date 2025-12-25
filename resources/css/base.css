@@ -1868,3 +1868,168 @@ body[data-minimal="true"] .waveform-container {
     display: none !important;
 }
 
+/* ========== ART-ONLY MODE ========== */
+/* Long-press visual mode button to enter: hides all UI, shows only background art with auto-sharp */
+body.art-only-mode .lyrics-container,
+body.art-only-mode .track-header,
+body.art-only-mode #player-ui-container,
+body.art-only-mode .top-right-controls,
+body.art-only-mode .bottom-nav,
+body.art-only-mode .lyrics-toggle-btn,
+body.art-only-mode .word-sync-toggle-btn,
+body.art-only-mode #provider-info,
+body.art-only-mode #next-up-card,
+body.art-only-mode .provider-modal,
+body.art-only-mode .settings-panel,
+body.art-only-mode .audio-source-modal,
+body.art-only-mode .queue-drawer {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Keep background visible in art-only mode */
+body.art-only-mode .background-layer {
+    display: block !important;
+}
+
+/* ========== NEXT-UP PREVIEW CARD ========== */
+.next-up-card {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    z-index: 150;
+    background: rgba(26, 27, 38, 0.85);
+    backdrop-filter: blur(15px);
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 200px;
+    max-width: 280px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: all 0.3s ease, transform 0.3s ease;
+    transform: translateX(0);
+}
+
+.next-up-card.hidden {
+    display: none;
+}
+
+.next-up-card:hover {
+    background: rgba(26, 27, 38, 0.95);
+    transform: scale(1.02);
+}
+
+.next-up-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 8px;
+}
+
+.next-up-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.next-up-art {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.next-up-art:not([src]),
+.next-up-art[src=""] {
+    display: none;
+}
+
+.next-up-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.next-up-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-up-artist {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+/* Hide next-up card in minimal mode */
+body[data-minimal="true"] .next-up-card {
+    display: none !important;
+}
+
+/* ========== SETTINGS HEADER BUTTONS ========== */
+.settings-header-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Style the settings link (anchor) same as button */
+a.settings-header-btn {
+    text-decoration: none;
+}
+
+/* ========== FILL MODE BUTTONS ========== */
+.fill-btn {
+    flex: 1;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fill-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.fill-btn.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ========== BACKGROUND FILL MODES ========== */
+.background-layer.fill-cover {
+    background-size: cover;
+    background-position: center;
+}
+
+.background-layer.fill-contain {
+    background-size: contain;
+    background-position: center;
+}
+
+.background-layer.fill-stretch {
+    background-size: 100% 100%;
+    background-position: center;
+}
+
+.background-layer.fill-original {
+    background-size: auto;
+    background-position: center;
+}

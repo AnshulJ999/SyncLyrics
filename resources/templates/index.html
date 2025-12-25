@@ -226,9 +226,14 @@
 <div id="settings-panel" class="settings-panel" style="display: none;">
     <div class="settings-header">
         <h3>Display Options</h3>
-        <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
-            <i class="bi bi-fullscreen"></i>
-        </button>
+        <div class="settings-header-buttons">
+            <a href="/settings" id="main-settings-link" class="settings-header-btn" title="Open Main Settings">
+                <i class="bi bi-sliders"></i>
+            </a>
+            <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
+                <i class="bi bi-fullscreen"></i>
+            </button>
+        </div>
     </div>
     <div class="settings-options">
         <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
@@ -265,6 +270,18 @@
     <div class="track-info">
         <div id="track-title" class="track-title"></div>
         <div id="track-artist" class="track-artist"></div>
+    </div>
+</div>
+
+<!-- Next-Up Preview Card (shows in last 30s of song) -->
+<div id="next-up-card" class="next-up-card hidden">
+    <div class="next-up-label">Up Next</div>
+    <div class="next-up-content">
+        <img id="next-up-art" class="next-up-art" src="" alt="">
+        <div class="next-up-info">
+            <div id="next-up-title" class="next-up-title"></div>
+            <div id="next-up-artist" class="next-up-artist"></div>
+        </div>
     </div>
 </div>
 
@@ -336,6 +353,17 @@
                         <button class="style-btn" data-style="soft">Soft</button>
                         <button class="style-btn" data-style="sharp">Sharp</button>
                         <button class="style-btn" data-style="blur">Blur</button>
+                    </div>
+                </div>
+
+                <!-- Background Fill Controls -->
+                <div class="style-controls-section">
+                    <h4>Background Fill</h4>
+                    <div class="style-buttons" id="fill-mode-buttons">
+                        <button class="fill-btn active" data-fill="cover" title="Fill screen, may crop edges">Cover</button>
+                        <button class="fill-btn" data-fill="contain" title="Full image visible, may have bars">Contain</button>
+                        <button class="fill-btn" data-fill="stretch" title="Stretch to fill (distorts)">Stretch</button>
+                        <button class="fill-btn" data-fill="original" title="Original size, centered">Original</button>
                     </div>
                 </div>
 
