@@ -191,6 +191,8 @@ def restart():
     import subprocess
     import logging as logging_module  # Avoid shadowing module-level logger
     
+    logger.info("Closing log handlers and spawning new instance...")
+    
     # FIX: Close all log file handlers BEFORE spawning new process
     # This prevents race condition where new process can't access log files
     # because old process still holds file locks
@@ -235,8 +237,9 @@ def restart():
         # Development mode - include full sys.argv (script name + args)
         subprocess.Popen([sys.executable] + sys.argv, creationflags=creationflags)
     
-    # Brief delay to ensure new process starts before we exit
-    time.sleep(0.6)
+    # Delay to ensure new process initializes before we exit
+    # Increased to 1.0s to prevent Windows Terminal freezing when spawning consecutive windows
+    time.sleep(1.0)
     os._exit(0)  # Force exit - file handlers already closed above
 
 async def cleanup() -> None:
@@ -346,6 +349,19 @@ async def cleanup() -> None:
 
     queue.put("exit")
     await asyncio.sleep(0.5)
+    
+    # Close log file handlers for clean exit
+    # This ensures file locks are released before process terminates
+    import logging as logging_module
+    logger.info("Cleanup complete, closing log handlers...")
+    root_logger = logging_module.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging_module.FileHandler):
+            try:
+                handler.close()
+                root_logger.removeHandler(handler)
+            except Exception:
+                pass
     
     # Signal watchdog that cleanup completed successfully
     _cleanup_complete_event.set()
