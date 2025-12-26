@@ -128,6 +128,12 @@ class RecognitionEngine:
         self._last_attempt_result: str = "idle"  # "matched" | "no_match" | "silent" | "error" | "idle"
         self._last_attempt_time: float = 0.0
         
+        # Pending song verification (anti-false-positive)
+        # Shazam results need N consecutive matches before being accepted
+        self._pending_song: Optional[RecognitionResult] = None
+        self._pending_match_count: int = 0
+        self._pending_fail_count: int = 0  # For timeout (clear pending after N fails)
+        
     @property
     def state(self) -> EngineState:
         """Current engine state."""
@@ -442,15 +448,15 @@ class RecognitionEngine:
                     # Success - enrich with Spotify (async)
                     await self._handle_successful_recognition(result)
                 else:
-                    # Failure
-                    self._handle_failed_recognition()
+                    # Failure/no-match - check for pending timeout
+                    self._handle_pending_timeout()
                 
             except asyncio.CancelledError:
                 logger.debug("Recognition loop cancelled")
                 break
             except Exception as e:
                 logger.error(f"Recognition loop error: {e}")
-                self._handle_failed_recognition()
+                self._handle_pending_timeout()
             
             # Adaptive interval based on detection state
             if not self._stop_requested:
@@ -580,6 +586,8 @@ class RecognitionEngine:
         """
         Handle a successful recognition result.
         
+        Includes multi-match verification for Shazam results to reduce false positives.
+        ACRCloud results bypass verification (high confidence).
         Enriches metadata with Spotify if enricher is available.
         """
         self._consecutive_failures = 0
@@ -588,6 +596,9 @@ class RecognitionEngine:
         self._last_attempt_time = time.time()
         self._is_playing = True
         self._frozen_position = None  # Unfreeze position
+        
+        # Reset pending fail count on any successful recognition
+        self._pending_fail_count = 0
         
         # Update adaptive interval state machine
         if not self._first_detection:
@@ -599,35 +610,173 @@ class RecognitionEngine:
         
         # Check for song change
         song_changed = not result.is_same_song(self._last_result)
-        if song_changed:
-            logger.info(f"Song changed to: {result}")
-            
-            # Reset to verification state for new song
-            self._verified_detection = False
-            
-            # Clear previous enrichment (will re-enrich below)
-            self._enriched_metadata = None
-            self._enrichment_attempted = False  # Allow enrichment for new song
-            
-            # Call song change callback
-            if self.on_song_change:
-                try:
-                    self.on_song_change(result)
-                except Exception as e:
-                    logger.error(f"Song change callback error: {e}")
         
-        # Enrich with Spotify using ISRC (only on song change or if not yet enriched)
-        # _enrichment_attempted prevents retry spam for songs not on Spotify
-        should_enrich = (self.metadata_enricher and result.isrc and 
-                         (song_changed or (self._enriched_metadata is None and not self._enrichment_attempted)))
+        if not song_changed:
+            # Same song - just update position and state
+            self._last_result = result
+            self._set_state(EngineState.ACTIVE)
+            return
+        
+        # NEW SONG DETECTED - run validation
+        if await self._validate_for_acceptance(result):
+            await self._accept_song_change(result)
+        # else: stored as pending, waiting for more matches
+    
+    async def _validate_for_acceptance(self, result: RecognitionResult) -> bool:
+        """
+        Validate a new song before accepting.
+        
+        Returns True if song should be accepted, False if pending verification.
+        """
+        from system_utils.session_config import get_effective_value
+        
+        # ACRCloud bypasses all verification (high confidence)
+        if result.recognition_provider == "acrcloud":
+            logger.info(f"ACRCloud result - accepting immediately: {result}")
+            self._clear_pending()
+            return True
+        
+        # Reaper validation (optional)
+        if get_effective_value("reaper_validation_enabled", False):
+            reaper_match = await self._check_reaper_validation(result)
+            if reaper_match:
+                logger.info(f"Reaper validation passed - accepting: {result}")
+                self._clear_pending()
+                return True
+            else:
+                logger.debug(f"Reaper validation failed for: {result}")
+                # Fall through to multi-match verification
+        
+        # Multi-match verification for Shazam results
+        cycles_needed = get_effective_value("verification_cycles", 2)
+        
+        if cycles_needed <= 1:
+            # No verification needed
+            self._clear_pending()
+            return True
+        
+        # Check if matches pending song
+        if self._pending_song and result.is_same_song(self._pending_song):
+            self._pending_match_count += 1
+            
+            if self._pending_match_count >= cycles_needed:
+                logger.info(f"Verified after {self._pending_match_count} matches: {result}")
+                self._clear_pending()
+                return True
+            else:
+                logger.debug(f"Pending: {self._pending_match_count}/{cycles_needed} for {result}")
+                return False
+        else:
+            # Different song or no pending - start new pending
+            self._pending_song = result
+            self._pending_match_count = 1
+            self._pending_fail_count = 0
+            logger.debug(f"New pending song ({1}/{cycles_needed}): {result}")
+            return False
+    
+    async def _check_reaper_validation(self, result: RecognitionResult) -> bool:
+        """
+        Check if result matches Reaper window title using fuzzy matching.
+        
+        Returns True if match found, False otherwise.
+        """
+        from system_utils.session_config import get_effective_value
+        
+        try:
+            from system_utils.reaper import is_reaper_running
+            
+            reaper_info = is_reaper_running()
+            if not reaper_info:
+                return False  # Reaper not running
+            
+            window_title = reaper_info.get("window_title", "")
+            if not window_title:
+                return False
+            
+            threshold = get_effective_value("reaper_validation_threshold", 80) / 100.0
+            
+            # Simple word-overlap fuzzy match
+            def fuzzy_match(needle: str, haystack: str) -> bool:
+                if not needle or not haystack:
+                    return False
+                needle_words = set(needle.lower().split())
+                haystack_words = set(haystack.lower().split())
+                if not needle_words:
+                    return False
+                overlap = len(needle_words & haystack_words)
+                return (overlap / len(needle_words)) >= threshold
+            
+            # Try matching artist or title against window title
+            artist_match = fuzzy_match(result.artist, window_title)
+            title_match = fuzzy_match(result.title, window_title)
+            
+            if artist_match or title_match:
+                logger.debug(f"Reaper match: artist={artist_match}, title={title_match}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Reaper validation error: {e}")
+            return False
+    
+    def _clear_pending(self):
+        """Clear pending song verification state."""
+        self._pending_song = None
+        self._pending_match_count = 0
+        self._pending_fail_count = 0
+    
+    def _handle_pending_timeout(self):
+        """
+        Handle pending song timeout when recognition fails.
+        
+        If a pending song exists and we've had too many failed recognition cycles,
+        clear the pending song (assume the first match was a false positive).
+        """
+        if self._pending_song is None:
+            return  # No pending song, nothing to timeout
+        
+        from system_utils.session_config import get_effective_value
+        
+        self._pending_fail_count += 1
+        timeout_cycles = get_effective_value("verification_timeout_cycles", 4)
+        
+        if self._pending_fail_count >= timeout_cycles:
+            logger.debug(f"Pending song timeout after {self._pending_fail_count} fails: {self._pending_song}")
+            self._clear_pending()
+        else:
+            logger.debug(f"Pending fail count: {self._pending_fail_count}/{timeout_cycles}")
+    
+    async def _accept_song_change(self, result: RecognitionResult):
+        """
+        Accept a song change after validation.
+        
+        Handles callbacks, enrichment, and state updates.
+        """
+        logger.info(f"Song changed to: {result}")
+        
+        # Reset to verification state for new song
+        self._verified_detection = False
+        
+        # Clear previous enrichment (will re-enrich below)
+        self._enriched_metadata = None
+        self._enrichment_attempted = False  # Allow enrichment for new song
+        
+        # Call song change callback
+        if self.on_song_change:
+            try:
+                self.on_song_change(result)
+            except Exception as e:
+                logger.error(f"Song change callback error: {e}")
+        
+        # Enrich with Spotify using ISRC
+        should_enrich = self.metadata_enricher and result.isrc
         
         if should_enrich:
-            self._enrichment_attempted = True  # Prevent retry on failure
-            # Fire-and-forget: Don't block recognition loop waiting for Spotify API
+            self._enrichment_attempted = True
             asyncio.create_task(self._enrich_metadata_async(result))
         
-        # Fix: Update recognition_provider on EVERY match (not just song changes)
-        # This ensures the badge updates correctly when switching between Shazam/ACRCloud
+        # Update state
         self._last_result = result
         self._set_state(EngineState.ACTIVE)
     

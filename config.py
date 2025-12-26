@@ -329,6 +329,11 @@ AUDIO_RECOGNITION = {
     "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
     "latency_offset": conf("audio_recognition.latency_offset", 0.0),
     "silence_threshold": conf("audio_recognition.silence_threshold", 500),
+    # Verification settings (anti-false-positive)
+    "verification_cycles": conf("audio_recognition.verification_cycles", 2),
+    "verification_timeout_cycles": conf("audio_recognition.verification_timeout_cycles", 4),
+    "reaper_validation_enabled": conf("audio_recognition.reaper_validation_enabled", False),
+    "reaper_validation_threshold": conf("audio_recognition.reaper_validation_threshold", 80),
 }
 
 # Helper functions

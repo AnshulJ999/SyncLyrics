@@ -259,6 +259,10 @@ class SettingsManager:
             "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 5.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=3.0, max_val=30.0),
             "audio_recognition.latency_offset": Setting("Latency Offset", float, 0.0, False, "Audio Recognition", "Manual latency adjustment (s)", "slider", min_val=-5.0, max_val=5.0),
             "audio_recognition.silence_threshold": Setting("Silence Threshold", int, 500, False, "Audio Recognition", "Min amplitude to detect audio", "slider", min_val=50, max_val=2000),
+            "audio_recognition.verification_cycles": Setting("Verification Cycles", int, 2, False, "Audio Recognition", "Shazam matches needed to accept new song (1=instant)", "number", min_val=1, max_val=5),
+            "audio_recognition.verification_timeout_cycles": Setting("Verification Timeout", int, 4, False, "Audio Recognition", "Clear pending if no confirmation in N cycles", "number", min_val=2, max_val=10),
+            "audio_recognition.reaper_validation_enabled": Setting("Reaper Validation", bool, False, False, "Audio Recognition", "Validate against Reaper window title", "switch"),
+            "audio_recognition.reaper_validation_threshold": Setting("Reaper Match Threshold", int, 80, False, "Audio Recognition", "Fuzzy match score (0-100) for Reaper validation", "number", min_val=50, max_val=100),
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, True, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),
