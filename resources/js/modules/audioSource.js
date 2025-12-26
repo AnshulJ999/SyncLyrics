@@ -14,6 +14,7 @@ import {
     getAudioRecognitionStatus
 } from './api.js';
 
+import { showToast } from './dom.js';
 import audioCapture from './audioCapture.js';
 
 // =============================================================================
@@ -530,12 +531,18 @@ function stopPolling() {
 // Recognition Control
 // =============================================================================
 
-async function handleStart() {
+async function handleStart(overrideMode = null) {
     const select = elements.deviceSelect;
     if (!select) return;
 
     const value = select.value;
-    const [mode, deviceId] = value.split(':');
+    let [mode, deviceId] = value.split(':');
+    
+    // Use override mode if provided (from Quick Start)
+    if (overrideMode) {
+        mode = overrideMode;
+        deviceId = overrideMode === 'frontend' ? 'default' : 'auto';
+    }
 
     // Check HTTPS for frontend mode
     if (mode === 'frontend' && !isSecureContext()) {
@@ -681,9 +688,12 @@ function isSecureContext() {
 }
 
 function showHttpsWarning() {
+    // Show inline warning in modal (if visible)
     if (elements.httpsWarning) {
         elements.httpsWarning.classList.add('visible');
     }
+    // Also show a toast so user definitely sees the message
+    showToast('🎤 Browser microphone requires HTTPS. Use System Audio instead, or switch to HTTPS.', 'error', 5000);
 }
 
 function hideHttpsWarning() {
@@ -814,7 +824,7 @@ export function init() {
 
 // Quick-start handler
 async function handleQuickStart(mode) {
-    // Set device select to appropriate value
+    // Set device select to appropriate value (for visual consistency)
     if (elements.deviceSelect) {
         if (mode === 'backend') {
             elements.deviceSelect.value = 'backend:auto';
@@ -822,8 +832,8 @@ async function handleQuickStart(mode) {
             elements.deviceSelect.value = 'frontend:default';
         }
     }
-    // Trigger start
-    await handleStart();
+    // Pass mode directly to avoid race condition with dropdown options
+    await handleStart(mode);
 }
 
 // Setup slider with value display and immediate apply
