@@ -678,18 +678,37 @@ class RecognitionEngine:
         """
         Check if result matches Reaper window title using fuzzy matching.
         
+        Uses ctypes to find Reaper window and get its title for validation.
         Returns True if match found, False otherwise.
         """
         from system_utils.session_config import get_effective_value
+        import platform
+        
+        # Only works on Windows
+        if platform.system() != "Windows":
+            return False
         
         try:
-            from system_utils.reaper import is_reaper_running
+            import ctypes
             
-            reaper_info = is_reaper_running()
-            if not reaper_info:
-                return False  # Reaper not running
+            user32 = ctypes.windll.user32
             
-            window_title = reaper_info.get("window_title", "")
+            # Find Reaper window by class name
+            hwnd = user32.FindWindowW("REAPERwnd", None)
+            if not hwnd:
+                logger.debug("Reaper validation: Reaper not running")
+                return False
+            
+            # Get window title
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                logger.debug("Reaper validation: No window title")
+                return False
+            
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            window_title = buffer.value
+            
             if not window_title:
                 return False
             
@@ -711,9 +730,10 @@ class RecognitionEngine:
             title_match = fuzzy_match(result.title, window_title)
             
             if artist_match or title_match:
-                logger.debug(f"Reaper match: artist={artist_match}, title={title_match}")
+                logger.debug(f"Reaper match: title='{window_title}' | artist={artist_match}, title={title_match}")
                 return True
             
+            logger.debug(f"Reaper validation failed: '{window_title}' vs '{result.artist} - {result.title}'")
             return False
             
         except Exception as e:
@@ -730,22 +750,24 @@ class RecognitionEngine:
         """
         Handle pending song timeout when recognition fails.
         
-        If a pending song exists and we've had too many failed recognition cycles,
-        clear the pending song (assume the first match was a false positive).
+        Also calls _handle_failed_recognition to maintain failure tracking
+        (consecutive failures, pause detection, position freezing).
         """
-        if self._pending_song is None:
-            return  # No pending song, nothing to timeout
+        # Handle pending song timeout
+        if self._pending_song is not None:
+            from system_utils.session_config import get_effective_value
+            
+            self._pending_fail_count += 1
+            timeout_cycles = get_effective_value("verification_timeout_cycles", 4)
+            
+            if self._pending_fail_count >= timeout_cycles:
+                logger.debug(f"Pending song timeout after {self._pending_fail_count} fails: {self._pending_song}")
+                self._clear_pending()
+            else:
+                logger.debug(f"Pending fail count: {self._pending_fail_count}/{timeout_cycles}")
         
-        from system_utils.session_config import get_effective_value
-        
-        self._pending_fail_count += 1
-        timeout_cycles = get_effective_value("verification_timeout_cycles", 4)
-        
-        if self._pending_fail_count >= timeout_cycles:
-            logger.debug(f"Pending song timeout after {self._pending_fail_count} fails: {self._pending_song}")
-            self._clear_pending()
-        else:
-            logger.debug(f"Pending fail count: {self._pending_fail_count}/{timeout_cycles}")
+        # Also run original failure handling (pause detection, etc.)
+        self._handle_failed_recognition()
     
     async def _accept_song_change(self, result: RecognitionResult):
         """
