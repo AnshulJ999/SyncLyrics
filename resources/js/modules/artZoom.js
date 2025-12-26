@@ -49,9 +49,6 @@ let edgeHoldInterval = null; // For hold-to-cycle on edges
 let pinchCenterX = 0;
 let pinchCenterY = 0;
 
-// Debug: track first move of each gesture
-let debugFirstMove = true;
-
 // ========== IMAGE SWITCHING ==========
 
 /**
@@ -104,10 +101,9 @@ function updateTransform() {
     panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
     panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
     
-    // Transform with origin at 0,0 (top-left) - simpler math
-    // Order: translate first, then scale
-    const transformValue = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
-    bg.style.setProperty('transform-origin', '0 0', 'important');
+    // Transform with origin at center - natural zoom behavior
+    const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
+    bg.style.setProperty('transform-origin', 'center center', 'important');
     bg.style.setProperty('transform', transformValue, 'important');
 }
 
@@ -164,7 +160,6 @@ function handleTouchStart(e) {
     
     touchStartTime = Date.now();
     touchMoved = false;
-    debugFirstMove = true;  // Reset for new gesture
     
     if (e.touches.length === 2) {
         // Pinch start - calculate initial distance and center between fingers
@@ -240,34 +235,17 @@ function handleTouchMove(e) {
     }
     
     if (e.touches.length === 2 && initialPinchDistance > 0) {
-        // Pinch zoom with focal point
+        // Pinch zoom - simple zoom toward center
         e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.hypot(dx, dy);
         
-        // Get current pinch center (it moves during gesture)
-        const currentFocalX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const currentFocalY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        
-        // Calculate new zoom
+        // Calculate new zoom based on pinch distance ratio
         const scale = currentDistance / initialPinchDistance;
-        const newZoom = clampZoom(initialZoomLevel * scale);
-        
-        // Zoom toward pinch center using correct formula for origin 0 0
-        // Formula: newTranslate = currentFocal - ((initialFocal - oldTranslate) / oldScale) * newScale
-        if (newZoom !== zoomLevel) {
-            panX = currentFocalX - ((pinchCenterX - panX) / zoomLevel) * newZoom;
-            panY = currentFocalY - ((pinchCenterY - panY) / zoomLevel) * newZoom;
-            zoomLevel = newZoom;
-        }
+        zoomLevel = clampZoom(initialZoomLevel * scale);
         updateTransform();
     } else if (e.touches.length === 1 && isDragging) {
-        // DIAGNOSTIC: Check if lastTouchX was never initialized
-        if (lastTouchX === 0 && lastTouchY === 0 && touchStartX !== 0) {
-            showToast('BUG: lastTouch=0,0 but start=' + Math.round(touchStartX), 'error', 3000);
-        }
-        
         // Pan - but only if movement exceeds dead zone (prevents jitter-induced jumps)
         const dx = e.touches[0].clientX - touchStartX;
         const dy = e.touches[0].clientY - touchStartY;
@@ -281,17 +259,10 @@ function handleTouchMove(e) {
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
         
-        // For origin 0 0 with translate-then-scale, pan is 1:1 (no zoom division needed)
-        // But clamp to prevent huge jumps
+        // Pan 1:1 with finger movement (clamp to prevent huge jumps)
         const maxDelta = 100;
         panX += Math.max(-maxDelta, Math.min(maxDelta, deltaX));
         panY += Math.max(-maxDelta, Math.min(maxDelta, deltaY));
-        
-        // DEBUG: Show toast on first movement of gesture
-        if (debugFirstMove) {
-            debugFirstMove = false;
-            showToast(`Pan: ${Math.round(panX)},${Math.round(panY)} | Δ:${Math.round(deltaX)},${Math.round(deltaY)} | z:${zoomLevel.toFixed(1)}`, 'info', 2000);
-        }
         
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
