@@ -615,6 +615,13 @@ class RecognitionEngine:
             # Same song - just update position and state
             self._last_result = result
             self._set_state(EngineState.ACTIVE)
+            
+            # Clear pending if current song confirmed - prevents interleaved false positives
+            # (e.g., A -> B -> A -> B pattern should NOT switch to B)
+            if self._pending_song:
+                logger.debug(f"Cleared pending {self._pending_song} - current song confirmed")
+                self._clear_pending()
+            
             return
         
         # NEW SONG DETECTED - run validation
