@@ -722,26 +722,42 @@ class RecognitionEngine:
             
             threshold = get_effective_value("reaper_validation_threshold", 80) / 100.0
             
-            # Simple word-overlap fuzzy match
-            def fuzzy_match(needle: str, haystack: str) -> bool:
+            # Simple word-overlap fuzzy match with score tracking
+            def fuzzy_match_score(needle: str, haystack: str) -> tuple:
+                """Returns (match: bool, overlap: int, total: int, pct: float)"""
                 if not needle or not haystack:
-                    return False
+                    return (False, 0, 0, 0.0)
                 needle_words = set(needle.lower().split())
                 haystack_words = set(haystack.lower().split())
                 if not needle_words:
-                    return False
+                    return (False, 0, 0, 0.0)
                 overlap = len(needle_words & haystack_words)
-                return (overlap / len(needle_words)) >= threshold
+                total = len(needle_words)
+                pct = overlap / total
+                return (pct >= threshold, overlap, total, pct * 100)
             
             # Try matching artist or title against window title
-            artist_match = fuzzy_match(result.artist, window_title)
-            title_match = fuzzy_match(result.title, window_title)
+            artist_match, artist_overlap, artist_total, artist_pct = fuzzy_match_score(result.artist, window_title)
+            title_match, title_overlap, title_total, title_pct = fuzzy_match_score(result.title, window_title)
+            
+            # Truncate window title for cleaner logs (keep first 60 chars)
+            window_short = window_title[:60] + "..." if len(window_title) > 60 else window_title
             
             if artist_match or title_match:
-                logger.debug(f"Reaper match: title='{window_title}' | artist={artist_match}, title={title_match}")
+                logger.debug(
+                    f"Reaper validation PASS: "
+                    f"artist={artist_overlap}/{artist_total} ({artist_pct:.0f}%), "
+                    f"title={title_overlap}/{title_total} ({title_pct:.0f}%) | "
+                    f"threshold={threshold*100:.0f}% | window='{window_short}'"
+                )
                 return True
             
-            logger.debug(f"Reaper validation failed: '{window_title}' vs '{result.artist} - {result.title}'")
+            logger.debug(
+                f"Reaper validation FAIL: "
+                f"artist={artist_overlap}/{artist_total} ({artist_pct:.0f}%), "
+                f"title={title_overlap}/{title_total} ({title_pct:.0f}%) | "
+                f"threshold={threshold*100:.0f}% | '{result.artist} - {result.title}'"
+            )
             return False
             
         except Exception as e:
