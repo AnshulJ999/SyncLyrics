@@ -18,7 +18,8 @@ const MIN_ZOOM = 0.1;    // 10% - allow zooming out to see cropped parts
 const MAX_ZOOM = 8;      // 800% - max zoom for high-res images
 const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
-const EDGE_TAP_SIZE = 50; // pixels from edge for image switching
+const EDGE_TAP_SIZE = 80; // pixels from edge for image switching
+const EDGE_HOLD_INTERVAL = 900; // ms between image switches when holding edge
 
 // ========== STATE ==========
 let zoomLevel = 1;
@@ -42,6 +43,11 @@ let lastTapTime = 0;
 // Image switching state
 let currentImageIndex = 0;
 let touchStartTime = 0;
+let edgeHoldInterval = null; // For hold-to-cycle on edges
+
+// Pinch center tracking (for zoom-toward-pinch)
+let pinchCenterX = 0;
+let pinchCenterY = 0;
 
 // ========== IMAGE SWITCHING ==========
 
@@ -112,6 +118,31 @@ export function resetArtZoom() {
     updateTransform();
 }
 
+/**
+ * Reset all touch state (called when disabling to prevent stale values)
+ */
+function resetTouchState() {
+    isDragging = false;
+    initialPinchDistance = 0;
+    initialZoomLevel = 1;
+    lastTouchX = 0;
+    lastTouchY = 0;
+    lastMouseX = 0;
+    lastMouseY = 0;
+    touchStartX = 0;
+    touchStartY = 0;
+    touchMoved = false;
+    touchStartTime = 0;
+    tapCount = 0;
+    lastTapTime = 0;
+    pinchCenterX = 0;
+    pinchCenterY = 0;
+    if (edgeHoldInterval) {
+        clearInterval(edgeHoldInterval);
+        edgeHoldInterval = null;
+    }
+}
+
 // ========== TOUCH HANDLERS ==========
 
 let touchStartX = 0;
@@ -125,11 +156,19 @@ function handleTouchStart(e) {
     touchMoved = false;
     
     if (e.touches.length === 2) {
-        // Pinch start - calculate initial distance between fingers
+        // Pinch start - calculate initial distance and center between fingers
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         initialPinchDistance = Math.hypot(dx, dy);
         initialZoomLevel = zoomLevel;
+        // Track pinch center for zoom-toward-point
+        pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        // Clear any edge hold interval (two fingers = not edge hold)
+        if (edgeHoldInterval) {
+            clearInterval(edgeHoldInterval);
+            edgeHoldInterval = null;
+        }
     } else if (e.touches.length === 1) {
         // Single touch - start drag
         isDragging = true;
@@ -137,6 +176,19 @@ function handleTouchStart(e) {
         lastTouchY = e.touches[0].clientY;
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
+        
+        // Check if on edge - start hold-to-cycle interval
+        if (currentArtistImages.length > 1) {
+            const isLeftEdge = touchStartX < EDGE_TAP_SIZE;
+            const isRightEdge = touchStartX > window.innerWidth - EDGE_TAP_SIZE;
+            if (isLeftEdge || isRightEdge) {
+                // Start interval after initial delay
+                edgeHoldInterval = setInterval(() => {
+                    if (isLeftEdge) prevImage();
+                    else nextImage();
+                }, EDGE_HOLD_INTERVAL);
+            }
+        }
         
         // Triple-tap detection
         const now = Date.now();
@@ -159,25 +211,59 @@ function handleTouchMove(e) {
     
     touchMoved = true;  // Mark that we moved (not just a tap)
     
+    // Clear edge hold interval if user starts moving (they're panning, not holding)
+    if (edgeHoldInterval) {
+        const dx = Math.abs(e.touches[0].clientX - touchStartX);
+        const dy = Math.abs(e.touches[0].clientY - touchStartY);
+        if (dx > 10 || dy > 10) {
+            clearInterval(edgeHoldInterval);
+            edgeHoldInterval = null;
+        }
+    }
+    
     if (e.touches.length === 2 && initialPinchDistance > 0) {
-        // Pinch zoom
+        // Pinch zoom with focal point
         e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.hypot(dx, dy);
         
+        // Calculate new zoom
         const scale = currentDistance / initialPinchDistance;
-        zoomLevel = clampZoom(initialZoomLevel * scale);
+        const newZoom = clampZoom(initialZoomLevel * scale);
+        
+        // Zoom toward pinch center: adjust pan so pinch point stays fixed
+        if (newZoom !== zoomLevel) {
+            const r = newZoom / zoomLevel;  // zoom ratio
+            const vcx = window.innerWidth / 2;
+            const vcy = window.innerHeight / 2;
+            // Correct formula for transform: scale(z) translate(t) with origin at center
+            panX = (pinchCenterX - vcx) * (1 - r) + panX * r;
+            panY = (pinchCenterY - vcy) * (1 - r) + panY * r;
+            zoomLevel = newZoom;
+        }
         updateTransform();
     } else if (e.touches.length === 1 && isDragging) {
-        // Pan - allow at any zoom level for image exploration
+        // Pan - but only if movement exceeds dead zone (prevents jitter-induced jumps)
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        const DRAG_DEADZONE = 15;  // Must move 15px from start before pan activates
+        
+        if (Math.abs(dx) < DRAG_DEADZONE && Math.abs(dy) < DRAG_DEADZONE) {
+            return;  // Ignore micro-movements (jitter)
+        }
+        
         e.preventDefault();
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
         
-        // Divide by zoom level so pan speed feels consistent at any zoom
-        panX += deltaX / zoomLevel;
-        panY += deltaY / zoomLevel;
+        // Scale pan by zoom level for consistent feel (but clamp to prevent huge jumps)
+        const maxDelta = 50;  // Max pixels per frame to prevent jumps
+        const scaledDeltaX = Math.max(-maxDelta, Math.min(maxDelta, deltaX / zoomLevel));
+        const scaledDeltaY = Math.max(-maxDelta, Math.min(maxDelta, deltaY / zoomLevel));
+        
+        panX += scaledDeltaX;
+        panY += scaledDeltaY;
         
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
@@ -187,6 +273,12 @@ function handleTouchMove(e) {
 
 function handleTouchEnd(e) {
     if (!isEnabled) return;
+    
+    // Clear edge hold interval
+    if (edgeHoldInterval) {
+        clearInterval(edgeHoldInterval);
+        edgeHoldInterval = null;
+    }
     
     if (e.touches.length < 2) {
         initialPinchDistance = 0;
@@ -312,6 +404,9 @@ export function disableArtZoom() {
     bg.removeEventListener('mousedown', handleMouseDown);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
+    
+    // Reset all touch state (prevents stale values causing jumps on re-entry)
+    resetTouchState();
     
     // Reset transform and cursor
     resetArtZoom();
