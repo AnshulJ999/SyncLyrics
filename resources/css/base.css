@@ -1899,6 +1899,13 @@ body.art-only-mode .background-layer {
     /* transform is set by artZoom.js - don't override here */
 }
 
+/* Ensure overlay stays visible in art-only mode with saturation boost */
+body.art-only-mode .background-overlay {
+    display: block !important;
+    z-index: 902 !important;  /* Just below background-layer */
+    pointer-events: none !important;  /* Let events pass through to background-layer */
+}
+
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;
