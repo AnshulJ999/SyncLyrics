@@ -665,6 +665,7 @@ class RecognitionEngine:
         # Check if matches pending song
         if self._pending_song and result.is_same_song(self._pending_song):
             self._pending_match_count += 1
+            self._pending_song = result  # Keep latest result for fresh position data
             
             if self._pending_match_count >= cycles_needed:
                 logger.info(f"Verified after {self._pending_match_count} matches: {result}")
