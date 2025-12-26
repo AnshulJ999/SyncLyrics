@@ -257,10 +257,12 @@ function handleTouchMove(e) {
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
         
-        // Pan 1:1 with finger movement (clamp to prevent huge jumps)
+        // Scale pan by zoom level for consistent feel (clamp to prevent huge jumps)
         const maxDelta = 100;
-        panX += Math.max(-maxDelta, Math.min(maxDelta, deltaX));
-        panY += Math.max(-maxDelta, Math.min(maxDelta, deltaY));
+        const scaledDeltaX = Math.max(-maxDelta, Math.min(maxDelta, deltaX / zoomLevel));
+        const scaledDeltaY = Math.max(-maxDelta, Math.min(maxDelta, deltaY / zoomLevel));
+        panX += scaledDeltaX;
+        panY += scaledDeltaY;
         
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
