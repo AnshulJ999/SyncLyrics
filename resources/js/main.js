@@ -403,7 +403,15 @@ async function updateLoop() {
                 setCurrentArtistImages([]);
                 if (trackInfo.artist_id && visualModeConfig.enabled) {
                     fetchArtistImages(trackInfo.artist_id).then(images => {
-                        setCurrentArtistImages(images);
+                        // Prepend album art as index 0 so user can browse back to it
+                        const albumArtUrl = trackInfo.album_art_url || trackInfo.album_art_path || '';
+                        if (albumArtUrl && images.length > 0) {
+                            setCurrentArtistImages([albumArtUrl, ...images]);
+                        } else if (albumArtUrl) {
+                            setCurrentArtistImages([albumArtUrl]);
+                        } else {
+                            setCurrentArtistImages(images);
+                        }
                     });
                 }
             }

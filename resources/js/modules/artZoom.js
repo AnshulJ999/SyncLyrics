@@ -329,12 +329,14 @@ function handleTouchEnd(e) {
         const dy = Math.abs(lastTouchY - touchStartY);
         const isQuickTap = tapDuration < 300 && dx < 20 && dy < 20;
         
-        if (isQuickTap && currentArtistImages.length > 1) {
+        if (isQuickTap && currentArtistImages.length > 0) {
             // Check if tap was on left or right edge
             if (touchStartX < EDGE_TAP_SIZE) {
                 prevImage();
+                e.preventDefault();  // Prevent synthetic mouse click
             } else if (touchStartX > window.innerWidth - EDGE_TAP_SIZE) {
                 nextImage();
+                e.preventDefault();  // Prevent synthetic mouse click
             }
         }
         
@@ -390,6 +392,22 @@ function handleMouseUp() {
     document.body.style.cursor = '';
 }
 
+/**
+ * Handle click events for PC edge clicking
+ * Separate from mousedown/mouseup because we need to detect clean clicks
+ */
+function handleClick(e) {
+    if (!isEnabled) return;
+    if (currentArtistImages.length === 0) return;
+    
+    // Check if click was on left or right edge
+    if (e.clientX < EDGE_TAP_SIZE) {
+        prevImage();
+    } else if (e.clientX > window.innerWidth - EDGE_TAP_SIZE) {
+        nextImage();
+    }
+}
+
 // ========== ENABLE/DISABLE ==========
 
 /**
@@ -415,6 +433,7 @@ export function enableArtZoom() {
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('click', handleClick);  // PC edge clicking
     
     // Prevent context menu (long-press on Android)
     document.body.addEventListener('contextmenu', (e) => {
@@ -447,6 +466,7 @@ export function disableArtZoom() {
     document.removeEventListener('mousedown', handleMouseDown);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
+    document.removeEventListener('click', handleClick);
     
     // Restore body's touch handling
     document.body.style.touchAction = '';
