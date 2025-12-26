@@ -161,7 +161,17 @@ def force_exit():
     os.kill(os.getpid(), signal.SIGTERM)
 
 def restart():
-    """Restart the application"""
+    """Restart the application by spawning a new process and exiting.
+    
+    Handles three scenarios:
+    1. Terminal mode (run.bat): Opens new console window via CREATE_NEW_CONSOLE
+    2. Windowless mode (VBS/pythonw): Uses DETACHED_PROCESS for reliable restart
+    3. Frozen EXE (console=False): Same as windowless mode
+    
+    Fixes applied:
+    - Closes log file handlers before spawn to prevent file lock race condition
+    - Uses conditional creationflags based on windowless detection
+    """
     logger.info("Initiating restart sequence...")
     
     # Stop the tray icon directly
@@ -178,26 +188,56 @@ def restart():
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
 
-    # FIX: Use subprocess for Windows/PyInstaller compatibility
-    # os.execl doesn't work reliably on Windows with frozen executables
     import subprocess
+    import logging as logging_module  # Avoid shadowing module-level logger
+    
+    # FIX: Close all log file handlers BEFORE spawning new process
+    # This prevents race condition where new process can't access log files
+    # because old process still holds file locks
+    root_logger = logging_module.getLogger()
+    for handler in root_logger.handlers[:]:  # Iterate over copy of list
+        if isinstance(handler, logging_module.FileHandler):
+            try:
+                handler.close()
+                root_logger.removeHandler(handler)
+            except Exception:
+                pass  # Best effort - we're exiting anyway
+    
+    # FIX: Use conditional creation flags based on whether we're running windowless
+    # - pythonw.exe: No console, stdout is None
+    # - Frozen EXE with console=False: No console, stdout not a TTY
+    # - Terminal/run.bat: Has console, CREATE_NEW_CONSOLE gives new window
+    #
+    # CREATE_NEW_CONSOLE + windowless app = undefined behavior (intermittent failures)
+    # DETACHED_PROCESS = child runs independently without console (reliable for windowless)
+    if os.name == 'nt':
+        # Detect if running windowless (pythonw, frozen no-console EXE, VBS hidden)
+        is_windowless = (
+            sys.stdout is None or  # pythonw sets stdout to None
+            not hasattr(sys.stdout, 'isatty') or  # Edge case: stdout replacement
+            not sys.stdout.isatty()  # No TTY = no real console attached
+        )
+        
+        if is_windowless:
+            # Windowless: use DETACHED_PROCESS for reliable restart
+            # CREATE_NEW_PROCESS_GROUP for signal isolation (Ctrl+C won't affect child)
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            # Console mode: CREATE_NEW_CONSOLE spawns visible terminal window
+            creationflags = subprocess.CREATE_NEW_CONSOLE
+    else:
+        creationflags = 0
     
     if getattr(sys, 'frozen', False):
-        # PyInstaller frozen executable
-        # Add delay to allow log file handles to close before new instance starts
-        logger.info("Spawning new instance...")
-        # Use CREATE_NEW_CONSOLE on Windows to detach from parent
-        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        # PyInstaller frozen executable - use sys.argv[1:] to avoid doubling script name
         subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=creationflags)
-        time.sleep(0.5)  # Brief delay to ensure new process starts
-        os._exit(0)  # Force exit without cleanup (cleanup already done)
     else:
-        # Development mode - FIX: Use subprocess instead of os.execl (fails on Windows)
-        logger.info("Spawning new Python instance...")
-        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        # Development mode - include full sys.argv (script name + args)
         subprocess.Popen([sys.executable] + sys.argv, creationflags=creationflags)
-        time.sleep(0.5)
-        os._exit(0)
+    
+    # Brief delay to ensure new process starts before we exit
+    time.sleep(0.6)
+    os._exit(0)  # Force exit - file handlers already closed above
 
 async def cleanup() -> None:
     """Cleanup resources before exit"""
