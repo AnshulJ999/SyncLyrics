@@ -14,8 +14,8 @@ import { showToast } from './dom.js';
 import { currentArtistImages } from './state.js';
 
 // ========== CONSTANTS ==========
-const MIN_ZOOM = 0.1;    // 10% - allow zooming out to see cropped parts
-const MAX_ZOOM = 8;      // 800% - max zoom for high-res images
+const MIN_ZOOM = 0.3;    // 30% - allow zooming out a bit
+const MAX_ZOOM = 5;      // 500% - max zoom for high-res images
 const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
 const EDGE_TAP_SIZE = 100; // pixels from edge for image switching
@@ -360,15 +360,6 @@ function handleWheel(e) {
     }
 }
 
-function handleMouseDown(e) {
-    if (!isEnabled) return;
-    
-    isDragging = true;
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-    document.body.style.cursor = 'grabbing';
-}
-
 function handleMouseMove(e) {
     if (!isEnabled || !isDragging) return;
     
@@ -383,8 +374,40 @@ function handleMouseMove(e) {
     updateTransform();
 }
 
-function handleMouseUp() {
+// Track mouse start position for click detection
+let mouseStartX = 0;
+let mouseStartY = 0;
+let mouseStartTime = 0;
+
+function handleMouseDown(e) {
     if (!isEnabled) return;
+    
+    isDragging = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    mouseStartX = e.clientX;
+    mouseStartY = e.clientY;
+    mouseStartTime = Date.now();
+    document.body.style.cursor = 'grabbing';
+}
+
+function handleMouseUp(e) {
+    if (!isEnabled) return;
+    
+    // Check for click (quick, minimal movement)
+    const clickDuration = Date.now() - mouseStartTime;
+    const dx = Math.abs(e.clientX - mouseStartX);
+    const dy = Math.abs(e.clientY - mouseStartY);
+    const isClick = clickDuration < 300 && dx < 10 && dy < 10;
+    
+    if (isClick && currentArtistImages.length > 1) {
+        // Check if click was on left or right edge
+        if (mouseStartX < EDGE_TAP_SIZE) {
+            prevImage();
+        } else if (mouseStartX > window.innerWidth - EDGE_TAP_SIZE) {
+            nextImage();
+        }
+    }
     
     isDragging = false;
     document.body.style.cursor = '';
@@ -451,8 +474,8 @@ export function disableArtZoom() {
     // Restore body's touch handling
     document.body.style.touchAction = '';
     
-    // Reset manual image flag
-    resetManualImageFlag();
+    // Note: We DON'T reset manual image flag here - preserve selected image
+    // until artist changes (handled in main.js)
     
     // Reset all touch state
     resetTouchState();
