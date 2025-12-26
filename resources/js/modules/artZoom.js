@@ -189,14 +189,21 @@ function handleTouchStart(e) {
         touchStartY = e.touches[0].clientY;
         
         // Check if on edge - start hold-to-cycle interval
-        if (currentArtistImages.length > 1) {
+        // Guard against double-firing (we have listeners on both bg and body)
+        if (currentArtistImages.length > 1 && !edgeHoldInterval) {
             const isLeftEdge = touchStartX < EDGE_TAP_SIZE;
             const isRightEdge = touchStartX > window.innerWidth - EDGE_TAP_SIZE;
             if (isLeftEdge || isRightEdge) {
-                // Start interval after initial delay
-                edgeHoldInterval = setInterval(() => {
+                // Start interval with initial delay before first cycle
+                edgeHoldInterval = setTimeout(() => {
+                    // First cycle
                     if (isLeftEdge) prevImage();
                     else nextImage();
+                    // Then continue cycling
+                    edgeHoldInterval = setInterval(() => {
+                        if (isLeftEdge) prevImage();
+                        else nextImage();
+                    }, EDGE_HOLD_INTERVAL);
                 }, EDGE_HOLD_INTERVAL);
             }
         }
@@ -295,8 +302,9 @@ function handleTouchMove(e) {
 function handleTouchEnd(e) {
     if (!isEnabled) return;
     
-    // Clear edge hold interval
+    // Clear edge hold interval (could be timeout or interval, clearTimeout handles both)
     if (edgeHoldInterval) {
+        clearTimeout(edgeHoldInterval);
         clearInterval(edgeHoldInterval);
         edgeHoldInterval = null;
     }
