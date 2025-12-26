@@ -102,7 +102,7 @@ def setup_logging(
     debug_file_handler = logging.handlers.RotatingFileHandler(
         debug_log_path, 
         maxBytes=1*1024*1024, 
-        backupCount=5, 
+        backupCount=15, 
         encoding='utf-8'
     )
     
