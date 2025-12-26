@@ -392,22 +392,21 @@ async function updateLoop() {
                 lastAlbumArtUrl = newAlbumArt;
             }
 
-            // Smart artist reset: only reset image index if artist changes
+            // Smart artist reset: only reset if artist changes
             const newArtistId = trackInfo.artist_id || '';
             if (newArtistId !== lastArtistId) {
                 resetImageIndex();
                 lastArtistId = newArtistId;
+                
+                // Only clear and refetch images when artist changes
+                setCurrentArtistImages([]);
+                if (trackInfo.artist_id && visualModeConfig.enabled) {
+                    fetchArtistImages(trackInfo.artist_id).then(images => {
+                        setCurrentArtistImages(images);
+                    });
+                }
             }
-
-            // Clear current artist images
-            setCurrentArtistImages([]);
-
-            // Fetch artist images for visual mode (non-blocking)
-            if (trackInfo.artist_id && visualModeConfig.enabled) {
-                fetchArtistImages(trackInfo.artist_id).then(images => {
-                    setCurrentArtistImages(images);
-                });
-            }
+            // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track
             if (trackInfo.id) {
