@@ -94,7 +94,7 @@ import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './mod
 import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
 
 // Art Zoom (Level 2)
-import { resetArtZoom, resetImageIndex } from './modules/artZoom.js';
+import { resetArtZoom, resetImageIndex, resetManualImageFlag } from './modules/artZoom.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -396,6 +396,7 @@ async function updateLoop() {
             const newArtistId = trackInfo.artist_id || '';
             if (newArtistId !== lastArtistId) {
                 resetImageIndex();
+                resetManualImageFlag();  // Clear manual image selection when artist changes
                 lastArtistId = newArtistId;
                 
                 // Only clear and refetch images when artist changes

@@ -30,6 +30,9 @@ import {
     setManualStyleOverride
 } from './state.js';
 
+// Import from artZoom to check if user is manually browsing artist images
+import { isManualArtistImageActive } from './artZoom.js';
+
 // Forward reference for slideshow functions (will be imported dynamically when needed)
 let startSlideshowFn = null;
 let stopSlideshowFn = null;
@@ -51,6 +54,13 @@ export function setSlideshowFunctions(startFn, stopFn) {
 export function updateBackground() {
     const bgLayer = document.getElementById('background-layer');
     const bgOverlay = document.getElementById('background-overlay');
+
+    // Skip update if user is manually browsing artist images in art-only mode
+    // This preserves their selected image when track changes (same artist)
+    if (isManualArtistImageActive()) {
+        console.log('[Background] Skipping update - user has manual artist image selected');
+        return;
+    }
 
     // In minimal mode, always keep the gradient background
     if (displayConfig.minimal) {
@@ -169,6 +179,13 @@ export function getCurrentBackgroundStyle() {
  * @param {string} style - Style to apply ('sharp', 'soft', 'blur', or 'none')
  */
 export function applyBackgroundStyle(style) {
+    // Skip style changes if user is manually browsing artist images
+    // This prevents soft mode from overriding sharp mode in art-only mode on track change
+    if (isManualArtistImageActive()) {
+        console.log('[Background] Skipping style change - user has manual artist image selected');
+        return;
+    }
+
     // Reset all styles
     displayConfig.sharpAlbumArt = false;
     displayConfig.softAlbumArt = false;

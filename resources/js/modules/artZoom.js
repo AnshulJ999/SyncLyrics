@@ -20,6 +20,7 @@ const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
 const EDGE_TAP_SIZE = 100; // pixels from edge for image switching
 const EDGE_HOLD_INTERVAL = 900; // ms between image switches when holding edge
+const MANUAL_IMAGE_TIMEOUT = 30 * 60 * 1000;  // 30 min failsafe for manual image flag
 
 // ========== STATE ==========
 let zoomLevel = 1;
@@ -45,7 +46,42 @@ let currentImageIndex = 0;
 let touchStartTime = 0;
 let edgeHoldInterval = null; // For hold-to-cycle on edges
 
+// Manual artist image preservation
+let isUsingManualArtistImage = false;  // True when user manually browses artist images
+let manualImageTimeout = null;  // Failsafe timeout to reset the flag
+
 // ========== IMAGE SWITCHING ==========
+
+/**
+ * Mark that user is manually browsing images (with failsafe timeout)
+ */
+function setManualImageFlag() {
+    isUsingManualArtistImage = true;
+    // Failsafe: reset flag after 30 min in case it gets stuck
+    if (manualImageTimeout) clearTimeout(manualImageTimeout);
+    manualImageTimeout = setTimeout(() => {
+        isUsingManualArtistImage = false;
+        console.log('[ArtZoom] Manual image flag reset by timeout');
+    }, MANUAL_IMAGE_TIMEOUT);
+}
+
+/**
+ * Check if user is manually viewing artist images (for background.js)
+ */
+export function isManualArtistImageActive() {
+    return isEnabled && isUsingManualArtistImage;
+}
+
+/**
+ * Reset manual image flag (called on artist change or exit art-only)
+ */
+export function resetManualImageFlag() {
+    isUsingManualArtistImage = false;
+    if (manualImageTimeout) {
+        clearTimeout(manualImageTimeout);
+        manualImageTimeout = null;
+    }
+}
 
 /**
  * Switch to next artist image
@@ -53,6 +89,7 @@ let edgeHoldInterval = null; // For hold-to-cycle on edges
 function nextImage() {
     if (currentArtistImages.length === 0) return;
     currentImageIndex = (currentImageIndex + 1) % currentArtistImages.length;
+    setManualImageFlag();  // User is manually browsing
     applyCurrentImage();
     resetArtZoom();
 }
@@ -63,6 +100,7 @@ function nextImage() {
 function prevImage() {
     if (currentArtistImages.length === 0) return;
     currentImageIndex = (currentImageIndex - 1 + currentArtistImages.length) % currentArtistImages.length;
+    setManualImageFlag();  // User is manually browsing
     applyCurrentImage();
     resetArtZoom();
 }
@@ -363,7 +401,6 @@ export function enableArtZoom() {
     
     const bg = document.getElementById('background-layer');
     if (!bg) return;
-    
     // Touch events on body (covers everything, avoids double-firing)
     document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
     document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -413,6 +450,9 @@ export function disableArtZoom() {
     
     // Restore body's touch handling
     document.body.style.touchAction = '';
+    
+    // Reset manual image flag
+    resetManualImageFlag();
     
     // Reset all touch state
     resetTouchState();
