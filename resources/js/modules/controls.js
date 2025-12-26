@@ -197,8 +197,8 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
 
         // Corner-based exit for art-only mode
         // Long-press (750ms) in any corner to exit - no conflict with pan/zoom
-        const CORNER_SIZE = 80;           // pixels from corner
-        const CORNER_HOLD_DURATION = 750; // ms
+        const CORNER_SIZE = 100;           // pixels from corner
+        const CORNER_HOLD_DURATION = 450; // ms
         const EDGE_TAP_SIZE = 50;         // pixels from left/right edge for image switching
         
         let cornerExitTimer = null;
