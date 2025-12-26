@@ -49,6 +49,9 @@ let edgeHoldInterval = null; // For hold-to-cycle on edges
 let pinchCenterX = 0;
 let pinchCenterY = 0;
 
+// Debug: track first move of each gesture
+let debugFirstMove = true;
+
 // ========== IMAGE SWITCHING ==========
 
 /**
@@ -93,12 +96,19 @@ function updateTransform() {
         return;
     }
     
-    // Use setProperty with 'important' to override CSS transform: none
-    const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
-    bg.style.setProperty('transform-origin', 'center center', 'important');
-    bg.style.setProperty('transform', transformValue, 'important');
+    // Apply bounds checking - keep at least 25% of image visible
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const maxPanX = vw * 0.75 * zoomLevel;  // 75% can go offscreen = 25% visible
+    const maxPanY = vh * 0.75 * zoomLevel;
+    panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+    panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
     
-    // console.log(`[ArtZoom] Transform: scale=${zoomLevel.toFixed(2)}, pan=(${panX.toFixed(0)}, ${panY.toFixed(0)})`);
+    // Transform with origin at 0,0 (top-left) - simpler math
+    // Order: translate first, then scale
+    const transformValue = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    bg.style.setProperty('transform-origin', '0 0', 'important');
+    bg.style.setProperty('transform', transformValue, 'important');
 }
 
 /**
@@ -154,6 +164,7 @@ function handleTouchStart(e) {
     
     touchStartTime = Date.now();
     touchMoved = false;
+    debugFirstMove = true;  // Reset for new gesture
     
     if (e.touches.length === 2) {
         // Pinch start - calculate initial distance and center between fingers
@@ -228,22 +239,28 @@ function handleTouchMove(e) {
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.hypot(dx, dy);
         
+        // Get current pinch center (it moves during gesture)
+        const currentFocalX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const currentFocalY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
         // Calculate new zoom
         const scale = currentDistance / initialPinchDistance;
         const newZoom = clampZoom(initialZoomLevel * scale);
         
-        // Zoom toward pinch center: adjust pan so pinch point stays fixed
+        // Zoom toward pinch center using correct formula for origin 0 0
+        // Formula: newTranslate = currentFocal - ((initialFocal - oldTranslate) / oldScale) * newScale
         if (newZoom !== zoomLevel) {
-            const r = newZoom / zoomLevel;  // zoom ratio
-            const vcx = window.innerWidth / 2;
-            const vcy = window.innerHeight / 2;
-            // Correct formula for transform: scale(z) translate(t) with origin at center
-            panX = (pinchCenterX - vcx) * (1 - r) + panX * r;
-            panY = (pinchCenterY - vcy) * (1 - r) + panY * r;
+            panX = currentFocalX - ((pinchCenterX - panX) / zoomLevel) * newZoom;
+            panY = currentFocalY - ((pinchCenterY - panY) / zoomLevel) * newZoom;
             zoomLevel = newZoom;
         }
         updateTransform();
     } else if (e.touches.length === 1 && isDragging) {
+        // DIAGNOSTIC: Check if lastTouchX was never initialized
+        if (lastTouchX === 0 && lastTouchY === 0 && touchStartX !== 0) {
+            showToast('BUG: lastTouch=0,0 but start=' + Math.round(touchStartX), 'error', 3000);
+        }
+        
         // Pan - but only if movement exceeds dead zone (prevents jitter-induced jumps)
         const dx = e.touches[0].clientX - touchStartX;
         const dy = e.touches[0].clientY - touchStartY;
@@ -257,13 +274,17 @@ function handleTouchMove(e) {
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
         
-        // Scale pan by zoom level for consistent feel (but clamp to prevent huge jumps)
-        const maxDelta = 50;  // Max pixels per frame to prevent jumps
-        const scaledDeltaX = Math.max(-maxDelta, Math.min(maxDelta, deltaX / zoomLevel));
-        const scaledDeltaY = Math.max(-maxDelta, Math.min(maxDelta, deltaY / zoomLevel));
+        // For origin 0 0 with translate-then-scale, pan is 1:1 (no zoom division needed)
+        // But clamp to prevent huge jumps
+        const maxDelta = 100;
+        panX += Math.max(-maxDelta, Math.min(maxDelta, deltaX));
+        panY += Math.max(-maxDelta, Math.min(maxDelta, deltaY));
         
-        panX += scaledDeltaX;
-        panY += scaledDeltaY;
+        // DEBUG: Show toast on first movement of gesture
+        if (debugFirstMove) {
+            debugFirstMove = false;
+            showToast(`Pan: ${Math.round(panX)},${Math.round(panY)} | Δ:${Math.round(deltaX)},${Math.round(deltaY)} | z:${zoomLevel.toFixed(1)}`, 'info', 2000);
+        }
         
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
@@ -365,17 +386,33 @@ export function enableArtZoom() {
     const bg = document.getElementById('background-layer');
     if (!bg) return;
     
-    // Touch events
+    // Touch events on background layer
     bg.addEventListener('touchstart', handleTouchStart, { passive: false });
     bg.addEventListener('touchmove', handleTouchMove, { passive: false });
     bg.addEventListener('touchend', handleTouchEnd);
     bg.addEventListener('touchcancel', handleTouchEnd);
+    
+    // Fallback: also listen on document.body for when image goes offscreen
+    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.body.addEventListener('touchend', handleTouchEnd);
+    document.body.addEventListener('touchcancel', handleTouchEnd);
+    
+    // CRITICAL: Disable browser's default touch handling on body
+    // Without this, browser may still handle gestures before our JS gets them
+    document.body.style.touchAction = 'none';
     
     // Mouse events
     bg.addEventListener('wheel', handleWheel, { passive: false });
     bg.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    
+    // Prevent context menu (long-press on Android)
+    bg.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.body.addEventListener('contextmenu', (e) => {
+        if (isEnabled) e.preventDefault();
+    });
     
     // Set cursor hint
     bg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';
@@ -393,17 +430,26 @@ export function disableArtZoom() {
     const bg = document.getElementById('background-layer');
     if (!bg) return;
     
-    // Remove touch events
+    // Remove touch events from background layer
     bg.removeEventListener('touchstart', handleTouchStart);
     bg.removeEventListener('touchmove', handleTouchMove);
     bg.removeEventListener('touchend', handleTouchEnd);
     bg.removeEventListener('touchcancel', handleTouchEnd);
+    
+    // Remove touch events from body fallback
+    document.body.removeEventListener('touchstart', handleTouchStart);
+    document.body.removeEventListener('touchmove', handleTouchMove);
+    document.body.removeEventListener('touchend', handleTouchEnd);
+    document.body.removeEventListener('touchcancel', handleTouchEnd);
     
     // Remove mouse events
     bg.removeEventListener('wheel', handleWheel);
     bg.removeEventListener('mousedown', handleMouseDown);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
+    
+    // Restore body's touch handling
+    document.body.style.touchAction = '';
     
     // Reset all touch state (prevents stale values causing jumps on re-entry)
     resetTouchState();

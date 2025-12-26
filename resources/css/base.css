@@ -1893,6 +1893,9 @@ body.art-only-mode .background-layer {
     display: block !important;
     z-index: 900 !important;  /* Above everything except modals/toast so it receives events */
     pointer-events: auto !important;  /* Ensure it receives touch/mouse events */
+    touch-action: none !important;  /* Disable browser's default pan/zoom - JS handles it */
+    -webkit-user-select: none !important;  /* Prevent text selection on long-press */
+    user-select: none !important;
     /* transform is set by artZoom.js - don't override here */
 }
 
