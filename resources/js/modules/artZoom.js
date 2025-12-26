@@ -113,28 +113,33 @@ function applyCurrentImage() {
     if (!bg || currentArtistImages.length === 0) return;
     
     const imageUrl = currentArtistImages[currentImageIndex];
-    
-    // Show toast immediately so user knows their tap registered
+    bg.style.backgroundImage = `url('${imageUrl}')`;
     showToast(`Image ${currentImageIndex + 1}/${currentArtistImages.length}`, 'success', 800);
     
-    // Wait for image to load, then apply (keeps old image visible until ready)
-    const img = new Image();
-    img.onload = () => {
-        bg.style.backgroundImage = `url('${imageUrl}')`;
-        // Preload adjacent images for smooth subsequent browsing
-        preloadAdjacentImages();
-    };
-    img.src = imageUrl;
+    // Preload adjacent images for smooth subsequent browsing
+    preloadAdjacentImages();
 }
 
+// Track preloaded URLs to avoid duplicates
+const preloadedUrls = new Set();
+
 /**
- * Preload images within ±3 of current index for smooth browsing
+ * Preload images within ±3 of current index using hidden DOM elements
+ * DOM-attached images are cached more persistently than new Image()
  */
 function preloadAdjacentImages() {
     if (currentArtistImages.length === 0) return;
     
     const PRELOAD_RANGE = 3;  // Preload 3 images in each direction
-    console.log(`[ArtZoom] Preloading ±${PRELOAD_RANGE} images around index ${currentImageIndex}`);
+    
+    // Create or get container for preloaded images
+    let container = document.getElementById('preload-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'preload-container';
+        container.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;';
+        document.body.appendChild(container);
+    }
     
     for (let offset = -PRELOAD_RANGE; offset <= PRELOAD_RANGE; offset++) {
         if (offset === 0) continue;  // Skip current (already loaded)
@@ -142,11 +147,22 @@ function preloadAdjacentImages() {
         const index = (currentImageIndex + offset + currentArtistImages.length) % currentArtistImages.length;
         const url = currentArtistImages[index];
         
-        // Create image to trigger browser cache
-        const img = new Image();
-        img.onload = () => console.log(`[ArtZoom] Preloaded index ${index}`);
-        img.onerror = () => console.warn(`[ArtZoom] Failed to preload index ${index}`);
+        // Skip if already preloaded
+        if (preloadedUrls.has(url)) continue;
+        preloadedUrls.add(url);
+        
+        // Option 3: Add link preload hint
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = url;
+        document.head.appendChild(link);
+        
+        // Option 4: Add hidden img to DOM (more reliable caching)
+        const img = document.createElement('img');
         img.src = url;
+        img.loading = 'eager';  // Force immediate load
+        container.appendChild(img);
     }
 }
 

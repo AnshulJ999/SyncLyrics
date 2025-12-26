@@ -1897,6 +1897,8 @@ body.art-only-mode .background-layer {
     -webkit-user-select: none !important;  /* Prevent text selection on long-press */
     user-select: none !important;
     /* transform is set by artZoom.js - don't override here */
+    /* Slower transition to help mask image loading flicker */
+    transition: background-image 0.4s ease-in-out !important;
 }
 
 /* Ensure overlay stays visible in art-only mode with saturation boost */
