@@ -113,8 +113,41 @@ function applyCurrentImage() {
     if (!bg || currentArtistImages.length === 0) return;
     
     const imageUrl = currentArtistImages[currentImageIndex];
-    bg.style.backgroundImage = `url('${imageUrl}')`;
+    
+    // Show toast immediately so user knows their tap registered
     showToast(`Image ${currentImageIndex + 1}/${currentArtistImages.length}`, 'success', 800);
+    
+    // Wait for image to load, then apply (keeps old image visible until ready)
+    const img = new Image();
+    img.onload = () => {
+        bg.style.backgroundImage = `url('${imageUrl}')`;
+        // Preload adjacent images for smooth subsequent browsing
+        preloadAdjacentImages();
+    };
+    img.src = imageUrl;
+}
+
+/**
+ * Preload images within ±3 of current index for smooth browsing
+ */
+function preloadAdjacentImages() {
+    if (currentArtistImages.length === 0) return;
+    
+    const PRELOAD_RANGE = 3;  // Preload 3 images in each direction
+    console.log(`[ArtZoom] Preloading ±${PRELOAD_RANGE} images around index ${currentImageIndex}`);
+    
+    for (let offset = -PRELOAD_RANGE; offset <= PRELOAD_RANGE; offset++) {
+        if (offset === 0) continue;  // Skip current (already loaded)
+        
+        const index = (currentImageIndex + offset + currentArtistImages.length) % currentArtistImages.length;
+        const url = currentArtistImages[index];
+        
+        // Create image to trigger browser cache
+        const img = new Image();
+        img.onload = () => console.log(`[ArtZoom] Preloaded index ${index}`);
+        img.onerror = () => console.warn(`[ArtZoom] Failed to preload index ${index}`);
+        img.src = url;
+    }
 }
 
 /**
