@@ -94,7 +94,7 @@ import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './mod
 import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
 
 // Art Zoom (Level 2)
-import { resetArtZoom } from './modules/artZoom.js';
+import { resetArtZoom, resetImageIndex } from './modules/artZoom.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -267,6 +267,8 @@ function resetOutroState() {
 async function updateLoop() {
     let lastTrackId = null;
     let lastSource = null;  // Track audio source for reset on source change
+    let lastAlbumArtUrl = null;  // Track album art for smart zoom reset
+    let lastArtistId = null;  // Track artist for smart image index reset
     let isIdleState = false;
     let currentPollInterval = updateInterval;
     let idleStartTime = null;
@@ -376,15 +378,26 @@ async function updateLoop() {
             resetWaveform();
             resetSpectrum();
 
-            // Reset zoom/pan on track change (prevents old zoom carrying over)
-            resetArtZoom();
-
             // Reset manual overrides on track change
             setManualVisualModeOverride(false);
             setManualStyleOverride(false);
 
             // Update instrumental button state
             updateInstrumentalButtonState();
+
+            // Smart art reset: only reset zoom if album art URL changes
+            const newAlbumArt = trackInfo.album_art_url || trackInfo.album_art_path || '';
+            if (newAlbumArt !== lastAlbumArtUrl) {
+                resetArtZoom();
+                lastAlbumArtUrl = newAlbumArt;
+            }
+
+            // Smart artist reset: only reset image index if artist changes
+            const newArtistId = trackInfo.artist_id || '';
+            if (newArtistId !== lastArtistId) {
+                resetImageIndex();
+                lastArtistId = newArtistId;
+            }
 
             // Clear current artist images
             setCurrentArtistImages([]);

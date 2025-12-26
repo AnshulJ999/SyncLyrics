@@ -18,7 +18,7 @@ const MIN_ZOOM = 0.1;    // 10% - allow zooming out to see cropped parts
 const MAX_ZOOM = 8;      // 800% - max zoom for high-res images
 const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
-const EDGE_TAP_SIZE = 80; // pixels from edge for image switching
+const EDGE_TAP_SIZE = 100; // pixels from edge for image switching
 const EDGE_HOLD_INTERVAL = 900; // ms between image switches when holding edge
 
 // ========== STATE ==========
@@ -44,10 +44,6 @@ let lastTapTime = 0;
 let currentImageIndex = 0;
 let touchStartTime = 0;
 let edgeHoldInterval = null; // For hold-to-cycle on edges
-
-// Pinch center tracking (for zoom-toward-pinch)
-let pinchCenterX = 0;
-let pinchCenterY = 0;
 
 // ========== IMAGE SWITCHING ==========
 
@@ -141,12 +137,17 @@ function resetTouchState() {
     touchStartTime = 0;
     tapCount = 0;
     lastTapTime = 0;
-    pinchCenterX = 0;
-    pinchCenterY = 0;
     if (edgeHoldInterval) {
         clearInterval(edgeHoldInterval);
         edgeHoldInterval = null;
     }
+}
+
+/**
+ * Reset image index to 0 (called when artist changes)
+ */
+export function resetImageIndex() {
+    currentImageIndex = 0;
 }
 
 // ========== TOUCH HANDLERS ==========
@@ -162,14 +163,11 @@ function handleTouchStart(e) {
     touchMoved = false;
     
     if (e.touches.length === 2) {
-        // Pinch start - calculate initial distance and center between fingers
+        // Pinch start - calculate initial distance between fingers
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         initialPinchDistance = Math.hypot(dx, dy);
         initialZoomLevel = zoomLevel;
-        // Track pinch center for zoom-toward-point
-        pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         // Clear any edge hold interval (two fingers = not edge hold)
         if (edgeHoldInterval) {
             clearInterval(edgeHoldInterval);
@@ -324,7 +322,6 @@ function handleWheel(e) {
 
 function handleMouseDown(e) {
     if (!isEnabled) return;
-    if (zoomLevel <= 1) return; // Only pan when zoomed
     
     isDragging = true;
     lastMouseX = e.clientX;
@@ -365,36 +362,28 @@ export function enableArtZoom() {
     const bg = document.getElementById('background-layer');
     if (!bg) return;
     
-    // Touch events on background layer
-    bg.addEventListener('touchstart', handleTouchStart, { passive: false });
-    bg.addEventListener('touchmove', handleTouchMove, { passive: false });
-    bg.addEventListener('touchend', handleTouchEnd);
-    bg.addEventListener('touchcancel', handleTouchEnd);
-    
-    // Fallback: also listen on document.body for when image goes offscreen
+    // Touch events on body (covers everything, avoids double-firing)
     document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
     document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.body.addEventListener('touchend', handleTouchEnd);
     document.body.addEventListener('touchcancel', handleTouchEnd);
     
-    // CRITICAL: Disable browser's default touch handling on body
-    // Without this, browser may still handle gestures before our JS gets them
+    // Disable browser's default touch handling
     document.body.style.touchAction = 'none';
     
     // Mouse events
-    bg.addEventListener('wheel', handleWheel, { passive: false });
-    bg.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
     
     // Prevent context menu (long-press on Android)
-    bg.addEventListener('contextmenu', (e) => e.preventDefault());
     document.body.addEventListener('contextmenu', (e) => {
         if (isEnabled) e.preventDefault();
     });
     
-    // Set cursor hint
-    bg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';
+    // Set cursor hint on background
+    bg.style.cursor = 'grab';
     
     console.log('[ArtZoom] Enabled');
 }
@@ -407,35 +396,28 @@ export function disableArtZoom() {
     isEnabled = false;
     
     const bg = document.getElementById('background-layer');
-    if (!bg) return;
     
-    // Remove touch events from background layer
-    bg.removeEventListener('touchstart', handleTouchStart);
-    bg.removeEventListener('touchmove', handleTouchMove);
-    bg.removeEventListener('touchend', handleTouchEnd);
-    bg.removeEventListener('touchcancel', handleTouchEnd);
-    
-    // Remove touch events from body fallback
+    // Remove touch events
     document.body.removeEventListener('touchstart', handleTouchStart);
     document.body.removeEventListener('touchmove', handleTouchMove);
     document.body.removeEventListener('touchend', handleTouchEnd);
     document.body.removeEventListener('touchcancel', handleTouchEnd);
     
     // Remove mouse events
-    bg.removeEventListener('wheel', handleWheel);
-    bg.removeEventListener('mousedown', handleMouseDown);
+    document.removeEventListener('wheel', handleWheel);
+    document.removeEventListener('mousedown', handleMouseDown);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
     
     // Restore body's touch handling
     document.body.style.touchAction = '';
     
-    // Reset all touch state (prevents stale values causing jumps on re-entry)
+    // Reset all touch state
     resetTouchState();
     
     // Reset transform and cursor
     resetArtZoom();
-    bg.style.cursor = '';
+    if (bg) bg.style.cursor = '';
     
     console.log('[ArtZoom] Disabled');
 }
