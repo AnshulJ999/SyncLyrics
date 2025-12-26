@@ -2139,9 +2139,10 @@ async def audio_recognition_get_config():
         
         # Check if HTTPS is actually available (certs exist)
         from pathlib import Path
-        from config import HTTPS
-        https_enabled = HTTPS.get("enabled", False)
-        cert_file = Path(HTTPS.get("cert_file", "certs/server.crt"))
+        from config import SERVER
+        https_config = SERVER.get("https", {})
+        https_enabled = https_config.get("enabled", False)
+        cert_file = Path(https_config.get("cert_file", "certs/server.crt"))
         https_available = https_enabled and cert_file.exists()
         
         return jsonify({
