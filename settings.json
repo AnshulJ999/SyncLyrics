@@ -15,7 +15,7 @@
     "audio_recognition.latency_offset": 0.0,
     "audio_recognition.reaper_auto_detect": false,
     "audio_recognition.recognition_interval": 3.0,
-    "audio_recognition.silence_threshold": 242,
+    "audio_recognition.silence_threshold": 350,
     "debug.enabled": true,
     "debug.log_detailed": true,
     "debug.log_file": "app.log",

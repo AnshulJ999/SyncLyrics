@@ -255,7 +255,7 @@ class SettingsManager:
             "audio_recognition.reaper_auto_detect": Setting("Reaper Auto-Detect", bool, False, False, "Audio Recognition", "Auto-start when Reaper detected", "switch"),
             "audio_recognition.device_id": Setting("Device ID", int, None, False, "Audio Recognition", "Audio device ID (blank = auto)", "number"),
             "audio_recognition.device_name": Setting("Device Name", str, "", False, "Audio Recognition", "Preferred device name"),
-            "audio_recognition.capture_duration": Setting("Capture Duration", float, 5.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=10.0),
+            "audio_recognition.capture_duration": Setting("Capture Duration", float, 5.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=60.0),
             "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 5.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=3.0, max_val=30.0),
             "audio_recognition.latency_offset": Setting("Latency Offset", float, 0.0, False, "Audio Recognition", "Manual latency adjustment (s)", "slider", min_val=-5.0, max_val=5.0),
             "audio_recognition.silence_threshold": Setting("Silence Threshold", int, 500, False, "Audio Recognition", "Min amplitude to detect audio", "slider", min_val=50, max_val=2000),
