@@ -126,13 +126,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 6px;
     padding-bottom: 0;
 }
 
 .provider-modal-header h3 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #fff;
     letter-spacing: -0.5px;
@@ -498,7 +498,7 @@
 .provider-tabs {
     display: flex;
     gap: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -538,8 +538,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -723,9 +723,9 @@
 /* DESKTOP SPLIT VIEW (New) */
 @media (min-width: 768px) {
     .provider-modal-content {
-        max-width: 900px;
-        width: 90%;
-        max-height: 80vh; /* Reverted to original size */
+        max-width: 90vw;
+        width: 95%;
+        max-height: 90vh; /* Reverted to original size */
         min-height: 500px; /* Ensure modal has minimum height for split view */
         overflow-y: hidden; /* Prevent body scroll, use inner scroll */
         display: flex;
@@ -734,8 +734,8 @@
 
     .provider-content-wrapper {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 32px;
+        grid-template-columns: 2fr 3fr;
+        gap: 16px;
         overflow: hidden;
         flex: 1; /* Take remaining height */
         min-height: 0; /* CRITICAL: Allows nested flex/grid scrolling to work properly */
@@ -791,13 +791,13 @@
     padding: 0;
     background: transparent;
     border-radius: 0;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     text-align: left; /* Align with content */
     display: flex;
     align-items: center;
     justify-content: space-between; /* Spread title and buttons */
     border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 12px;
+    padding-bottom: 8px;
 }
 
 .style-controls-section h4 {
@@ -846,10 +846,10 @@
 /* FIX: Grid Overlapping */
 .art-grid {
     display: grid;
-    /* Use auto-fill with a fixed minimum to ensure consistent rows */
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
+    /* Fixed 2 columns for consistent layout */
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
     /* Ensure the grid respects the container width */
     width: 100%; 
     /* Ensure content flows naturally */
