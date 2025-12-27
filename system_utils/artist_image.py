@@ -110,17 +110,14 @@ def load_artist_image_from_db(artist: str, album: str = None) -> Optional[Dict[s
             except Exception as e:
                 logger.debug(f"Failed to load preference metadata: {e}")
         
-        # If no preference found, return None (let album art be used as background)
-        if not preferred_filename and not preferred_provider:
-            # Cache None result to avoid repeated checks
-            if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
-                oldest_key = next(iter(state._artist_image_load_cache))
-                del state._artist_image_load_cache[oldest_key]
-            state._artist_image_load_cache[cache_key] = (current_time, None)
-            return None
+        # ===========================================================================
+        # CRITICAL: Load artist metadata and run self-healing BEFORE preference check
+        # This ensures orphaned entries get cleaned up even when no preference is set
+        # ===========================================================================
         
-        # Now load the artist images metadata (from artist folder)
+        # Load artist images metadata (from artist folder) - needed for self-healing
         if not artist_metadata_path.exists():
+            # No metadata file - cache and return early
             if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
                 oldest_key = next(iter(state._artist_image_load_cache))
                 del state._artist_image_load_cache[oldest_key]
@@ -160,6 +157,8 @@ def load_artist_image_from_db(artist: str, album: str = None) -> Optional[Dict[s
         # CRITICAL FIX: Self-healing - remove images from metadata if files are deleted
         # This ensures metadata stays in sync with actual files on disk
         # Mirrors the same pattern used in album_art.py for album art providers
+        # NOTE: This runs BEFORE the preference check to clean up orphaned entries
+        #       even when no preference is set (e.g., user never selected an artist image)
         images = metadata.get("images", [])
         removed_count = 0
         images_to_keep = []
@@ -187,6 +186,18 @@ def load_artist_image_from_db(artist: str, album: str = None) -> Optional[Dict[s
             if metadata_path_str in state._album_art_metadata_cache:
                 del state._album_art_metadata_cache[metadata_path_str]
             logger.info(f"Self-healing: Removed {removed_count} missing artist image(s) from metadata for '{artist}'")
+        
+        # ===========================================================================
+        # NOW check preference - if no preference set, return None
+        # Self-healing has already run above, so orphaned entries are cleaned up
+        # ===========================================================================
+        if not preferred_filename and not preferred_provider:
+            # Cache None result to avoid repeated checks
+            if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(state._artist_image_load_cache))
+                del state._artist_image_load_cache[oldest_key]
+            state._artist_image_load_cache[cache_key] = (current_time, None)
+            return None
         
         # Find preferred image
         matching_image = None
