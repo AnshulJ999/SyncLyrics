@@ -29,6 +29,10 @@ logger = get_logger(__name__)
 # Async lock protects read-modify-write cycles
 _db_lock = asyncio.Lock()
 
+# Log throttling to avoid spam (only log first access per track per 5s)
+_last_logged_track: str = ""
+_last_log_time: float = 0
+
 
 # =============================================================================
 # DATA VALIDATION HELPERS
@@ -138,7 +142,17 @@ def load_from_db(artist: str, title: str) -> Optional[Dict[str, Any]]:
     try:
         with open(db_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        logger.debug(f"Loaded Spicetify data from cache: {artist} - {title}")
+        
+        # Throttle logging - only log first access per track per 5s
+        global _last_logged_track, _last_log_time
+        import time
+        track_key = f"{artist} - {title}"
+        current_time = time.time()
+        if track_key != _last_logged_track or (current_time - _last_log_time) > 5:
+            logger.debug(f"Loaded Spicetify data from cache: {track_key}")
+            _last_logged_track = track_key
+            _last_log_time = current_time
+        
         return data
     except Exception as e:
         logger.debug(f"Failed to load Spicetify cache: {e}")
