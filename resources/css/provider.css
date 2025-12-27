@@ -723,7 +723,7 @@
 /* DESKTOP SPLIT VIEW (New) */
 @media (min-width: 768px) {
     .provider-modal-content {
-        max-width: 90vw;
+        max-width: 93vw;
         width: 95%;
         max-height: 90vh; /* Reverted to original size */
         min-height: 500px; /* Ensure modal has minimum height for split view */
@@ -791,13 +791,13 @@
     padding: 0;
     background: transparent;
     border-radius: 0;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     text-align: left; /* Align with content */
     display: flex;
     align-items: center;
     justify-content: space-between; /* Spread title and buttons */
     /* border-bottom: 1px solid rgba(255,255,255,0.1); */
-    padding-bottom: 4px;
+    padding-bottom: 2px;
 }
 
 .style-controls-section h4 {
