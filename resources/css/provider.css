@@ -101,10 +101,10 @@
     background: rgba(30, 32, 48, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
-    padding: 32px;
-    max-width: 800px; /* Reverted to original size */
-    width: 95%; /* Wider on mobile */
-    max-height: 85vh; /* Reverted to original size */
+    padding: 20px;
+    max-width: 900px;
+    width: 95%;
+    max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.95) translateY(20px);
@@ -126,13 +126,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     padding-bottom: 0;
 }
 
 .provider-modal-header h3 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #fff;
     letter-spacing: -0.5px;
@@ -300,8 +300,8 @@
 
 /* Modal Footer */
 .provider-modal-footer {
-    margin-top: 28px;
-    padding-top: 20px;
+    margin-top: 16px;
+    padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     justify-content: center;
@@ -723,7 +723,7 @@
 /* DESKTOP SPLIT VIEW (New) */
 @media (min-width: 768px) {
     .provider-modal-content {
-        max-width: 800px;
+        max-width: 900px;
         width: 90%;
         max-height: 80vh; /* Reverted to original size */
         min-height: 500px; /* Ensure modal has minimum height for split view */

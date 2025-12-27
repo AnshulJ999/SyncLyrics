@@ -309,7 +309,11 @@
     <div class="provider-modal-content">
         <div class="provider-modal-header">
             <h3>Select Provider</h3>
-            <button id="provider-modal-close" class="modal-close">×</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="reload-settings-btn" class="modal-close" style="font-size: 1rem;"
+                    title="Reload backend settings">⚙️</button>
+                <button id="provider-modal-close" class="modal-close">×</button>
+            </div>
         </div>
         <div class="provider-tabs">
             <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
@@ -341,8 +345,6 @@
                         title="Refetch lyrics from all providers">🔄 Refetch Lyrics</button>
                     <button id="lyrics-delete-cache" class="btn-danger"
                         title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
-                    <button id="reload-settings-btn" class="btn-reload"
-                        title="Reload backend settings without restart">⚙️ Reload Settings</button>
                 </div>
             </div>
 
@@ -373,15 +375,9 @@
                     <!-- Populated dynamically -->
                 </div>
                 <div class="provider-modal-footer">
-                    <div
-                        style="color: rgba(255, 255, 255, 0.5); font-size: 0.65rem; text-align: center; width: 100%;">
-                        Select an image to use
-                    </div>
-                    <div style="display: flex; gap: 12px; margin-top: 10px; justify-content: center;">
-                        <button id="art-refetch" class="btn-reload"
-                            title="Refetch album art and artist images">🔄 Refetch Art</button>
-                        <button id="album-art-clear-preference" class="btn-secondary">Reset to Default</button>
-                    </div>
+                    <button id="art-refetch" class="btn-reload"
+                        title="Refetch album art and artist images">🔄 Refetch Art</button>
+                    <button id="album-art-clear-preference" class="btn-secondary">Reset to Default</button>
                 </div>
             </div>
 
