@@ -313,7 +313,7 @@ function handleTouchMove(e) {
     if (edgeHoldInterval) {
         const dx = Math.abs(e.touches[0].clientX - touchStartX);
         const dy = Math.abs(e.touches[0].clientY - touchStartY);
-        if (dx > 10 || dy > 10) {
+        if (dx > 90 || dy > 90) {
             clearInterval(edgeHoldInterval);
             edgeHoldInterval = null;
         }
