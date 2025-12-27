@@ -115,9 +115,9 @@ _album_art_metadata_cache: Dict[str, tuple] = {}
 _discovery_cache: Dict[str, tuple] = {}
 
 # Cache for load_artist_image_from_db() results
-# Key: artist (str), Value: (timestamp, result_dict)
+# Key: (artist, album) tuple, Value: (timestamp, result_dict)
 # Caches the result to avoid calling discover_custom_images on every poll cycle (10x per second)
-_artist_image_load_cache: Dict[str, tuple] = {}
+_artist_image_load_cache: Dict[tuple, tuple] = {}
 
 # Cache for ensure_artist_image_db results to prevent spamming checks
 # Key: artist, Value: (timestamp, result_list)

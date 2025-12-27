@@ -265,7 +265,9 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
-        artist_image_result = load_artist_image_from_db(captured_artist, captured_album)
+        # FIX 6.1: Use album or title fallback to match server.py preference save path
+        album_or_title = captured_album if captured_album else captured_title
+        artist_image_result = load_artist_image_from_db(captured_artist, album_or_title)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():

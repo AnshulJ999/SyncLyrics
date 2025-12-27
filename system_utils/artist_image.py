@@ -274,10 +274,11 @@ def clear_artist_image_cache(artist: str) -> None:
     """
     # Cache keys are now tuples of (artist, album)
     # Clear all entries for this artist (any album)
+    # Also handle legacy string keys for smooth transition
     keys_to_delete = [key for key in state._artist_image_load_cache.keys() 
-                      if isinstance(key, tuple) and key[0] == artist]
+                      if (isinstance(key, tuple) and key[0] == artist) or key == artist]
     for key in keys_to_delete:
-        del state._artist_image_load_cache[key]
+        state._artist_image_load_cache.pop(key, None)  # Safe delete
     
     if keys_to_delete:
         logger.debug(f"Cleared artist image cache for '{artist}' ({len(keys_to_delete)} entries)")

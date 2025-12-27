@@ -335,7 +335,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
         # FIX: Run in executor to avoid blocking event loop during file I/O
-        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist, album)
+        # FIX 6.1: Use album or title fallback to match server.py preference save path
+        album_or_title = album if album else title
+        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist, album_or_title)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
