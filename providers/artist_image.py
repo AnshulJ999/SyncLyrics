@@ -617,7 +617,7 @@ class ArtistImageProvider:
                     logger.debug(f"FanArt.tv: No likes data available, using API order for {len(album_covers)} album covers")
                 
                 # Limit to top 10 album covers
-                for cover in album_covers[:10]:
+                for cover in album_covers[:12]:
                     if isinstance(cover, dict) and cover.get('url'):
                         images.append({
                             'url': cover['url'],
