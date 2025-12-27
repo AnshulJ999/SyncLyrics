@@ -361,7 +361,7 @@ export function enterVisualMode() {
     // if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal && hasArtBgEnabled) {
     //
     // CURRENT BEHAVIOR: Always apply sharp in visual mode (ignores URL art params)
-    if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal) {
+    if (visualModeConfig.autoSharp && !displayConfig.minimal) {
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
         }
