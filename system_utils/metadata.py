@@ -664,7 +664,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                 
                 # B. Check for Artist Image Preference (use cached, don't block)
                 from .artist_image import load_artist_image_from_db
-                artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+                artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist, album)
                 if artist_image_result:
                     artist_image_path = artist_image_result["path"]
                     if artist_image_path.exists():
@@ -834,7 +834,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     
                     # B. Check for Artist Image Preference (use cached, don't block)
                     from .artist_image import load_artist_image_from_db, ensure_artist_image_db
-                    artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+                    artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist, album)
                     if artist_image_result:
                         artist_image_path = artist_image_result["path"]
                         if artist_image_path.exists():

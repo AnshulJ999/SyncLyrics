@@ -1066,7 +1066,11 @@ async def set_album_art_preference():
     
     if is_artist_image:
         # Handle artist image preference
-        artist_folder = get_album_db_folder(artist, None)  # Artist-only folder
+        # NEW 6.1: Save preference to ALBUM folder (per-album behavior)
+        # Images still live in artist folder, but preference is per-album
+        album_folder = get_album_db_folder(artist, album_or_title)  # Album folder for preference
+        album_metadata_path = album_folder / "metadata.json"
+        artist_folder = get_album_db_folder(artist, None)  # Artist folder for images
         artist_metadata_path = artist_folder / "metadata.json"
         
         if not artist_metadata_path.exists():
@@ -1161,35 +1165,50 @@ async def set_album_art_preference():
             if not matching_image:
                 return jsonify({"error": f"Artist image '{provider_name}' not found in database"}), 404
             
-            # CRITICAL FIX: Save both provider_name (for display) and filename (for robust loading)
-            # The provider_name is what we show in UI, but filename is what we use to actually find the image
-            artist_metadata["preferred_provider"] = provider_name
-            artist_metadata["preferred_image_filename"] = matching_image.get("filename")  # NEW: Save filename for robust matching
-            artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            # Get the selected filename for saving
+            selected_filename = matching_image.get("filename")
             
-            # CRITICAL FIX: DO NOT clear album art preference when artist image is selected
-            # Album art preference (top-left thumbnail) and artist image preference (background) are INDEPENDENT
-            # When user selects an artist image:
-            #   - Background should show the artist image (handled by load_artist_image_from_db in system_utils.py)
-            #   - Top-left should keep the user's preferred album art (e.g., iTunes, not auto-selected LastFM)
-            # The system_utils.py logic already handles this correctly:
-            #   - load_album_art_from_db() respects preferred_provider for top-left display
-            #   - load_artist_image_from_db() only returns image if preference is explicitly set
-            #   - get_current_song_meta_data() uses artist image for background if available, but keeps album art for top-left
+            # NEW 6.1: Save preference to ALBUM folder (per-album behavior)
+            # Load or create album metadata
+            try:
+                if album_metadata_path.exists():
+                    with open(album_metadata_path, 'r', encoding='utf-8') as f:
+                        album_pref_metadata = json.load(f)
+                else:
+                    # Create new metadata for this album folder
+                    album_pref_metadata = {
+                        "type": "album_art",  # Keep compatible type
+                        "artist": artist,
+                        "album": album_or_title
+                    }
+            except Exception as e:
+                logger.error(f"Failed to load album metadata for preference: {e}")
+                # Create fresh metadata
+                album_pref_metadata = {
+                    "type": "album_art",
+                    "artist": artist,
+                    "album": album_or_title
+                }
             
-            # Save updated metadata
-            if not save_album_db_metadata(artist_folder, artist_metadata):
+            # Save the per-album artist image preference
+            album_pref_metadata["preferred_artist_image_filename"] = selected_filename
+            album_pref_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            
+            # Ensure album folder exists and save
+            album_folder.mkdir(parents=True, exist_ok=True)
+            if not save_album_db_metadata(album_folder, album_pref_metadata):
                 return jsonify({"error": "Failed to save artist image preference"}), 500
             
             # Log successful preference save for observability
-            logger.info(f"Set artist image preference to '{provider_name}' for {artist}")
+            logger.info(f"Set artist image preference to '{provider_name}' for {artist} - {album_or_title}")
             
             # CRITICAL FIX: Clear artist image cache to ensure new preference is immediately reflected
             # Without this, the cache (15-second TTL) would continue serving the old image until it expires
+            # Clear cache for the (artist, album) pair
             clear_artist_image_cache(artist)
             
             # Store filename for use outside lock
-            filename = matching_image.get("filename")
+            filename = selected_filename
         
         # Copy selected image to cache for immediate use (outside lock to avoid blocking)
         db_image_path = artist_folder / filename
