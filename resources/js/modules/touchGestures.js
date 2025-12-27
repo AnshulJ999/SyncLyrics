@@ -20,7 +20,7 @@ const THREE_FINGER_TAP_THRESHOLD = 400;  // Max ms for tap detection
 const THREE_FINGER_TAP_TOLERANCE = 30;   // Max movement in px before tap is cancelled
 
 // ========== DEBUG ==========
-const DEBUG = true;  // Set to false to disable debug logging
+const DEBUG = false;  // Set to false to disable debug logging
 
 function debugLog(...args) {
     if (DEBUG) console.log('[TouchGestures]', ...args);
@@ -142,7 +142,7 @@ async function triggerThreeFingerAction() {
     
     try {
         await playbackCommand('play-pause');
-        showToast('⏯️ Playback toggled', 'success', 1000);
+        showToast('⏯️ Playback toggled', 'success', 500);
     } catch (error) {
         console.error('[TouchGestures] Playback toggle failed:', error);
         showToast('Playback toggle failed', 'error');
