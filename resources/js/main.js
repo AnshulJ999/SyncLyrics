@@ -96,6 +96,9 @@ import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './mod
 // Art Zoom (Level 2)
 import { resetArtZoom, resetImageIndex, resetManualImageFlag } from './modules/artZoom.js';
 
+// Touch Gestures (Level 2)
+import { initTouchGestures } from './modules/touchGestures.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -550,6 +553,9 @@ async function main() {
     setupProviderUI();
     setupQueueInteractions();
     setupTouchControls();
+
+    // Initialize multi-finger touch gestures (3-finger tap for play/pause)
+    initTouchGestures();
 
     // Initialize audio source module
     audioSource.init();

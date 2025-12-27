@@ -329,6 +329,20 @@ export function setupSettingsPanel() {
                 if (icon) icon.className = 'bi bi-fullscreen';
             }
         });
+
+        // 'F' keyboard shortcut for fullscreen toggle
+        document.addEventListener('keydown', (e) => {
+            // Ignore if typing in input/textarea
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            if (e.key.toLowerCase() === 'f') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
     }
 
     // Copy URL button (preserves SVG icon)
