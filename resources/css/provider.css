@@ -302,7 +302,7 @@
 .provider-modal-footer {
     margin-top: 16px;
     padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    /* border-top: 1px solid rgba(255, 255, 255, 0.1); */
     display: flex;
     justify-content: center;
     gap: 12px;
@@ -540,7 +540,7 @@
     justify-content: space-between;
     margin-bottom: 12px;
     padding-bottom: 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
 }
 
 .lyrics-header-title {
@@ -770,12 +770,12 @@
     .provider-tab-content::before {
         content: attr(data-title);
         display: block;
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: 700;
         color: #fff;
-        margin-bottom: 16px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 8px;
+        padding-bottom: 0;
+        /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
         flex-shrink: 0; /* Prevent header from being squished when content is long */
     }
     
@@ -791,13 +791,13 @@
     padding: 0;
     background: transparent;
     border-radius: 0;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     text-align: left; /* Align with content */
     display: flex;
     align-items: center;
     justify-content: space-between; /* Spread title and buttons */
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 8px;
+    /* border-bottom: 1px solid rgba(255,255,255,0.1); */
+    padding-bottom: 4px;
 }
 
 .style-controls-section h4 {
