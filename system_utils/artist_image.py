@@ -157,7 +157,36 @@ def load_artist_image_from_db(artist: str, album: str = None) -> Optional[Dict[s
                 if metadata_path_str in state._album_art_metadata_cache:
                     del state._album_art_metadata_cache[metadata_path_str]
         
+        # CRITICAL FIX: Self-healing - remove images from metadata if files are deleted
+        # This ensures metadata stays in sync with actual files on disk
+        # Mirrors the same pattern used in album_art.py for album art providers
         images = metadata.get("images", [])
+        removed_count = 0
+        images_to_keep = []
+        for img in images:
+            filename = img.get("filename")
+            if not filename:
+                images_to_keep.append(img)  # Keep entries without filename (shouldn't happen, but defensive)
+                continue
+            file_path = artist_folder / filename
+            # If file doesn't exist but metadata says it's downloaded, remove it
+            if img.get("downloaded", False) and not file_path.exists():
+                removed_count += 1
+                logger.debug(f"Self-healing: Removing missing artist image '{filename}' from metadata for '{artist}'")
+            else:
+                images_to_keep.append(img)
+        
+        # Update metadata with cleaned images list
+        if removed_count > 0:
+            metadata["images"] = images_to_keep
+            images = images_to_keep  # Update local reference
+            # Save updated metadata
+            save_album_db_metadata(artist_folder, metadata)
+            # Invalidate cache after save
+            metadata_path_str = str(artist_metadata_path)
+            if metadata_path_str in state._album_art_metadata_cache:
+                del state._album_art_metadata_cache[metadata_path_str]
+            logger.info(f"Self-healing: Removed {removed_count} missing artist image(s) from metadata for '{artist}'")
         
         # Find preferred image
         matching_image = None
