@@ -30,6 +30,8 @@ import {
     setAlbumArtPreference,
     clearAlbumArtPreference as apiClearAlbumArtPreference,
     deleteCachedLyrics as apiDeleteCachedLyrics,
+    refetchLyrics as apiRefetchLyrics,
+    refetchArt as apiRefetchArt,
     toggleInstrumentalMark as apiToggleInstrumental,
     saveBackgroundStyle,
     getCurrentTrack
@@ -461,6 +463,46 @@ export async function deleteCachedLyrics() {
     }
 }
 
+/**
+ * Refetch lyrics from all providers
+ */
+export async function refetchLyricsHandler() {
+    try {
+        showToast('Refetching lyrics...');
+        const result = await apiRefetchLyrics();
+
+        if (result.status === 'success') {
+            showToast(result.message || 'Refetching lyrics...');
+        } else {
+            showToast(result.message || 'Failed to refetch lyrics', 'error');
+        }
+    } catch (error) {
+        console.error('Error refetching lyrics:', error);
+        showToast('Failed to refetch lyrics', 'error');
+    }
+}
+
+/**
+ * Refetch album art and artist images
+ */
+export async function refetchArtHandler() {
+    try {
+        showToast('Refetching art...');
+        const result = await apiRefetchArt();
+
+        if (result.status === 'success') {
+            showToast(result.message || 'Refetching art...');
+            // Refresh the album art tab to show new images
+            setTimeout(() => loadAlbumArtTab(), 2000);
+        } else {
+            showToast(result.message || 'Failed to refetch art', 'error');
+        }
+    } catch (error) {
+        console.error('Error refetching art:', error);
+        showToast('Failed to refetch art', 'error');
+    }
+}
+
 // ========== INSTRUMENTAL MARKING ==========
 
 /**
@@ -687,6 +729,18 @@ export function setupProviderUI() {
     const deleteBtn = document.getElementById('lyrics-delete-cache');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', deleteCachedLyrics);
+    }
+
+    // Refetch lyrics button
+    const refetchLyricsBtn = document.getElementById('lyrics-refetch');
+    if (refetchLyricsBtn) {
+        refetchLyricsBtn.addEventListener('click', refetchLyricsHandler);
+    }
+
+    // Refetch art button
+    const refetchArtBtn = document.getElementById('art-refetch');
+    if (refetchArtBtn) {
+        refetchArtBtn.addEventListener('click', refetchArtHandler);
     }
 
     // Mark as Instrumental button

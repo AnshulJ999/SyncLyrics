@@ -630,7 +630,8 @@ def _backfill_missing_providers(
     missing_providers: List[object],
     skip_provider_limit: bool = False,
     album: str = None,
-    duration: int = None
+    duration: int = None,
+    force: bool = False
 ) -> None:
     """Fetches any providers that are missing in the DB while UI uses cached lyrics.
     
@@ -641,10 +642,14 @@ def _backfill_missing_providers(
         skip_provider_limit: If True, skip the 3-provider limit check (used for word-sync backfill)
         album: Album name for provider matching (optional)
         duration: Track duration in seconds (optional)
+        force: If True, bypass the duplicate-run tracker (for manual refetch requests)
     """
     song_key = _normalized_song_key(artist, title)
-    if song_key in _backfill_tracker:
-        return
+    
+    # Skip tracker check if force=True (manual refetch request)
+    if not force:
+        if song_key in _backfill_tracker:
+            return
 
     _backfill_tracker.add(song_key)
 
@@ -1241,6 +1246,54 @@ async def delete_cached_lyrics(artist: str, title: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error deleting cached lyrics: {e}")
         return {'status': 'error', 'message': f'Failed to delete: {str(e)}'}
+
+
+async def refetch_lyrics(artist: str, title: str, album: str = None, duration: int = None) -> Dict[str, Any]:
+    """
+    Manually trigger lyrics refetch from ALL enabled providers.
+    Unlike automatic backfill, this forces fetching even if lyrics already exist.
+    
+    Args:
+        artist: Artist name
+        title: Song title
+        album: Album name (optional)
+        duration: Track duration in seconds (optional)
+    
+    Returns:
+        {
+            'status': 'success' | 'error',
+            'message': str,
+            'providers_count': int  # Number of providers being fetched
+        }
+    """
+    if not artist or not title:
+        return {'status': 'error', 'message': 'Artist and title are required'}
+    
+    # Get all enabled providers
+    enabled_providers = [p for p in providers if p.enabled]
+    
+    if not enabled_providers:
+        return {'status': 'error', 'message': 'No providers enabled'}
+    
+    # Trigger backfill with force=True - skips tracker check and fetches from all
+    _backfill_missing_providers(
+        artist, 
+        title, 
+        enabled_providers, 
+        skip_provider_limit=True,  # Don't stop at 3 providers
+        album=album, 
+        duration=duration,
+        force=True  # Bypass the duplicate-run tracker
+    )
+    
+    logger.info(f"Manual lyrics refetch triggered for {artist} - {title} ({len(enabled_providers)} providers)")
+    
+    return {
+        'status': 'success', 
+        'message': f'Refetching lyrics from {len(enabled_providers)} providers...',
+        'providers_count': len(enabled_providers)
+    }
+
 
 # ==========================================
 # Main Logic

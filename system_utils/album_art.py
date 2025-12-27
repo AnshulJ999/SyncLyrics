@@ -260,7 +260,8 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
 
 
 async def ensure_album_art_db(
-    artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
+    artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, 
+    retry_count: int = 0, force: bool = False
 ) -> Optional[Tuple[str, str]]:
     """
     Background task to fetch all album art options and save them to the database.
@@ -272,6 +273,8 @@ async def ensure_album_art_db(
         album: Album name (optional)
         title: Track title
         spotify_url: Spotify album art URL (optional)
+        retry_count: Internal retry counter for self-healing
+        force: If True, re-download images even if they already exist (for manual refetch)
         
     Returns:
         Tuple of (preferred_url, resolution_str) of the selected art, or None if failed.
@@ -382,8 +385,8 @@ async def ensure_album_art_db(
                         should_upgrade = True
                         logger.info(f"Found existing 640px Spotify image, attempting upgrade to 1400px for {artist} - {title}")
 
-                # Download image if we don't have it, if it's missing, or if we should upgrade
-                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
+                # Download image if we don't have it, if it's missing, if we should upgrade, or if force=True
+                if force or not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
                     try:
                         # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
                         # This prevents race conditions when the same provider downloads for the same album simultaneously

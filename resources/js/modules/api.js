@@ -465,6 +465,24 @@ export async function deleteCachedLyrics() {
     return apiFetch('/api/lyrics/delete', { method: 'DELETE' });
 }
 
+/**
+ * Refetch lyrics from all providers for current track
+ * 
+ * @returns {Promise<Object>} Result
+ */
+export async function refetchLyrics() {
+    return apiFetch('/api/backfill/lyrics', { method: 'POST' });
+}
+
+/**
+ * Refetch album art and artist images for current track
+ * 
+ * @returns {Promise<Object>} Result
+ */
+export async function refetchArt() {
+    return apiFetch('/api/backfill/art', { method: 'POST' });
+}
+
 // ========== INSTRUMENTAL ==========
 
 /**

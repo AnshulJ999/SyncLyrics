@@ -819,6 +819,63 @@ async def delete_cached_lyrics_endpoint():
     else:
         return jsonify(result), 500
 
+
+@app.route("/api/backfill/lyrics", methods=['POST'])
+async def backfill_lyrics_endpoint():
+    """Manually trigger lyrics refetch from ALL enabled providers"""
+    from lyrics import refetch_lyrics, current_song_data
+    
+    if not current_song_data:
+        return jsonify({"status": "error", "message": "No song playing"}), 404
+    
+    artist = current_song_data.get("artist", "")
+    title = current_song_data.get("title", "")
+    album = current_song_data.get("album")
+    duration_ms = current_song_data.get("duration_ms")
+    duration = duration_ms // 1000 if duration_ms else None
+    
+    if not artist or not title:
+        return jsonify({"status": "error", "message": "Invalid song data"}), 400
+    
+    result = await refetch_lyrics(artist, title, album, duration)
+    return jsonify(result), 200 if result['status'] == 'success' else 500
+
+
+@app.route("/api/backfill/art", methods=['POST'])
+async def backfill_art_endpoint():
+    """Manually trigger album art and artist images refetch"""
+    from system_utils import get_current_song_meta_data, ensure_album_art_db, ensure_artist_image_db
+    
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"status": "error", "message": "No song playing"}), 404
+    
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    title = metadata.get("title")
+    spotify_url = metadata.get("album_art_url")
+    artist_id = metadata.get("artist_id")
+    
+    if not artist:
+        return jsonify({"status": "error", "message": "Invalid song data"}), 400
+    
+    # Trigger both album art and artist images refetch with force=True
+    from system_utils.helpers import create_tracked_task
+    
+    async def run_refetch():
+        # Refetch album art
+        await ensure_album_art_db(artist, album, title, spotify_url, retry_count=0, force=True)
+        # Refetch artist images
+        await ensure_artist_image_db(artist, artist_id, force=True)
+    
+    create_tracked_task(run_refetch())
+    
+    return jsonify({
+        "status": "success",
+        "message": "Refetching album art and artist images..."
+    }), 200
+
+
 # --- Album Art Database API ---
 
 @app.route("/api/album-art/options", methods=['GET'])

@@ -349,7 +349,7 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None) -> List[str]:
+async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False) -> List[str]:
     """
     Background task to fetch artist images and save them to the database.
     Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spotify, and Last.fm.
@@ -362,6 +362,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     5. Last.fm (fallback, if LASTFM_API_KEY in .env)
     
     Note: iTunes is NOT used for artist images (it rarely works for artists).
+    
+    Args:
+        artist: Artist name
+        spotify_artist_id: Spotify artist ID for Spotify API fallback (optional)
+        force: If True, bypass cache and tracker checks (for manual refetch)
     """
     # Check if feature is enabled (respects album_art_db setting for both loading AND downloading)
     if not FEATURES.get("album_art_db", True):
@@ -370,15 +375,16 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Import here to avoid circular import
     from .metadata import get_current_song_meta_data
     
-    # Check cache first (debouncing)
+    # Check cache first (debouncing) - SKIP if force=True
     # If we checked this artist recently (within 60 seconds), return cached result
     # This prevents spamming the logic/logs when frontend polls frequently
     current_time = time.time()
-    cached_data = state._artist_db_check_cache.get(artist)
-    if cached_data:
-        timestamp, cached_result = cached_data
-        if current_time - timestamp < 60:
-            return cached_result
+    if not force:
+        cached_data = state._artist_db_check_cache.get(artist)
+        if cached_data:
+            timestamp, cached_result = cached_data
+            if current_time - timestamp < 60:
+                return cached_result
     
     # Clean up old entries to prevent memory leak (keep only recent entries)
     # Remove entries older than 5 minutes to prevent unbounded growth
@@ -394,9 +400,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Artist name is stable and prevents duplicate downloads for the same artist
     request_key = artist
     
-    # Prevent duplicate downloads for the same artist
-    if request_key in state._artist_download_tracker:
-        return []
+    # Prevent duplicate downloads for the same artist - SKIP if force=True
+    if not force:
+        if request_key in state._artist_download_tracker:
+            return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
     # CRITICAL FIX: Instead of clearing all entries (which causes race conditions),
@@ -427,6 +434,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 
                 # Check if artist images already exist in DB (optimization)
                 # If images exist, return immediately (no need to re-fetch)
+                # SKIP if force=True (manual refetch request)
                 if metadata_path.exists():
                     try:
                         with open(metadata_path, 'r', encoding='utf-8') as f:
@@ -434,8 +442,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         existing_images = existing_metadata.get("images", [])
                         
-                        # If images exist, return immediately (no need to re-fetch)
-                        if len(existing_images) > 0:
+                        # If images exist AND not force mode, return cached paths
+                        if len(existing_images) > 0 and not force:
                             encoded_folder = quote(folder.name, safe='')
                             result_paths = [
                                 f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
