@@ -800,12 +800,17 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         temp_file_path = result["temp_file_path"]
                         if temp_file_path.exists():
                             try:
+                                # Delete existing file first (Windows doesn't allow overwrite with rename)
+                                if final_file_path.exists():
+                                    final_file_path.unlink()
                                 # Move temp file to final location
                                 temp_file_path.rename(final_file_path)
                             except Exception as e:
                                 logger.debug(f"Failed to rename temp file {temp_file_path} to {final_file_path}: {e}")
                                 # Try copy as fallback
                                 try:
+                                    if final_file_path.exists():
+                                        final_file_path.unlink()
                                     shutil.copy2(temp_file_path, final_file_path)
                                     temp_file_path.unlink()
                                 except Exception as e2:
