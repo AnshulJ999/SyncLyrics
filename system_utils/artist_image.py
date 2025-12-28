@@ -389,7 +389,7 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False, artist_visuals: Optional[Dict[str, Any]] = None) -> List[str]:
+async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False, artist_visuals: Optional[Dict[str, Any]] = None, spicetify_only: bool = False) -> List[str]:
     """
     Background task to fetch artist images and save them to the database.
     Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spicetify GraphQL, Spotify, and Last.fm.
@@ -409,7 +409,11 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
         spotify_artist_id: Spotify artist ID for Spotify API fallback (optional)
         force: If True, bypass cache and tracker checks (for manual refetch)
         artist_visuals: Spicetify GraphQL visuals dict with header_image and gallery (optional)
+        spicetify_only: If True, skip API calls and only add Spicetify images to existing collection
     """
+    # force=True overrides spicetify_only (user explicitly wants full refetch)
+    if force:
+        spicetify_only = False
     # Check if feature is enabled (respects album_art_db setting for both loading AND downloading)
     if not FEATURES.get("album_art_db", True):
         return []
@@ -520,9 +524,25 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         return []
                 artist_provider = state._artist_image_provider
                 
-                # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
-                # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
-                all_images = await artist_provider.get_artist_images(artist)
+                # Fetch images - either from API or use existing
+                if spicetify_only:
+                    # Skip API calls - use existing images from metadata.json
+                    # This is for adding only Spicetify images to existing collection
+                    all_images = []
+                    for img in existing_metadata.get("images", []):
+                        if img.get("url"):
+                            all_images.append({
+                                "url": img.get("url"),
+                                "source": img.get("source"),
+                                "type": img.get("type"),
+                                "width": img.get("width"),
+                                "height": img.get("height")
+                            })
+                    logger.debug(f"Spicetify-only mode: Using {len(all_images)} existing images for {artist}")
+                else:
+                    # Normal mode: fetch from all sources (Deezer, TheAudioDB, FanArt.tv)
+                    # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
+                    all_images = await artist_provider.get_artist_images(artist)
                 
                 # Spicetify GraphQL visuals (header + gallery from internal API)
                 # These are high-res images directly from Spotify's internal GraphQL
@@ -562,7 +582,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Fallback 1: Spotify (if ID provided) - Keep as backup
                 # CRITICAL FIX: Validate artist ID to prevent race conditions
                 # If track changed while this function was running, spotify_artist_id might be stale
-                if spotify_artist_id:
+                # Skip in spicetify_only mode - we're only adding Spicetify images
+                if spotify_artist_id and not spicetify_only:
                     client = get_shared_spotify_client()
                     if client:
                         try:

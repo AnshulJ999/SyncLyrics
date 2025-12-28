@@ -955,8 +955,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             async def background_spicetify_only_backfill(_artist=artist, _artist_id=spotify_artist_id, _visuals=artist_visuals):
                                 """Background task to add only Spicetify images for existing artists"""
                                 try:
-                                    # Pass force=False but with artist_visuals - the function will add Spicetify images
-                                    await ensure_artist_image_db(_artist, _artist_id, artist_visuals=_visuals)
+                                    # spicetify_only=True: Skip API calls, only add Spicetify images
+                                    await ensure_artist_image_db(_artist, _artist_id, artist_visuals=_visuals, spicetify_only=True)
                                 except Exception as e:
                                     logger.debug(f"Spicetify: Background Spicetify-only backfill failed for {_artist}: {e}")
                             
