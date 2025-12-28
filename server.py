@@ -859,6 +859,8 @@ async def backfill_art_endpoint():
     if not artist:
         return jsonify({"status": "error", "message": "Invalid song data"}), 400
     
+    logger.info(f"Manual Refetch Art triggered for: {artist} - {title}")
+    
     # Trigger both album art and artist images refetch with force=True
     from system_utils.helpers import create_tracked_task
     from system_utils.spicetify_db import load_from_db
