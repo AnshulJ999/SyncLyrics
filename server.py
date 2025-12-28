@@ -2628,6 +2628,13 @@ async def get_client_config():
         "visualModeAutoSharp": settings.get("visual_mode.auto_sharp"),
         "slideshowEnabled": settings.get("visual_mode.slideshow.enabled"),
         "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds"),
+        # Slideshow (Art Cycling) settings
+        "slideshowDefaultEnabled": settings.get("slideshow.default_enabled"),
+        "slideshowConfigIntervalSeconds": settings.get("slideshow.interval_seconds"),
+        "slideshowKenBurnsEnabled": settings.get("slideshow.ken_burns_enabled"),
+        "slideshowKenBurnsIntensity": settings.get("slideshow.ken_burns_intensity"),
+        "slideshowShuffle": settings.get("slideshow.shuffle"),
+        "slideshowTransitionDuration": settings.get("slideshow.transition_duration"),
         # Word-sync settings
         "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True)
     }

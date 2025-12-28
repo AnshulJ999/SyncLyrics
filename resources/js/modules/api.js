@@ -10,6 +10,7 @@
 import {
     displayConfig,
     visualModeConfig,
+    slideshowConfig,
     currentColors,
     setUpdateInterval,
     setCurrentColors,
@@ -147,6 +148,26 @@ export async function getConfig() {
         }
         if (config.slideshowIntervalSeconds !== undefined) {
             visualModeConfig.slideshowIntervalSeconds = config.slideshowIntervalSeconds;
+        }
+
+        // Load slideshow (art cycling) settings from server
+        if (config.slideshowDefaultEnabled !== undefined) {
+            slideshowConfig.defaultEnabled = config.slideshowDefaultEnabled;
+        }
+        if (config.slideshowConfigIntervalSeconds !== undefined) {
+            slideshowConfig.intervalSeconds = config.slideshowConfigIntervalSeconds;
+        }
+        if (config.slideshowKenBurnsEnabled !== undefined) {
+            slideshowConfig.kenBurnsEnabled = config.slideshowKenBurnsEnabled;
+        }
+        if (config.slideshowKenBurnsIntensity !== undefined) {
+            slideshowConfig.kenBurnsIntensity = config.slideshowKenBurnsIntensity;
+        }
+        if (config.slideshowShuffle !== undefined) {
+            slideshowConfig.shuffle = config.slideshowShuffle;
+        }
+        if (config.slideshowTransitionDuration !== undefined) {
+            slideshowConfig.transitionDuration = config.slideshowTransitionDuration;
         }
 
         // Apply word_sync_default_enabled setting (only if URL doesn't override)

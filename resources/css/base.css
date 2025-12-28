@@ -831,6 +831,49 @@ body[data-minimal="true"] .word-sync-toggle-btn {
     display: none !important;
 }
 
+/* Slideshow Toggle Button (next to word-sync) */
+.slideshow-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 128px;  /* Next to word-sync-toggle-btn (76px + 52px) */
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.slideshow-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Phosphor icon sizing */
+.slideshow-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+/* Active state when slideshow is enabled */
+.slideshow-toggle-btn.active {
+    color: white;
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .slideshow-toggle-btn {
+    display: none !important;
+}
+
 .control-btn {
     background: transparent;
     border: none;
@@ -1877,6 +1920,7 @@ body.art-only-mode .top-right-controls,
 body.art-only-mode .bottom-nav,
 body.art-only-mode .lyrics-toggle-btn,
 body.art-only-mode .word-sync-toggle-btn,
+body.art-only-mode .slideshow-toggle-btn,
 body.art-only-mode #provider-info,
 body.art-only-mode #next-up-card,
 body.art-only-mode .provider-modal,
@@ -2063,4 +2107,27 @@ a.settings-header-btn {
 .background-layer.fill-original {
     background-size: auto;
     background-position: center;
+}
+
+/* ========== SLIDESHOW IMAGES ========== */
+/* Slideshow images overlay on background-layer for crossfade transitions */
+.slideshow-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    will-change: opacity, transform;
+    /* Ensure slideshow images are on top of base background */
+    z-index: 1;
+}
+
+/* Active state - fade in */
+.slideshow-image.active {
+    opacity: 1;
 }

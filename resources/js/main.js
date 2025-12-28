@@ -75,7 +75,15 @@ import {
 } from './modules/background.js';
 
 // Slideshow (Level 2)
-import { startSlideshow, stopSlideshow } from './modules/slideshow.js';
+import {
+    startSlideshow,
+    stopSlideshow,
+    initSlideshow,
+    setupSlideshowButton,
+    handleArtistChange as handleSlideshowArtistChange,
+    loadImagePoolForCurrentArtist,
+    checkSlideshowPause
+} from './modules/slideshow.js';
 
 // Provider (Level 3)
 import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
@@ -103,6 +111,10 @@ import { initTouchGestures } from './modules/touchGestures.js';
 
 // Connect slideshow functions to background module
 setSlideshowFunctions(startSlideshow, stopSlideshow);
+
+// Initialize slideshow module
+initSlideshow();
+setupSlideshowButton();  // Phase 2 will pass showModalFn here
 
 // ========== WORD-SYNC TOGGLE UI HELPER ==========
 
@@ -397,7 +409,8 @@ async function updateLoop() {
 
             // Smart artist reset: only reset if artist changes
             const newArtistId = trackInfo.artist_id || '';
-            if (newArtistId !== lastArtistId) {
+            const sameArtist = newArtistId === lastArtistId;
+            if (!sameArtist) {
                 resetImageIndex();
                 resetManualImageFlag();  // Clear manual image selection when artist changes
                 lastArtistId = newArtistId;
@@ -415,9 +428,15 @@ async function updateLoop() {
                         } else {
                             setCurrentArtistImages(images);
                         }
+                        
+                        // Update slideshow image pool after artist images are loaded
+                        loadImagePoolForCurrentArtist();
                     });
                 }
             }
+            
+            // Notify slideshow of artist change (handles same artist vs different artist logic)
+            handleSlideshowArtistChange(trackInfo.artist || '', sameArtist);
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track

@@ -96,6 +96,21 @@ export let visualModeConfig = {
     slideshowIntervalSeconds: 8
 };
 
+// ========== SLIDESHOW CONFIGURATION (Art Cycling) ==========
+export let slideshowConfig = {
+    defaultEnabled: false,
+    intervalSeconds: 6,
+    kenBurnsEnabled: true,
+    kenBurnsIntensity: 'subtle',  // 'subtle', 'medium', 'cinematic'
+    shuffle: false,
+    transitionDuration: 0.8
+};
+
+// Slideshow runtime state
+export let slideshowImagePool = [];      // Combined artist + album images
+export let slideshowPaused = false;       // Paused due to manual browsing or background tab
+export let slideshowSessionOverride = null;  // null = use auto-preference, true = forced on, false = forced off
+
 // ========== BACKGROUND STATE ==========
 export let savedBackgroundState = null;
 export let manualStyleOverride = false; // Phase 2: Track if user manually overrode style
@@ -138,6 +153,9 @@ export function setDashboardImages(value) { dashboardImages = value; }
 export function setSlideshowInterval(value) { slideshowInterval = value; }
 export function setCurrentSlideIndex(value) { currentSlideIndex = value; }
 export function setSlideshowEnabled(value) { slideshowEnabled = value; }
+export function setSlideshowImagePool(value) { slideshowImagePool = value; }
+export function setSlideshowPaused(value) { slideshowPaused = value; }
+export function setSlideshowSessionOverride(value) { slideshowSessionOverride = value; }
 export function setSavedBackgroundState(value) { savedBackgroundState = value; }
 export function setManualStyleOverride(value) { 
     manualStyleOverride = value;

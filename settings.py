@@ -250,6 +250,14 @@ class SettingsManager:
             "visual_mode.slideshow.enabled": Setting("Slideshow", bool, False, False, "Visual Mode", "Enable slideshow when no music", "switch"),
             "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
 
+            # Slideshow (Art Cycling)
+            "slideshow.default_enabled": Setting("Slideshow Default", bool, False, False, "Slideshow", "Start with slideshow enabled", "switch"),
+            "slideshow.interval_seconds": Setting("Slideshow Interval", int, 6, False, "Slideshow", "Seconds per image", "slider", min_val=1, max_val=600),
+            "slideshow.ken_burns_enabled": Setting("Ken Burns Effect", bool, True, False, "Slideshow", "Enable subtle zoom/pan animation", "switch"),
+            "slideshow.ken_burns_intensity": Setting("Ken Burns Intensity", str, "subtle", False, "Slideshow", "Animation intensity (subtle/medium/cinematic)", "select", options=["subtle", "medium", "cinematic"]),
+            "slideshow.shuffle": Setting("Shuffle Mode", bool, False, False, "Slideshow", "Random image order", "switch"),
+            "slideshow.transition_duration": Setting("Transition Duration", float, 0.8, False, "Slideshow", "Crossfade duration (s)", "slider", min_val=0.2, max_val=2.0),
+
             # Audio Recognition (Reaper Integration)
             "audio_recognition.enabled": Setting("Audio Recognition", bool, False, False, "Audio Recognition", "Enable audio fingerprinting", "switch"),
             "audio_recognition.reaper_auto_detect": Setting("Reaper Auto-Detect", bool, False, False, "Audio Recognition", "Auto-start when Reaper detected", "switch"),
