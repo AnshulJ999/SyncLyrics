@@ -177,6 +177,7 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             # Spotify-specific fields for Visual Mode and UI features
             'artist_id': track.get('artist_id'),  # For Visual Mode artist slideshow
             'url': track.get('url'),  # For 'open in Spotify' feature
+            'artist_visuals': track.get('artist_visuals'),  # GraphQL header/gallery images
         }
 
 

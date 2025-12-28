@@ -389,17 +389,18 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False) -> List[str]:
+async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False, artist_visuals: Optional[Dict[str, Any]] = None) -> List[str]:
     """
     Background task to fetch artist images and save them to the database.
-    Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spotify, and Last.fm.
+    Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spicetify GraphQL, Spotify, and Last.fm.
     
     Priority order:
     1. Deezer (free, 1000x1000px, no auth required)
     2. TheAudioDB (free key '123', provides MBID for FanArt.tv)
     3. FanArt.tv (requires FANART_TV_API_KEY in .env + MBID from TheAudioDB)
-    4. Spotify (fallback, if spotify_artist_id provided)
-    5. Last.fm (fallback, if LASTFM_API_KEY in .env)
+    4. Spicetify GraphQL (header + gallery from internal API, if provided)
+    5. Spotify (fallback, if spotify_artist_id provided)
+    6. Last.fm (fallback, if LASTFM_API_KEY in .env)
     
     Note: iTunes is NOT used for artist images (it rarely works for artists).
     
@@ -407,6 +408,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
         artist: Artist name
         spotify_artist_id: Spotify artist ID for Spotify API fallback (optional)
         force: If True, bypass cache and tracker checks (for manual refetch)
+        artist_visuals: Spicetify GraphQL visuals dict with header_image and gallery (optional)
     """
     # Check if feature is enabled (respects album_art_db setting for both loading AND downloading)
     if not FEATURES.get("album_art_db", True):
@@ -513,6 +515,41 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
                 # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
                 all_images = await artist_provider.get_artist_images(artist)
+                
+                # Spicetify GraphQL visuals (header + gallery from internal API)
+                # These are high-res images directly from Spotify's internal GraphQL
+                if artist_visuals:
+                    existing_urls = {i['url'] for i in all_images}
+                    added_count = 0
+                    
+                    # Header image (artist-curated banner, up to 2660x1140)
+                    header_img = artist_visuals.get('header_image')
+                    if header_img and header_img.get('url') and header_img['url'] not in existing_urls:
+                        all_images.append({
+                            "url": header_img['url'],
+                            "source": "spicetify",
+                            "type": "header",
+                            "width": header_img.get('width', 2660),
+                            "height": header_img.get('height', 1140)
+                        })
+                        existing_urls.add(header_img['url'])
+                        added_count += 1
+                    
+                    # Gallery images (artist photos, 690x500+)
+                    for img in artist_visuals.get('gallery', []):
+                        if img and img.get('url') and img['url'] not in existing_urls:
+                            all_images.append({
+                                "url": img['url'],
+                                "source": "spicetify",
+                                "type": "gallery",
+                                "width": img.get('width', 690),
+                                "height": img.get('height', 500)
+                            })
+                            existing_urls.add(img['url'])
+                            added_count += 1
+                    
+                    if added_count > 0:
+                        logger.debug(f"Spicetify GraphQL: Added {added_count} artist images for {artist}")
                 
                 # Fallback 1: Spotify (if ID provided) - Keep as backup
                 # CRITICAL FIX: Validate artist ID to prevent race conditions

@@ -912,11 +912,12 @@ async def get_current_song_meta_data() -> Optional[dict]:
                     # D. Artist Image Backfill (already non-blocking, just copied from old code)
                     if artist and artist not in state._artist_download_tracker:
                         spotify_artist_id = result.get("artist_id")
+                        artist_visuals = result.get("artist_visuals")  # GraphQL header/gallery
                         
                         async def background_artist_images_backfill():
                             """Background task to fetch artist images from all enabled sources"""
                             try:
-                                await ensure_artist_image_db(artist, spotify_artist_id)
+                                await ensure_artist_image_db(artist, spotify_artist_id, artist_visuals=artist_visuals)
                             except Exception as e:
                                 logger.debug(f"Spicetify: Background artist image backfill failed for {artist}: {e}")
                         

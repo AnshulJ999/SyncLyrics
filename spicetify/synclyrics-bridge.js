@@ -50,7 +50,7 @@
         // No max attempts - keeps trying forever (caps at RECONNECT_MAX_MS delay)
         POSITION_THROTTLE_MS: 100,                    // Min time between position updates
         AUDIO_KEEPALIVE: true,                        // Enable silent audio to prevent Chrome throttling
-        DEBUG: false                                  // Enable console logging
+        DEBUG: true                                  // Enable console logging
     };
 
     // ======== STATE ========
@@ -67,6 +67,8 @@
     // Caches (cleared on song change)
     let audioDataCache = null;
     let colorCache = null;
+    let artistVisualsCache = null;      // Cache for artist images from GraphQL
+    let artistVisualsCacheUri = null;   // Track which artist the cache is for
 
     // Named listener references (for cleanup)
     let listeners = {
@@ -636,6 +638,12 @@
             colorCache = await fetchColors(trackUri, item?.album?.uri);
         }
 
+        // Fetch artist visuals from GraphQL (header image + gallery)
+        const artistUri = item?.artists?.[0]?.uri;
+        let artistVisuals = null;
+        if (artistUri) {
+            artistVisuals = await fetchArtistVisuals(artistUri);
+        }
         // Build and send track data message with ALL available metadata
         const metadata = item?.metadata || {};
         
@@ -753,7 +761,10 @@
             audio_analysis: audioDataCache,
             
             // ======== COLORS ========
-            colors: colorCache
+            colors: colorCache,
+            
+            // ======== ARTIST VISUALS (from GraphQL) ========
+            artist_visuals: artistVisuals
         };
 
         broadcastMessage(msg);
@@ -875,7 +886,10 @@
             
             // ======== AUDIO & COLORS ========
             audio_analysis: audioDataCache,
-            colors: colorCache
+            colors: colorCache,
+            
+            // ======== ARTIST VISUALS (from GraphQL) ========
+            artist_visuals: artistVisualsCache
         };
         
         sendMessageTo(ws, msg);
@@ -1092,6 +1106,135 @@
         return null;
     }
 
+    /**
+     * Fetch artist visuals (header image + gallery) via GraphQL
+     * Uses multiple fallback queries for maximum compatibility
+     * @param {string} artistUri - Spotify artist URI (spotify:artist:xxx)
+     * @returns {Object|null} Artist visuals or null on error
+     */
+    async function fetchArtistVisuals(artistUri) {
+        if (!artistUri) return null;
+        
+        // Return cached data if same artist
+        if (artistUri === artistVisualsCacheUri && artistVisualsCache) {
+            log('Artist visuals: Using cached data for', artistUri);
+            return artistVisualsCache;
+        }
+        
+        const result = {
+            header_image: null,
+            gallery: [],
+            source: null
+        };
+        
+        // Method 1: Try fetchExtractedColorAndImageForArtistEntity (most reliable for images)
+        try {
+            if (Spicetify.GraphQL?.Definitions?.fetchExtractedColorAndImageForArtistEntity) {
+                log('Artist visuals: Trying fetchExtractedColorAndImageForArtistEntity');
+                const response = await Spicetify.GraphQL.Request(
+                    Spicetify.GraphQL.Definitions.fetchExtractedColorAndImageForArtistEntity,
+                    { uri: artistUri }
+                );
+                
+                log('Artist visuals response (method 1):', response);
+                
+                if (response?.data?.artistUnion?.visuals) {
+                    const visuals = response.data.artistUnion.visuals;
+                    
+                    // Header image (largest, artist-curated banner)
+                    if (visuals.headerImage?.sources?.length > 0) {
+                        // Get largest source
+                        const largest = visuals.headerImage.sources.reduce((a, b) => 
+                            ((a.width || 0) * (a.height || 0)) > ((b.width || 0) * (b.height || 0)) ? a : b
+                        );
+                        result.header_image = {
+                            url: largest.url,
+                            width: largest.width,
+                            height: largest.height
+                        };
+                    }
+                    
+                    // Gallery images
+                    if (visuals.gallery?.items?.length > 0) {
+                        result.gallery = visuals.gallery.items
+                            .filter(item => item?.sources?.length > 0)
+                            .map(item => {
+                                const src = item.sources[0];
+                                return {
+                                    url: src.url,
+                                    width: src.width,
+                                    height: src.height
+                                };
+                            });
+                    }
+                    
+                    if (result.header_image || result.gallery.length > 0) {
+                        result.source = 'fetchExtractedColorAndImageForArtistEntity';
+                        log('Artist visuals: Found', result.gallery.length, 'gallery +', result.header_image ? 1 : 0, 'header');
+                    }
+                }
+            }
+        } catch (e) {
+            log('Artist visuals: fetchExtractedColorAndImageForArtistEntity failed:', e.message);
+        }
+        
+        // Method 2: Fallback to queryArtistOverview if Method 1 failed
+        if (!result.source) {
+            try {
+                if (Spicetify.GraphQL?.Definitions?.queryArtistOverview) {
+                    log('Artist visuals: Trying queryArtistOverview fallback');
+                    const response = await Spicetify.GraphQL.Request(
+                        Spicetify.GraphQL.Definitions.queryArtistOverview,
+                        { uri: artistUri, locale: '', includePrerelease: false }
+                    );
+                    
+                    log('Artist visuals response (method 2):', response);
+                    
+                    if (response?.data?.artistUnion?.visuals) {
+                        const visuals = response.data.artistUnion.visuals;
+                        
+                        if (visuals.headerImage?.sources?.length > 0) {
+                            const largest = visuals.headerImage.sources.reduce((a, b) => 
+                                ((a.width || 0) * (a.height || 0)) > ((b.width || 0) * (b.height || 0)) ? a : b
+                            );
+                            result.header_image = {
+                                url: largest.url,
+                                width: largest.width,
+                                height: largest.height
+                            };
+                        }
+                        
+                        if (visuals.gallery?.items?.length > 0) {
+                            result.gallery = visuals.gallery.items
+                                .filter(item => item?.sources?.length > 0)
+                                .map(item => {
+                                    const src = item.sources[0];
+                                    return { url: src.url, width: src.width, height: src.height };
+                                });
+                        }
+                        
+                        if (result.header_image || result.gallery.length > 0) {
+                            result.source = 'queryArtistOverview';
+                            log('Artist visuals: Found', result.gallery.length, 'gallery +', result.header_image ? 1 : 0, 'header via fallback');
+                        }
+                    }
+                }
+            } catch (e) {
+                log('Artist visuals: queryArtistOverview failed:', e.message);
+            }
+        }
+        
+        // Log if no visuals found from any method
+        if (!result.source) {
+            log('Artist visuals: No visuals available from any method');
+        }
+        
+        // Cache the result (even if null, to prevent repeated failed requests)
+        artistVisualsCache = result.source ? result : null;
+        artistVisualsCacheUri = artistUri;
+        
+        return artistVisualsCache;
+    }
     // ======== EVENT LISTENERS ========
 
     /**
@@ -1116,6 +1259,8 @@
             // Clear caches
             audioDataCache = null;
             colorCache = null;
+            artistVisualsCache = null;
+            artistVisualsCacheUri = null;
             currentTrackUri = null;
             
             // Send position update immediately
