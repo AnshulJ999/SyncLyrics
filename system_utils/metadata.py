@@ -920,14 +920,48 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         logger.debug(f"Spicetify: Got artist_visuals for {artist} (header: {bool(header)}, gallery: {len(gallery)})")
                     
                     if artist and artist not in state._artist_download_tracker:
-                        async def background_artist_images_backfill():
+                        # CLOSURE FIX: Capture values via default arguments (evaluated at definition time)
+                        async def background_artist_images_backfill(_artist=artist, _artist_id=spotify_artist_id, _visuals=artist_visuals):
                             """Background task to fetch artist images from all enabled sources"""
                             try:
-                                await ensure_artist_image_db(artist, spotify_artist_id, artist_visuals=artist_visuals)
+                                await ensure_artist_image_db(_artist, _artist_id, artist_visuals=_visuals)
                             except Exception as e:
-                                logger.debug(f"Spicetify: Background artist image backfill failed for {artist}: {e}")
+                                logger.debug(f"Spicetify: Background artist image backfill failed for {_artist}: {e}")
                         
                         create_tracked_task(background_artist_images_backfill())
+                    
+                    elif artist and artist_visuals:
+                        # Artist already in tracker, but check if Spicetify images are missing
+                        # This ensures existing artists get Spicetify images added without full re-fetch
+                        from .artist_image import ensure_artist_image_db
+                        from .album_art import get_album_db_folder
+                        import json
+                        
+                        folder = get_album_db_folder(artist, None)
+                        metadata_path = folder / "metadata.json"
+                        
+                        has_spicetify_images = False
+                        if metadata_path.exists():
+                            try:
+                                with open(metadata_path, 'r', encoding='utf-8') as f:
+                                    existing = json.load(f)
+                                images = existing.get("images", [])
+                                has_spicetify_images = any(img.get("source") == "spicetify" for img in images)
+                            except Exception:
+                                pass
+                        
+                        if not has_spicetify_images:
+                            # CLOSURE FIX: Capture values via default arguments
+                            async def background_spicetify_only_backfill(_artist=artist, _artist_id=spotify_artist_id, _visuals=artist_visuals):
+                                """Background task to add only Spicetify images for existing artists"""
+                                try:
+                                    # Pass force=False but with artist_visuals - the function will add Spicetify images
+                                    await ensure_artist_image_db(_artist, _artist_id, artist_visuals=_visuals)
+                                except Exception as e:
+                                    logger.debug(f"Spicetify: Background Spicetify-only backfill failed for {_artist}: {e}")
+                            
+                            logger.debug(f"Spicetify: Adding Spicetify images for existing artist: {artist}")
+                            create_tracked_task(background_spicetify_only_backfill())
                     
                     # Cache the enrichment result for this track
                     get_current_song_meta_data._spicetify_enriched_track = track_id

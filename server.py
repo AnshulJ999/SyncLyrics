@@ -861,12 +861,19 @@ async def backfill_art_endpoint():
     
     # Trigger both album art and artist images refetch with force=True
     from system_utils.helpers import create_tracked_task
+    from system_utils.spicetify_db import load_from_db
+    
+    # Load artist_visuals from Spicetify DB (if available for this track)
+    artist_visuals = None
+    spicetify_data = load_from_db(artist, title)
+    if spicetify_data:
+        artist_visuals = spicetify_data.get("artist_visuals")
     
     async def run_refetch():
         # Refetch album art
         await ensure_album_art_db(artist, album, title, spotify_url, retry_count=0, force=True)
-        # Refetch artist images
-        await ensure_artist_image_db(artist, artist_id, force=True)
+        # Refetch artist images (with Spicetify visuals if available)
+        await ensure_artist_image_db(artist, artist_id, force=True, artist_visuals=artist_visuals)
     
     create_tracked_task(run_refetch())
     

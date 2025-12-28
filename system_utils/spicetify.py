@@ -350,6 +350,7 @@ async def _handle_track_data(data: dict):
             collection=data.get('collection'),
             raw_metadata=data.get('raw_metadata'),
             context_metadata=data.get('context_metadata'),
-            page_metadata=data.get('page_metadata')
+            page_metadata=data.get('page_metadata'),
+            artist_visuals=data.get('artist_visuals')  # GraphQL header/gallery images
         ))
 

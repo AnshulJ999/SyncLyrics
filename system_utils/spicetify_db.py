@@ -219,7 +219,8 @@ async def save_to_db(
     collection: Optional[Dict[str, Any]] = None,
     raw_metadata: Optional[Dict[str, Any]] = None,
     context_metadata: Optional[Dict[str, Any]] = None,
-    page_metadata: Optional[Dict[str, Any]] = None
+    page_metadata: Optional[Dict[str, Any]] = None,
+    artist_visuals: Optional[Dict[str, Any]] = None  # GraphQL header/gallery images
 ) -> bool:
     """
     Save Spicetify data to disk with atomic writes.
@@ -242,6 +243,7 @@ async def save_to_db(
         raw_metadata: Raw Spicetify metadata object
         context_metadata: Context metadata from Spicetify
         page_metadata: Page metadata from Spicetify
+        artist_visuals: GraphQL artist header/gallery images from Spicetify
         
     Returns:
         True if save successful
@@ -355,6 +357,12 @@ async def save_to_db(
             data["page_metadata"] = page_metadata
         elif "page_metadata" in existing:
             data["page_metadata"] = existing["page_metadata"]
+        
+        # Artist visuals (GraphQL header/gallery) - preserve existing if new is empty
+        if artist_visuals and (artist_visuals.get('header_image') or artist_visuals.get('gallery')):
+            data["artist_visuals"] = artist_visuals
+        elif "artist_visuals" in existing and existing["artist_visuals"]:
+            data["artist_visuals"] = existing["artist_visuals"]
         
         # Atomic write pattern (same as lyrics.py):
         # 1. Write to temp file in same directory

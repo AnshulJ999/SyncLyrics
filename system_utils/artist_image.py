@@ -484,18 +484,26 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         existing_images = existing_metadata.get("images", [])
                         
-                        # If images exist AND not force mode, return cached paths
+                        # If images exist AND not force mode, check if we need to add Spicetify images
                         if len(existing_images) > 0 and not force:
-                            encoded_folder = quote(folder.name, safe='')
-                            result_paths = [
-                                f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
-                                for img in existing_images 
-                                if img.get('downloaded') and img.get('filename')
-                            ]
+                            # Check if Spicetify images are missing but we have artist_visuals to add
+                            has_spicetify = any(img.get("source") == "spicetify" for img in existing_images)
                             
-                            # Update cache
-                            state._artist_db_check_cache[artist] = (time.time(), result_paths)
-                            return result_paths
+                            if has_spicetify or not artist_visuals:
+                                # Already has Spicetify images OR no new Spicetify images to add -> return cached
+                                encoded_folder = quote(folder.name, safe='')
+                                result_paths = [
+                                    f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
+                                    for img in existing_images 
+                                    if img.get('downloaded') and img.get('filename')
+                                ]
+                                
+                                # Update cache
+                                state._artist_db_check_cache[artist] = (time.time(), result_paths)
+                                return result_paths
+                            else:
+                                # Missing Spicetify images AND we have new ones to add -> continue to process
+                                logger.debug(f"Adding Spicetify images to existing artist: {artist}")
                             
                     except Exception as e:
                         logger.debug(f"Failed to load cached artist images: {e}")
