@@ -177,7 +177,7 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             # Spotify-specific fields for Visual Mode and UI features
             'artist_id': track.get('artist_id'),  # For Visual Mode artist slideshow
             'url': track.get('url'),  # For 'open in Spotify' feature
-            'artist_visuals': track.get('artist_visuals'),  # GraphQL header/gallery images
+            'artist_visuals': _spicetify_state.get('artist_visuals'),  # GraphQL header/gallery images
         }
 
 
@@ -294,6 +294,7 @@ async def _handle_track_data(data: dict):
         _spicetify_state['audio_analysis'] = data.get('audio_analysis')
         _spicetify_state['colors'] = data.get('colors')
         _spicetify_state['track_uri'] = data.get('track_uri')
+        _spicetify_state['artist_visuals'] = data.get('artist_visuals')  # GraphQL header/gallery
         
         # Store normalized track ID for audio analysis validation
         # This allows frontend to verify analysis matches current track

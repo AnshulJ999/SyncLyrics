@@ -910,10 +910,16 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 logger.debug(f"Failed to create Spicetify enrichment task: {e}")
                     
                     # D. Artist Image Backfill (already non-blocking, just copied from old code)
+                    spotify_artist_id = result.get("artist_id")
+                    artist_visuals = result.get("artist_visuals")  # GraphQL header/gallery
+                    
+                    # Debug log to verify artist_visuals is being received
+                    if artist_visuals:
+                        header = artist_visuals.get('header_image')
+                        gallery = artist_visuals.get('gallery', [])
+                        logger.debug(f"Spicetify: Got artist_visuals for {artist} (header: {bool(header)}, gallery: {len(gallery)})")
+                    
                     if artist and artist not in state._artist_download_tracker:
-                        spotify_artist_id = result.get("artist_id")
-                        artist_visuals = result.get("artist_visuals")  # GraphQL header/gallery
-                        
                         async def background_artist_images_backfill():
                             """Background task to fetch artist images from all enabled sources"""
                             try:
