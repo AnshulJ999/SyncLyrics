@@ -1190,26 +1190,34 @@
                     
                     log('Artist visuals response (method 2):', response);
                     
-                    if (response?.data?.artistUnion?.visuals) {
-                        const visuals = response.data.artistUnion.visuals;
-                        
-                        if (visuals.headerImage?.sources?.length > 0) {
-                            const largest = visuals.headerImage.sources.reduce((a, b) => 
-                                ((a.width || 0) * (a.height || 0)) > ((b.width || 0) * (b.height || 0)) ? a : b
+                    const artistUnion = response?.data?.artistUnion;
+                    if (artistUnion) {
+                        // Header image is at artistUnion.headerImage.data.sources (NOT inside visuals)
+                        // Properties are maxWidth/maxHeight (NOT width/height)
+                        if (artistUnion.headerImage?.data?.sources?.length > 0) {
+                            const sources = artistUnion.headerImage.data.sources;
+                            const largest = sources.reduce((a, b) => 
+                                ((a.maxWidth || 0) * (a.maxHeight || 0)) > ((b.maxWidth || 0) * (b.maxHeight || 0)) ? a : b
                             );
                             result.header_image = {
                                 url: largest.url,
-                                width: largest.width,
-                                height: largest.height
+                                width: largest.maxWidth,
+                                height: largest.maxHeight
                             };
+                            log('Artist visuals: Found header image', largest.maxWidth, 'x', largest.maxHeight);
                         }
                         
-                        if (visuals.gallery?.items?.length > 0) {
-                            result.gallery = visuals.gallery.items
+                        // Gallery is at artistUnion.visuals.gallery.items
+                        if (artistUnion.visuals?.gallery?.items?.length > 0) {
+                            result.gallery = artistUnion.visuals.gallery.items
                                 .filter(item => item?.sources?.length > 0)
                                 .map(item => {
                                     const src = item.sources[0];
-                                    return { url: src.url, width: src.width, height: src.height };
+                                    return { 
+                                        url: src.url, 
+                                        width: src.width || src.maxWidth, 
+                                        height: src.height || src.maxHeight 
+                                    };
                                 });
                         }
                         
