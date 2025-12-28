@@ -382,10 +382,9 @@ export function exitVisualMode() {
     console.log('Exiting Visual Mode');
     setVisualModeActive(false);
 
-    // Stop slideshow
-    if (stopSlideshowFn) {
-        stopSlideshowFn();
-    }
+    // NOTE: Slideshow is now independent of visual mode
+    // We no longer stop slideshow when exiting visual mode
+    // The user controls slideshow via the dedicated button or 'S' key
 
     // Show lyrics container
     const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');

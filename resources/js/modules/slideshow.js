@@ -81,6 +81,19 @@ export function initSlideshow() {
     // Setup visibility change handler for background tab pause
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
+    // If slideshow was enabled, start it after a delay to allow track data to load
+    if (slideshowEnabled) {
+        console.log('[Slideshow] Was enabled, will auto-start after delay...');
+        setTimeout(() => {
+            if (slideshowEnabled && slideshowImagePool.length === 0) {
+                loadImagePoolForCurrentArtist();
+            }
+            if (slideshowEnabled && slideshowImagePool.length > 0 && !slideshowInterval) {
+                startSlideshow();
+            }
+        }, 2000);  // 2 second delay to let track data load
+    }
+    
     console.log(`[Slideshow] Initialized. Enabled: ${slideshowEnabled}`);
 }
 
@@ -247,18 +260,14 @@ export function handleArtistChange(newArtist, sameArtist) {
     if (!slideshowEnabled) return;
     
     if (sameArtist) {
-        // Same artist - continue slideshow, don't reset index
-        console.log(`[Slideshow] Same artist "${newArtist}" - continuing`);
-    } else {
-        // Different artist - reload image pool
-        console.log(`[Slideshow] Artist changed to "${newArtist}" - reloading images`);
-        
-        // Small delay to let artist images load first
-        setTimeout(() => {
-            loadImagePoolForCurrentArtist();
-            // Don't restart interval - let it continue naturally
-        }, 500);
+        // Same artist - continue slideshow exactly as-is, don't touch anything
+        console.log(`[Slideshow] Same artist "${newArtist}" - continuing without reset`);
+        return;  // Early return - do nothing for same artist
     }
+    
+    // Different artist - reload image pool (but don't restart interval if already running)
+    console.log(`[Slideshow] Artist changed to "${newArtist}" - will reload images`);
+    // Note: loadImagePoolForCurrentArtist() is called from main.js AFTER artist images are fetched
 }
 
 // ========== SLIDESHOW CONTROL ==========
@@ -267,6 +276,11 @@ export function handleArtistChange(newArtist, sameArtist) {
  * Start slideshow - begin cycling through images
  */
 export function startSlideshow() {
+    // Only start if slideshow is enabled
+    if (!slideshowEnabled) {
+        return;
+    }
+    
     if (slideshowInterval) {
         clearInterval(slideshowInterval);
     }

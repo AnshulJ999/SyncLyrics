@@ -429,8 +429,10 @@ async function updateLoop() {
                             setCurrentArtistImages(images);
                         }
                         
-                        // Update slideshow image pool after artist images are loaded
+                        // Update slideshow image pool and restart if enabled
                         loadImagePoolForCurrentArtist();
+                        // Slideshow should continue/restart with new images
+                        startSlideshow();
                     });
                 }
             }
