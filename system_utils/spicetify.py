@@ -93,11 +93,11 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         # Check staleness
         age_ms = (time.time() * 1000) - _spicetify_state['last_update']
         if age_ms > METADATA_STALE_MS:
-            # Throttle stale log to once per 20 seconds to avoid spam
+            # Throttle stale log to once per 120 seconds to avoid spam
             if not hasattr(get_current_song_meta_data_spicetify, '_last_stale_log'):
                 get_current_song_meta_data_spicetify._last_stale_log = 0
             now = time.time()
-            if now - get_current_song_meta_data_spicetify._last_stale_log > 20:
+            if now - get_current_song_meta_data_spicetify._last_stale_log > 120:
                 logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
                 get_current_song_meta_data_spicetify._last_stale_log = now
             return None
@@ -277,11 +277,11 @@ async def _handle_position_update(data: dict):
     # Use server time for freshness (more reliable than client timestamp)
     _spicetify_state['last_update'] = time.time() * 1000
     
-    # Debug log throttled to once per 10 seconds to reduce spam
+    # Debug log throttled to once per 60 seconds to reduce spam
     if not hasattr(_handle_position_update, '_last_pos_log'):
         _handle_position_update._last_pos_log = 0
     now = time.time()
-    if now - _handle_position_update._last_pos_log > 10:
+    if now - _handle_position_update._last_pos_log > 60:
         logger.debug(f"Spicetify position: {data.get('position_ms', 0)}ms, playing={data.get('is_playing')}")
         _handle_position_update._last_pos_log = now
 
