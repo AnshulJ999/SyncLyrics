@@ -568,10 +568,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 saved_images = existing_metadata.get("images", [])
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
-                # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
-                # Store original list of existing filenames to identify new downloads
+                # Store original list of existing filenames (used for deduplication check)
                 existing_filenames = {img.get('filename') for img in saved_images if img.get('filename')}
-                newly_downloaded_files = []  # Track (file_path, filename) tuples for cleanup
                 
                 # Simple deduplication set (by URL)
                 existing_urls = {img.get('url') for img in saved_images if img.get('url')}
@@ -840,59 +838,20 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         existing_urls.add(url)  # Mark as processed
                         metadata_changed = True  # New image added or upgraded, need to save
-                        
-                        # Track for cleanup if validation fails
-                        if filename not in existing_filenames:
-                            newly_downloaded_files.append((final_file_path, filename))
                 
-                # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
-                # DEBOUNCE FIX: Use retry loop to match first validation block
-                # This prevents false aborts due to SMTC lag after downloads complete
-                final_validation_passed = False
-                for final_retry in range(4):
-                    try:
-                        # REMOVED: get_current_song_meta_data._last_check_time = 0
-                        # Don't bust global cache - causes feedback loops
-                        current_metadata = await get_current_song_meta_data()
-                        if current_metadata:
-                            current_artist = current_metadata.get("artist", "")
-                            current_artist_id = current_metadata.get("artist_id")
-                            
-                            name_changed = current_artist != original_artist
-                            id_mismatch_is_critical = (
-                                original_spotify_id is not None and 
-                                current_artist_id is not None and 
-                                current_artist_id != original_spotify_id
-                            )
-                            
-                            if name_changed or id_mismatch_is_critical:
-                                if final_retry < 3:
-                                    await asyncio.sleep(0.5)
-                                    continue
-                                else:
-                                    logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) before metadata save, discarding")
-                                    
-                                    # CRITICAL FIX: Clean up orphaned files that were downloaded but validation failed
-                                    cleanup_count = 0
-                                    for file_path, filename in newly_downloaded_files:
-                                        try:
-                                            if file_path.exists():
-                                                file_path.unlink()
-                                                cleanup_count += 1
-                                                logger.debug(f"Cleaned up orphaned file: {filename}")
-                                        except Exception as e:
-                                            logger.debug(f"Failed to clean up orphaned file {filename}: {e}")
-                                    
-                                    if cleanup_count > 0:
-                                        logger.info(f"Cleaned up {cleanup_count} orphaned image file(s) after validation failure")
-                                    
-                                    return []  # Don't save metadata for wrong artist
-                            
-                            final_validation_passed = True
-                            break
-                    except Exception as e:
-                        logger.debug(f"Failed to verify artist before metadata save (retry {final_retry}): {e}")
-                        break
+                # INFORMATIONAL: Check if song changed during download (for logging only)
+                # Images are saved for original_artist regardless of current playback,
+                # since all API calls used original parameters and folder was created for original artist
+                try:
+                    current_metadata = await get_current_song_meta_data()
+                    if current_metadata:
+                        current_artist = current_metadata.get("artist", "")
+                        if current_artist != original_artist:
+                            # Log that we saved images for a different artist than currently playing
+                            # This is EXPECTED behavior - images are correct for original_artist
+                            logger.info(f"Song changed during download: saved artist images for '{original_artist}' (now playing: '{current_artist}'). Images are correct.")
+                except Exception as e:
+                    logger.debug(f"Could not check current song after download: {e}")
                 
                 # OPTIMIZATION: Only save metadata if it actually changed OR if file doesn't exist
                 # This prevents unnecessary disk writes when ensure_artist_image_db runs but finds no new images
