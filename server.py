@@ -958,8 +958,14 @@ async def get_album_art_options():
             # Check if this is artist images metadata (type: "artist_images")
             if artist_metadata.get("type") == "artist_images":
                 artist_images = artist_metadata.get("images", [])
-                artist_preferred = artist_metadata.get("preferred_provider")
                 folder_name = artist_folder.name
+                
+                # CRITICAL FIX: Read artist image preference from ALBUM folder, not artist folder
+                # Preferences are now stored per-album as preferred_artist_image_filename
+                # The db_result contains album metadata which has this field
+                album_preferred_artist_filename = None
+                if db_result and db_result.get("metadata"):
+                    album_preferred_artist_filename = db_result["metadata"].get("preferred_artist_image_filename")
                 
                 # Convert artist images to options format
                 # CRITICAL FIX: Count images per source to create unique provider names when needed
@@ -1008,15 +1014,10 @@ async def get_album_art_options():
                     height = img.get("height", 0)
                     resolution = f"{width}x{height}" if width and height else "unknown"
                     
-                    # Check if this is the preferred artist image
-                    # Match by provider_name (with or without "(Artist)" suffix for backward compatibility), source, or URL
-                    # Also check if saved preference matches the internal format with "(Artist)" suffix
-                    is_preferred = (artist_preferred == provider_name or 
-                                  artist_preferred == f"{provider_name} (Artist)" or
-                                  artist_preferred == source or
-                                  artist_preferred == f"{source} (Artist)" or
-                                  artist_preferred == img_url or
-                                  (not preferred_provider and artist_preferred and source in artist_preferred))
+                    # CRITICAL FIX: Check preferred by FILENAME from album folder preference
+                    # This uses the new per-album system (preferred_artist_image_filename in album metadata)
+                    # Match by filename which is the most reliable identifier
+                    is_preferred = (album_preferred_artist_filename == filename) if album_preferred_artist_filename else False
                     
                     options.append({
                         "provider": provider_name,
@@ -1031,10 +1032,13 @@ async def get_album_art_options():
                     })
                 
                 # CRITICAL FIX: Update preferred_provider to reflect artist image preference if set
-                # This ensures the response field accurately reflects the current selection
-                # Priority: Artist image preference > Album art preference (artist images override album art)
-                if artist_preferred:
-                    preferred_provider = artist_preferred
+                # Use the album folder preference (filename-based) to find the source name for display
+                if album_preferred_artist_filename:
+                    # Find the source name for this filename to set as preferred_provider for API response
+                    for img in artist_images:
+                        if img.get("filename") == album_preferred_artist_filename:
+                            preferred_provider = img.get("source", album_preferred_artist_filename)
+                            break
         except Exception as e:
             logger.debug(f"Failed to load artist images metadata: {e}")
     
@@ -1303,6 +1307,11 @@ async def set_album_art_preference():
             db_metadata["preferred_provider"] = provider_name
             db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
             
+            # CRITICAL FIX: Clear artist image preference from album folder when album art is selected
+            # The preference is stored as preferred_artist_image_filename in the album folder (per-album behavior)
+            # This ensures album art takes priority over any previously selected artist image
+            db_metadata["preferred_artist_image_filename"] = None
+            
             # CRITICAL FIX: Clear artist image preference when album art is selected (mutual exclusion)
             # This ensures that selecting album art overrides any previously selected artist image
             # The user's last selection (album art) should take priority
@@ -1487,9 +1496,15 @@ async def clear_album_art_preference():
                     # CRITICAL FIX: Explicitly set to None so save_album_db_metadata knows to delete it
                     # (pop() would be restored by safety logic in save function)
                     album_data["preferred_provider"] = None
+                    # CRITICAL FIX: Also clear artist image preference from album folder
+                    # This is stored as preferred_artist_image_filename (per-album behavior)
+                    album_data["preferred_artist_image_filename"] = None
                     album_data["last_accessed"] = datetime.utcnow().isoformat() + "Z"
                     save_album_db_metadata(album_folder, album_data)
-                    logger.info(f"Cleared album art preference for {artist} - {album_or_title}")
+                    logger.info(f"Cleared album art and artist image preference for {artist} - {album_or_title}")
+                    
+                    # CRITICAL FIX: Clear artist image cache to ensure changes take effect immediately
+                    clear_artist_image_cache(artist)
             except Exception as e:
                 logger.error(f"Error clearing album art preference: {e}")
 
