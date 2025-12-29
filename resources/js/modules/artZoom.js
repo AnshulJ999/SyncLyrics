@@ -11,7 +11,7 @@
  */
 
 import { showToast } from './dom.js';
-import { currentArtistImages, slideshowImagePool, slideshowEnabled, lastTrackInfo } from './state.js';
+import { currentArtistImages, slideshowImagePool, slideshowEnabled, lastTrackInfo, slideshowConfig } from './state.js';
 
 // ========== CONSTANTS ==========
 const MIN_ZOOM = 0.3;    // 30% - allow zooming out a bit
@@ -192,7 +192,8 @@ function applyCurrentImage() {
     newImg.style.backgroundImage = `url('${imageUrl}')`;
     newImg.style.backgroundPosition = 'center';
     newImg.style.opacity = '0';
-    newImg.style.transition = 'opacity 0.3s ease';
+    const transitionDuration = slideshowConfig.transitionDuration || 0.4;
+    newImg.style.transition = `opacity ${transitionDuration}s ease`;
     newImg.style.zIndex = '1';
     
     // Apply background fill mode from localStorage (user's preference)
@@ -223,11 +224,12 @@ function applyCurrentImage() {
     });
     
     // Remove old art-mode images and clear background after transition
+    const cleanupDelay = (transitionDuration + 1.1) * 1000;
     setTimeout(() => {
         const oldImages = bg.querySelectorAll('.art-mode-image:not(:last-child)');
         oldImages.forEach(img => img.remove());
         bg.style.backgroundImage = 'none';
-    }, 350);
+    }, cleanupDelay);
     
     // Show toast with correct count based on which pool we're using
     showToast(`Image ${currentImageIndex + 1}/${imagePool.length}`, 'success', 800);
@@ -244,7 +246,12 @@ const preloadedUrls = new Set();
  * DOM-attached images are cached more persistently than new Image()
  */
 function preloadAdjacentImages() {
-    if (currentArtistImages.length === 0) return;
+    // Use the same pool that applyCurrentImage uses
+    const imagePool = slideshowEnabled && slideshowImagePool.length > 0 
+        ? slideshowImagePool 
+        : currentArtistImages;
+    
+    if (imagePool.length === 0) return;
     
     const PRELOAD_RANGE = 3;  // Preload 3 images in each direction
     
@@ -260,8 +267,8 @@ function preloadAdjacentImages() {
     for (let offset = -PRELOAD_RANGE; offset <= PRELOAD_RANGE; offset++) {
         if (offset === 0) continue;  // Skip current (already loaded)
         
-        const index = (currentImageIndex + offset + currentArtistImages.length) % currentArtistImages.length;
-        const url = currentArtistImages[index];
+        const index = (currentImageIndex + offset + imagePool.length) % imagePool.length;
+        const url = imagePool[index];
         
         // Skip if already preloaded
         if (preloadedUrls.has(url)) continue;

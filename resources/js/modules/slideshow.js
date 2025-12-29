@@ -149,6 +149,11 @@ function setupGlobalEdgeTapHandler() {
             return;
         }
         
+        // Skip if art-only mode is active - artZoom handles edge taps there
+        if (document.body.classList.contains('art-only-mode')) {
+            return;
+        }
+        
         const x = e.touches[0].clientX;
         const screenWidth = window.innerWidth;
         
