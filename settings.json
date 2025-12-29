@@ -103,7 +103,7 @@
     "slideshow.ken_burns_enabled": true,
     "slideshow.ken_burns_intensity": "subtle",
     "slideshow.shuffle": true,
-    "slideshow.transition_duration": 0.8,
+    "slideshow.transition_duration": 1.0,
     "spotify.cache.enabled": true,
     "spotify.cache.metadata_ttl": 2.0,
     "spotify.polling.fast_interval": 2.0,

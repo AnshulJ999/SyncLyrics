@@ -193,15 +193,36 @@
 .slideshow-image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 8px;
+    gap: 6px;
     overflow-y: auto;
-    padding: 4px;
+    padding: 2px;
     width: 100%;
     grid-auto-rows: min-content;  /* Fit content exactly to prevent overlap */
     align-items: start;  /* Align items to top of their cells */
     /* Prevent pull-to-refresh */
     overscroll-behavior: contain;
     touch-action: manipulation;
+    /* Auto-hide scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* Webkit scrollbar - auto-hide effect */
+.slideshow-image-grid::-webkit-scrollbar {
+    width: 6px;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .slideshow-image-card {
@@ -219,10 +240,12 @@
     border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Selected state - currently disabled (excluded styling is sufficient)
 .slideshow-image-card.selected {
     border-color: rgba(59, 130, 246, 0.8);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
 }
+*/
 
 .slideshow-image-card.excluded {
     opacity: 0.4;
@@ -294,7 +317,11 @@
     }
     
     .slideshow-image-grid {
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        /* Old: auto-fill with minmax for responsive columns */
+        /* grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); */
+        
+        /* Fixed 4 columns for consistent layout */
+        grid-template-columns: repeat(4, 1fr);
         flex: 1;
         min-height: 0;
     }
