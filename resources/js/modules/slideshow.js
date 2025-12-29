@@ -1036,13 +1036,55 @@ function renderImageGrid() {
         allImages.push({ url: albumArt, source: 'Album Art', key: 'album_art' });
     }
     
-    // Add artist images (use URL as key - stable local paths)
-    let artistIdx = 0;
+    // Extract provider from URL and build smart naming
+    // URL format: /api/album-art/image/Artist/fanart_tv_1.jpg
+    // Provider mapping for display names
+    const providerDisplayNames = {
+        'fanart': 'FanArt',
+        'fanart_tv': 'FanArt',
+        'deezer': 'Deezer',
+        'spotify': 'Spotify',
+        'theaudiodb': 'AudioDB',
+        'audiodb': 'AudioDB',
+        'spicetify': 'Spicetify',
+        'lastfm': 'LastFM',
+        'last_fm': 'LastFM',
+        'custom': 'Custom',
+        'Custom': 'Custom',
+        'Unknown': 'Custom',
+        'itunes': 'iTunes'
+    };
+    
+    // First pass: count images per provider
+    const providerCounts = {};
+    const artistImagesWithProvider = [];
+    
     currentArtistImages.forEach((img) => {
-        if (img !== albumArt) {  // Avoid duplicate
-            allImages.push({ url: img, source: `Artist ${artistIdx + 1}`, key: img });
-            artistIdx++;
-        }
+        if (img === albumArt) return;  // Skip duplicate
+        
+        // Extract filename from URL
+        const filename = img.split('/').pop() || '';
+        // Extract provider prefix (everything before last underscore + number)
+        // e.g., "fanart_tv_1.jpg" -> "fanart_tv", "deezer_2.jpg" -> "deezer"
+        const match = filename.match(/^([a-z_]+?)(?:_\d+)?\.(?:jpg|png|webp|jpeg)$/i);
+        const providerKey = match ? match[1].toLowerCase() : 'unknown';
+        const displayName = providerDisplayNames[providerKey] || providerKey.charAt(0).toUpperCase() + providerKey.slice(1);
+        
+        providerCounts[displayName] = (providerCounts[displayName] || 0) + 1;
+        artistImagesWithProvider.push({ url: img, provider: displayName });
+    });
+    
+    // Second pass: assign names with numbers only if provider has multiple
+    const providerIndices = {};
+    artistImagesWithProvider.forEach(({ url, provider }) => {
+        providerIndices[provider] = (providerIndices[provider] || 0) + 1;
+        const count = providerCounts[provider];
+        const idx = providerIndices[provider];
+        
+        // Only add number if this provider has multiple images
+        const source = count > 1 ? `${provider} ${idx}` : provider;
+        
+        allImages.push({ url, source, key: url });
     });
     
     // Load excluded images from storage

@@ -288,7 +288,7 @@
     font-size: 0.7rem;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.9);
-    text-transform: uppercase;
+    /* Title case defined in JS, no transform needed */
     letter-spacing: 0.3px;
 }
 
