@@ -366,11 +366,9 @@ export function enterVisualMode() {
             applyBackgroundStyle('sharp');
         }
     }
-
-    // Start slideshow if available
-    if (currentArtistImages.length > 0 && !displayConfig.minimal && startSlideshowFn) {
-        startSlideshowFn('artist');
-    }
+    
+    // NOTE: Slideshow is completely independent of visual mode
+    // User controls slideshow via dedicated button, 'S' key, or 4-finger gesture
 }
 
 /**

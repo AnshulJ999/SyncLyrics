@@ -23,6 +23,7 @@ import {
     currentSlideIndex,
     currentArtistImages,
     lastTrackInfo,
+    displayConfig,
     setSlideshowEnabled,
     setSlideshowInterval,
     setSlideshowImagePool,
@@ -565,9 +566,22 @@ function showSlide(index) {
     newImg.style.backgroundImage = `url("${imageUrl}")`;
     newImg.style.transition = `opacity ${slideshowConfig.transitionDuration}s ease`;
     
-    // Apply Ken Burns effect if enabled
-    if (slideshowConfig.kenBurnsEnabled) {
-        applyKenBurnsEffect(newImg);
+    // Apply background fill mode from localStorage (user's preference)
+    const fillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+    switch (fillMode) {
+        case 'contain':
+            newImg.style.backgroundSize = 'contain';
+            break;
+        case 'stretch':
+            newImg.style.backgroundSize = '100% 100%';
+            break;
+        case 'original':
+            newImg.style.backgroundSize = 'auto';
+            break;
+        case 'cover':
+        default:
+            newImg.style.backgroundSize = 'cover';
+            break;
     }
     
     bgContainer.appendChild(newImg);
@@ -576,11 +590,21 @@ function showSlide(index) {
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             newImg.classList.add('active');
+            
+            // Apply Ken Burns effect AFTER element is active (visible)
+            // This ensures the animation starts from the visible state
+            if (slideshowConfig.kenBurnsEnabled) {
+                // Small delay to let the opacity transition start
+                setTimeout(() => {
+                    applyKenBurnsEffect(newImg);
+                }, 50);
+            }
         });
     });
     
     // Remove old images after transition completes
-    const cleanupDelay = (slideshowConfig.transitionDuration + 0.5) * 1000;
+    // Use longer delay to ensure smooth transitions
+    const cleanupDelay = (slideshowConfig.transitionDuration + 0.6) * 1000;
     setTimeout(() => {
         const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(:last-child)');
         oldImages.forEach(img => img.remove());
