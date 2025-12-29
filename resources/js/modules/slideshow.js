@@ -134,29 +134,44 @@ let globalTouchStartY = 0;
 
 /**
  * Setup global edge tap handler for slideshow cycling in normal mode
- * This works regardless of art-only mode, as long as slideshow is active
+ * Attached to document with capture:true to intercept touches before other handlers
  */
 function setupGlobalEdgeTapHandler() {
-    const bgLayer = document.getElementById('background-layer');
-    if (!bgLayer) {
-        console.warn('[Slideshow] Background layer not found for edge tap handler');
-        return;
-    }
-    
-    bgLayer.addEventListener('touchstart', (e) => {
+    // Attach to document for reliable capture
+    document.addEventListener('touchstart', (e) => {
         // Only track if slideshow is active and single touch
         if (!slideshowEnabled || e.touches.length !== 1) return;
         
-        globalTouchStartTime = Date.now();
-        globalTouchStartX = e.touches[0].clientX;
-        globalTouchStartY = e.touches[0].clientY;
-    }, { passive: true });
+        // Ignore touches on interactive elements
+        const target = e.target;
+        if (target.closest('button, a, input, .control-btn, .modal, .lyrics-container, .album-art')) {
+            return;
+        }
+        
+        const x = e.touches[0].clientX;
+        const screenWidth = window.innerWidth;
+        
+        // Only track if touch is on edge
+        if (x < EDGE_TAP_SIZE || x > screenWidth - EDGE_TAP_SIZE) {
+            globalTouchStartTime = Date.now();
+            globalTouchStartX = x;
+            globalTouchStartY = e.touches[0].clientY;
+        }
+    }, { passive: true, capture: true });
     
-    bgLayer.addEventListener('touchend', (e) => {
+    document.addEventListener('touchend', (e) => {
+        // Only process if we tracked a start
+        if (globalTouchStartTime === 0) return;
+        
         // Only process if slideshow is active
-        if (!slideshowEnabled) return;
+        if (!slideshowEnabled) {
+            globalTouchStartTime = 0;
+            return;
+        }
         
         const duration = Date.now() - globalTouchStartTime;
+        globalTouchStartTime = 0;  // Reset
+        
         if (duration > TAP_DURATION_MAX) return;  // Not a tap
         
         // Check if it was a stationary tap (minimal movement)
@@ -186,9 +201,9 @@ function setupGlobalEdgeTapHandler() {
             console.log('[Slideshow] Edge tap: next');
             return;
         }
-    }, { passive: true });
+    }, { passive: true, capture: true });
     
-    console.log('[Slideshow] Global edge tap handler attached');
+    console.log('[Slideshow] Global edge tap handler attached to document');
 }
 
 // ========== BUTTON & TOGGLE ==========
