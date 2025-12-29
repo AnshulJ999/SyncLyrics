@@ -334,9 +334,10 @@ export function loadImagePoolForCurrentArtist() {
     // Build image pool: album art (index 0) + artist images
     const pool = [];
     
-    // Add currently displayed album art as first image (if not excluded)
+    // Add currently displayed album art as first image
+    // Use 'album_art' key for exclusion since URLs change between tracks
     const albumArtUrl = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path || '';
-    if (albumArtUrl && !excluded.includes(albumArtUrl)) {
+    if (albumArtUrl && !excluded.includes('album_art')) {
         pool.push(albumArtUrl);
     }
     
@@ -600,6 +601,10 @@ function showSlide(index) {
     }
     
     bgContainer.appendChild(newImg);
+    
+    // Clear base layer background to prevent flicker on track change
+    // Slideshow images overlay on top, so base layer should be empty
+    bgContainer.style.backgroundImage = 'none';
     
     // Fade in new image (allow layout to complete first)
     requestAnimationFrame(() => {
@@ -1026,15 +1031,17 @@ function renderImageGrid() {
     const albumArt = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path;
     const allImages = [];
     
-    // Add album art first
+    // Add album art first (use 'album_art' key for exclusion)
     if (albumArt) {
-        allImages.push({ url: albumArt, source: 'Album Art' });
+        allImages.push({ url: albumArt, source: 'Album Art', key: 'album_art' });
     }
     
-    // Add artist images
-    currentArtistImages.forEach((img, idx) => {
+    // Add artist images (use URL as key - stable local paths)
+    let artistIdx = 0;
+    currentArtistImages.forEach((img) => {
         if (img !== albumArt) {  // Avoid duplicate
-            allImages.push({ url: img, source: `Artist ${idx + 1}` });
+            allImages.push({ url: img, source: `Artist ${artistIdx + 1}`, key: img });
+            artistIdx++;
         }
     });
     
@@ -1042,8 +1049,8 @@ function renderImageGrid() {
     loadExcludedImages();
     const excluded = excludedImages[artistName] || [];
     
-    // Count included images
-    const includedCount = allImages.filter(img => !excluded.includes(img.url)).length;
+    // Count included images (using keys)
+    const includedCount = allImages.filter(img => !excluded.includes(img.key)).length;
     if (countEl) {
         countEl.textContent = `${includedCount}/${allImages.length} images`;
     }
@@ -1052,7 +1059,7 @@ function renderImageGrid() {
     allImages.forEach(img => {
         const card = document.createElement('div');
         card.className = 'slideshow-image-card';
-        if (excluded.includes(img.url)) {
+        if (excluded.includes(img.key)) {
             card.classList.add('excluded');
         } else {
             card.classList.add('selected');
@@ -1063,22 +1070,37 @@ function renderImageGrid() {
         imgEl.loading = 'lazy';
         imgEl.alt = img.source;
         
+        // Add resolution when image loads
+        imgEl.onload = function() {
+            const resEl = card.querySelector('.slideshow-image-resolution');
+            if (!resEl) {
+                const res = document.createElement('span');
+                res.className = 'slideshow-image-resolution';
+                res.textContent = `${this.naturalWidth}×${this.naturalHeight}`;
+                card.querySelector('.slideshow-image-card-overlay')?.appendChild(res);
+            }
+        };
+        
         const overlay = document.createElement('div');
         overlay.className = 'slideshow-image-card-overlay';
-        overlay.textContent = img.source;
+        
+        const sourceEl = document.createElement('span');
+        sourceEl.className = 'slideshow-image-source';
+        sourceEl.textContent = img.source;
+        overlay.appendChild(sourceEl);
         
         card.appendChild(imgEl);
         card.appendChild(overlay);
         
         // Click to toggle include/exclude
         card.addEventListener('click', () => {
-            toggleImageExclusion(img.url, artistName);
+            toggleImageExclusion(img.key, artistName);
             card.classList.toggle('excluded');
             card.classList.toggle('selected');
             
             // Update count
             const newExcluded = excludedImages[artistName] || [];
-            const newIncluded = allImages.filter(i => !newExcluded.includes(i.url)).length;
+            const newIncluded = allImages.filter(i => !newExcluded.includes(i.key)).length;
             if (countEl) {
                 countEl.textContent = `${newIncluded}/${allImages.length} images`;
             }
