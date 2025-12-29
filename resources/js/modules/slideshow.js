@@ -59,6 +59,10 @@ const KEN_BURNS_DIRECTIONS = [
 let lastSlideshowArtist = null;
 let resumeTimer = null;
 
+// Fisher-Yates shuffle state
+let shuffledOrder = [];      // Array of indices in shuffled order
+let shufflePosition = 0;     // Current position in shuffled order
+
 // ========== INITIALIZATION ==========
 
 /**
@@ -80,6 +84,9 @@ export function initSlideshow() {
     
     // Setup visibility change handler for background tab pause
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Setup global edge tap handler for slideshow cycling in normal mode
+    setupGlobalEdgeTapHandler();
     
     // If slideshow was enabled, start it after a delay to allow track data to load
     if (slideshowEnabled) {
@@ -112,6 +119,75 @@ function handleVisibilityChange() {
             resumeSlideshow();
         }
     }
+}
+
+// ========== GLOBAL EDGE TAP HANDLER ==========
+// Constants for edge detection
+const EDGE_TAP_SIZE = 100;  // Pixels from edge
+const TAP_DURATION_MAX = 300;  // Max ms for a tap
+
+// Global edge tap state
+let globalTouchStartTime = 0;
+let globalTouchStartX = 0;
+let globalTouchStartY = 0;
+
+/**
+ * Setup global edge tap handler for slideshow cycling in normal mode
+ * This works regardless of art-only mode, as long as slideshow is active
+ */
+function setupGlobalEdgeTapHandler() {
+    const bgLayer = document.getElementById('background-layer');
+    if (!bgLayer) {
+        console.warn('[Slideshow] Background layer not found for edge tap handler');
+        return;
+    }
+    
+    bgLayer.addEventListener('touchstart', (e) => {
+        // Only track if slideshow is active and single touch
+        if (!slideshowEnabled || e.touches.length !== 1) return;
+        
+        globalTouchStartTime = Date.now();
+        globalTouchStartX = e.touches[0].clientX;
+        globalTouchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    bgLayer.addEventListener('touchend', (e) => {
+        // Only process if slideshow is active
+        if (!slideshowEnabled) return;
+        
+        const duration = Date.now() - globalTouchStartTime;
+        if (duration > TAP_DURATION_MAX) return;  // Not a tap
+        
+        // Check if it was a stationary tap (minimal movement)
+        const endX = e.changedTouches[0]?.clientX || globalTouchStartX;
+        const endY = e.changedTouches[0]?.clientY || globalTouchStartY;
+        const moveDistance = Math.sqrt(
+            Math.pow(endX - globalTouchStartX, 2) + 
+            Math.pow(endY - globalTouchStartY, 2)
+        );
+        
+        if (moveDistance > 30) return;  // Too much movement, not a tap
+        
+        const screenWidth = window.innerWidth;
+        
+        // Left edge tap - previous image
+        if (globalTouchStartX < EDGE_TAP_SIZE) {
+            previousSlide();
+            pauseSlideshow('manual');  // Pause auto-advance
+            console.log('[Slideshow] Edge tap: previous');
+            return;
+        }
+        
+        // Right edge tap - next image
+        if (globalTouchStartX > screenWidth - EDGE_TAP_SIZE) {
+            advanceSlide();
+            pauseSlideshow('manual');  // Pause auto-advance
+            console.log('[Slideshow] Edge tap: next');
+            return;
+        }
+    }, { passive: true });
+    
+    console.log('[Slideshow] Global edge tap handler attached');
 }
 
 // ========== BUTTON & TOGGLE ==========
@@ -397,6 +473,24 @@ export function checkSlideshowPause() {
 // ========== SLIDE DISPLAY ==========
 
 /**
+ * Fisher-Yates shuffle - creates an array of indices in random order
+ * Each image will be shown exactly once before reshuffling
+ */
+function shuffleImagePool() {
+    const n = slideshowImagePool.length;
+    shuffledOrder = Array.from({ length: n }, (_, i) => i);
+    
+    // Fisher-Yates shuffle algorithm
+    for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledOrder[i], shuffledOrder[j]] = [shuffledOrder[j], shuffledOrder[i]];
+    }
+    
+    shufflePosition = 0;
+    console.log(`[Slideshow] Shuffled ${n} images`);
+}
+
+/**
  * Advance to next slide (exported for edge tap cycling)
  */
 export function advanceSlide() {
@@ -404,8 +498,20 @@ export function advanceSlide() {
     
     let nextIndex;
     if (slideshowConfig.shuffle) {
-        // Random (true shuffle - may repeat, but simple)
-        nextIndex = Math.floor(Math.random() * slideshowImagePool.length);
+        // Fisher-Yates: cycle through shuffled order
+        if (shuffledOrder.length !== slideshowImagePool.length) {
+            // Pool changed, reshuffle
+            shuffleImagePool();
+        }
+        
+        shufflePosition = (shufflePosition + 1) % shuffledOrder.length;
+        
+        // Reshuffle when we've shown all images
+        if (shufflePosition === 0) {
+            shuffleImagePool();
+        }
+        
+        nextIndex = shuffledOrder[shufflePosition];
     } else {
         // Sequential
         nextIndex = (currentSlideIndex + 1) % slideshowImagePool.length;
@@ -423,8 +529,13 @@ export function previousSlide() {
     
     let prevIndex;
     if (slideshowConfig.shuffle) {
-        // Random
-        prevIndex = Math.floor(Math.random() * slideshowImagePool.length);
+        // Fisher-Yates: go backwards through shuffled order
+        if (shuffledOrder.length !== slideshowImagePool.length) {
+            shuffleImagePool();
+        }
+        
+        shufflePosition = (shufflePosition - 1 + shuffledOrder.length) % shuffledOrder.length;
+        prevIndex = shuffledOrder[shufflePosition];
     } else {
         // Sequential backwards
         prevIndex = (currentSlideIndex - 1 + slideshowImagePool.length) % slideshowImagePool.length;
@@ -637,35 +748,40 @@ export function setupControlCenter() {
         });
     });
     
-    // Custom button - toggles input visibility
+    // Custom button - applies immediately with default or current value
     const customBtn = document.getElementById('slideshow-custom-btn');
     const customInput = document.getElementById('slideshow-custom-timing');
     if (customBtn && customInput) {
         customBtn.addEventListener('click', () => {
-            const isHidden = customInput.classList.contains('hidden');
-            customInput.classList.toggle('hidden', !isHidden);
-            if (isHidden) {
-                customInput.focus();
-                customInput.select();
-            }
+            // Get current value or default to 6
+            const currentValue = parseInt(customInput.value) || 6;
+            
+            // Apply custom timing immediately
+            handleTimingClick(currentValue, true);
+            
+            // Show input for adjustment
+            customInput.classList.remove('hidden');
+            customInput.value = currentValue;
+            customInput.focus();
+            customInput.select();
         });
         
-        // Custom input handler
-        customInput.addEventListener('change', (e) => {
-            const value = parseInt(e.target.value);
+        // Apply on blur (when input loses focus)
+        customInput.addEventListener('blur', () => {
+            const value = parseInt(customInput.value);
             if (value >= 1 && value <= 600) {
-                handleTimingClick(value, true);  // true = is custom value
+                handleTimingClick(value, true);
+            } else if (customInput.value === '' || isNaN(value)) {
+                // If empty or invalid, default to 6
+                handleTimingClick(6, true);
+                customInput.value = 6;
             }
         });
         
-        // Enter key in input
+        // Enter key blurs the input (which triggers apply)
         customInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                const value = parseInt(e.target.value);
-                if (value >= 1 && value <= 600) {
-                    handleTimingClick(value, true);
-                    customInput.blur();
-                }
+                customInput.blur();
             }
         });
     }
