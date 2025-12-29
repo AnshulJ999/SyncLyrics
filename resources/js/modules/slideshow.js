@@ -425,7 +425,7 @@ export function startSlideshow() {
 }
 
 /**
- * Stop slideshow - clear interval and cleanup
+ * Stop slideshow - clear interval and cleanup with smooth transition
  */
 export function stopSlideshow() {
     if (slideshowInterval) {
@@ -438,15 +438,25 @@ export function stopSlideshow() {
         resumeTimer = null;
     }
     
-    // Clear slideshow images from background
-    clearSlideshowImages();
+    const bgContainer = document.getElementById('background-layer');
     
-    // Restore proper background (album art or preferred artist image)
+    // Restore proper background first (underneath slideshow images)
     // updateBackground() handles all the logic to determine what should be shown
     updateBackground();
     
+    // Fade out slideshow images for smooth transition
+    if (bgContainer) {
+        const slideshowImages = bgContainer.querySelectorAll('.slideshow-image');
+        slideshowImages.forEach(img => img.classList.remove('active'));  // opacity → 0
+        
+        // Remove slideshow images after fade completes
+        setTimeout(() => {
+            clearSlideshowImages();
+        }, (slideshowConfig.transitionDuration || 0.8) * 1000);
+    }
+    
     setSlideshowPaused(false);
-    console.log('[Slideshow] Stopped');
+    console.log('[Slideshow] Stopped (fading out)');
 }
 
 /**
