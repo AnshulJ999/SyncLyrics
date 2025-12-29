@@ -190,11 +190,28 @@ function applyCurrentImage() {
     newImg.style.width = '100%';
     newImg.style.height = '100%';
     newImg.style.backgroundImage = `url('${imageUrl}')`;
-    newImg.style.backgroundSize = 'cover';
     newImg.style.backgroundPosition = 'center';
     newImg.style.opacity = '0';
     newImg.style.transition = 'opacity 0.3s ease';
     newImg.style.zIndex = '1';
+    
+    // Apply background fill mode from localStorage (user's preference)
+    const fillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+    switch (fillMode) {
+        case 'contain':
+            newImg.style.backgroundSize = 'contain';
+            break;
+        case 'stretch':
+            newImg.style.backgroundSize = '100% 100%';
+            break;
+        case 'original':
+            newImg.style.backgroundSize = 'auto';
+            break;
+        case 'cover':
+        default:
+            newImg.style.backgroundSize = 'cover';
+            break;
+    }
     
     bg.appendChild(newImg);
     

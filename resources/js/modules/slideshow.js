@@ -33,6 +33,7 @@ import {
 
 import { showToast } from './dom.js';
 import { isManualArtistImageActive } from './artZoom.js';
+import { updateBackground } from './background.js';
 
 // ========== CONSTANTS ==========
 const RESUME_DELAY_RATIO = 0.5;  // Resume after half of interval when manual browsing stops
@@ -430,12 +431,9 @@ export function stopSlideshow() {
     // Clear slideshow images from background
     clearSlideshowImages();
     
-    // Restore album art as background (showSlide sets it to 'none')
-    const bgContainer = document.getElementById('background-layer');
-    const albumArt = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path;
-    if (bgContainer && albumArt) {
-        bgContainer.style.backgroundImage = `url('${albumArt}')`;
-    }
+    // Restore proper background (album art or preferred artist image)
+    // updateBackground() handles all the logic to determine what should be shown
+    updateBackground();
     
     setSlideshowPaused(false);
     console.log('[Slideshow] Stopped');
