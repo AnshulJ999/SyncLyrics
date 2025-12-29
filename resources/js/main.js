@@ -25,6 +25,7 @@ import {
     wordSyncEnabled,
     anyProviderHasWordSync,
     debugTimingEnabled,
+    slideshowImagePool,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
@@ -85,7 +86,10 @@ import {
     pauseSlideshow,
     showSlideshowModal,
     setupControlCenter,
-    loadSettingsFromLocalStorage
+    loadSettingsFromLocalStorage,
+    advanceSlide,
+    previousSlide,
+    isSlideshowActive
 } from './modules/slideshow.js';
 
 // Provider (Level 3)
@@ -105,7 +109,7 @@ import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './mod
 import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
 
 // Art Zoom (Level 2)
-import { resetArtZoom, resetImageIndex, resetManualImageFlag, setPauseSlideshowFn } from './modules/artZoom.js';
+import { resetArtZoom, resetImageIndex, resetManualImageFlag, setPauseSlideshowFn, setSlideshowCycleFns } from './modules/artZoom.js';
 
 // Touch Gestures (Level 2)
 import { initTouchGestures } from './modules/touchGestures.js';
@@ -117,6 +121,9 @@ setSlideshowFunctions(startSlideshow, stopSlideshow);
 
 // Connect pause function to artZoom for manual browsing
 setPauseSlideshowFn(pauseSlideshow);
+
+// Connect slideshow cycling functions to artZoom for edge tap
+setSlideshowCycleFns(advanceSlide, previousSlide, isSlideshowActive);
 
 // Initialize slideshow module
 initSlideshow();
@@ -447,6 +454,12 @@ async function updateLoop() {
             
             // Notify slideshow of artist change (handles same artist vs different artist logic)
             handleSlideshowArtistChange(trackInfo.artist || '', sameArtist);
+            
+            // Ensure slideshow continues/restarts on track change (if enabled)
+            // This handles the case where slideshow might have stopped unexpectedly
+            if (sameArtist && slideshowImagePool.length > 0) {
+                startSlideshow();  // Restart/continue for same artist
+            }
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track

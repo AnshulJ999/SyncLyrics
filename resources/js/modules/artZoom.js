@@ -52,14 +52,26 @@ let manualImageTimeout = null;  // Failsafe timeout to reset the flag
 
 // ========== IMAGE SWITCHING ==========
 
-// Forward reference for slideshow pause callback (avoids circular import)
+// Forward references for slideshow callbacks (avoids circular import)
 let pauseSlideshowFn = null;
+let advanceSlideFn = null;
+let previousSlideFn = null;
+let isSlideshowActiveFn = null;
 
 /**
  * Set slideshow pause callback (called from main.js)
  */
 export function setPauseSlideshowFn(fn) {
     pauseSlideshowFn = fn;
+}
+
+/**
+ * Set slideshow cycling callbacks (called from main.js)
+ */
+export function setSlideshowCycleFns(advanceFn, previousFn, isActiveFn) {
+    advanceSlideFn = advanceFn;
+    previousSlideFn = previousFn;
+    isSlideshowActiveFn = isActiveFn;
 }
 
 /**
@@ -101,8 +113,20 @@ export function resetManualImageFlag() {
 
 /**
  * Switch to next artist image
+ * Uses slideshow cycling if slideshow is active, otherwise normal artZoom cycling
  */
 function nextImage() {
+    // If slideshow is active, use slideshow cycling instead
+    if (isSlideshowActiveFn && isSlideshowActiveFn()) {
+        if (advanceSlideFn) {
+            advanceSlideFn();
+            // Still set manual flag to pause auto-advance
+            setManualImageFlag();
+        }
+        return;
+    }
+    
+    // Normal artZoom cycling
     if (currentArtistImages.length === 0) return;
     currentImageIndex = (currentImageIndex + 1) % currentArtistImages.length;
     setManualImageFlag();  // User is manually browsing
@@ -112,8 +136,20 @@ function nextImage() {
 
 /**
  * Switch to previous artist image
+ * Uses slideshow cycling if slideshow is active, otherwise normal artZoom cycling
  */
 function prevImage() {
+    // If slideshow is active, use slideshow cycling instead
+    if (isSlideshowActiveFn && isSlideshowActiveFn()) {
+        if (previousSlideFn) {
+            previousSlideFn();
+            // Still set manual flag to pause auto-advance
+            setManualImageFlag();
+        }
+        return;
+    }
+    
+    // Normal artZoom cycling
     if (currentArtistImages.length === 0) return;
     currentImageIndex = (currentImageIndex - 1 + currentArtistImages.length) % currentArtistImages.length;
     setManualImageFlag();  // User is manually browsing

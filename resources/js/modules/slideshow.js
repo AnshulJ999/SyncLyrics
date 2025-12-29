@@ -397,9 +397,9 @@ export function checkSlideshowPause() {
 // ========== SLIDE DISPLAY ==========
 
 /**
- * Advance to next slide
+ * Advance to next slide (exported for edge tap cycling)
  */
-function advanceSlide() {
+export function advanceSlide() {
     if (slideshowImagePool.length === 0) return;
     
     let nextIndex;
@@ -413,6 +413,25 @@ function advanceSlide() {
     
     setCurrentSlideIndex(nextIndex);
     showSlide(nextIndex);
+}
+
+/**
+ * Go to previous slide (exported for edge tap cycling)
+ */
+export function previousSlide() {
+    if (slideshowImagePool.length === 0) return;
+    
+    let prevIndex;
+    if (slideshowConfig.shuffle) {
+        // Random
+        prevIndex = Math.floor(Math.random() * slideshowImagePool.length);
+    } else {
+        // Sequential backwards
+        prevIndex = (currentSlideIndex - 1 + slideshowImagePool.length) % slideshowImagePool.length;
+    }
+    
+    setCurrentSlideIndex(prevIndex);
+    showSlide(prevIndex);
 }
 
 /**
@@ -608,18 +627,45 @@ export function setupControlCenter() {
         resetBtn.addEventListener('click', handleResetToDefaults);
     }
     
-    // Timing buttons
-    document.querySelectorAll('.slideshow-timing-btn').forEach(btn => {
-        btn.addEventListener('click', () => handleTimingClick(parseInt(btn.dataset.timing)));
+    // Timing preset buttons (3, 6, 9, 15, 30)
+    document.querySelectorAll('.slideshow-timing-btn[data-timing]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const timing = parseInt(btn.dataset.timing);
+            if (!isNaN(timing)) {
+                handleTimingClick(timing);
+            }
+        });
     });
     
-    // Custom timing input
+    // Custom button - toggles input visibility
+    const customBtn = document.getElementById('slideshow-custom-btn');
     const customInput = document.getElementById('slideshow-custom-timing');
-    if (customInput) {
+    if (customBtn && customInput) {
+        customBtn.addEventListener('click', () => {
+            const isHidden = customInput.classList.contains('hidden');
+            customInput.classList.toggle('hidden', !isHidden);
+            if (isHidden) {
+                customInput.focus();
+                customInput.select();
+            }
+        });
+        
+        // Custom input handler
         customInput.addEventListener('change', (e) => {
             const value = parseInt(e.target.value);
             if (value >= 1 && value <= 600) {
-                handleTimingClick(value);
+                handleTimingClick(value, true);  // true = is custom value
+            }
+        });
+        
+        // Enter key in input
+        customInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const value = parseInt(e.target.value);
+                if (value >= 1 && value <= 600) {
+                    handleTimingClick(value, true);
+                    customInput.blur();
+                }
             }
         });
     }
@@ -692,22 +738,38 @@ export function setupControlCenter() {
 
 /**
  * Handle timing button click
+ * @param {number} seconds - The timing value in seconds
+ * @param {boolean} isCustom - True if value came from custom input
  */
-function handleTimingClick(seconds) {
+function handleTimingClick(seconds, isCustom = false) {
+    if (isNaN(seconds) || seconds < 1 || seconds > 600) return;
+    
     slideshowConfig.intervalSeconds = seconds;
     
-    // Update button states
-    document.querySelectorAll('.slideshow-timing-btn').forEach(btn => {
+    const presets = [3, 6, 9, 15, 30];
+    const customBtn = document.getElementById('slideshow-custom-btn');
+    const customInput = document.getElementById('slideshow-custom-timing');
+    
+    // Update preset button states
+    document.querySelectorAll('.slideshow-timing-btn[data-timing]').forEach(btn => {
         btn.classList.toggle('active', parseInt(btn.dataset.timing) === seconds);
     });
     
-    // Clear custom input if selecting preset
-    const customInput = document.getElementById('slideshow-custom-timing');
-    if (customInput && [3, 6, 9].includes(seconds)) {
-        customInput.value = '';
-    } else if (customInput) {
-        customInput.value = seconds;
-        document.querySelectorAll('.slideshow-timing-btn').forEach(btn => btn.classList.remove('active'));
+    // Handle custom button and input
+    if (isCustom || !presets.includes(seconds)) {
+        // Custom value - show input with value, mark custom button active
+        if (customBtn) customBtn.classList.add('active');
+        if (customInput) {
+            customInput.value = seconds;
+            customInput.classList.remove('hidden');
+        }
+    } else {
+        // Preset value - clear custom UI
+        if (customBtn) customBtn.classList.remove('active');
+        if (customInput) {
+            customInput.value = '';
+            customInput.classList.add('hidden');
+        }
     }
     
     saveSettingsToLocalStorage();

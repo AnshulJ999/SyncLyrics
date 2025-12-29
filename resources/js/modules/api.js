@@ -150,24 +150,31 @@ export async function getConfig() {
             visualModeConfig.slideshowIntervalSeconds = config.slideshowIntervalSeconds;
         }
 
-        // Load slideshow (art cycling) settings from server
+        // Load slideshow (art cycling) settings from server AS DEFAULTS ONLY
+        // User settings in localStorage take priority and are loaded later via loadSettingsFromLocalStorage()
+        // Only set these if NO user settings exist (first time load)
+        const hasUserSettings = localStorage.getItem('slideshowSettings') !== null;
+        
         if (config.slideshowDefaultEnabled !== undefined) {
             slideshowConfig.defaultEnabled = config.slideshowDefaultEnabled;
         }
-        if (config.slideshowConfigIntervalSeconds !== undefined) {
-            slideshowConfig.intervalSeconds = config.slideshowConfigIntervalSeconds;
-        }
-        if (config.slideshowKenBurnsEnabled !== undefined) {
-            slideshowConfig.kenBurnsEnabled = config.slideshowKenBurnsEnabled;
-        }
-        if (config.slideshowKenBurnsIntensity !== undefined) {
-            slideshowConfig.kenBurnsIntensity = config.slideshowKenBurnsIntensity;
-        }
-        if (config.slideshowShuffle !== undefined) {
-            slideshowConfig.shuffle = config.slideshowShuffle;
-        }
-        if (config.slideshowTransitionDuration !== undefined) {
-            slideshowConfig.transitionDuration = config.slideshowTransitionDuration;
+        // Only override these if user hasn't saved custom settings
+        if (!hasUserSettings) {
+            if (config.slideshowConfigIntervalSeconds !== undefined) {
+                slideshowConfig.intervalSeconds = config.slideshowConfigIntervalSeconds;
+            }
+            if (config.slideshowKenBurnsEnabled !== undefined) {
+                slideshowConfig.kenBurnsEnabled = config.slideshowKenBurnsEnabled;
+            }
+            if (config.slideshowKenBurnsIntensity !== undefined) {
+                slideshowConfig.kenBurnsIntensity = config.slideshowKenBurnsIntensity;
+            }
+            if (config.slideshowShuffle !== undefined) {
+                slideshowConfig.shuffle = config.slideshowShuffle;
+            }
+            if (config.slideshowTransitionDuration !== undefined) {
+                slideshowConfig.transitionDuration = config.slideshowTransitionDuration;
+            }
         }
 
         // Apply word_sync_default_enabled setting (only if URL doesn't override)
