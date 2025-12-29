@@ -309,6 +309,71 @@
     <i class="ph-fill ph-film-slate"></i>
 </button>
 
+<!-- Slideshow Control Center Modal -->
+<div id="slideshow-modal" class="slideshow-modal hidden">
+    <div class="slideshow-modal-content">
+        <div class="slideshow-modal-header">
+            <h3>Slideshow Settings</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="slideshow-reset-btn" class="modal-btn-small" title="Reset to defaults">↺</button>
+                <button id="slideshow-modal-close" class="modal-close">×</button>
+            </div>
+        </div>
+        
+        <!-- Controls Toolbar -->
+        <div class="slideshow-toolbar">
+            <!-- Timing Section -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Timing</span>
+                <div class="slideshow-timing-buttons">
+                    <button class="slideshow-timing-btn" data-timing="3">3s</button>
+                    <button class="slideshow-timing-btn active" data-timing="6">6s</button>
+                    <button class="slideshow-timing-btn" data-timing="9">9s</button>
+                    <input type="number" id="slideshow-custom-timing" class="slideshow-custom-input" 
+                           min="1" max="600" placeholder="Custom" title="Custom timing (1-600 seconds)">
+                </div>
+            </div>
+            
+            <!-- Options Section -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Effects</span>
+                <div class="slideshow-option-buttons">
+                    <button id="slideshow-shuffle-btn" class="slideshow-option-btn" title="Random order">
+                        <i class="bi bi-shuffle"></i> Shuffle
+                    </button>
+                    <button id="slideshow-ken-burns-btn" class="slideshow-option-btn active" title="Subtle zoom/pan animation">
+                        ✨ Ken Burns
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Ken Burns Intensity (shown when Ken Burns is active) -->
+            <div id="slideshow-ken-burns-options" class="slideshow-control-group">
+                <span class="slideshow-control-label">Intensity</span>
+                <div class="slideshow-intensity-buttons">
+                    <button class="slideshow-intensity-btn active" data-intensity="subtle">Subtle</button>
+                    <button class="slideshow-intensity-btn" data-intensity="medium">Medium</button>
+                    <button class="slideshow-intensity-btn" data-intensity="cinematic">Cinematic</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Selection Actions -->
+        <div class="slideshow-selection-bar">
+            <span class="slideshow-image-count" id="slideshow-image-count">0 images</span>
+            <div class="slideshow-selection-buttons">
+                <button id="slideshow-select-all" class="slideshow-action-btn">Select All</button>
+                <button id="slideshow-deselect-all" class="slideshow-action-btn">Deselect All</button>
+            </div>
+        </div>
+        
+        <!-- Image Grid -->
+        <div id="slideshow-image-grid" class="slideshow-image-grid">
+            <!-- Populated dynamically -->
+        </div>
+    </div>
+</div>
+
 
 <!-- Provider Selection Modal (NEW) -->
 <div id="provider-modal" class="provider-modal hidden">

@@ -82,7 +82,10 @@ import {
     setupSlideshowButton,
     handleArtistChange as handleSlideshowArtistChange,
     loadImagePoolForCurrentArtist,
-    checkSlideshowPause
+    checkSlideshowPause,
+    showSlideshowModal,
+    setupControlCenter,
+    loadSettingsFromLocalStorage
 } from './modules/slideshow.js';
 
 // Provider (Level 3)
@@ -114,7 +117,9 @@ setSlideshowFunctions(startSlideshow, stopSlideshow);
 
 // Initialize slideshow module
 initSlideshow();
-setupSlideshowButton();  // Phase 2 will pass showModalFn here
+loadSettingsFromLocalStorage();  // Load saved settings from localStorage
+setupSlideshowButton(showSlideshowModal);  // Pass modal function for long-press
+setupControlCenter();  // Setup control center event handlers
 
 // ========== WORD-SYNC TOGGLE UI HELPER ==========
 
