@@ -1059,16 +1059,24 @@ function renderImageGrid() {
     const providerCounts = {};
     const artistImagesWithProvider = [];
     
+    // Known provider prefixes (lowercase for matching)
+    const knownProviders = ['fanart', 'fanart_tv', 'FanArt.tv', 'deezer', 'spotify', 'theaudiodb', 'audiodb', 'spicetify', 'lastfm', 'last_fm', 'last.fm', 'itunes'];
+    
     currentArtistImages.forEach((img) => {
         if (img === albumArt) return;  // Skip duplicate
         
         // Extract filename from URL
         const filename = img.split('/').pop() || '';
-        // Extract provider prefix (everything before last underscore + number)
-        // e.g., "fanart_tv_1.jpg" -> "fanart_tv", "deezer_2.jpg" -> "deezer"
-        const match = filename.match(/^([a-z_]+?)(?:_\d+)?\.(?:jpg|png|webp|jpeg)$/i);
-        const providerKey = match ? match[1].toLowerCase() : 'unknown';
-        const displayName = providerDisplayNames[providerKey] || providerKey.charAt(0).toUpperCase() + providerKey.slice(1);
+        const filenameLower = filename.toLowerCase();
+        
+        // Check if filename starts with a known provider
+        let displayName = 'Custom';  // Default to Custom
+        for (const prefix of knownProviders) {
+            if (filenameLower.startsWith(prefix + '_') || filenameLower.startsWith(prefix + '.')) {
+                displayName = providerDisplayNames[prefix] || prefix;
+                break;
+            }
+        }
         
         providerCounts[displayName] = (providerCounts[displayName] || 0) + 1;
         artistImagesWithProvider.push({ url: img, provider: displayName });
