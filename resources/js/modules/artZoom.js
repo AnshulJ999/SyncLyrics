@@ -52,11 +52,27 @@ let manualImageTimeout = null;  // Failsafe timeout to reset the flag
 
 // ========== IMAGE SWITCHING ==========
 
+// Forward reference for slideshow pause callback (avoids circular import)
+let pauseSlideshowFn = null;
+
+/**
+ * Set slideshow pause callback (called from main.js)
+ */
+export function setPauseSlideshowFn(fn) {
+    pauseSlideshowFn = fn;
+}
+
 /**
  * Mark that user is manually browsing images (with failsafe timeout)
  */
 function setManualImageFlag() {
     isUsingManualArtistImage = true;
+    
+    // Pause slideshow when user manually browses
+    if (pauseSlideshowFn) {
+        pauseSlideshowFn('manual');
+    }
+    
     // Failsafe: reset flag after 30 min in case it gets stuck
     if (manualImageTimeout) clearTimeout(manualImageTimeout);
     manualImageTimeout = setTimeout(() => {

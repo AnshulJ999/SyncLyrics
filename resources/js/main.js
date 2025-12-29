@@ -82,7 +82,7 @@ import {
     setupSlideshowButton,
     handleArtistChange as handleSlideshowArtistChange,
     loadImagePoolForCurrentArtist,
-    checkSlideshowPause,
+    pauseSlideshow,
     showSlideshowModal,
     setupControlCenter,
     loadSettingsFromLocalStorage
@@ -105,7 +105,7 @@ import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './mod
 import { initSpectrum, updateSpectrum, hideSpectrum, resetSpectrum } from './modules/spectrum.js';
 
 // Art Zoom (Level 2)
-import { resetArtZoom, resetImageIndex, resetManualImageFlag } from './modules/artZoom.js';
+import { resetArtZoom, resetImageIndex, resetManualImageFlag, setPauseSlideshowFn } from './modules/artZoom.js';
 
 // Touch Gestures (Level 2)
 import { initTouchGestures } from './modules/touchGestures.js';
@@ -114,6 +114,9 @@ import { initTouchGestures } from './modules/touchGestures.js';
 
 // Connect slideshow functions to background module
 setSlideshowFunctions(startSlideshow, stopSlideshow);
+
+// Connect pause function to artZoom for manual browsing
+setPauseSlideshowFn(pauseSlideshow);
 
 // Initialize slideshow module
 initSlideshow();

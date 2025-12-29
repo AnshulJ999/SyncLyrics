@@ -3,6 +3,7 @@
  * 
  * Provides global touch gesture detection for enhanced touchscreen control.
  * - Three-finger tap: Play/Pause toggle
+ * - Four-finger tap: Slideshow toggle (in art-only mode)
  * 
  * NOTES:
  * - Uses capture phase (capture: true) to intercept events before other handlers
@@ -14,6 +15,7 @@
 
 import { playbackCommand } from './api.js';
 import { showToast } from './dom.js';
+import { toggleSlideshow } from './slideshow.js';
 
 // ========== CONSTANTS ==========
 const THREE_FINGER_TAP_THRESHOLD = 400;  // Max ms for tap detection
@@ -81,8 +83,8 @@ function handleTouchStart(e) {
     // Track maximum touch count seen
     maxTouchCount = Math.max(maxTouchCount, touchCount);
     
-    // Only activate for exactly 3 fingers
-    if (touchCount === 3) {
+    // Only activate for exactly 3 or 4 fingers
+    if (touchCount === 3 || touchCount === 4) {
         gestureActive = true;
         gestureHandled = false;  // Reset for new gesture
         touchStartTime = Date.now();
@@ -94,12 +96,12 @@ function handleTouchStart(e) {
                 y: e.touches[i].clientY
             });
         }
-        debugLog('3-finger gesture STARTED');
-        showDebugOverlay('3-finger: STARTED');
-    } else if (touchCount > 3) {
-        // More than 3 fingers - cancel gesture
+        debugLog(`${touchCount}-finger gesture STARTED`);
+        showDebugOverlay(`${touchCount}-finger: STARTED`);
+    } else if (touchCount > 4) {
+        // More than 4 fingers - cancel gesture
         gestureActive = false;
-        debugLog('Gesture cancelled: >3 fingers');
+        debugLog('Gesture cancelled: >4 fingers');
     }
 }
 
@@ -150,6 +152,22 @@ async function triggerThreeFingerAction() {
 }
 
 /**
+ * Trigger the 4-finger tap action (slideshow toggle)
+ */
+function triggerFourFingerAction() {
+    if (gestureHandled) {
+        debugLog('Action already handled, skipping duplicate');
+        return;
+    }
+    gestureHandled = true;
+    
+    debugLog('✓ Toggling slideshow');
+    showDebugOverlay('4-finger: SUCCESS!');
+    
+    toggleSlideshow();
+}
+
+/**
  * Handle touch end - trigger action if valid tap
  */
 async function handleTouchEnd(e) {
@@ -162,9 +180,13 @@ async function handleTouchEnd(e) {
         const tapDuration = Date.now() - touchStartTime;
         debugLog(`All fingers lifted. Duration: ${tapDuration}ms, gestureActive: ${gestureActive}`);
         
-        // Check if we had a valid 3-finger gesture that wasn't cancelled
-        if (gestureActive && tapDuration <= THREE_FINGER_TAP_THRESHOLD && maxTouchCount === 3) {
-            await triggerThreeFingerAction();
+        // Check if we had a valid gesture that wasn't cancelled
+        if (gestureActive && tapDuration <= THREE_FINGER_TAP_THRESHOLD) {
+            if (maxTouchCount === 3) {
+                await triggerThreeFingerAction();
+            } else if (maxTouchCount === 4) {
+                triggerFourFingerAction();
+            }
         } else if (maxTouchCount >= 3) {
             debugLog(`✗ Invalid: active=${gestureActive}, duration=${tapDuration}ms`);
             showDebugOverlay(`FAIL: ${gestureActive ? tapDuration + 'ms' : 'cancelled'}`);
@@ -184,11 +206,15 @@ function handleTouchCancel(e) {
     debugLog('touchcancel event fired');
     showDebugOverlay('CANCEL event');
     
-    // Treat cancel as valid end if we had an active 3-finger gesture
-    if (maxTouchCount === 3 && gestureActive) {
+    // Treat cancel as valid end if we had an active 3 or 4-finger gesture
+    if ((maxTouchCount === 3 || maxTouchCount === 4) && gestureActive) {
         const tapDuration = Date.now() - touchStartTime;
         if (tapDuration <= THREE_FINGER_TAP_THRESHOLD) {
-            triggerThreeFingerAction();
+            if (maxTouchCount === 3) {
+                triggerThreeFingerAction();
+            } else if (maxTouchCount === 4) {
+                triggerFourFingerAction();
+            }
         }
     }
     
@@ -212,6 +238,6 @@ export function initTouchGestures() {
     document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
     document.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
     
-    console.log('[TouchGestures] Module initialized - 3-finger tap for play/pause');
+    console.log('[TouchGestures] Module initialized - 3-finger tap for play/pause, 4-finger tap for slideshow');
     if (DEBUG) console.log('[TouchGestures] DEBUG MODE ON');
 }
