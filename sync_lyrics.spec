@@ -46,14 +46,7 @@ a = Analysis(
         'numpy.core._multiarray_umath',
         'numpy.linalg',
         'numpy.fft',
-        'scipy',
-        'scipy.signal',
-        'scipy.signal._sigtools',
-        'scipy.signal._upfirdn_apply',
-        'scipy.interpolate',
-        'scipy.sparse',
-        'scipy.sparse.csgraph',
-        'scipy.special',
+        # scipy removed - using numpy fallback for audio resampling (saves ~100MB in build)
         'psutil',
         
         # === Audio Recognition Custom Modules ===
