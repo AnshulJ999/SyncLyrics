@@ -397,8 +397,18 @@ export function startSlideshow() {
         return;
     }
     
-    // Show first image immediately if not already shown
-    showSlide(currentSlideIndex);
+    // If shuffle is enabled, shuffle and pick random starting position
+    let startIndex = currentSlideIndex;
+    if (slideshowConfig.shuffle) {
+        shuffleImagePool();
+        // Pick random starting position in the shuffled order
+        shufflePosition = Math.floor(Math.random() * shuffledOrder.length);
+        startIndex = shuffledOrder[shufflePosition];
+        setCurrentSlideIndex(startIndex);
+    }
+    
+    // Show first image immediately
+    showSlide(startIndex);
     
     // Start interval
     const intervalMs = slideshowConfig.intervalSeconds * 1000;
@@ -411,7 +421,7 @@ export function startSlideshow() {
     setSlideshowInterval(interval);
     setSlideshowPaused(false);
     
-    console.log(`[Slideshow] Started with ${intervalMs}ms interval, ${slideshowImagePool.length} images`);
+    console.log(`[Slideshow] Started with ${intervalMs}ms interval, ${slideshowImagePool.length} images${slideshowConfig.shuffle ? ' (shuffled, starting at ' + startIndex + ')' : ''}`);
 }
 
 /**
