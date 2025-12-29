@@ -51,14 +51,14 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .slideshow-modal-header h3 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #fff;
 }
@@ -88,8 +88,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
-    margin-bottom: 16px;
-    padding: 12px;
+    margin-bottom: 12px;
+    padding: 10px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 12px;
 }
@@ -173,8 +173,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
-    padding: 8px 12px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 8px;
 }
@@ -192,11 +192,16 @@
 /* Image Grid */
 .slideshow-image-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 12px;
-    max-height: 40vh;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
     overflow-y: auto;
     padding: 4px;
+    width: 100%;
+    grid-auto-rows: min-content;  /* Fit content exactly to prevent overlap */
+    align-items: start;  /* Align items to top of their cells */
+    /* Prevent pull-to-refresh */
+    overscroll-behavior: contain;
+    touch-action: manipulation;
 }
 
 .slideshow-image-card {
@@ -246,10 +251,24 @@
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 4px 6px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+    padding: 8px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.slideshow-image-source {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.slideshow-image-resolution {
     font-size: 0.65rem;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.6);
 }
 
 /* Responsive - Mobile */
@@ -259,6 +278,24 @@
     }
     
     .slideshow-image-grid {
-        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+}
+
+/* Desktop - Larger Modal */
+@media (min-width: 768px) {
+    .slideshow-modal-content {
+        max-width: 93vw;
+        width: 95%;
+        max-height: 90vh;
+        min-height: 400px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .slideshow-image-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        flex: 1;
+        min-height: 0;
     }
 }
