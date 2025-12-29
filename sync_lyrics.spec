@@ -134,7 +134,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'scipy',      # Optional pydub dependency - not needed (ENABLE_RESAMPLING=False)
+        'matplotlib', # Transitive scipy dependency - not used
+        'tkinter',    # GUI toolkit - not used (saves ~10MB)
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
