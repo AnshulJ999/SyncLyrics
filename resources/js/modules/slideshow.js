@@ -624,7 +624,7 @@ function showSlide(index) {
     
     // Remove old images after transition completes
     // Use longer delay to ensure smooth transitions
-    const cleanupDelay = (slideshowConfig.transitionDuration + 0.6) * 1000;
+    const cleanupDelay = (slideshowConfig.transitionDuration + 1.5) * 1000;
     setTimeout(() => {
         const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(:last-child)');
         oldImages.forEach(img => img.remove());
@@ -1078,19 +1078,33 @@ function renderImageGrid() {
             }
         }
         
+        // Extract the number from filename (e.g., "fanarttv_21.jpg" → "21", "Custom49.jpg" → "49")
+        const numMatch = filename.match(/(\d+)\.(?:jpg|png|webp|jpeg)$/i);
+        const fileNum = numMatch ? numMatch[1] : null;
+        
         providerCounts[displayName] = (providerCounts[displayName] || 0) + 1;
-        artistImagesWithProvider.push({ url: img, provider: displayName });
+        artistImagesWithProvider.push({ url: img, provider: displayName, fileNum });
     });
     
-    // Second pass: assign names with numbers only if provider has multiple
+    // Second pass: assign names with numbers
+    // Use filename number if available, otherwise use sequential index
     const providerIndices = {};
-    artistImagesWithProvider.forEach(({ url, provider }) => {
+    artistImagesWithProvider.forEach(({ url, provider, fileNum }) => {
         providerIndices[provider] = (providerIndices[provider] || 0) + 1;
         const count = providerCounts[provider];
-        const idx = providerIndices[provider];
         
-        // Only add number if this provider has multiple images
-        const source = count > 1 ? `${provider} ${idx}` : provider;
+        // Determine what number to show
+        let source;
+        if (count === 1) {
+            // Single image from this provider - no number needed
+            source = provider;
+        } else if (fileNum !== null) {
+            // Use the actual filename number
+            source = `${provider} ${fileNum}`;
+        } else {
+            // Fallback to sequential index
+            source = `${provider} ${providerIndices[provider]}`;
+        }
         
         allImages.push({ url, source, key: url });
     });
