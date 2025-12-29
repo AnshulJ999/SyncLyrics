@@ -1592,6 +1592,10 @@ async def set_background_style():
             # This ensures the "Auto" reset takes effect immediately in the UI
             get_current_song_meta_data._last_check_time = 0
             
+            # FIX: Clear _last_result to invalidate audio recognition cache (stores background_style with _audio_rec_enriched flag)
+            if hasattr(get_current_song_meta_data, '_last_result'):
+                get_current_song_meta_data._last_result = None
+            
             # FIX: Also invalidate Spicetify enrichment cache which stores background_style separately
             # Without this, clicking "Auto" doesn't work for Spicetify source (stale cached style persists)
             if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
