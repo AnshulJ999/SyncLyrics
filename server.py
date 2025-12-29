@@ -1592,6 +1592,13 @@ async def set_background_style():
             # This ensures the "Auto" reset takes effect immediately in the UI
             get_current_song_meta_data._last_check_time = 0
             
+            # FIX: Also invalidate Spicetify enrichment cache which stores background_style separately
+            # Without this, clicking "Auto" doesn't work for Spicetify source (stale cached style persists)
+            if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+                get_current_song_meta_data._spicetify_enriched_track = None
+            if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+                get_current_song_meta_data._spicetify_enriched_result = None
+            
             return jsonify({"status": "success", "style": style, "message": f"Saved {style} preference"})
         else:
             return jsonify({"error": "Failed to save preference"}), 500
