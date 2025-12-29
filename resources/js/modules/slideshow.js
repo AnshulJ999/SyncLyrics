@@ -1041,7 +1041,7 @@ function renderImageGrid() {
     // Provider mapping for display names
     const providerDisplayNames = {
         'fanart': 'FanArt',
-        'fanart_tv': 'FanArt',
+        'fanarttv': 'FanArt',
         'deezer': 'Deezer',
         'spotify': 'Spotify',
         'theaudiodb': 'AudioDB',
@@ -1060,7 +1060,7 @@ function renderImageGrid() {
     const artistImagesWithProvider = [];
     
     // Known provider prefixes (lowercase for matching)
-    const knownProviders = ['fanart', 'fanart_tv', 'FanArt.tv', 'deezer', 'spotify', 'theaudiodb', 'audiodb', 'spicetify', 'lastfm', 'last_fm', 'last.fm', 'itunes'];
+    const knownProviders = ['fanart', 'fanart_tv', 'FanArt.tv', 'fanarttv', 'deezer', 'spotify', 'theaudiodb', 'audiodb', 'spicetify', 'lastfm', 'last_fm', 'last.fm', 'itunes'];
     
     currentArtistImages.forEach((img) => {
         if (img === albumArt) return;  // Skip duplicate
