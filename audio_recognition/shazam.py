@@ -31,6 +31,10 @@ logger = get_logger(__name__)
 TIMESKEW_REJECT_THRESHOLD = 0.01   # Reject if abs(timeskew) > 1%
 FREQSKEW_REJECT_THRESHOLD = 0.012   # Reject if abs(frequencyskew) > 1%
 
+# Audio resampling flag - ShazamIO handles sample rates internally (downsamples to 16kHz)
+# Set to True only if you experience recognition issues with 48kHz audio
+ENABLE_RESAMPLING = False
+
 
 @dataclass
 class RecognitionResult:
@@ -445,7 +449,9 @@ class ShazamRecognizer:
         channels = audio.channels
         
         # Resample to 44100 Hz if needed (WASAPI devices often return 48000 Hz)
-        if sample_rate != TARGET_SAMPLE_RATE:
+        # NOTE: ShazamIO internally downsamples to 16kHz, so this step is optional
+        # Set ENABLE_RESAMPLING = True at module level if you experience issues
+        if ENABLE_RESAMPLING and sample_rate != TARGET_SAMPLE_RATE:
             try:
                 # Try scipy for high-quality resampling
                 from scipy import signal
