@@ -189,7 +189,6 @@ function setupGlobalEdgeTapHandler() {
         // Left edge tap - previous image
         if (globalTouchStartX < EDGE_TAP_SIZE) {
             previousSlide();
-            pauseSlideshow('manual');  // Pause auto-advance
             console.log('[Slideshow] Edge tap: previous');
             return;
         }
@@ -197,7 +196,6 @@ function setupGlobalEdgeTapHandler() {
         // Right edge tap - next image
         if (globalTouchStartX > screenWidth - EDGE_TAP_SIZE) {
             advanceSlide();
-            pauseSlideshow('manual');  // Pause auto-advance
             console.log('[Slideshow] Edge tap: next');
             return;
         }
@@ -431,6 +429,13 @@ export function stopSlideshow() {
     
     // Clear slideshow images from background
     clearSlideshowImages();
+    
+    // Restore album art as background (showSlide sets it to 'none')
+    const bgContainer = document.getElementById('background-layer');
+    const albumArt = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path;
+    if (bgContainer && albumArt) {
+        bgContainer.style.backgroundImage = `url('${albumArt}')`;
+    }
     
     setSlideshowPaused(false);
     console.log('[Slideshow] Stopped');

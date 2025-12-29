@@ -11,7 +11,7 @@
  */
 
 import { showToast } from './dom.js';
-import { currentArtistImages } from './state.js';
+import { currentArtistImages, slideshowImagePool, slideshowEnabled, lastTrackInfo } from './state.js';
 
 // ========== CONSTANTS ==========
 const MIN_ZOOM = 0.3;    // 30% - allow zooming out a bit
@@ -76,14 +76,10 @@ export function setSlideshowCycleFns(advanceFn, previousFn, isActiveFn) {
 
 /**
  * Mark that user is manually browsing images (with failsafe timeout)
+ * Note: No longer pauses slideshow - slideshow continues naturally
  */
 function setManualImageFlag() {
     isUsingManualArtistImage = true;
-    
-    // Pause slideshow when user manually browses
-    if (pauseSlideshowFn) {
-        pauseSlideshowFn('manual');
-    }
     
     // Failsafe: reset flag after 30 min in case it gets stuck
     if (manualImageTimeout) clearTimeout(manualImageTimeout);
@@ -116,20 +112,23 @@ export function resetManualImageFlag() {
  * Uses slideshow cycling if slideshow is active, otherwise normal artZoom cycling
  */
 function nextImage() {
-    // If slideshow is active, use slideshow cycling instead
+    // If slideshow is actively cycling, use slideshow advance
     if (isSlideshowActiveFn && isSlideshowActiveFn()) {
         if (advanceSlideFn) {
             advanceSlideFn();
-            // Still set manual flag to pause auto-advance
-            setManualImageFlag();
+            setManualImageFlag();  // For background.js protection
         }
         return;
     }
     
-    // Normal artZoom cycling
-    if (currentArtistImages.length === 0) return;
-    currentImageIndex = (currentImageIndex + 1) % currentArtistImages.length;
-    setManualImageFlag();  // User is manually browsing
+    // Normal artZoom cycling - use slideshow pool if available
+    const imagePool = slideshowEnabled && slideshowImagePool.length > 0 
+        ? slideshowImagePool 
+        : currentArtistImages;
+    
+    if (imagePool.length === 0) return;
+    currentImageIndex = (currentImageIndex + 1) % imagePool.length;
+    setManualImageFlag();  // For background.js protection
     applyCurrentImage();
     resetArtZoom();
 }
@@ -139,34 +138,82 @@ function nextImage() {
  * Uses slideshow cycling if slideshow is active, otherwise normal artZoom cycling
  */
 function prevImage() {
-    // If slideshow is active, use slideshow cycling instead
+    // If slideshow is actively cycling, use slideshow previous
     if (isSlideshowActiveFn && isSlideshowActiveFn()) {
         if (previousSlideFn) {
             previousSlideFn();
-            // Still set manual flag to pause auto-advance
-            setManualImageFlag();
+            setManualImageFlag();  // For background.js protection
         }
         return;
     }
     
-    // Normal artZoom cycling
-    if (currentArtistImages.length === 0) return;
-    currentImageIndex = (currentImageIndex - 1 + currentArtistImages.length) % currentArtistImages.length;
-    setManualImageFlag();  // User is manually browsing
+    // Normal artZoom cycling - use slideshow pool if available
+    const imagePool = slideshowEnabled && slideshowImagePool.length > 0 
+        ? slideshowImagePool 
+        : currentArtistImages;
+    
+    if (imagePool.length === 0) return;
+    currentImageIndex = (currentImageIndex - 1 + imagePool.length) % imagePool.length;
+    setManualImageFlag();  // For background.js protection
     applyCurrentImage();
     resetArtZoom();
 }
 
 /**
- * Apply current image to background
+ * Apply current image to background with crossfade effect
+ * Uses slideshow pool when slideshow is enabled, otherwise uses currentArtistImages
  */
 function applyCurrentImage() {
     const bg = document.getElementById('background-layer');
-    if (!bg || currentArtistImages.length === 0) return;
+    if (!bg) return;
     
-    const imageUrl = currentArtistImages[currentImageIndex];
-    bg.style.backgroundImage = `url('${imageUrl}')`;
-    showToast(`Image ${currentImageIndex + 1}/${currentArtistImages.length}`, 'success', 800);
+    // Use slideshow pool when slideshow is enabled, otherwise use currentArtistImages
+    const imagePool = slideshowEnabled && slideshowImagePool.length > 0 
+        ? slideshowImagePool 
+        : currentArtistImages;
+    
+    if (imagePool.length === 0) return;
+    
+    // Clamp index to valid range
+    if (currentImageIndex >= imagePool.length) {
+        currentImageIndex = 0;
+    }
+    
+    const imageUrl = imagePool[currentImageIndex];
+    
+    // Use crossfade technique (like slideshow) to avoid flicker
+    const newImg = document.createElement('div');
+    newImg.className = 'art-mode-image';
+    newImg.style.position = 'absolute';
+    newImg.style.top = '0';
+    newImg.style.left = '0';
+    newImg.style.width = '100%';
+    newImg.style.height = '100%';
+    newImg.style.backgroundImage = `url('${imageUrl}')`;
+    newImg.style.backgroundSize = 'cover';
+    newImg.style.backgroundPosition = 'center';
+    newImg.style.opacity = '0';
+    newImg.style.transition = 'opacity 0.3s ease';
+    newImg.style.zIndex = '1';
+    
+    bg.appendChild(newImg);
+    
+    // Fade in
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            newImg.style.opacity = '1';
+        });
+    });
+    
+    // Remove old art-mode images and clear background after transition
+    setTimeout(() => {
+        const oldImages = bg.querySelectorAll('.art-mode-image:not(:last-child)');
+        oldImages.forEach(img => img.remove());
+        bg.style.backgroundImage = 'none';
+    }, 350);
+    
+    // Show toast with correct count based on which pool we're using
+    showToast(`Image ${currentImageIndex + 1}/${imagePool.length}`, 'success', 800);
     
     // Preload adjacent images for smooth subsequent browsing
     preloadAdjacentImages();

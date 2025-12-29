@@ -434,15 +434,9 @@ async function updateLoop() {
                 setCurrentArtistImages([]);
                 if (trackInfo.artist_id && visualModeConfig.enabled) {
                     fetchArtistImages(trackInfo.artist_id).then(images => {
-                        // Prepend album art as index 0 so user can browse back to it
-                        const albumArtUrl = trackInfo.album_art_url || trackInfo.album_art_path || '';
-                        if (albumArtUrl && images.length > 0) {
-                            setCurrentArtistImages([albumArtUrl, ...images]);
-                        } else if (albumArtUrl) {
-                            setCurrentArtistImages([albumArtUrl]);
-                        } else {
-                            setCurrentArtistImages(images);
-                        }
+                        // Don't prepend album art - slideshow handles it separately
+                        // Art mode will access album art from lastTrackInfo when needed
+                        setCurrentArtistImages(images);
                         
                         // Update slideshow image pool and restart if enabled
                         loadImagePoolForCurrentArtist();
