@@ -52,6 +52,7 @@ _auto_detect_task = None       # Background task handle
 _auto_started = False          # True if WE started the engine (not user)
 _manual_override = False       # True if user manually started/stopped
 _last_reaper_state = False     # Last known Reaper window state
+_reaper_session_active = False # True if Reaper was detected while engine running
 
 
 class ReaperAudioSource:
@@ -866,7 +867,9 @@ async def _reaper_auto_detect_loop():
                 # Reaper is open - should we start the engine?
                 
                 if source.is_active:
-                    # Engine already running - nothing to do
+                    # Engine already running - mark this as a Reaper session
+                    # This ties engine lifecycle to Reaper (even if manually restarted)
+                    _reaper_session_active = True
                     continue
                 
                 if _manual_override:
@@ -883,6 +886,7 @@ async def _reaper_auto_detect_loop():
                 try:
                     await source.start(manual=False)  # manual=False marks this as auto-started
                     _auto_started = True
+                    _reaper_session_active = True  # Mark as Reaper session
                     
                     # Set runtime flag so metadata uses audio recognition
                     from system_utils.metadata import set_audio_rec_runtime_enabled
@@ -895,18 +899,20 @@ async def _reaper_auto_detect_loop():
                 
                 if not source.is_active:
                     # Engine not running - nothing to do
+                    _reaper_session_active = False  # Clear session flag
                     continue
                 
-                if not _auto_started:
-                    # User manually started - don't auto-stop
-                    logger.debug("Reaper closed but engine was manually started - not auto-stopping")
+                if not _reaper_session_active:
+                    # Not a Reaper session (e.g. started without Reaper ever being detected)
+                    logger.debug("Reaper closed but not a Reaper session - not auto-stopping")
                     continue
                 
-                # We auto-started and Reaper is now closed - stop the engine
+                # Reaper was part of this session and is now closed - stop the engine
                 logger.info("Reaper closed - auto-stopping audio recognition")
                 try:
                     await source.stop(manual=False)  # manual=False marks this as auto-stopped
                     _auto_started = False
+                    _reaper_session_active = False  # Clear session flag
                 except Exception as e:
                     logger.error(f"Failed to auto-stop audio recognition: {e}")
         
