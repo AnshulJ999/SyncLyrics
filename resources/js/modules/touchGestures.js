@@ -394,6 +394,11 @@ function handleTouchStart(e) {
     
     // For multi-finger gestures (3+), use stabilization
     if (touchCount >= 3) {
+        // CRITICAL: Prevent default to stop Android from intercepting 3-finger gestures
+        // Android reserves 3-finger gestures for system functions (screenshot, etc.)
+        // Without this, Android fires touchcancel immediately
+        e.preventDefault();
+        
         // If already in POSSIBLE state, just update maxTouchCount
         if (state === GestureState.POSSIBLE) {
             debugLog(`[${timestamp}] Finger added: ${prevMax} → ${maxTouchCount}`);
@@ -613,7 +618,9 @@ function handleTouchCancel(e) {
 export function initTouchGestures() {
     // Attach to document with capture: true for broader capture
     // This intercepts events before they can be stopped by other handlers
-    document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    // IMPORTANT: touchstart uses passive:false to allow preventDefault()
+    // This is required to prevent Android from intercepting 3-finger gestures
+    document.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
     document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
     document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
     document.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
