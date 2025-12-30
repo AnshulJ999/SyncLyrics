@@ -350,6 +350,14 @@ function classifyGesture(duration, maxMovement, movementVector) {
  * @returns {Object|null} Matching gesture definition or null
  */
 function findMatchingGesture(fingerCount, gestureType) {
+    // SUPPRESSION RULE: If user ever touched 4+ fingers during this gesture,
+    // block 3-finger actions. This prevents staggered 4-finger taps from
+    // accidentally triggering the 3-finger play/pause action.
+    if (fingerCount === 3 && maxTouchCount >= 4) {
+        debugLog(`Suppressing 3-finger ${gestureType}: maxTouchCount was ${maxTouchCount}`);
+        return null;
+    }
+    
     return GESTURE_REGISTRY.find(g => 
         g.enabled && 
         g.fingers === fingerCount && 
