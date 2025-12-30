@@ -185,6 +185,18 @@ export function applyBackgroundStyle(style) {
         console.log('[Background] Skipping style change - user has manual artist image selected');
         return;
     }
+    
+    // Skip style changes if slideshow is running in art-only mode
+    // Import slideshowEnabled from state would create circular dep, so check DOM state
+    if (document.body.classList.contains('art-only-mode')) {
+        // Check if any slideshow images exist (indicates slideshow is active)
+        const bgLayer = document.getElementById('background-layer');
+        const hasSlideshowImages = bgLayer && bgLayer.querySelector('.slideshow-image');
+        if (hasSlideshowImages) {
+            console.log('[Background] Skipping style change - slideshow active in art-only mode');
+            return;
+        }
+    }
 
     // Reset all styles
     displayConfig.sharpAlbumArt = false;

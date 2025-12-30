@@ -26,6 +26,7 @@ import {
     anyProviderHasWordSync,
     debugTimingEnabled,
     slideshowImagePool,
+    slideshowInterval,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
@@ -449,11 +450,13 @@ async function updateLoop() {
             // Notify slideshow of artist change (handles same artist vs different artist logic)
             handleSlideshowArtistChange(trackInfo.artist || '', sameArtist);
             
-            // COMMENTED OUT FOR TESTING: With legacy stopSlideshow removed from resetVisualModeState,
-            // slideshow should naturally continue for same artist without needing restart
-            // if (sameArtist && slideshowImagePool.length > 0) {
-            //     startSlideshow();  // Restart/continue for same artist
-            // }
+            // Safety net: Only restart slideshow if it stopped unexpectedly
+            // If slideshow is already running (!slideshowInterval = false), leave it alone
+            // This prevents unnecessary re-shuffle and image change on track skip
+            if (sameArtist && slideshowImagePool.length > 0 && !slideshowInterval) {
+                console.log('[Main] Slideshow stopped unexpectedly, restarting for same artist');
+                startSlideshow();
+            }
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track

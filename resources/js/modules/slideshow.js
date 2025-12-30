@@ -126,8 +126,8 @@ function handleVisibilityChange() {
 
 // ========== GLOBAL EDGE TAP HANDLER ==========
 // Constants for edge detection
-const EDGE_TAP_SIZE = 100;  // Pixels from edge
-const TAP_DURATION_MAX = 300;  // Max ms for a tap
+const EDGE_TAP_SIZE = 150;  // Pixels from edge
+const TAP_DURATION_MAX = 500;  // Max ms for a tap
 
 // Global edge tap state
 let globalTouchStartTime = 0;
@@ -231,7 +231,7 @@ export function toggleSlideshow() {
         // Starting slideshow - load images and start
         loadImagePoolForCurrentArtist();
         startSlideshow();
-        showToast('Slideshow enabled', 'success', 1000);
+        showToast(`Slideshow enabled (${slideshowConfig.intervalSeconds}s)`, 'success', 1200);
     } else {
         // Stopping slideshow
         stopSlideshow();
@@ -438,6 +438,27 @@ export function startSlideshow() {
 }
 
 /**
+ * Reset the slideshow interval timer (for manual advance/previous)
+ * This ensures the user gets a full interval after manually skipping
+ */
+function resetSlideshowTimer() {
+    // Only reset if slideshow is actively running
+    if (!slideshowInterval || !slideshowEnabled) return;
+    
+    // Clear old interval
+    clearInterval(slideshowInterval);
+    
+    // Start fresh interval
+    const intervalMs = slideshowConfig.intervalSeconds * 1000;
+    const interval = setInterval(() => {
+        if (!slideshowPaused && slideshowImagePool.length > 0) {
+            advanceSlide();
+        }
+    }, intervalMs);
+    setSlideshowInterval(interval);
+}
+
+/**
  * Stop slideshow - clear interval and cleanup with smooth transition
  */
 export function stopSlideshow() {
@@ -574,6 +595,9 @@ export function advanceSlide() {
     
     setCurrentSlideIndex(nextIndex);
     showSlide(nextIndex);
+    
+    // Reset interval timer so user gets full interval after manual skip
+    resetSlideshowTimer();
 }
 
 /**
@@ -598,6 +622,9 @@ export function previousSlide() {
     
     setCurrentSlideIndex(prevIndex);
     showSlide(prevIndex);
+    
+    // Reset interval timer so user gets full interval after manual skip
+    resetSlideshowTimer();
 }
 
 /**
