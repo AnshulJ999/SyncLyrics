@@ -449,11 +449,11 @@ async function updateLoop() {
             // Notify slideshow of artist change (handles same artist vs different artist logic)
             handleSlideshowArtistChange(trackInfo.artist || '', sameArtist);
             
-            // Ensure slideshow continues/restarts on track change (if enabled)
-            // This handles the case where slideshow might have stopped unexpectedly
-            if (sameArtist && slideshowImagePool.length > 0) {
-                startSlideshow();  // Restart/continue for same artist
-            }
+            // COMMENTED OUT FOR TESTING: With legacy stopSlideshow removed from resetVisualModeState,
+            // slideshow should naturally continue for same artist without needing restart
+            // if (sameArtist && slideshowImagePool.length > 0) {
+            //     startSlideshow();  // Restart/continue for same artist
+            // }
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track
