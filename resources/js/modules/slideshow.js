@@ -60,6 +60,7 @@ const KEN_BURNS_DIRECTIONS = [
 // Track last artist to detect artist changes
 let lastSlideshowArtist = null;
 let resumeTimer = null;
+let cleanupTimer = null;  // Track scheduled cleanup to prevent race condition
 
 // Fisher-Yates shuffle state
 let shuffledOrder = [];      // Array of indices in shuffled order
@@ -393,6 +394,13 @@ export function startSlideshow() {
         return;
     }
     
+    // Cancel any pending cleanup from a previous stopSlideshow() call
+    // This prevents the race condition where cleanup deletes our new images
+    if (cleanupTimer) {
+        clearTimeout(cleanupTimer);
+        cleanupTimer = null;
+    }
+    
     if (slideshowInterval) {
         clearInterval(slideshowInterval);
     }
@@ -455,8 +463,10 @@ export function stopSlideshow() {
         slideshowImages.forEach(img => img.classList.remove('active'));  // opacity → 0
         
         // Remove slideshow images after fade completes
-        setTimeout(() => {
+        // Store timer ID so it can be cancelled if startSlideshow() is called before cleanup
+        cleanupTimer = setTimeout(() => {
             clearSlideshowImages();
+            cleanupTimer = null;
         }, (slideshowConfig.transitionDuration || 0.8) * 1000);
     }
     
