@@ -424,10 +424,8 @@ export function resetVisualModeState() {
         lyricsContainer.classList.remove('visual-mode-hidden');
     }
 
-    // Stop slideshow
-    if (stopSlideshowFn) {
-        stopSlideshowFn();
-    }
+    // NOTE: Slideshow is NOT stopped here - it's an independent feature
+    // managed by main.js based on artist change logic
 
     // Restore background style
     if (savedBackgroundState) {
