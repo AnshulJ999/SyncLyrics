@@ -32,7 +32,7 @@ import {
 } from './state.js';
 
 import { showToast } from './dom.js';
-import { isManualArtistImageActive, resetArtZoom } from './artZoom.js';
+import { isManualArtistImageActive, resetArtZoom, syncZoomImgIfInArtMode } from './artZoom.js';
 import { updateBackground } from './background.js';
 
 // ========== CONSTANTS ==========
@@ -698,6 +698,8 @@ function showSlide(index) {
     // Reset zoom/pan if in art-only mode (consistency with artZoom behavior)
     if (document.body.classList.contains('art-only-mode')) {
         resetArtZoom();
+        // Sync the zoom img with the new slideshow image
+        syncZoomImgIfInArtMode(imageUrl);
     }
     
     // Preload adjacent images for smoother rapid cycling

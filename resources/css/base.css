@@ -1900,6 +1900,42 @@ body.art-only-mode .background-overlay {
     pointer-events: none !important;  /* Let events pass through to background-layer */
 }
 
+/* ========== ART MODE ZOOM IMAGES ========== */
+/* Hidden by default - shown only in art mode with zoom-out enabled */
+.art-zoom-img {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -5;
+    pointer-events: none;
+    object-position: center;
+    object-fit: cover;  /* Default, overridden by JS based on fill mode */
+    background-color: black;  /* Fallback for letterboxing in contain mode */
+}
+
+/* When art mode is active AND zoom-out is enabled */
+body.art-only-mode.zoom-out-enabled .art-zoom-img {
+    display: block;
+    z-index: 901;  /* Above background-layer (900) */
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Hide background layer when zoom imgs are active */
+body.art-only-mode.zoom-out-enabled #background-layer {
+    visibility: hidden !important;
+}
+
+/* Transition for crossfade between zoom imgs */
+.art-zoom-img {
+    transition: opacity 0.8s ease;  /* Matches slideshowConfig.transitionDuration */
+}
+
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;

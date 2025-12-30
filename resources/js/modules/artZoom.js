@@ -11,7 +11,7 @@
  */
 
 import { showToast } from './dom.js';
-import { currentArtistImages, slideshowImagePool, slideshowEnabled, lastTrackInfo, slideshowConfig } from './state.js';
+import { currentArtistImages, slideshowImagePool, slideshowEnabled, lastTrackInfo, slideshowConfig, artModeZoomOutEnabled } from './state.js';
 
 // ========== CONSTANTS ==========
 const MIN_ZOOM = 0.3;    // 30% - allow zooming out a bit
@@ -49,6 +49,126 @@ let edgeHoldInterval = null; // For hold-to-cycle on edges
 // Manual artist image preservation
 let isUsingManualArtistImage = false;  // True when user manually browses artist images
 let manualImageTimeout = null;  // Failsafe timeout to reset the flag
+
+// ========== ZOOM-OUT FEATURE (Art Mode) ==========
+// Track which zoom img is currently active for crossfade
+let activeZoomImg = 'a';  // 'a' or 'b'
+
+/**
+ * Get the URL of the currently visible image
+ * Checks slideshow images, art-mode images, then background-layer
+ */
+function getCurrentVisibleImageUrl() {
+    const bgLayer = document.getElementById('background-layer');
+    if (!bgLayer) return '';
+    
+    // Priority 1: Active slideshow image
+    const slideshowImg = bgLayer.querySelector('.slideshow-image.active');
+    if (slideshowImg) {
+        return extractUrlFromBackground(slideshowImg.style.backgroundImage);
+    }
+    
+    // Priority 2: Last art-mode image (topmost)
+    const artModeImgs = bgLayer.querySelectorAll('.art-mode-image');
+    if (artModeImgs.length > 0) {
+        const lastImg = artModeImgs[artModeImgs.length - 1];
+        return extractUrlFromBackground(lastImg.style.backgroundImage);
+    }
+    
+    // Priority 3: Background layer itself
+    const bgImage = bgLayer.style.backgroundImage;
+    if (bgImage && bgImage !== 'none') {
+        return extractUrlFromBackground(bgImage);
+    }
+    
+    // Priority 4: From lastTrackInfo
+    return lastTrackInfo?.album_art_url || lastTrackInfo?.background_image_url || '';
+}
+
+/**
+ * Extract URL from CSS background-image value
+ */
+function extractUrlFromBackground(bgImage) {
+    if (!bgImage || bgImage === 'none') return '';
+    // Remove url(" and ") or url(' and ') or url( and )
+    return bgImage.replace(/url\(["']?/, '').replace(/["']?\)/, '');
+}
+
+/**
+ * Apply fill mode to zoom img based on user preference
+ */
+function applyFillModeToImg(img) {
+    const fillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+    switch (fillMode) {
+        case 'contain':
+            img.style.objectFit = 'contain';
+            break;
+        case 'stretch':
+            img.style.objectFit = 'fill';  // 'fill' stretches to fit
+            break;
+        case 'original':
+            img.style.objectFit = 'none';  // Shows at original size
+            break;
+        case 'cover':
+        default:
+            img.style.objectFit = 'cover';
+            break;
+    }
+}
+
+/**
+ * Crossfade to a new image on the zoom imgs
+ * Alternates between img-a and img-b for smooth transitions
+ */
+function crossfadeZoomImg(newUrl) {
+    const duration = slideshowConfig.transitionDuration || 0.8;
+    const currentId = `art-zoom-img-${activeZoomImg}`;
+    const nextId = `art-zoom-img-${activeZoomImg === 'a' ? 'b' : 'a'}`;
+    
+    const currentImg = document.getElementById(currentId);
+    const nextImg = document.getElementById(nextId);
+    
+    if (!currentImg || !nextImg) return;
+    
+    // Setup next image
+    nextImg.src = newUrl;
+    applyFillModeToImg(nextImg);
+    nextImg.style.opacity = '0';
+    nextImg.style.zIndex = '902';  // Above current
+    nextImg.style.transition = `opacity ${duration}s ease`;
+    
+    // Copy transform from current to next (preserve zoom/pan)
+    nextImg.style.transform = currentImg.style.transform;
+    nextImg.style.transformOrigin = currentImg.style.transformOrigin;
+    
+    // Crossfade after image loads
+    const doFade = () => {
+        requestAnimationFrame(() => {
+            nextImg.style.opacity = '1';
+            currentImg.style.opacity = '0';
+            currentImg.style.zIndex = '901';  // Below next
+        });
+        activeZoomImg = activeZoomImg === 'a' ? 'b' : 'a';
+    };
+    
+    // Check if image is already loaded (cached)
+    if (nextImg.complete) {
+        doFade();
+    } else {
+        nextImg.onload = doFade;
+    }
+}
+
+/**
+ * Update zoom img from external source (background.js, slideshow.js)
+ * Called when image changes while in art mode
+ */
+export function syncZoomImgIfInArtMode(newUrl) {
+    if (!isEnabled || !artModeZoomOutEnabled) return;
+    if (!document.body.classList.contains('zoom-out-enabled')) return;
+    
+    crossfadeZoomImg(newUrl);
+}
 
 // ========== IMAGE SWITCHING ==========
 
@@ -181,6 +301,16 @@ function applyCurrentImage() {
     
     const imageUrl = imagePool[currentImageIndex];
     
+    // If zoom-out feature is enabled and active, use zoom img crossfade
+    if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+        crossfadeZoomImg(imageUrl);
+        showToast(`Image ${currentImageIndex + 1}/${imagePool.length}`, 'success', 800);
+        preloadAdjacentImages();
+        return;  // Skip the old background-layer crossfade
+    }
+    
+    // Original behavior: crossfade using background-layer divs
+    
     // Use crossfade technique (like slideshow) to avoid flicker
     const newImg = document.createElement('div');
     newImg.className = 'art-mode-image';
@@ -290,11 +420,40 @@ function preloadAdjacentImages() {
 }
 
 /**
- * Apply current zoom and pan to background layer
+ * Apply current zoom and pan to background layer (or zoom imgs if feature enabled)
  */
 function updateTransform() {
-    const bg = document.getElementById('background-layer');
-    if (!bg) {
+    // Determine target element based on feature flag
+    let target;
+    if (isEnabled && artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+        // Apply transform to BOTH zoom imgs (they share transform state)
+        const imgA = document.getElementById('art-zoom-img-a');
+        const imgB = document.getElementById('art-zoom-img-b');
+        
+        // Apply bounds checking
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const maxPanX = vw * 0.75 * zoomLevel;
+        const maxPanY = vh * 0.75 * zoomLevel;
+        panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+        panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
+        
+        const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
+        
+        if (imgA) {
+            imgA.style.setProperty('transform-origin', 'center center', 'important');
+            imgA.style.setProperty('transform', transformValue, 'important');
+        }
+        if (imgB) {
+            imgB.style.setProperty('transform-origin', 'center center', 'important');
+            imgB.style.setProperty('transform', transformValue, 'important');
+        }
+        return;
+    }
+    
+    // Fallback: use background-layer (original behavior)
+    target = document.getElementById('background-layer');
+    if (!target) {
         console.warn('[ArtZoom] Background layer not found');
         return;
     }
@@ -309,8 +468,8 @@ function updateTransform() {
     
     // Transform with origin at center - natural zoom behavior
     const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
-    bg.style.setProperty('transform-origin', 'center center', 'important');
-    bg.style.setProperty('transform', transformValue, 'important');
+    target.style.setProperty('transform-origin', 'center center', 'important');
+    target.style.setProperty('transform', transformValue, 'important');
 }
 
 /**
@@ -591,6 +750,34 @@ export function enableArtZoom() {
     
     const bg = document.getElementById('background-layer');
     if (!bg) return;
+    
+    // Setup zoom imgs if feature is enabled
+    if (artModeZoomOutEnabled) {
+        const currentUrl = getCurrentVisibleImageUrl();
+        const imgA = document.getElementById('art-zoom-img-a');
+        const imgB = document.getElementById('art-zoom-img-b');
+        
+        if (imgA && imgB && currentUrl) {
+            // Setup primary image
+            imgA.src = currentUrl;
+            applyFillModeToImg(imgA);
+            imgA.style.opacity = '1';
+            imgA.style.zIndex = '901';
+            imgA.style.transform = '';
+            
+            // Setup secondary (hidden, for crossfade)
+            imgB.style.opacity = '0';
+            imgB.style.zIndex = '900';
+            imgB.style.transform = '';
+            
+            activeZoomImg = 'a';
+            
+            // Enable zoom-out mode
+            document.body.classList.add('zoom-out-enabled');
+            console.log('[ArtZoom] Zoom-out enabled with image:', currentUrl.substring(0, 50) + '...');
+        }
+    }
+    
     // Touch events on body (covers everything, avoids double-firing)
     document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
     document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -612,8 +799,13 @@ export function enableArtZoom() {
         if (isEnabled) e.preventDefault();
     });
     
-    // Set cursor hint on background
-    bg.style.cursor = 'grab';
+    // Set cursor hint on background (or zoom img)
+    if (artModeZoomOutEnabled) {
+        const activeImg = document.getElementById(`art-zoom-img-${activeZoomImg}`);
+        if (activeImg) activeImg.style.cursor = 'grab';
+    } else {
+        bg.style.cursor = 'grab';
+    }
     
     console.log('[ArtZoom] Enabled');
 }
@@ -626,6 +818,23 @@ export function disableArtZoom() {
     isEnabled = false;
     
     const bg = document.getElementById('background-layer');
+    
+    // Cleanup zoom imgs if feature was enabled
+    if (artModeZoomOutEnabled) {
+        document.body.classList.remove('zoom-out-enabled');
+        
+        const imgA = document.getElementById('art-zoom-img-a');
+        const imgB = document.getElementById('art-zoom-img-b');
+        
+        if (imgA) {
+            imgA.style.transform = '';
+            imgA.style.cursor = '';
+        }
+        if (imgB) {
+            imgB.style.transform = '';
+            imgB.style.cursor = '';
+        }
+    }
     
     // Remove touch events
     document.body.removeEventListener('touchstart', handleTouchStart);

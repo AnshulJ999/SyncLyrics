@@ -31,7 +31,7 @@ import {
 } from './state.js';
 
 // Import from artZoom to check if user is manually browsing artist images
-import { isManualArtistImageActive } from './artZoom.js';
+import { isManualArtistImageActive, syncZoomImgIfInArtMode } from './artZoom.js';
 
 // Forward reference for slideshow functions (will be imported dynamically when needed)
 let startSlideshowFn = null;
@@ -101,6 +101,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.softAlbumArt && lastTrackInfo && backgroundUrl) {
         const safeUrl = encodeURI(backgroundUrl);
@@ -108,6 +110,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.artBackground && lastTrackInfo && backgroundUrl) {
         const safeUrl = encodeURI(backgroundUrl);
@@ -115,6 +119,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.useAlbumColors && currentColors) {
         bgLayer.classList.remove('visible');

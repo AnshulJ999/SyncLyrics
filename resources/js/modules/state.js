@@ -111,6 +111,10 @@ export let slideshowImagePool = [];      // Combined artist + album images
 export let slideshowPaused = false;       // Paused due to manual browsing or background tab
 export let slideshowSessionOverride = null;  // null = use auto-preference, true = forced on, false = forced off
 
+// ========== ART MODE ZOOM-OUT ==========
+// Feature flag for zoom-out capability in art mode (uses <img> instead of background-image)
+export let artModeZoomOutEnabled = true;  // ON by default - set to false to disable
+
 // ========== BACKGROUND STATE ==========
 export let savedBackgroundState = null;
 export let manualStyleOverride = false; // Phase 2: Track if user manually overrode style
