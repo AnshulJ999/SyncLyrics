@@ -636,7 +636,11 @@ async def get_current_provider_info():
     """Get info about the provider currently serving lyrics"""
     from lyrics import get_current_provider, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
     provider_name = get_current_provider()
@@ -662,11 +666,15 @@ async def get_available_providers():
     """Get list of providers that could provide lyrics for current song"""
     from lyrics import get_available_providers_for_song, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     if not artist or not title:
         return jsonify({"error": "Invalid song data"}), 400
@@ -679,7 +687,11 @@ async def set_provider_preference():
     """Set preferred provider for current song"""
     from lyrics import set_provider_preference as set_pref, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
     data = await request.get_json()
@@ -688,8 +700,8 @@ async def set_provider_preference():
     if not provider_name:
         return jsonify({"error": "No provider specified"}), 400
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     result = await set_pref(artist, title, provider_name)
     
@@ -703,7 +715,11 @@ async def set_word_sync_preference():
     """Set preferred word-sync provider for current song"""
     from lyrics import set_word_sync_provider_preference, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
     data = await request.get_json()
@@ -712,8 +728,8 @@ async def set_word_sync_preference():
     if not provider_name:
         return jsonify({"error": "No provider specified"}), 400
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     result = await set_word_sync_provider_preference(artist, title, provider_name)
     
@@ -727,11 +743,15 @@ async def clear_word_sync_preference():
     """Clear word-sync provider preference for current song"""
     from lyrics import clear_word_sync_provider_preference, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     success = await clear_word_sync_provider_preference(artist, title)
     
@@ -785,11 +805,15 @@ async def clear_provider_preference_endpoint():
     """Clear provider preference for current song"""
     from lyrics import clear_provider_preference as clear_pref, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     success = await clear_pref(artist, title)
     
@@ -803,11 +827,15 @@ async def delete_cached_lyrics_endpoint():
     """Delete all cached lyrics for current song (use when lyrics are wrong)"""
     from lyrics import delete_cached_lyrics, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     if not artist or not title:
         return jsonify({"error": "Invalid song data"}), 400
@@ -825,13 +853,17 @@ async def backfill_lyrics_endpoint():
     """Manually trigger lyrics refetch from ALL enabled providers"""
     from lyrics import refetch_lyrics, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"status": "error", "message": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
-    album = current_song_data.get("album")
-    duration_ms = current_song_data.get("duration_ms")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
+    album = song_data.get("album")
+    duration_ms = song_data.get("duration_ms")
     duration = duration_ms // 1000 if duration_ms else None
     
     if not artist or not title:
