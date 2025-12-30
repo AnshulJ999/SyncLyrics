@@ -144,15 +144,15 @@ class AudioCaptureManager:
         "vb-cable",      # Priority 4: Virtual audio cable
         "vb-audio",      # Priority 5: VB-Audio virtual devices
         "voicemeeter",   # Priority 6: Voicemeeter
-        "wave out",      # Priority 7: Generic wave out
-        "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
+    #    "wave out",      # Priority 7: Generic wave out
+    #    "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
     ]
     
     # Generic devices to exclude from listing (duplicates/mappers that clutter the list)
     EXCLUDE_PATTERNS = [
         "microsoft sound mapper",
         "primary sound capture driver",
-        "communications",  # Usually just a role alias
+    #    "communications",  # Usually just a role alias
     ]
     
     # Fix 2.1: Class-level cache for auto-detected loopback device

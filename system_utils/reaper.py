@@ -904,7 +904,7 @@ async def _reaper_auto_detect_loop():
                 
                 if not _reaper_session_active:
                     # Not a Reaper session (e.g. started without Reaper ever being detected)
-                    logger.debug("Reaper closed but not a Reaper session - not auto-stopping")
+                    logger.debug("Reaper not running and not a Reaper session - not auto-stopping")
                     continue
                 
                 # Reaper was part of this session and is now closed - stop the engine
