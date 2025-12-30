@@ -157,7 +157,7 @@ function crossfadeZoomImg(newUrl) {
         if (imgW && imgH) {
             const baseScale = calculateBaseScale(imgW, imgH, vw, vh);
             const finalScale = baseScale * zoomLevel;
-            const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX / finalScale}px, ${panY / finalScale}px)`;
+            const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX}px, ${panY}px)`;
             nextImg.style.transform = transformValue;
         }
         
@@ -479,8 +479,9 @@ function updateTransform() {
         panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
         
         // Combine centering + scale + pan
-        // CSS already has translate(-50%, -50%) for centering, but we override with full transform
-        const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX / finalScale}px, ${panY / finalScale}px)`;
+        // Order: translate center, then scale, then translate for pan
+        // This matches the input formula (deltaX / zoomLevel) so pan feels consistent
+        const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX}px, ${panY}px)`;
         
         if (imgA) {
             imgA.style.setProperty('transform', transformValue, 'important');
