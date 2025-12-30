@@ -7,7 +7,8 @@
  * Architecture:
  * - State Machine: IDLE → POSSIBLE → RECOGNIZED/FAILED/CANCELLED
  * - Gesture Registry: Declarative gesture definitions with actions
- * - Stabilization Delay: Prevents conflicts between similar gestures (e.g., 3 vs 4 finger)
+ * - Delayed Evaluation: Waits for finger count to stabilize before triggering
+ *   (implements Hammer.js-style "requireFailure" pattern)
  * 
  * Default Gestures:
  * - 3-finger tap: Play/Pause toggle
@@ -15,8 +16,9 @@
  * 
  * NOTES:
  * - Uses capture phase (capture: true) to intercept events before other handlers
- * - Handles touchcancel as fallback since Android often fires it instead of touchend
- * - Stabilization delay allows staggered finger landings to register correctly
+ * - Uses passive:false + preventDefault() for 3+ finger touches to prevent
+ *   Android from intercepting gestures for system functions
+ * - Tracks maxTouchCount because fingers don't lift simultaneously
  * 
  * Level 2 - Imports: api, dom, slideshow
  */
@@ -28,8 +30,8 @@ import { toggleSlideshow } from './slideshow.js';
 // ========== CONSTANTS ==========
 
 // Timing configuration
-const STABILIZATION_DELAY = 1000;      // ms to wait for finger count to stabilize
-const TAP_MAX_DURATION = 400;        // ms - maximum duration for a tap gesture
+const FINGER_STABILIZATION_DELAY = 100;  // ms to wait after fingers lift before evaluating
+const TAP_MAX_DURATION = 500;        // ms - maximum duration for a tap gesture (increased for stabilization)
 const TAP_MAX_MOVEMENT = 30;         // px - maximum movement allowed for tap
 const HOLD_MIN_DURATION = 600;       // ms - minimum duration for hold gesture
 const HOLD_MAX_MOVEMENT = 30;        // px - maximum movement allowed for hold
@@ -199,11 +201,10 @@ let touchStartTime = 0;
 let touchStartPositions = [];       // Array of {x, y} for each finger at start
 let touchCurrentPositions = [];     // Array of {x, y} for current finger positions
 let maxTouchCount = 0;              // Maximum fingers seen during this gesture
-let stabilizedFingerCount = 0;      // Finger count after stabilization
 let gestureHandled = false;         // Prevent duplicate triggers
 
 // Timers
-let stabilizationTimer = null;
+let evaluationTimer = null;         // Delay before evaluating gesture (allows more fingers to be added)
 let holdTimer = null;
 
 // Double-tap tracking
@@ -221,12 +222,11 @@ function resetState() {
     touchStartPositions = [];
     touchCurrentPositions = [];
     maxTouchCount = 0;
-    stabilizedFingerCount = 0;
     gestureHandled = false;
     
-    if (stabilizationTimer) {
-        clearTimeout(stabilizationTimer);
-        stabilizationTimer = null;
+    if (evaluationTimer) {
+        clearTimeout(evaluationTimer);
+        evaluationTimer = null;
     }
     if (holdTimer) {
         clearTimeout(holdTimer);
@@ -378,6 +378,58 @@ async function triggerGesture(gesture) {
     }
 }
 
+/**
+ * Evaluate and trigger gesture after stabilization delay
+ * This is the core of the "requireFailure" pattern - we delay evaluation
+ * to give higher finger-count gestures a chance to be recognized
+ */
+function evaluateGesture() {
+    if (state !== GestureState.POSSIBLE) {
+        debugLog('evaluateGesture: not in POSSIBLE state, skipping');
+        return;
+    }
+    
+    const timestamp = Date.now();
+    const duration = timestamp - touchStartTime;
+    const maxMovement = calculateMaxMovement();
+    const movementVector = calculateMovementVector();
+    
+    debugLog(`[${timestamp}] Evaluating: duration=${duration}ms, maxMove=${maxMovement.toFixed(1)}px, fingers=${maxTouchCount}`);
+    showDebugOverlay(`Evaluating...\nFingers: ${maxTouchCount}\nDuration: ${duration}ms`);
+    
+    // Classify the gesture
+    const gestureType = classifyGesture(duration, maxMovement, movementVector);
+    
+    if (gestureType) {
+        debugLog(`Classified as: ${gestureType} with ${maxTouchCount} fingers`);
+        
+        // Find matching gesture in registry
+        const gesture = findMatchingGesture(maxTouchCount, gestureType);
+        
+        if (gesture) {
+            state = GestureState.RECOGNIZED;
+            triggerGesture(gesture);
+        } else {
+            debugLog(`No registered gesture for ${maxTouchCount}-finger ${gestureType}`);
+            state = GestureState.FAILED;
+            showDebugOverlay(`No gesture for\n${maxTouchCount}-finger ${gestureType}`);
+        }
+        
+        // Track for double-tap detection
+        if (gestureType === GestureType.TAP) {
+            lastTapTime = timestamp;
+            lastTapFingerCount = maxTouchCount;
+        }
+    } else {
+        debugLog('No gesture type matched');
+        state = GestureState.FAILED;
+        showDebugOverlay('No match');
+    }
+    
+    // Reset for next gesture
+    resetState();
+}
+
 // ========== EVENT HANDLERS ==========
 
 /**
@@ -386,23 +438,29 @@ async function triggerGesture(gesture) {
 function handleTouchStart(e) {
     const touchCount = e.touches.length;
     const timestamp = Date.now();
-    debugLog(`[${timestamp}] touchstart: ${touchCount} finger(s), state=${state}, maxTouchCount was ${maxTouchCount}`);
     
-    // Track maximum touch count seen during this gesture
-    const prevMax = maxTouchCount;
-    maxTouchCount = Math.max(maxTouchCount, touchCount);
-    
-    // For multi-finger gestures (3+), use stabilization
+    // For multi-finger gestures (3+), use special handling
     if (touchCount >= 3) {
         // CRITICAL: Prevent default to stop Android from intercepting 3-finger gestures
         // Android reserves 3-finger gestures for system functions (screenshot, etc.)
-        // Without this, Android fires touchcancel immediately
         e.preventDefault();
+        
+        // Track maximum touch count seen during this gesture
+        const prevMax = maxTouchCount;
+        maxTouchCount = Math.max(maxTouchCount, touchCount);
+        
+        debugLog(`[${timestamp}] touchstart: ${touchCount} fingers, max: ${prevMax} → ${maxTouchCount}, state=${state}`);
+        
+        // Cancel any pending evaluation timer - more fingers might be coming
+        if (evaluationTimer) {
+            clearTimeout(evaluationTimer);
+            evaluationTimer = null;
+            debugLog('Cancelled pending evaluation - more fingers detected');
+        }
         
         // If already in POSSIBLE state, just update maxTouchCount
         if (state === GestureState.POSSIBLE) {
-            debugLog(`[${timestamp}] Finger added: ${prevMax} → ${maxTouchCount}`);
-            showDebugOverlay(`Fingers: ${prevMax} → ${maxTouchCount}\nstate: POSSIBLE`);
+            showDebugOverlay(`Fingers: ${prevMax} → ${maxTouchCount}`);
             return;
         }
         
@@ -420,56 +478,18 @@ function handleTouchStart(e) {
             touchCurrentPositions.push({ ...pos });
         }
         
-        debugLog(`[${timestamp}] ${touchCount}-finger gesture STARTED, stabilization in ${STABILIZATION_DELAY}ms`);
-        showDebugOverlay(`${touchCount}-finger: STARTED\nWaiting ${STABILIZATION_DELAY}ms...`);
-        
-        // Start stabilization timer
-        // This gives time for additional fingers to land before we commit to a finger count
-        if (stabilizationTimer) clearTimeout(stabilizationTimer);
-        stabilizationTimer = setTimeout(() => {
-            stabilizedFingerCount = maxTouchCount;
-            const now = Date.now();
-            debugLog(`[${now}] Stabilized at ${stabilizedFingerCount} fingers (waited ${now - touchStartTime}ms)`);
-            showDebugOverlay(`STABILIZED: ${stabilizedFingerCount} fingers`);
-            
-            // Start hold timer for potential hold gestures
-            startHoldTimer();
-        }, STABILIZATION_DELAY);
+        debugLog(`${touchCount}-finger gesture STARTED`);
+        showDebugOverlay(`${touchCount}-finger: STARTED`);
         
     } else if (touchCount > 0 && touchCount < 3) {
-        // 1-2 finger gestures - currently not intercepted to avoid conflicts with scrolling/zooming
-        // Can be enabled in future by removing this condition
-        if (state !== GestureState.IDLE) {
-            // Fingers were lifted and we're in a weird state - reset
-            debugLog(`[${timestamp}] Resetting: got ${touchCount} fingers while in state=${state}`);
+        // 1-2 finger gestures - we track maxTouchCount but don't activate gesture
+        // This handles the case where user starts with 1-2 fingers then adds more
+        maxTouchCount = Math.max(maxTouchCount, touchCount);
+        
+        if (state !== GestureState.IDLE && state !== GestureState.POSSIBLE) {
             resetState();
         }
     }
-}
-
-
-/**
- * Start hold timer for hold gesture detection
- */
-function startHoldTimer() {
-    if (holdTimer) clearTimeout(holdTimer);
-    
-    holdTimer = setTimeout(() => {
-        // Check if we're still in POSSIBLE state and haven't moved too much
-        if (state !== GestureState.POSSIBLE) return;
-        
-        const maxMovement = calculateMaxMovement();
-        if (maxMovement <= HOLD_MAX_MOVEMENT) {
-            // Hold gesture recognized!
-            const fingerCount = stabilizedFingerCount || maxTouchCount;
-            const gesture = findMatchingGesture(fingerCount, GestureType.HOLD);
-            
-            if (gesture) {
-                state = GestureState.RECOGNIZED;
-                triggerGesture(gesture);
-            }
-        }
-    }, HOLD_MIN_DURATION);
 }
 
 /**
@@ -489,82 +509,52 @@ function handleTouchMove(e) {
     // Check if movement exceeds tap threshold (for early tap failure)
     const maxMovement = calculateMaxMovement();
     if (maxMovement > TAP_MAX_MOVEMENT) {
-        // Movement exceeds tap threshold - could still be a swipe
         debugLog(`Movement: ${maxMovement.toFixed(1)}px (tap threshold exceeded)`);
     }
-    
-    // Don't fail the gesture yet - could be a swipe
-    // Full classification happens on touchend
 }
 
 /**
- * Handle touch end - classify and trigger gesture
+ * Handle touch end - schedule gesture evaluation
+ * 
+ * KEY INSIGHT: We don't evaluate immediately when fingers lift.
+ * Instead, we schedule evaluation after a short delay.
+ * This gives time for more fingers to be added (staggered landing).
+ * If more fingers are added, the timer is cancelled and restarted.
  */
-async function handleTouchEnd(e) {
+function handleTouchEnd(e) {
     const remainingTouches = e.touches.length;
     const timestamp = Date.now();
-    debugLog(`[${timestamp}] touchend: ${remainingTouches} remaining, max=${maxTouchCount}, stabilized=${stabilizedFingerCount}, state=${state}`);
     
-    // Wait until ALL fingers are lifted before evaluating
-    if (remainingTouches === 0 && state === GestureState.POSSIBLE) {
-        // Clear stabilization timer if still running
-        const stabilizationWasRunning = stabilizationTimer !== null;
-        if (stabilizationTimer) {
-            clearTimeout(stabilizationTimer);
-            stabilizationTimer = null;
-            // Use maxTouchCount since stabilization didn't complete
-            stabilizedFingerCount = maxTouchCount;
-            debugLog(`[${timestamp}] Stabilization timer was still running! Using maxTouchCount=${maxTouchCount}`);
+    debugLog(`[${timestamp}] touchend: ${remainingTouches} remaining, max=${maxTouchCount}, state=${state}`);
+    
+    // Only process if we're in POSSIBLE state
+    if (state !== GestureState.POSSIBLE) {
+        if (remainingTouches === 0) {
+            resetState();
         }
-        
-        // Clear hold timer (we're evaluating now)
-        if (holdTimer) {
-            clearTimeout(holdTimer);
-            holdTimer = null;
-        }
-        
-        const duration = timestamp - touchStartTime;
-        const maxMovement = calculateMaxMovement();
-        const movementVector = calculateMovementVector();
-        
-        debugLog(`[${timestamp}] Evaluating: duration=${duration}ms, maxMove=${maxMovement.toFixed(1)}px, fingers=${stabilizedFingerCount}`);
-        showDebugOverlay(`Duration: ${duration}ms\nFingers: ${stabilizedFingerCount}\nStab ran: ${!stabilizationWasRunning}`);
-        
-        // Classify the gesture
-        const gestureType = classifyGesture(duration, maxMovement, movementVector);
-        
-        if (gestureType) {
-            debugLog(`[${timestamp}] Classified as: ${gestureType} with ${stabilizedFingerCount} fingers`);
-            
-            // Find matching gesture in registry
-            const gesture = findMatchingGesture(stabilizedFingerCount, gestureType);
-            
-            if (gesture) {
-                state = GestureState.RECOGNIZED;
-                await triggerGesture(gesture);
-            } else {
-                debugLog(`No registered gesture for ${stabilizedFingerCount}-finger ${gestureType}`);
-                state = GestureState.FAILED;
-            }
-            
-            // Track for double-tap detection
-            if (gestureType === GestureType.TAP) {
-                lastTapTime = timestamp;
-                lastTapFingerCount = stabilizedFingerCount;
-            }
-        } else {
-            debugLog('No gesture type matched');
-            state = GestureState.FAILED;
-            showDebugOverlay('No match');
-        }
-        
-        // Reset for next gesture
-        resetState();
-        
-    } else if (remainingTouches === 0) {
-        // All fingers lifted but we weren't in POSSIBLE state
-        resetState();
+        return;
     }
+    
+    // If fingers remain, don't evaluate yet
+    if (remainingTouches > 0) {
+        debugLog(`Still ${remainingTouches} fingers down, waiting...`);
+        showDebugOverlay(`${remainingTouches} fingers remain\nmax: ${maxTouchCount}`);
+        return;
+    }
+    
+    // All fingers lifted - schedule evaluation after delay
+    // This delay allows for the "requireFailure" pattern:
+    // If user puts fingers back down quickly, we cancel and continue
+    debugLog(`All fingers lifted, scheduling evaluation in ${FINGER_STABILIZATION_DELAY}ms`);
+    showDebugOverlay(`Lifted. Wait ${FINGER_STABILIZATION_DELAY}ms...\nmax: ${maxTouchCount}`);
+    
+    if (evaluationTimer) {
+        clearTimeout(evaluationTimer);
+    }
+    
+    evaluationTimer = setTimeout(() => {
+        evaluateGesture();
+    }, FINGER_STABILIZATION_DELAY);
 }
 
 /**
@@ -575,38 +565,21 @@ function handleTouchCancel(e) {
     showDebugOverlay('CANCEL event');
     
     // On Android, touchcancel is often fired for valid multi-touch gestures
-    // Treat it as touchend if we have an active gesture
+    // Treat it like touchend - schedule evaluation
     if (state === GestureState.POSSIBLE && maxTouchCount >= 3) {
-        // Clear timers
-        if (stabilizationTimer) {
-            clearTimeout(stabilizationTimer);
-            stabilizationTimer = null;
-            stabilizedFingerCount = maxTouchCount;
-        }
-        if (holdTimer) {
-            clearTimeout(holdTimer);
-            holdTimer = null;
+        debugLog(`touchcancel with ${maxTouchCount} fingers, scheduling evaluation`);
+        
+        if (evaluationTimer) {
+            clearTimeout(evaluationTimer);
         }
         
-        const duration = Date.now() - touchStartTime;
-        const maxMovement = calculateMaxMovement();
-        const movementVector = calculateMovementVector();
-        
-        // Classify and trigger
-        const gestureType = classifyGesture(duration, maxMovement, movementVector);
-        
-        if (gestureType) {
-            const gesture = findMatchingGesture(stabilizedFingerCount, gestureType);
-            if (gesture) {
-                state = GestureState.RECOGNIZED;
-                triggerGesture(gesture);
-            }
-        }
+        evaluationTimer = setTimeout(() => {
+            evaluateGesture();
+        }, FINGER_STABILIZATION_DELAY);
+    } else {
+        // Not an active gesture, just reset
+        resetState();
     }
-    
-    // Always reset on cancel
-    state = GestureState.CANCELLED;
-    resetState();
 }
 
 // ========== PUBLIC API ==========
@@ -668,7 +641,6 @@ export function getGestureState() {
     return {
         state,
         maxTouchCount,
-        stabilizedFingerCount,
         gestureHandled
     };
 }
