@@ -32,7 +32,7 @@ import {
 } from './state.js';
 
 import { showToast } from './dom.js';
-import { isManualArtistImageActive } from './artZoom.js';
+import { isManualArtistImageActive, resetArtZoom } from './artZoom.js';
 import { updateBackground } from './background.js';
 
 // ========== CONSTANTS ==========
@@ -694,6 +694,62 @@ function showSlide(index) {
         const oldImages = bgContainer.querySelectorAll('.slideshow-image:not(:last-child)');
         oldImages.forEach(img => img.remove());
     }, cleanupDelay);
+    
+    // Reset zoom/pan if in art-only mode (consistency with artZoom behavior)
+    if (document.body.classList.contains('art-only-mode')) {
+        resetArtZoom();
+    }
+    
+    // Preload adjacent images for smoother rapid cycling
+    preloadAdjacentSlides(index);
+}
+
+// Track preloaded URLs to avoid duplicate preloads
+const preloadedSlideUrls = new Set();
+
+/**
+ * Preload images within ±3 of current index for smoother cycling
+ * Similar to artZoom's preloadAdjacentImages but for slideshow
+ * 
+ * @param {number} currentIndex - Current slide index
+ */
+function preloadAdjacentSlides(currentIndex) {
+    if (slideshowImagePool.length === 0) return;
+    
+    const PRELOAD_RANGE = 3;  // Preload 3 images in each direction
+    
+    // Create or get container for preloaded images
+    let container = document.getElementById('slideshow-preload-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'slideshow-preload-container';
+        container.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;';
+        document.body.appendChild(container);
+    }
+    
+    for (let offset = -PRELOAD_RANGE; offset <= PRELOAD_RANGE; offset++) {
+        if (offset === 0) continue;  // Skip current (already loaded)
+        
+        const index = (currentIndex + offset + slideshowImagePool.length) % slideshowImagePool.length;
+        const url = slideshowImagePool[index];
+        
+        // Skip if already preloaded
+        if (preloadedSlideUrls.has(url)) continue;
+        preloadedSlideUrls.add(url);
+        
+        // Add link preload hint
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = url;
+        document.head.appendChild(link);
+        
+        // Add hidden img to DOM for reliable caching
+        const img = document.createElement('img');
+        img.src = url;
+        img.loading = 'eager';
+        container.appendChild(img);
+    }
 }
 
 /**
