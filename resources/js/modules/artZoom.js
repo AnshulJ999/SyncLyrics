@@ -430,22 +430,43 @@ function updateTransform() {
         const imgA = document.getElementById('art-zoom-img-a');
         const imgB = document.getElementById('art-zoom-img-b');
         
-        // Apply bounds checking
+        // Get viewport dimensions
         const vw = window.innerWidth;
         const vh = window.innerHeight;
+        
+        // Get the active image to read natural dimensions
+        const activeImg = activeZoomImg === 'a' ? imgA : imgB;
+        if (!activeImg || !activeImg.naturalWidth) {
+            // Image not loaded yet, skip
+            return;
+        }
+        
+        // Calculate the "cover scale" - minimum scale to make image cover viewport
+        // This is what object-fit: cover does, but we calculate it manually
+        const imgW = activeImg.naturalWidth;
+        const imgH = activeImg.naturalHeight;
+        const coverScale = Math.max(vw / imgW, vh / imgH);
+        
+        // Apply zoom level on top of cover scale
+        // At zoomLevel=1, we match object-fit:cover behavior
+        // At zoomLevel<1, we reveal more of the image (zoom out)
+        // At zoomLevel>1, we zoom in further
+        const finalScale = coverScale * zoomLevel;
+        
+        // Apply bounds checking for panning
         const maxPanX = vw * 0.75 * zoomLevel;
         const maxPanY = vh * 0.75 * zoomLevel;
         panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
         panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
         
-        const transformValue = `scale(${zoomLevel}) translate(${panX}px, ${panY}px)`;
+        // Combine centering + scale + pan
+        // CSS already has translate(-50%, -50%) for centering, but we override with full transform
+        const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX / finalScale}px, ${panY / finalScale}px)`;
         
         if (imgA) {
-            imgA.style.setProperty('transform-origin', 'center center', 'important');
             imgA.style.setProperty('transform', transformValue, 'important');
         }
         if (imgB) {
-            imgB.style.setProperty('transform-origin', 'center center', 'important');
             imgB.style.setProperty('transform', transformValue, 'important');
         }
         return;
