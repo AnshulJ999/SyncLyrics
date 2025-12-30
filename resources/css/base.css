@@ -1917,6 +1917,8 @@ body.art-only-mode .background-overlay {
     transform: translate(-50%, -50%);
     transform-origin: center center;
     background-color: black;
+    /* Smooth transitions for opacity (fade) */
+    transition: opacity 0.8s ease;
 }
 
 /* When art mode is active AND zoom-out is enabled */

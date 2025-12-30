@@ -95,24 +95,34 @@ function extractUrlFromBackground(bgImage) {
 }
 
 /**
- * Apply fill mode to zoom img based on user preference
+ * Calculate the base scale for an image to achieve the desired fill mode
+ * This replaces object-fit with manual scale calculation
+ * @param {number} imgW - Image natural width
+ * @param {number} imgH - Image natural height
+ * @param {number} vw - Viewport width
+ * @param {number} vh - Viewport height
+ * @returns {number} The base scale to apply
  */
-function applyFillModeToImg(img) {
+function calculateBaseScale(imgW, imgH, vw, vh) {
     const fillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+    
     switch (fillMode) {
-        case 'contain':
-            img.style.objectFit = 'contain';
-            break;
-        case 'stretch':
-            img.style.objectFit = 'fill';  // 'fill' stretches to fit
-            break;
-        case 'original':
-            img.style.objectFit = 'none';  // Shows at original size
-            break;
         case 'cover':
+            // Scale to cover viewport completely (may crop)
+            return Math.max(vw / imgW, vh / imgH);
+        case 'contain':
+            // Scale to fit inside viewport completely (may letterbox)
+            return Math.min(vw / imgW, vh / imgH);
+        case 'stretch':
+            // For stretch, we'd need non-uniform scaling which is complex
+            // Approximate with cover behavior for now
+            // TODO: Could use scaleX/scaleY separately but that changes the approach
+            return Math.max(vw / imgW, vh / imgH);
+        case 'original':
+            // No scaling - show at natural size
+            return 1;
         default:
-            img.style.objectFit = 'cover';
-            break;
+            return Math.max(vw / imgW, vh / imgH);
     }
 }
 
@@ -130,29 +140,39 @@ function crossfadeZoomImg(newUrl) {
     
     if (!currentImg || !nextImg) return;
     
-    // Setup next image
+    // Setup next image (hidden initially)
     nextImg.src = newUrl;
-    applyFillModeToImg(nextImg);
     nextImg.style.opacity = '0';
     nextImg.style.zIndex = '902';  // Above current
     nextImg.style.transition = `opacity ${duration}s ease`;
     
-    // Copy transform from current to next (preserve zoom/pan)
-    nextImg.style.transform = currentImg.style.transform;
-    nextImg.style.transformOrigin = currentImg.style.transformOrigin;
-    
-    // Crossfade after image loads
+    // Crossfade after image loads - calculate scale for NEW image dimensions
     const doFade = () => {
+        // Calculate proper scale for this image's dimensions
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const imgW = nextImg.naturalWidth;
+        const imgH = nextImg.naturalHeight;
+        
+        if (imgW && imgH) {
+            const baseScale = calculateBaseScale(imgW, imgH, vw, vh);
+            const finalScale = baseScale * zoomLevel;
+            const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX / finalScale}px, ${panY / finalScale}px)`;
+            nextImg.style.transform = transformValue;
+        }
+        
+        // Fade in next, fade out current
         requestAnimationFrame(() => {
             nextImg.style.opacity = '1';
             currentImg.style.opacity = '0';
-            currentImg.style.zIndex = '901';  // Below next
+            currentImg.style.zIndex = '901';
         });
+        
         activeZoomImg = activeZoomImg === 'a' ? 'b' : 'a';
     };
     
     // Check if image is already loaded (cached)
-    if (nextImg.complete) {
+    if (nextImg.complete && nextImg.naturalWidth) {
         doFade();
     } else {
         nextImg.onload = doFade;
@@ -441,17 +461,16 @@ function updateTransform() {
             return;
         }
         
-        // Calculate the "cover scale" - minimum scale to make image cover viewport
-        // This is what object-fit: cover does, but we calculate it manually
+        // Calculate the base scale based on fill mode preference
         const imgW = activeImg.naturalWidth;
         const imgH = activeImg.naturalHeight;
-        const coverScale = Math.max(vw / imgW, vh / imgH);
+        const baseScale = calculateBaseScale(imgW, imgH, vw, vh);
         
-        // Apply zoom level on top of cover scale
-        // At zoomLevel=1, we match object-fit:cover behavior
+        // Apply zoom level on top of base scale
+        // At zoomLevel=1, we match the fill mode behavior
         // At zoomLevel<1, we reveal more of the image (zoom out)
         // At zoomLevel>1, we zoom in further
-        const finalScale = coverScale * zoomLevel;
+        const finalScale = baseScale * zoomLevel;
         
         // Apply bounds checking for panning
         const maxPanX = vw * 0.75 * zoomLevel;
@@ -779,23 +798,49 @@ export function enableArtZoom() {
         const imgB = document.getElementById('art-zoom-img-b');
         
         if (imgA && imgB && currentUrl) {
-            // Setup primary image
-            imgA.src = currentUrl;
-            applyFillModeToImg(imgA);
-            imgA.style.opacity = '1';
+            // Start hidden - will fade in after image loads and transform is applied
+            imgA.style.opacity = '0';
             imgA.style.zIndex = '901';
-            imgA.style.transform = '';
+            imgA.src = currentUrl;
             
             // Setup secondary (hidden, for crossfade)
             imgB.style.opacity = '0';
             imgB.style.zIndex = '900';
-            imgB.style.transform = '';
             
             activeZoomImg = 'a';
             
-            // Enable zoom-out mode
-            document.body.classList.add('zoom-out-enabled');
-            console.log('[ArtZoom] Zoom-out enabled with image:', currentUrl.substring(0, 50) + '...');
+            // Wait for image to load before showing
+            const onImageReady = () => {
+                // Calculate and apply initial transform
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const imgW = imgA.naturalWidth;
+                const imgH = imgA.naturalHeight;
+                
+                if (imgW && imgH) {
+                    const baseScale = calculateBaseScale(imgW, imgH, vw, vh);
+                    const transformValue = `translate(-50%, -50%) scale(${baseScale})`;
+                    imgA.style.transform = transformValue;
+                    imgB.style.transform = transformValue;
+                }
+                
+                // Enable zoom-out mode
+                document.body.classList.add('zoom-out-enabled');
+                
+                // Now fade in
+                requestAnimationFrame(() => {
+                    imgA.style.opacity = '1';
+                });
+                
+                console.log('[ArtZoom] Zoom-out enabled with image:', currentUrl.substring(0, 50) + '...');
+            };
+            
+            // Check if already loaded (cached)
+            if (imgA.complete && imgA.naturalWidth) {
+                onImageReady();
+            } else {
+                imgA.onload = onImageReady;
+            }
         }
     }
     
@@ -890,6 +935,12 @@ export function disableArtZoom() {
  * Initialize art zoom module (called once on page load)
  */
 export function initArtZoom() {
-    // Just setup - actual enable/disable happens via art-only mode toggle
+    // Handle window resize - recalculate scale for new viewport
+    window.addEventListener('resize', () => {
+        if (isEnabled && artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+            updateTransform();
+        }
+    });
+    
     console.log('[ArtZoom] Module initialized');
 }
