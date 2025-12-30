@@ -30,7 +30,7 @@ import { toggleSlideshow } from './slideshow.js';
 // ========== CONSTANTS ==========
 
 // Timing configuration
-const FINGER_STABILIZATION_DELAY = 100;  // ms to wait after fingers lift before evaluating
+const FINGER_STABILIZATION_DELAY = 70;  // ms to wait after fingers lift before evaluating
 const TAP_MAX_DURATION = 500;        // ms - maximum duration for a tap gesture (increased for stabilization)
 const TAP_MAX_MOVEMENT = 30;         // px - maximum movement allowed for tap
 const HOLD_MIN_DURATION = 600;       // ms - minimum duration for hold gesture
@@ -60,7 +60,7 @@ const GestureType = {
 };
 
 // ========== DEBUG ==========
-const DEBUG = true;  // Set to true to enable debug overlay and logging
+const DEBUG = false;  // Set to true to enable debug overlay and logging
 
 function debugLog(...args) {
     if (DEBUG) console.log('[TouchGestures]', ...args);
