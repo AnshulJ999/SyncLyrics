@@ -28,7 +28,7 @@ import { toggleSlideshow } from './slideshow.js';
 // ========== CONSTANTS ==========
 
 // Timing configuration
-const STABILIZATION_DELAY = 80;      // ms to wait for finger count to stabilize
+const STABILIZATION_DELAY = 1000;      // ms to wait for finger count to stabilize
 const TAP_MAX_DURATION = 400;        // ms - maximum duration for a tap gesture
 const TAP_MAX_MOVEMENT = 30;         // px - maximum movement allowed for tap
 const HOLD_MIN_DURATION = 600;       // ms - minimum duration for hold gesture
@@ -385,24 +385,26 @@ async function triggerGesture(gesture) {
  */
 function handleTouchStart(e) {
     const touchCount = e.touches.length;
-    debugLog(`touchstart: ${touchCount} finger(s)`);
+    const timestamp = Date.now();
+    debugLog(`[${timestamp}] touchstart: ${touchCount} finger(s), state=${state}, maxTouchCount was ${maxTouchCount}`);
     
     // Track maximum touch count seen during this gesture
+    const prevMax = maxTouchCount;
     maxTouchCount = Math.max(maxTouchCount, touchCount);
     
     // For multi-finger gestures (3+), use stabilization
     if (touchCount >= 3) {
         // If already in POSSIBLE state, just update maxTouchCount
         if (state === GestureState.POSSIBLE) {
-            debugLog(`Finger added, maxTouchCount now ${maxTouchCount}`);
-            showDebugOverlay(`Fingers: ${maxTouchCount}`);
+            debugLog(`[${timestamp}] Finger added: ${prevMax} → ${maxTouchCount}`);
+            showDebugOverlay(`Fingers: ${prevMax} → ${maxTouchCount}\nstate: POSSIBLE`);
             return;
         }
         
         // Start new gesture
         state = GestureState.POSSIBLE;
         gestureHandled = false;
-        touchStartTime = Date.now();
+        touchStartTime = timestamp;
         touchStartPositions = [];
         touchCurrentPositions = [];
         
@@ -413,16 +415,17 @@ function handleTouchStart(e) {
             touchCurrentPositions.push({ ...pos });
         }
         
-        debugLog(`${touchCount}-finger gesture STARTED`);
-        showDebugOverlay(`${touchCount}-finger: STARTED`);
+        debugLog(`[${timestamp}] ${touchCount}-finger gesture STARTED, stabilization in ${STABILIZATION_DELAY}ms`);
+        showDebugOverlay(`${touchCount}-finger: STARTED\nWaiting ${STABILIZATION_DELAY}ms...`);
         
         // Start stabilization timer
         // This gives time for additional fingers to land before we commit to a finger count
         if (stabilizationTimer) clearTimeout(stabilizationTimer);
         stabilizationTimer = setTimeout(() => {
             stabilizedFingerCount = maxTouchCount;
-            debugLog(`Stabilized at ${stabilizedFingerCount} fingers`);
-            showDebugOverlay(`Stabilized: ${stabilizedFingerCount} fingers`);
+            const now = Date.now();
+            debugLog(`[${now}] Stabilized at ${stabilizedFingerCount} fingers (waited ${now - touchStartTime}ms)`);
+            showDebugOverlay(`STABILIZED: ${stabilizedFingerCount} fingers`);
             
             // Start hold timer for potential hold gestures
             startHoldTimer();
@@ -433,10 +436,12 @@ function handleTouchStart(e) {
         // Can be enabled in future by removing this condition
         if (state !== GestureState.IDLE) {
             // Fingers were lifted and we're in a weird state - reset
+            debugLog(`[${timestamp}] Resetting: got ${touchCount} fingers while in state=${state}`);
             resetState();
         }
     }
 }
+
 
 /**
  * Start hold timer for hold gesture detection
@@ -492,16 +497,19 @@ function handleTouchMove(e) {
  */
 async function handleTouchEnd(e) {
     const remainingTouches = e.touches.length;
-    debugLog(`touchend: ${remainingTouches} finger(s) remaining, max was ${maxTouchCount}`);
+    const timestamp = Date.now();
+    debugLog(`[${timestamp}] touchend: ${remainingTouches} remaining, max=${maxTouchCount}, stabilized=${stabilizedFingerCount}, state=${state}`);
     
     // Wait until ALL fingers are lifted before evaluating
     if (remainingTouches === 0 && state === GestureState.POSSIBLE) {
         // Clear stabilization timer if still running
+        const stabilizationWasRunning = stabilizationTimer !== null;
         if (stabilizationTimer) {
             clearTimeout(stabilizationTimer);
             stabilizationTimer = null;
             // Use maxTouchCount since stabilization didn't complete
             stabilizedFingerCount = maxTouchCount;
+            debugLog(`[${timestamp}] Stabilization timer was still running! Using maxTouchCount=${maxTouchCount}`);
         }
         
         // Clear hold timer (we're evaluating now)
@@ -510,18 +518,18 @@ async function handleTouchEnd(e) {
             holdTimer = null;
         }
         
-        const duration = Date.now() - touchStartTime;
+        const duration = timestamp - touchStartTime;
         const maxMovement = calculateMaxMovement();
         const movementVector = calculateMovementVector();
         
-        debugLog(`Evaluating: duration=${duration}ms, maxMove=${maxMovement.toFixed(1)}px, distance=${movementVector.distance.toFixed(1)}px`);
-        showDebugOverlay(`Duration: ${duration}ms\nMovement: ${maxMovement.toFixed(1)}px`);
+        debugLog(`[${timestamp}] Evaluating: duration=${duration}ms, maxMove=${maxMovement.toFixed(1)}px, fingers=${stabilizedFingerCount}`);
+        showDebugOverlay(`Duration: ${duration}ms\nFingers: ${stabilizedFingerCount}\nStab ran: ${!stabilizationWasRunning}`);
         
         // Classify the gesture
         const gestureType = classifyGesture(duration, maxMovement, movementVector);
         
         if (gestureType) {
-            debugLog(`Classified as: ${gestureType} with ${stabilizedFingerCount} fingers`);
+            debugLog(`[${timestamp}] Classified as: ${gestureType} with ${stabilizedFingerCount} fingers`);
             
             // Find matching gesture in registry
             const gesture = findMatchingGesture(stabilizedFingerCount, gestureType);
@@ -536,7 +544,7 @@ async function handleTouchEnd(e) {
             
             // Track for double-tap detection
             if (gestureType === GestureType.TAP) {
-                lastTapTime = Date.now();
+                lastTapTime = timestamp;
                 lastTapFingerCount = stabilizedFingerCount;
             }
         } else {
