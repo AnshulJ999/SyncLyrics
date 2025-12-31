@@ -176,6 +176,9 @@ function crossfadeZoomImg(newUrl) {
         doFade();
     } else {
         nextImg.onload = doFade;
+        nextImg.onerror = () => {
+            console.warn('[ArtZoom] Image failed to load:', newUrl.substring(0, 80));
+        };
     }
 }
 
@@ -671,10 +674,26 @@ function handleTouchMove(e) {
         const deltaX = e.touches[0].clientX - lastTouchX;
         const deltaY = e.touches[0].clientY - lastTouchY;
         
-        // Scale pan by zoom level for consistent feel (clamp to prevent huge jumps)
+        // Calculate effective scale (baseScale * zoomLevel) for proper pan feel
+        // This ensures 1:1 finger-to-image movement regardless of image dimensions
+        let effectiveScale = zoomLevel;
+        if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+            const activeImg = activeZoomImg === 'a' 
+                ? document.getElementById('art-zoom-img-a') 
+                : document.getElementById('art-zoom-img-b');
+            if (activeImg?.naturalWidth) {
+                const baseScale = calculateBaseScale(
+                    activeImg.naturalWidth, activeImg.naturalHeight,
+                    window.innerWidth, window.innerHeight
+                );
+                effectiveScale = baseScale * zoomLevel;
+            }
+        }
+        
+        // Scale pan by effective scale for consistent feel (clamp to prevent huge jumps)
         const maxDelta = 100;
-        const scaledDeltaX = Math.max(-maxDelta, Math.min(maxDelta, deltaX / zoomLevel));
-        const scaledDeltaY = Math.max(-maxDelta, Math.min(maxDelta, deltaY / zoomLevel));
+        const scaledDeltaX = Math.max(-maxDelta, Math.min(maxDelta, deltaX / effectiveScale));
+        const scaledDeltaY = Math.max(-maxDelta, Math.min(maxDelta, deltaY / effectiveScale));
         panX += scaledDeltaX;
         panY += scaledDeltaY;
         
@@ -753,8 +772,23 @@ function handleMouseMove(e) {
     const deltaX = e.clientX - lastMouseX;
     const deltaY = e.clientY - lastMouseY;
     
-    panX += deltaX / zoomLevel;
-    panY += deltaY / zoomLevel;
+    // Calculate effective scale (baseScale * zoomLevel) for proper pan feel
+    let effectiveScale = zoomLevel;
+    if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+        const activeImg = activeZoomImg === 'a' 
+            ? document.getElementById('art-zoom-img-a') 
+            : document.getElementById('art-zoom-img-b');
+        if (activeImg?.naturalWidth) {
+            const baseScale = calculateBaseScale(
+                activeImg.naturalWidth, activeImg.naturalHeight,
+                window.innerWidth, window.innerHeight
+            );
+            effectiveScale = baseScale * zoomLevel;
+        }
+    }
+    
+    panX += deltaX / effectiveScale;
+    panY += deltaY / effectiveScale;
     
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
