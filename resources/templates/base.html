@@ -20,14 +20,18 @@
     <!-- Preload critical CSS for faster first paint -->
     <link rel="preload" href="{{ url_for('static', filename='css/base.css')}}?v={{ cache_version }}" as="style">
     <link rel="preload" href="{{ url_for('static', filename='css/bootstrap.min.css')}}?v={{ cache_version }}" as="style">
+    <!-- Preload icon fonts to prevent FOUT (Flash of Unstyled Text) -->
+    <link rel="preload" href="{{ url_for('static', filename='css/fonts/bootstrap-icons.woff2')}}" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ url_for('static', filename='css/phosphor/Phosphor-Fill.woff2')}}" as="font" type="font/woff2" crossorigin>
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-icons.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/provider.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/audio-source.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/slideshow.css')}}?v={{ cache_version }}">
-    <!-- Phosphor Icons (for karaoke mic icon) -->
-    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+    <!-- Phosphor Icons (self-hosted for faster loading) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phosphor/style.css')}}?v={{ cache_version }}">
     {% block styles %} {% endblock %}
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js')}}?v={{ cache_version }}" defer></script>
     <script src="{{ url_for('static', filename='js/base.js')}}?v={{ cache_version }}" defer></script>
