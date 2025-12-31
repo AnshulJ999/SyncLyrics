@@ -861,9 +861,22 @@ const DEFAULT_SETTINGS = {
 /**
  * Show the slideshow control center modal
  */
-export function showSlideshowModal() {
+export async function showSlideshowModal() {
     const modal = document.getElementById('slideshow-modal');
     if (!modal) return;
+    
+    // If no artist images loaded yet, fetch them now
+    if (currentArtistImages.length === 0 && lastTrackInfo?.artist_id) {
+        try {
+            const data = await fetchArtistImages(lastTrackInfo.artist_id, true);
+            if (data?.images) {
+                setCurrentArtistImages(data.images);
+                currentImageMetadata = data.metadata || [];
+            }
+        } catch (e) {
+            console.warn('[Slideshow] Failed to fetch images for modal:', e);
+        }
+    }
     
     // Update UI to reflect current settings
     updateModalUIFromConfig();
@@ -1206,6 +1219,12 @@ function updateModalUIFromConfig() {
         const currentValue = currentAutoEnable === null ? 'null' : String(currentAutoEnable);
         btn.classList.toggle('active', btnValue === currentValue);
     });
+    
+    // Sort dropdown (sync value on modal open)
+    const sortSelect = document.getElementById('slideshow-sort-select');
+    if (sortSelect) {
+        sortSelect.value = currentSortOption;
+    }
     
     updateKenBurnsOptionsVisibility();
 }
@@ -1610,7 +1629,7 @@ function toggleFavorite(filename, artistName) {
     
     saveFavoritesToLocalStorage();
     saveExcludedImages();  // This also saves favorites to backend
-    renderImageGrid();  // Re-render to update star icons
+    // Note: UI update is handled by click handler (favBtn.classList.toggle)
 }
 
 // ========== SORTING ==========
