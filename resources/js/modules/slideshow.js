@@ -34,6 +34,7 @@ import {
 import { showToast } from './dom.js';
 import { isManualArtistImageActive, resetArtZoom, syncZoomImgIfInArtMode } from './artZoom.js';
 import { updateBackground } from './background.js';
+import { fetchArtistImages, saveArtistSlideshowPreferences } from './api.js';
 
 // ========== CONSTANTS ==========
 const RESUME_DELAY_RATIO = 0.5;  // Resume after half of interval when manual browsing stops
@@ -827,8 +828,21 @@ export function getSlideshowState() {
 
 // ========== CONTROL CENTER MODAL ==========
 
-// Track excluded images per artist (stored in localStorage for now, Phase 2.5 will use backend)
-let excludedImages = {};  // { artistName: [imageUrl, ...] }
+// Track excluded images per artist (now synced with backend, localStorage as cache)
+let excludedImages = {};  // { artistName: [filename, ...] }
+
+// Track favorite images per artist (synced with backend)
+let favoriteImages = {};  // { artistName: [filename, ...] }
+
+// Current image metadata cache (loaded from backend when modal opens)
+let currentImageMetadata = [];  // [{source, filename, width, height, added_at}, ...]
+
+// Sorting state (persisted to localStorage)
+const SORT_OPTIONS = ['original', 'name', 'resolution', 'provider', 'date'];
+let currentSortOption = localStorage.getItem('slideshowSortOption') || 'original';
+
+// Filtering state (not persisted - resets on modal close)
+let activeFilters = new Set(['all']);  // 'all', provider names, 'favorites'
 
 // Default settings for reset
 const DEFAULT_SETTINGS = {
@@ -838,6 +852,7 @@ const DEFAULT_SETTINGS = {
     kenBurnsIntensity: 'subtle',
     transitionDuration: 0.8
 };
+
 
 /**
  * Show the slideshow control center modal
@@ -1016,8 +1031,36 @@ export function setupControlCenter() {
         });
     }
     
+    // Sort dropdown
+    const sortSelect = document.getElementById('slideshow-sort-select');
+    if (sortSelect) {
+        // Set initial value from localStorage
+        sortSelect.value = currentSortOption;
+        sortSelect.addEventListener('change', (e) => {
+            handleSortChange(e.target.value);
+        });
+    }
+    
+    // Filter chips - attach to all static chips
+    const filterChipsContainer = document.getElementById('slideshow-filter-chips');
+    if (filterChipsContainer) {
+        filterChipsContainer.addEventListener('click', (e) => {
+            const chip = e.target.closest('.slideshow-filter-chip');
+            if (chip && chip.dataset.filter) {
+                toggleFilter(chip.dataset.filter);
+            }
+        });
+    }
+    
+    // Reset filters button
+    const resetFiltersBtn = document.getElementById('slideshow-reset-filters');
+    if (resetFiltersBtn) {
+        resetFiltersBtn.addEventListener('click', resetFilters);
+    }
+    
     console.log('[Slideshow] Control center handlers attached');
 }
+
 
 /**
  * Handle timing button click
@@ -1279,7 +1322,29 @@ function renderImageGrid() {
         card.appendChild(imgEl);
         card.appendChild(overlay);
         
+        // Add favorite star button
+        const favBtn = document.createElement('button');
+        favBtn.className = 'slideshow-favorite-btn';
+        favBtn.innerHTML = '★';
+        favBtn.title = 'Toggle favorite';
+        
+        // Check if this image is favorited
+        const favorites = favoriteImages[artistName] || [];
+        if (favorites.includes(img.key)) {
+            favBtn.classList.add('active');
+        }
+        
+        // Favorite button click (stop propagation to not toggle exclusion)
+        favBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleFavorite(img.key, artistName);
+            favBtn.classList.toggle('active');
+        });
+        
+        card.appendChild(favBtn);
+        
         // Click to toggle include/exclude
+
         card.addEventListener('click', () => {
             toggleImageExclusion(img.key, artistName);
             card.classList.toggle('excluded');
@@ -1317,35 +1382,324 @@ function toggleImageExclusion(url, artistName) {
 }
 
 /**
- * Load excluded images from localStorage
+ * Load excluded images and favorites - backend first, localStorage as fallback
+ * Also handles one-time migration from localStorage to backend
  */
-function loadExcludedImages() {
+async function loadExcludedImages() {
+    const currentArtist = lastTrackInfo?.artist || '';
+    
+    // If no artist, just load from localStorage
+    if (!currentArtist) {
+        loadExcludedImagesFromLocalStorage();
+        loadFavoritesFromLocalStorage();
+        return;
+    }
+    
+    try {
+        // Try backend first
+        const artistId = lastTrackInfo?.artist_id;
+        if (artistId) {
+            const data = await fetchArtistImages(artistId, true);
+            if (data?.preferences) {
+                // Use backend data
+                excludedImages[currentArtist] = data.preferences.excluded || [];
+                favoriteImages[currentArtist] = data.preferences.favorites || [];
+                currentImageMetadata = data.metadata || [];
+                
+                // Cache to localStorage
+                saveExcludedImagesToLocalStorage();
+                saveFavoritesToLocalStorage();
+                
+                console.log(`[Slideshow] Loaded preferences from backend for "${currentArtist}": ${excludedImages[currentArtist].length} excluded, ${favoriteImages[currentArtist].length} favorites`);
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('[Slideshow] Backend fetch failed, using localStorage:', e);
+    }
+    
+    // Fallback: localStorage
+    loadExcludedImagesFromLocalStorage();
+    loadFavoritesFromLocalStorage();
+    
+    // Migration: if localStorage has data but backend didn't, push to backend
+    const hasLocalExcluded = excludedImages[currentArtist]?.length > 0;
+    const hasLocalFavorites = favoriteImages[currentArtist]?.length > 0;
+    if (hasLocalExcluded || hasLocalFavorites) {
+        migratePrefsToBackend(currentArtist);
+    }
+}
+
+/**
+ * Load excluded images from localStorage only (fallback)
+ */
+function loadExcludedImagesFromLocalStorage() {
     try {
         const saved = localStorage.getItem('slideshowExcludedImages');
         if (saved) {
             excludedImages = JSON.parse(saved);
         }
     } catch (e) {
-        console.warn('[Slideshow] Failed to load excluded images:', e);
+        console.warn('[Slideshow] Failed to load excluded images from localStorage:', e);
         excludedImages = {};
     }
 }
 
 /**
- * Save excluded images to localStorage
+ * Save excluded images to localStorage only (cache)
  */
-function saveExcludedImages() {
+function saveExcludedImagesToLocalStorage() {
     try {
         localStorage.setItem('slideshowExcludedImages', JSON.stringify(excludedImages));
     } catch (e) {
-        console.warn('[Slideshow] Failed to save excluded images:', e);
+        console.warn('[Slideshow] Failed to save excluded images to localStorage:', e);
     }
 }
+
+/**
+ * Load favorites from localStorage (fallback)
+ */
+function loadFavoritesFromLocalStorage() {
+    try {
+        const saved = localStorage.getItem('slideshowFavoriteImages');
+        if (saved) {
+            favoriteImages = JSON.parse(saved);
+        }
+    } catch (e) {
+        favoriteImages = {};
+    }
+}
+
+/**
+ * Save favorites to localStorage (cache)
+ */
+function saveFavoritesToLocalStorage() {
+    try {
+        localStorage.setItem('slideshowFavoriteImages', JSON.stringify(favoriteImages));
+    } catch (e) {
+        console.warn('[Slideshow] Failed to save favorites to localStorage');
+    }
+}
+
+/**
+ * Save excluded images and favorites - to both localStorage (cache) and backend
+ */
+async function saveExcludedImages() {
+    const currentArtist = lastTrackInfo?.artist || '';
+    
+    // Always save to localStorage (cache)
+    saveExcludedImagesToLocalStorage();
+    saveFavoritesToLocalStorage();
+    
+    // Also save to backend
+    if (currentArtist) {
+        try {
+            await saveArtistSlideshowPreferences(
+                currentArtist,
+                excludedImages[currentArtist] || [],
+                null,  // auto_enable (not changed here)
+                favoriteImages[currentArtist] || []
+            );
+            console.log(`[Slideshow] Saved preferences to backend for "${currentArtist}"`);
+        } catch (e) {
+            console.warn('[Slideshow] Failed to save to backend:', e);
+            showToast('Preferences saved locally', 'warning', 1500);
+        }
+    }
+}
+
+/**
+ * Migrate existing localStorage preferences to backend (one-time)
+ */
+async function migratePrefsToBackend(artist) {
+    try {
+        await saveArtistSlideshowPreferences(
+            artist,
+            excludedImages[artist] || [],
+            null,
+            favoriteImages[artist] || []
+        );
+        showToast('Preferences synced', 'success', 1200);
+        console.log(`[Slideshow] Migrated preferences for "${artist}" to backend`);
+    } catch (e) {
+        console.warn('[Slideshow] Migration failed:', e);
+    }
+}
+
+/**
+ * Toggle favorite status for an image
+ */
+function toggleFavorite(filename, artistName) {
+    if (!favoriteImages[artistName]) {
+        favoriteImages[artistName] = [];
+    }
+    
+    const idx = favoriteImages[artistName].indexOf(filename);
+    if (idx >= 0) {
+        favoriteImages[artistName].splice(idx, 1);
+    } else {
+        favoriteImages[artistName].push(filename);
+    }
+    
+    saveFavoritesToLocalStorage();
+    saveExcludedImages();  // This also saves favorites to backend
+    renderImageGrid();  // Re-render to update star icons
+}
+
+// ========== SORTING ==========
+
+/**
+ * Sort image metadata array based on current sort option
+ * @param {Array} metadata - Array of image metadata objects
+ * @returns {Array} Sorted copy of metadata array
+ */
+function sortImages(metadata) {
+    if (!metadata || metadata.length === 0 || currentSortOption === 'original') {
+        return metadata;  // Keep original order
+    }
+    
+    const sorted = [...metadata];
+    
+    switch (currentSortOption) {
+        case 'name':
+            sorted.sort((a, b) => (a.filename || '').localeCompare(b.filename || ''));
+            break;
+        case 'resolution':
+            sorted.sort((a, b) => {
+                const resA = (a.width || 0) * (a.height || 0);
+                const resB = (b.width || 0) * (b.height || 0);
+                return resB - resA;  // Descending (largest first)
+            });
+            break;
+        case 'provider':
+            sorted.sort((a, b) => (a.source || '').localeCompare(b.source || ''));
+            break;
+        case 'date':
+            sorted.sort((a, b) => {
+                const dateA = new Date(a.added_at || 0);
+                const dateB = new Date(b.added_at || 0);
+                return dateB - dateA;  // Descending (newest first)
+            });
+            break;
+    }
+    
+    return sorted;
+}
+
+/**
+ * Handle sort option change
+ * @param {string} option - Sort option from SORT_OPTIONS
+ */
+function handleSortChange(option) {
+    if (!SORT_OPTIONS.includes(option)) return;
+    
+    currentSortOption = option;
+    localStorage.setItem('slideshowSortOption', option);
+    renderImageGrid();  // Re-render with new sort
+    console.log(`[Slideshow] Sort changed to: ${option}`);
+}
+
+// ========== FILTERING ==========
+
+/**
+ * Get list of unique providers from metadata
+ * @param {Array} metadata - Array of image metadata objects
+ * @returns {Array<string>} Array of provider names (lowercase)
+ */
+function getProviderList(metadata) {
+    const providers = new Set();
+    metadata.forEach(img => {
+        if (img.source) {
+            providers.add(img.source.toLowerCase());
+        }
+    });
+    return Array.from(providers).sort();
+}
+
+/**
+ * Filter images based on active filters
+ * @param {Array} metadata - Array of image metadata objects
+ * @param {string} artistName - Artist name for favorites lookup
+ * @returns {Array} Filtered copy of metadata array
+ */
+function filterImages(metadata, artistName) {
+    if (!metadata || activeFilters.has('all')) {
+        return metadata;
+    }
+    
+    const favs = favoriteImages[artistName] || [];
+    
+    return metadata.filter(img => {
+        // Check favorites filter
+        if (activeFilters.has('favorites') && favs.includes(img.filename)) {
+            return true;
+        }
+        
+        // Check provider filters
+        const source = (img.source || '').toLowerCase();
+        for (const filter of activeFilters) {
+            if (filter !== 'favorites' && source === filter) {
+                return true;
+            }
+        }
+        
+        return false;
+    });
+}
+
+/**
+ * Toggle a filter chip
+ * @param {string} filter - Filter name ('all', provider name, or 'favorites')
+ */
+function toggleFilter(filter) {
+    if (filter === 'all') {
+        // 'All' is exclusive
+        activeFilters.clear();
+        activeFilters.add('all');
+    } else {
+        // Remove 'all' when selecting specific filters
+        activeFilters.delete('all');
+        if (activeFilters.has(filter)) {
+            activeFilters.delete(filter);
+        } else {
+            activeFilters.add(filter);
+        }
+        // If no filters left, default to 'all'
+        if (activeFilters.size === 0) {
+            activeFilters.add('all');
+        }
+    }
+    updateFilterChips();
+    renderImageGrid();
+}
+
+/**
+ * Reset all filters to 'all'
+ */
+function resetFilters() {
+    activeFilters.clear();
+    activeFilters.add('all');
+    updateFilterChips();
+    renderImageGrid();
+}
+
+/**
+ * Update filter chip UI to reflect active state
+ */
+function updateFilterChips() {
+    const chips = document.querySelectorAll('.slideshow-filter-chip');
+    chips.forEach(chip => {
+        const filter = chip.dataset.filter;
+        chip.classList.toggle('active', activeFilters.has(filter));
+    });
+}
+
 
 /**
  * Save settings to localStorage
  */
 function saveSettingsToLocalStorage() {
+
     try {
         localStorage.setItem('slideshowSettings', JSON.stringify({
             intervalSeconds: slideshowConfig.intervalSeconds,

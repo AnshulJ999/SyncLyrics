@@ -324,6 +324,89 @@ def clear_artist_image_cache(artist: str) -> None:
         logger.debug(f"Cleared artist image cache for '{artist}' ({len(keys_to_delete)} entries)")
 
 
+def get_slideshow_preferences(artist: str) -> Dict[str, Any]:
+    """
+    Read slideshow preferences from artist's metadata.json.
+    
+    These preferences are per-artist and stored alongside the artist images.
+    
+    Args:
+        artist: Artist name
+        
+    Returns:
+        Dictionary with:
+        - excluded: List of filenames to exclude from slideshow
+        - auto_enable: True (always on), False (always off), None (use global)
+        - favorites: List of favorite image filenames
+    """
+    folder = get_album_db_folder(artist, None)
+    metadata_path = folder / "metadata.json"
+    
+    default_prefs = {"excluded": [], "auto_enable": None, "favorites": []}
+    
+    if not metadata_path.exists():
+        return default_prefs
+    
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        prefs = metadata.get("slideshow_preferences", {})
+        # Ensure all keys exist with defaults
+        return {
+            "excluded": prefs.get("excluded", []),
+            "auto_enable": prefs.get("auto_enable"),
+            "favorites": prefs.get("favorites", [])
+        }
+    except Exception as e:
+        logger.debug(f"Failed to load slideshow preferences for '{artist}': {e}")
+        return default_prefs
+
+
+def save_slideshow_preferences(artist: str, preferences: Dict[str, Any]) -> bool:
+    """
+    Save slideshow preferences to artist's metadata.json.
+    
+    Merges into existing metadata under key 'slideshow_preferences'.
+    Uses existing save_album_db_metadata() for atomic write.
+    
+    Args:
+        artist: Artist name
+        preferences: Dict with excluded, auto_enable, favorites
+        
+    Returns:
+        True if saved successfully, False otherwise
+    """
+    folder = get_album_db_folder(artist, None)
+    metadata_path = folder / "metadata.json"
+    
+    # Load existing metadata
+    metadata = {}
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+        except Exception as e:
+            logger.debug(f"Failed to load existing metadata for '{artist}': {e}")
+    
+    # Ensure folder exists (for new artists without images yet)
+    folder.mkdir(parents=True, exist_ok=True)
+    
+    # Merge preferences
+    metadata["slideshow_preferences"] = {
+        "excluded": preferences.get("excluded", []),
+        "auto_enable": preferences.get("auto_enable"),
+        "favorites": preferences.get("favorites", [])
+    }
+    
+    success = save_album_db_metadata(folder, metadata)
+    if success:
+        logger.debug(f"Saved slideshow preferences for '{artist}': {len(preferences.get('excluded', []))} excluded, {len(preferences.get('favorites', []))} favorites")
+    else:
+        logger.warning(f"Failed to save slideshow preferences for '{artist}'")
+    
+    return success
+
+
 def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
     """
     Get first available artist image as fallback (when no album art exists and no explicit preference).

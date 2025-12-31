@@ -1991,9 +1991,14 @@ async def seek_playback():
 async def get_artist_images():
     """
     Get artist images, preferring local DB, falling back to Spotify and caching.
+    
+    Query params:
+        artist_id: Spotify artist ID (optional, used for fallback)
+        include_metadata: If 'true', return full image metadata and preferences
     """
-    # Get artist_id from query params (might be stale if frontend hasn't updated)
+    # Get query params
     artist_id = request.args.get('artist_id')
+    include_metadata = request.args.get('include_metadata', 'false').lower() == 'true'
     
     # We also need the artist NAME to find the folder
     # Try to get from current metadata if not passed
@@ -2022,12 +2027,80 @@ async def get_artist_images():
     # This will return local URLs like /api/album-art/image/Artist/img.jpg
     images = await ensure_artist_image_db(artist_name, artist_id)
     
-    return jsonify({
+    # Build response
+    response = {
         "artist_id": artist_id,
         "artist_name": artist_name,
         "images": images,
         "count": len(images)
-    })
+    }
+    
+    # Extended behavior: include full metadata and preferences
+    if include_metadata:
+        from system_utils.artist_image import get_slideshow_preferences
+        from system_utils.album_art import get_album_db_folder
+        
+        folder = get_album_db_folder(artist_name, None)
+        metadata_path = folder / "metadata.json"
+        image_metadata = []
+        
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    full_metadata = json.load(f)
+                # Only include downloaded images with relevant fields
+                for img in full_metadata.get("images", []):
+                    if img.get("downloaded") and img.get("filename"):
+                        image_metadata.append({
+                            "source": img.get("source", "unknown"),
+                            "filename": img.get("filename"),
+                            "width": img.get("width"),
+                            "height": img.get("height"),
+                            "added_at": img.get("added_at")
+                        })
+            except Exception as e:
+                logger.debug(f"Failed to load image metadata for '{artist_name}': {e}")
+        
+        response["metadata"] = image_metadata
+        response["preferences"] = get_slideshow_preferences(artist_name)
+    
+    return jsonify(response)
+
+
+@app.route("/api/artist/images/preferences", methods=['POST'])
+async def save_artist_slideshow_preferences_endpoint():
+    """
+    Save slideshow preferences for an artist.
+    
+    Body: {
+        "artist": "Artist Name",
+        "excluded": ["filename1.jpg", ...],
+        "auto_enable": true | false | null,
+        "favorites": ["filename2.jpg", ...]
+    }
+    """
+    from system_utils.artist_image import save_slideshow_preferences
+    
+    data = await request.get_json()
+    artist = data.get('artist')
+    
+    if not artist:
+        return jsonify({"error": "Artist name required"}), 400
+    
+    preferences = {
+        "excluded": data.get('excluded', []),
+        "auto_enable": data.get('auto_enable'),
+        "favorites": data.get('favorites', [])
+    }
+    
+    success = save_slideshow_preferences(artist, preferences)
+    
+    if success:
+        logger.info(f"Saved slideshow preferences for '{artist}'")
+        return jsonify({"status": "success", "message": "Preferences saved"})
+    else:
+        return jsonify({"error": "Failed to save preferences"}), 500
+
 
 @app.route("/api/playback/queue", methods=['GET'])
 async def get_playback_queue():

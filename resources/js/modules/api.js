@@ -361,23 +361,33 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
 // ========== ARTIST IMAGES ==========
 
 /**
- * Fetch artist images from Spotify API
+ * Fetch artist images from backend
  * 
  * @param {string} artistId - Spotify artist ID
- * @returns {Promise<Array<string>>} Array of image URLs
+ * @param {boolean} includeMetadata - If true, return full object with metadata and preferences
+ * @returns {Promise<Array<string>|Object>} URL array (default) or full response object (if includeMetadata)
  */
-export async function fetchArtistImages(artistId) {
+export async function fetchArtistImages(artistId, includeMetadata = false) {
     if (!artistId) {
         console.warn('No artist ID provided for image fetch');
-        return [];
+        return includeMetadata ? { images: [], metadata: [], preferences: {} } : [];
     }
 
     try {
-        const response = await fetch(`/api/artist/images?artist_id=${encodeURIComponent(artistId)}`);
+        const url = `/api/artist/images?artist_id=${encodeURIComponent(artistId)}${includeMetadata ? '&include_metadata=true' : ''}`;
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
+        
+        if (includeMetadata) {
+            // Return full response for control center (includes metadata and preferences)
+            console.log(`Loaded ${data.images?.length || 0} artist images with metadata`);
+            return data;
+        }
+        
+        // Existing behavior: return URL array only
         if (data.images && data.images.length > 0) {
             console.log(`Loaded ${data.images.length} artist images`);
             return data.images;
@@ -385,8 +395,9 @@ export async function fetchArtistImages(artistId) {
     } catch (error) {
         console.error('Error fetching artist images:', error);
     }
-    return [];
+    return includeMetadata ? { images: [], metadata: [], preferences: {} } : [];
 }
+
 
 // ========== ALBUM ART ==========
 
@@ -603,7 +614,26 @@ export async function fetchRandomSlideshowImages(limit = 50) {
     return [];
 }
 
+/**
+ * Save slideshow preferences for an artist
+ * 
+ * @param {string} artist - Artist name
+ * @param {Array<string>} excluded - Filenames to exclude from slideshow
+ * @param {boolean|null} autoEnable - Tri-state: true (always on), false (always off), null (use global)
+ * @param {Array<string>} favorites - Filenames marked as favorites
+ * @returns {Promise<Object>} Result
+ */
+export async function saveArtistSlideshowPreferences(artist, excluded, autoEnable = null, favorites = []) {
+    return postJson('/api/artist/images/preferences', {
+        artist,
+        excluded,
+        auto_enable: autoEnable,
+        favorites
+    });
+}
+
 // ========== AUDIO RECOGNITION API ==========
+
 
 /**
  * Get audio recognition status

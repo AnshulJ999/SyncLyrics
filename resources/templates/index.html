@@ -362,6 +362,29 @@
                     <button class="slideshow-intensity-btn" data-intensity="cinematic">Cinematic</button>
                 </div>
             </div>
+            
+            <!-- Sort Section -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Sort</span>
+                <select id="slideshow-sort-select" class="slideshow-sort-select">
+                    <option value="original">Original</option>
+                    <option value="name">Name</option>
+                    <option value="resolution">Resolution</option>
+                    <option value="provider">Provider</option>
+                    <option value="date">Date Added</option>
+                </select>
+            </div>
+            
+            <!-- Filter Section -->
+            <div class="slideshow-control-group slideshow-filter-group">
+                <span class="slideshow-control-label">Filter</span>
+                <div class="slideshow-filter-chips" id="slideshow-filter-chips">
+                    <button class="slideshow-filter-chip active" data-filter="all">All</button>
+                    <!-- Provider chips added dynamically -->
+                    <button class="slideshow-filter-chip" data-filter="favorites">★ Favorites</button>
+                    <button class="slideshow-reset-filters-btn" id="slideshow-reset-filters">Reset</button>
+                </div>
+            </div>
         </div>
         
         <!-- Selection Actions -->
@@ -371,6 +394,7 @@
                 <button id="slideshow-select-all" class="slideshow-action-btn">Select All</button>
                 <button id="slideshow-deselect-all" class="slideshow-action-btn">Deselect All</button>
             </div>
+
         </div>
         
         <!-- Image Grid -->

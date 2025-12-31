@@ -20,7 +20,9 @@ const ZOOM_SENSITIVITY = 0.002;  // For scroll wheel
 const TRIPLE_TAP_THRESHOLD = 400; // ms between taps
 const EDGE_TAP_SIZE = 100; // pixels from edge for image switching
 const EDGE_HOLD_INTERVAL = 900; // ms between image switches when holding edge
+const CORNER_TAP_SIZE = 100; // pixels from corner for opening control center
 const MANUAL_IMAGE_TIMEOUT = 30 * 60 * 1000;  // 30 min failsafe for manual image flag
+
 
 // ========== STATE ==========
 let zoomLevel = 1;
@@ -724,20 +726,37 @@ function handleTouchEnd(e) {
         const dy = Math.abs(lastTouchY - touchStartY);
         const isQuickTap = tapDuration < 300 && dx < 20 && dy < 20;
         
-        if (isQuickTap && currentArtistImages.length > 0) {
-            // Check if tap was on left or right edge
-            if (touchStartX < EDGE_TAP_SIZE) {
-                prevImage();
-                e.preventDefault();  // Prevent synthetic mouse click
-            } else if (touchStartX > window.innerWidth - EDGE_TAP_SIZE) {
-                nextImage();
-                e.preventDefault();  // Prevent synthetic mouse click
+        if (isQuickTap) {
+            // Check for bottom-right corner tap first (opens slideshow control center)
+            const isBottomRightCorner = (
+                touchStartX > window.innerWidth - CORNER_TAP_SIZE &&
+                touchStartY > window.innerHeight - CORNER_TAP_SIZE
+            );
+            
+            if (isBottomRightCorner) {
+                // Open slideshow control center via dynamic import (avoids circular dependency)
+                import('./slideshow.js').then(module => {
+                    module.showSlideshowModal();
+                }).catch(err => {
+                    console.warn('[ArtZoom] Failed to open slideshow modal:', err);
+                });
+                e.preventDefault();
+            } else if (currentArtistImages.length > 0) {
+                // Check if tap was on left or right edge for image switching
+                if (touchStartX < EDGE_TAP_SIZE) {
+                    prevImage();
+                    e.preventDefault();  // Prevent synthetic mouse click
+                } else if (touchStartX > window.innerWidth - EDGE_TAP_SIZE) {
+                    nextImage();
+                    e.preventDefault();  // Prevent synthetic mouse click
+                }
             }
         }
         
         isDragging = false;
     }
 }
+
 
 // ========== MOUSE HANDLERS ==========
 
