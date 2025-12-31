@@ -1941,6 +1941,11 @@ body.art-only-mode.zoom-out-enabled #background-layer {
     transition: opacity 0.8s ease;  /* Matches slideshowConfig.transitionDuration */
 }
 
+/* Apply saturation boost in sharp mode (matches overlay's backdrop-filter effect) */
+body.art-only-mode.zoom-out-enabled.sharp-mode .art-zoom-img {
+    filter: saturate(110%);
+}
+
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;
