@@ -213,34 +213,8 @@ function setupGlobalEdgeTapHandler() {
 }
 
 // ========== BUTTON & TOGGLE ==========
+// NOTE: toggleSlideshow() is defined below in SLIDESHOW CONTROL section
 
-/**
- * Toggle slideshow on/off
- * Called when user clicks the slideshow button
- */
-export function toggleSlideshow() {
-    const newState = !slideshowEnabled;
-    setSlideshowEnabled(newState);
-    
-    // Save to localStorage
-    localStorage.setItem('slideshowEnabled', newState.toString());
-    
-    // Update UI
-    updateSlideshowButtonState();
-    
-    if (newState) {
-        // Starting slideshow - load images and start
-        loadImagePoolForCurrentArtist();
-        startSlideshow();
-        showToast(`Slideshow enabled (${slideshowConfig.intervalSeconds}s)`, 'success', 1200);
-    } else {
-        // Stopping slideshow
-        stopSlideshow();
-        showToast('Slideshow disabled', 'success', 1000);
-    }
-    
-    console.log(`[Slideshow] Toggled ${newState ? 'ON' : 'OFF'}`);
-}
 
 /**
  * Update slideshow button visual state
@@ -524,6 +498,10 @@ function enableSlideshow(isManualToggle = false) {
         startSlideshow();
     }
     
+    if (isManualToggle) {
+        showToast(`Slideshow enabled (${slideshowConfig.intervalSeconds}s)`, 'success', 1200);
+    }
+    
     console.log(`[Slideshow] Enabled${isManualToggle ? ' (manual)' : ' (auto)'}`);
 }
 
@@ -542,6 +520,10 @@ function disableSlideshow(isManualToggle = false) {
     updateSlideshowButtonState();
     localStorage.setItem('slideshowEnabled', 'false');
     stopSlideshow();
+    
+    if (isManualToggle) {
+        showToast('Slideshow disabled', 'success', 1000);
+    }
     
     console.log(`[Slideshow] Disabled${isManualToggle ? ' (manual)' : ' (auto)'}`);
 }
