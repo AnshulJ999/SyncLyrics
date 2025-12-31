@@ -324,6 +324,10 @@ function applyCurrentImage() {
     // If zoom-out feature is enabled and active, use zoom img crossfade
     if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
         crossfadeZoomImg(imageUrl);
+        
+        // Also sync background-layer so exiting art mode shows the same image
+        bg.style.backgroundImage = `url('${imageUrl}')`;
+        
         showToast(`Image ${currentImageIndex + 1}/${imagePool.length}`, 'success', 800);
         preloadAdjacentImages();
         return;  // Skip the old background-layer crossfade
