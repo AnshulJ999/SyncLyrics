@@ -364,24 +364,68 @@ export function loadImagePoolForCurrentArtist() {
 }
 
 /**
- * Handle artist change - reload image pool if needed
+ * Handle artist change - reload image pool and apply auto-enable preference
  * Called from main.js on track change
  * 
  * @param {string} newArtist - New artist name
  * @param {boolean} sameArtist - Whether it's the same artist as before
  */
 export function handleArtistChange(newArtist, sameArtist) {
-    if (!slideshowEnabled) return;
-    
     if (sameArtist) {
-        // Same artist - continue slideshow exactly as-is, don't touch anything
+        // Same artist - continue exactly as-is, don't re-evaluate preferences
         console.log(`[Slideshow] Same artist "${newArtist}" - continuing without reset`);
-        return;  // Early return - do nothing for same artist
+        return;
     }
     
-    // Different artist - reload image pool (but don't restart interval if already running)
-    console.log(`[Slideshow] Artist changed to "${newArtist}" - will reload images`);
-    // Note: loadImagePoolForCurrentArtist() is called from main.js AFTER artist images are fetched
+    // Different artist - reset manual override for new artist
+    manualOverrideActive = false;
+    
+    // Clear any pending debounce (user skipping tracks quickly)
+    if (artistChangeDebounceTimer) {
+        clearTimeout(artistChangeDebounceTimer);
+    }
+    
+    console.log(`[Slideshow] Artist changing to "${newArtist}" - will apply preferences after debounce`);
+    
+    // Debounce: wait before loading preferences and applying auto-enable
+    // This prevents rapid loads when user skips tracks quickly
+    artistChangeDebounceTimer = setTimeout(async () => {
+        artistChangeDebounceTimer = null;
+        
+        try {
+            // Load preferences for new artist (includes auto_enable)
+            await loadExcludedImages();
+            
+            // Apply auto-enable preference (only if not manually overridden)
+            if (!manualOverrideActive) {
+                applyAutoEnableForCurrentArtist(newArtist);
+            }
+        } catch (e) {
+            console.warn('[Slideshow] Failed to load preferences for artist change:', e);
+            // On failure, keep current state (default behavior)
+        }
+    }, ARTIST_CHANGE_DEBOUNCE_MS);
+}
+
+/**
+ * Apply auto-enable preference for current artist
+ * @param {string} artistName - Artist name for logging
+ */
+function applyAutoEnableForCurrentArtist(artistName) {
+    if (currentAutoEnable === true) {
+        // "Always" - enable slideshow for this artist
+        if (!slideshowEnabled) {
+            console.log(`[Slideshow] Auto-enabling for "${artistName}" (preference: Always)`);
+            enableSlideshow();
+        }
+    } else if (currentAutoEnable === false) {
+        // "Never" - disable slideshow for this artist
+        if (slideshowEnabled) {
+            console.log(`[Slideshow] Auto-disabling for "${artistName}" (preference: Never)`);
+            disableSlideshow();
+        }
+    }
+    // null = "Default" - keep current global state, do nothing
 }
 
 // ========== SLIDESHOW CONTROL ==========
@@ -457,6 +501,60 @@ function resetSlideshowTimer() {
         }
     }, intervalMs);
     setSlideshowInterval(interval);
+}
+
+/**
+ * Enable slideshow (turn on)
+ * @param {boolean} isManualToggle - True if triggered by user action (sets manual override)
+ */
+function enableSlideshow(isManualToggle = false) {
+    if (slideshowEnabled) return;  // Already enabled
+    
+    if (isManualToggle) {
+        manualOverrideActive = true;
+    }
+    
+    setSlideshowEnabled(true);
+    updateSlideshowButtonState();
+    localStorage.setItem('slideshowEnabled', 'true');
+    
+    // Load images and start
+    loadImagePoolForCurrentArtist();
+    if (slideshowImagePool.length > 0) {
+        startSlideshow();
+    }
+    
+    console.log(`[Slideshow] Enabled${isManualToggle ? ' (manual)' : ' (auto)'}`);
+}
+
+/**
+ * Disable slideshow (turn off)
+ * @param {boolean} isManualToggle - True if triggered by user action (sets manual override)
+ */
+function disableSlideshow(isManualToggle = false) {
+    if (!slideshowEnabled) return;  // Already disabled
+    
+    if (isManualToggle) {
+        manualOverrideActive = true;
+    }
+    
+    setSlideshowEnabled(false);
+    updateSlideshowButtonState();
+    localStorage.setItem('slideshowEnabled', 'false');
+    stopSlideshow();
+    
+    console.log(`[Slideshow] Disabled${isManualToggle ? ' (manual)' : ' (auto)'}`);
+}
+
+/**
+ * Toggle slideshow on/off (user action)
+ */
+export function toggleSlideshow() {
+    if (slideshowEnabled) {
+        disableSlideshow(true);  // Manual toggle
+    } else {
+        enableSlideshow(true);   // Manual toggle
+    }
 }
 
 /**
@@ -847,6 +945,13 @@ let activeFilters = new Set(['all']);  // 'all', provider names, 'favorites'
 // Auto-enable state for current artist (loaded from backend preferences)
 let currentAutoEnable = null;  // null (use global), true (always), false (never)
 
+// Manual override flag - set true when user manually toggles slideshow
+// Prevents auto-enable from overriding user's choice until artist changes
+let manualOverrideActive = false;
+
+// Debounce timer for artist changes (handles quick track skipping)
+let artistChangeDebounceTimer = null;
+const ARTIST_CHANGE_DEBOUNCE_MS = 1500;  // Wait 500ms before applying auto-enable
 
 // Default settings for reset
 const DEFAULT_SETTINGS = {
