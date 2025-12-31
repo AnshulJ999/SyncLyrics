@@ -844,6 +844,10 @@ let currentSortOption = localStorage.getItem('slideshowSortOption') || 'original
 // Filtering state (not persisted - resets on modal close)
 let activeFilters = new Set(['all']);  // 'all', provider names, 'favorites'
 
+// Auto-enable state for current artist (loaded from backend preferences)
+let currentAutoEnable = null;  // null (use global), true (always), false (never)
+
+
 // Default settings for reset
 const DEFAULT_SETTINGS = {
     intervalSeconds: 6,
@@ -1058,8 +1062,35 @@ export function setupControlCenter() {
         resetFiltersBtn.addEventListener('click', resetFilters);
     }
     
+    // Auto-enable buttons
+    document.querySelectorAll('.slideshow-auto-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const value = btn.dataset.auto;
+            // Convert string to proper type
+            if (value === 'null') {
+                currentAutoEnable = null;
+            } else if (value === 'true') {
+                currentAutoEnable = true;
+            } else {
+                currentAutoEnable = false;
+            }
+            
+            // Update button states
+            document.querySelectorAll('.slideshow-auto-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.auto === value);
+            });
+            
+            // Save to backend (saveExcludedImages now includes auto_enable)
+            saveExcludedImages();
+            
+            const artistName = lastTrackInfo?.artist || 'unknown';
+            console.log(`[Slideshow] Auto-enable for "${artistName}" set to: ${currentAutoEnable}`);
+        });
+    });
+    
     console.log('[Slideshow] Control center handlers attached');
 }
+
 
 
 /**
@@ -1169,6 +1200,13 @@ function updateModalUIFromConfig() {
         btn.classList.toggle('active', btn.dataset.intensity === slideshowConfig.kenBurnsIntensity);
     });
     
+    // Auto-enable buttons (per-artist preference)
+    document.querySelectorAll('.slideshow-auto-btn').forEach(btn => {
+        const btnValue = btn.dataset.auto;
+        const currentValue = currentAutoEnable === null ? 'null' : String(currentAutoEnable);
+        btn.classList.toggle('active', btnValue === currentValue);
+    });
+    
     updateKenBurnsOptionsVisibility();
 }
 
@@ -1275,18 +1313,46 @@ function renderImageGrid() {
         allImages.push({ url, source, key: url });
     });
     
+    // Enrich allImages with backend metadata (for sorting by resolution/date)
+    allImages.forEach(img => {
+        if (img.key === 'album_art') return;  // Skip album art (no metadata)
+        
+        // Extract filename from URL to match with backend metadata
+        const filename = img.url.split('/').pop();
+        const meta = currentImageMetadata.find(m => m.filename === filename);
+        if (meta) {
+            img.width = meta.width;
+            img.height = meta.height;
+            img.added_at = meta.added_at;
+            img.filename = meta.filename;
+        } else {
+            // Fallback: use filename from URL
+            img.filename = filename;
+        }
+    });
+    
     // Load excluded images from storage
     loadExcludedImages();
     const excluded = excludedImages[artistName] || [];
     
-    // Count included images (using keys)
+    // Create dynamic provider chips before sorting/filtering
+    updateProviderChips(allImages);
+    
+    // Apply sorting
+    let displayImages = sortImages(allImages);
+    
+    // Apply filtering
+    displayImages = filterImages(displayImages, artistName);
+    
+    // Count included images (using keys from original allImages for accurate count)
     const includedCount = allImages.filter(img => !excluded.includes(img.key)).length;
     if (countEl) {
         countEl.textContent = `${includedCount}/${allImages.length} images`;
     }
     
-    // Render cards
-    allImages.forEach(img => {
+    // Render cards (use displayImages which is sorted and filtered)
+    displayImages.forEach(img => {
+
         const card = document.createElement('div');
         card.className = 'slideshow-image-card';
         if (excluded.includes(img.key)) {
@@ -1405,12 +1471,13 @@ async function loadExcludedImages() {
                 excludedImages[currentArtist] = data.preferences.excluded || [];
                 favoriteImages[currentArtist] = data.preferences.favorites || [];
                 currentImageMetadata = data.metadata || [];
+                currentAutoEnable = data.preferences.auto_enable;  // null, true, or false
                 
                 // Cache to localStorage
                 saveExcludedImagesToLocalStorage();
                 saveFavoritesToLocalStorage();
                 
-                console.log(`[Slideshow] Loaded preferences from backend for "${currentArtist}": ${excludedImages[currentArtist].length} excluded, ${favoriteImages[currentArtist].length} favorites`);
+                console.log(`[Slideshow] Loaded preferences from backend for "${currentArtist}": ${excludedImages[currentArtist].length} excluded, ${favoriteImages[currentArtist].length} favorites, auto_enable=${currentAutoEnable}`);
                 return;
             }
         }
@@ -1497,7 +1564,7 @@ async function saveExcludedImages() {
             await saveArtistSlideshowPreferences(
                 currentArtist,
                 excludedImages[currentArtist] || [],
-                null,  // auto_enable (not changed here)
+                currentAutoEnable,  // auto_enable per-artist preference
                 favoriteImages[currentArtist] || []
             );
             console.log(`[Slideshow] Saved preferences to backend for "${currentArtist}"`);
@@ -1618,27 +1685,28 @@ function getProviderList(metadata) {
 
 /**
  * Filter images based on active filters
- * @param {Array} metadata - Array of image metadata objects
+ * @param {Array} images - Array of image objects {url, source, key, ...}
  * @param {string} artistName - Artist name for favorites lookup
- * @returns {Array} Filtered copy of metadata array
+ * @returns {Array} Filtered copy of images array
  */
-function filterImages(metadata, artistName) {
-    if (!metadata || activeFilters.has('all')) {
-        return metadata;
+function filterImages(images, artistName) {
+    if (!images || activeFilters.has('all')) {
+        return images;
     }
     
     const favs = favoriteImages[artistName] || [];
     
-    return metadata.filter(img => {
-        // Check favorites filter
-        if (activeFilters.has('favorites') && favs.includes(img.filename)) {
+    return images.filter(img => {
+        // Check favorites filter (favorites stored as keys/URLs)
+        if (activeFilters.has('favorites') && favs.includes(img.key)) {
             return true;
         }
         
         // Check provider filters
-        const source = (img.source || '').toLowerCase();
+        // Extract base provider name from source (e.g., "FanArt 1" → "fanart")
+        const baseSource = (img.source || '').replace(/\s+\d+$/, '').toLowerCase();
         for (const filter of activeFilters) {
-            if (filter !== 'favorites' && source === filter) {
+            if (filter !== 'favorites' && baseSource === filter) {
                 return true;
             }
         }
@@ -1646,6 +1714,7 @@ function filterImages(metadata, artistName) {
         return false;
     });
 }
+
 
 /**
  * Toggle a filter chip
@@ -1691,6 +1760,45 @@ function updateFilterChips() {
     chips.forEach(chip => {
         const filter = chip.dataset.filter;
         chip.classList.toggle('active', activeFilters.has(filter));
+    });
+}
+
+/**
+ * Update provider chips dynamically based on available images
+ * @param {Array} images - Array of image objects with source property
+ */
+function updateProviderChips(images) {
+    const container = document.getElementById('slideshow-filter-chips');
+    if (!container) return;
+    
+    // Get unique base provider names (e.g., "FanArt 1" → "fanart")
+    const providers = new Set();
+    images.forEach(img => {
+        if (img.source && img.source !== 'Album Art') {
+            const baseProvider = img.source.replace(/\s+\d+$/, '').toLowerCase();
+            providers.add(baseProvider);
+        }
+    });
+    
+    // Remove existing dynamic provider chips (keep "All", "Favorites", and "Reset")
+    const existingDynamicChips = container.querySelectorAll('.slideshow-filter-chip.dynamic-provider');
+    existingDynamicChips.forEach(chip => chip.remove());
+    
+    // Find the "Favorites" chip to insert before it
+    const favoritesChip = container.querySelector('[data-filter="favorites"]');
+    if (!favoritesChip) return;
+    
+    // Create and insert provider chips
+    const sortedProviders = Array.from(providers).sort();
+    sortedProviders.forEach(provider => {
+        const chip = document.createElement('button');
+        chip.className = 'slideshow-filter-chip dynamic-provider';
+        chip.dataset.filter = provider;
+        chip.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);  // Capitalize
+        if (activeFilters.has(provider)) {
+            chip.classList.add('active');
+        }
+        container.insertBefore(chip, favoritesChip);
     });
 }
 

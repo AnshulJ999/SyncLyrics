@@ -578,6 +578,10 @@ let touchMoved = false;
 function handleTouchStart(e) {
     if (!isEnabled) return;
     
+    // Don't capture if slideshow modal is open - let modal handle touch events
+    const modal = document.getElementById('slideshow-modal');
+    if (modal && !modal.classList.contains('hidden')) return;
+    
     touchStartTime = Date.now();
     touchMoved = false;
     
@@ -638,6 +642,10 @@ function handleTouchStart(e) {
 
 function handleTouchMove(e) {
     if (!isEnabled) return;
+    
+    // Don't capture if slideshow modal is open
+    const modal = document.getElementById('slideshow-modal');
+    if (modal && !modal.classList.contains('hidden')) return;
     
     touchMoved = true;  // Mark that we moved (not just a tap)
     
@@ -707,6 +715,10 @@ function handleTouchMove(e) {
 
 function handleTouchEnd(e) {
     if (!isEnabled) return;
+    
+    // Don't capture if slideshow modal is open
+    const modal = document.getElementById('slideshow-modal');
+    if (modal && !modal.classList.contains('hidden')) return;
     
     // Clear edge hold interval (could be timeout or interval, clearTimeout handles both)
     if (edgeHoldInterval) {
