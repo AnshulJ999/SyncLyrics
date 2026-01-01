@@ -1990,10 +1990,11 @@ function updateProviderChips(images) {
         }
     });
     
-    // Update Included/Excluded chip counts
+    // Update Included/Excluded chip counts (use Set for O(1) lookups)
     const artistName = lastTrackInfo?.artist || '';
     const excluded = excludedImages[artistName] || [];
-    const excludedCount = images.filter(img => excluded.includes(img.key)).length;
+    const excludedSet = new Set(excluded);
+    const excludedCount = images.filter(img => excludedSet.has(img.key)).length;
     const includedCount = images.length - excludedCount;
     
     const includedChip = container.querySelector('[data-filter="included"]');
