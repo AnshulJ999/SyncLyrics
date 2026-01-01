@@ -168,7 +168,7 @@ const IDLE_POLL_INTERVAL = 1000; // 1 second when in slow polling mode
 
 // ========== NEXT-UP CARD CONSTANTS ==========
 const NEXT_UP_SHOW_THRESHOLD_MS = 30000; // Show card in last 30 seconds
-const NEXT_UP_RETRY_DELAY_MS = 10000; // 10 seconds between retries on error
+const NEXT_UP_RETRY_DELAY_MS = 4000; // 4 seconds between retries on error
 let nextUpCardVisible = false;
 let nextUpTrackId = null; // Cache to avoid redundant fetches
 let nextUpLastFetchAttempt = 0; // Timestamp to throttle retries on error

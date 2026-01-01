@@ -396,7 +396,7 @@ class SpotifyAPI:
         # Queue Cache (prevents rate limiting from frequent frontend polling)
         self._queue_cache = None
         self._queue_cache_time = 0
-        self._QUEUE_CACHE_TTL = 10  # seconds - balance between freshness and rate limits
+        self._QUEUE_CACHE_TTL = 4  # seconds - balance between freshness and rate limits
         
         # FIX: Throttle for credential/auth errors to prevent log spam
         self._credentials_error_logged = False
