@@ -836,7 +836,7 @@ async def _reaper_auto_detect_loop():
     - If Reaper window closes AND we auto-started → stop engine
     - If user manually started/stopped → respect their choice
     """
-    global _auto_started, _manual_override, _last_reaper_state, _shutting_down
+    global _auto_started, _manual_override, _last_reaper_state, _shutting_down, _reaper_session_active
     
     logger.info(f"Reaper auto-detect started (checking every {REAPER_CHECK_INTERVAL}s)")
     
