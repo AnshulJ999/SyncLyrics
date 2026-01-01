@@ -951,35 +951,48 @@ const DEFAULT_SETTINGS = {
     transitionDuration: 0.8
 };
 
-
 /**
  * Show the slideshow control center modal
+ * Modal appears immediately, data loads after (non-blocking)
  */
 export async function showSlideshowModal() {
     const modal = document.getElementById('slideshow-modal');
     if (!modal) return;
     
-    // If no artist images loaded yet, fetch them now
-    if (currentArtistImages.length === 0 && lastTrackInfo?.artist_id) {
+    // Show modal IMMEDIATELY (don't wait for network)
+    modal.classList.remove('hidden');
+    updateModalUIFromConfig();
+    
+    const grid = document.getElementById('slideshow-image-grid');
+    const needsFetch = currentArtistImages.length === 0 && lastTrackInfo?.artist_id;
+    
+    // If we need to fetch, show loading state while data loads
+    if (needsFetch && grid) {
+        grid.innerHTML = '<div class="slideshow-loading" style="text-align:center;padding:2rem;opacity:0.7;">Loading images...</div>';
+    }
+    
+    // Now fetch data if needed (modal is already visible)
+    if (needsFetch) {
         try {
             const data = await fetchArtistImages(lastTrackInfo.artist_id, true);
             if (data?.images) {
                 setCurrentArtistImages(data.images);
                 currentImageMetadata = data.metadata || [];
+                // Also populate preferences from backend response
+                if (data.preferences) {
+                    const artist = lastTrackInfo?.artist || '';
+                    excludedImages[artist] = data.preferences.excluded || [];
+                    favoriteImages[artist] = data.preferences.favorites || [];
+                    currentAutoEnable = data.preferences.auto_enable;
+                }
             }
         } catch (e) {
             console.warn('[Slideshow] Failed to fetch images for modal:', e);
         }
     }
     
-    // Update UI to reflect current settings
-    updateModalUIFromConfig();
-    
-    // Render image grid
+    // Render grid (with loaded data or existing data)
     renderImageGrid();
-    
-    // Show modal
-    modal.classList.remove('hidden');
     
     console.log('[Slideshow] Control center opened');
 }
