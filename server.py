@@ -77,17 +77,48 @@ async def theme() -> dict:
 async def add_cache_headers(response):
     """
     Add Cache-Control headers to prevent stale content issues.
-    - Static assets: 1hr cache with revalidation (cache busting via ?v= handles updates)
+    - Static assets: 6min cache with ETag/Last-Modified for efficient revalidation
     - API/pages: no caching to ensure fresh data
     - Routes that set their own Cache-Control are respected (e.g., image serving)
-    """
-    path = request.path
     
-    # Static assets (CSS, JS, images) - allow short cache since we use cache busting
-    if path.startswith('/static/'):
-        response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
+    ETag and Last-Modified enable 304 Not Modified responses, so even after
+    max-age expires, the browser only downloads new content if files changed.
+    This fixes stale cache issues in Home Assistant iFrame while maintaining performance.
+    """
+    req_path = request.path
+    
+    # Static assets (CSS, JS, images, fonts)
+    if req_path.startswith('/static/'):
+        # Reduced from 3600s (1hr) to 360s (6min) to ensure updates propagate faster
+        # Combined with ETag/Last-Modified, this enables efficient revalidation
+        response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
+        
+        # Add ETag and Last-Modified for static files to enable 304 responses
+        # This makes cache validation very efficient even with shorter max-age
+        try:
+            # Resolve the actual file path from the request URL
+            # /static/js/main.js -> STATIC_DIRECTORY/js/main.js
+            relative_path = req_path[len('/static/'):]  # Remove '/static/' prefix
+            file_path = os.path.join(STATIC_DIRECTORY, relative_path)
+            
+            if os.path.isfile(file_path):
+                # Last-Modified: file modification timestamp
+                mtime = os.path.getmtime(file_path)
+                from email.utils import formatdate
+                response.headers['Last-Modified'] = formatdate(mtime, usegmt=True)
+                
+                # ETag: hash of file path + mtime (fast, no file read needed)
+                # Using mtime ensures ETag changes when file is modified
+                import hashlib
+                etag_source = f"{file_path}:{mtime}".encode('utf-8')
+                etag = hashlib.md5(etag_source).hexdigest()
+                response.headers['ETag'] = f'"{etag}"'
+        except Exception:
+            # If file path resolution fails, skip ETag/Last-Modified
+            # The response will still work, just without validation headers
+            pass
     # API endpoints and pages - no caching (unless route already set its own)
-    elif path.startswith('/api/') or path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
+    elif req_path.startswith('/api/') or req_path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
         # Don't overwrite if route already set cache headers (e.g., image serving routes)
         if 'Cache-Control' not in response.headers:
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
