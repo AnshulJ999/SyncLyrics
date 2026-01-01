@@ -1504,17 +1504,6 @@ function renderImageGrid() {
         imgEl.loading = 'lazy';
         imgEl.alt = img.source;
         
-        // Add resolution when image loads
-        imgEl.onload = function() {
-            const resEl = card.querySelector('.slideshow-image-resolution');
-            if (!resEl) {
-                const res = document.createElement('span');
-                res.className = 'slideshow-image-resolution';
-                res.textContent = `${this.naturalWidth}×${this.naturalHeight}`;
-                card.querySelector('.slideshow-image-card-overlay')?.appendChild(res);
-            }
-        };
-        
         const overlay = document.createElement('div');
         overlay.className = 'slideshow-image-card-overlay';
         
@@ -1522,6 +1511,15 @@ function renderImageGrid() {
         sourceEl.className = 'slideshow-image-source';
         sourceEl.textContent = img.source;
         overlay.appendChild(sourceEl);
+        
+        // Add resolution from pre-fetched metadata (no onload needed)
+        // This avoids 100+ DOM modifications during scroll
+        if (img.width && img.height) {
+            const resEl = document.createElement('span');
+            resEl.className = 'slideshow-image-resolution';
+            resEl.textContent = `${img.width}×${img.height}`;
+            overlay.appendChild(resEl);
+        }
         
         card.appendChild(imgEl);
         card.appendChild(overlay);
