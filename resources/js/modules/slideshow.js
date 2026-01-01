@@ -28,7 +28,8 @@ import {
     setSlideshowInterval,
     setSlideshowImagePool,
     setSlideshowPaused,
-    setCurrentSlideIndex
+    setCurrentSlideIndex,
+    setCurrentArtistImages
 } from './state.js';
 
 import { showToast } from './dom.js';
