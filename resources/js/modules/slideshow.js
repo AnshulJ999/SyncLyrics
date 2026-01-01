@@ -1513,12 +1513,22 @@ function renderImageGrid() {
         overlay.appendChild(sourceEl);
         
         // Add resolution from pre-fetched metadata (no onload needed)
-        // This avoids 100+ DOM modifications during scroll
+        // This avoids 100+ DOM modifications during scroll for artist images
         if (img.width && img.height) {
             const resEl = document.createElement('span');
             resEl.className = 'slideshow-image-resolution';
             resEl.textContent = `${img.width}×${img.height}`;
             overlay.appendChild(resEl);
+        } else if (img.key === 'album_art') {
+            // Album art doesn't have pre-fetched metadata - use onload (just 1 image, fast)
+            imgEl.onload = function() {
+                if (!overlay.querySelector('.slideshow-image-resolution')) {
+                    const resEl = document.createElement('span');
+                    resEl.className = 'slideshow-image-resolution';
+                    resEl.textContent = `${this.naturalWidth}×${this.naturalHeight}`;
+                    overlay.appendChild(resEl);
+                }
+            };
         }
         
         card.appendChild(imgEl);
