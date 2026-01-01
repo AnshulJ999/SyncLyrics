@@ -46,20 +46,20 @@
     transform: scale(1) translateY(0);
 }
 
-/* Modal Header */
+/* Modal Header - compact */
 .slideshow-modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 8px;
+    padding-bottom: 0;
+    /* border removed for space saving */
 }
 
 .slideshow-modal-header h3 {
     margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
+    font-size: 0.9rem;
+    font-weight: 600;
     color: #fff;
 }
 
@@ -83,28 +83,28 @@
     color: #fff;
 }
 
-/* Toolbar */
+/* Toolbar - compact */
 .slideshow-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 12px;
-    padding: 10px;
+    gap: 12px;
+    margin-bottom: 6px;
+    padding: 6px 8px;
     background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
+    border-radius: 10px;
 }
 
 .slideshow-control-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .slideshow-control-label {
-    font-size: 0.75rem;
+    font-size: 0.6rem;
     color: rgba(255, 255, 255, 0.5);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    text-transform: none;
+    letter-spacing: 0.4px;
 }
 
 .slideshow-timing-buttons,
@@ -121,9 +121,9 @@
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: rgba(255, 255, 255, 0.8);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -410,11 +410,11 @@
 
 .slideshow-reset-filters-btn {
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.6);
+    padding: 2px 4px;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.5);
     cursor: pointer;
     margin-left: auto;
     transition: all 0.2s ease;
