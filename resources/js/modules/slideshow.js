@@ -363,8 +363,15 @@ export function handleArtistChange(newArtist, sameArtist) {
     
     // Debounce: wait before loading preferences and applying auto-enable
     // This prevents rapid loads when user skips tracks quickly
+    const artistAtSchedule = newArtist;  // Capture artist in closure for verification
     artistChangeDebounceTimer = setTimeout(async () => {
         artistChangeDebounceTimer = null;
+        
+        // Verify artist hasn't changed since we scheduled this timeout
+        if (lastTrackInfo?.artist !== artistAtSchedule) {
+            console.log(`[Slideshow] Artist changed during debounce, skipping apply for "${artistAtSchedule}"`);
+            return;
+        }
         
         try {
             // Load preferences for new artist (includes auto_enable)
@@ -985,6 +992,12 @@ export function hideSlideshowModal() {
     if (!modal) return;
     
     modal.classList.add('hidden');
+    
+    // Update slideshow pool with any include/exclude changes made in modal
+    if (slideshowEnabled) {
+        loadImagePoolForCurrentArtist();
+    }
+    
     console.log('[Slideshow] Control center closed');
 }
 
@@ -1419,13 +1432,16 @@ function renderImageGrid() {
         allImages.push({ url, source, key: url });
     });
     
+    // Build metadata map for O(1) lookup (instead of O(n) .find per image)
+    const metadataMap = new Map(currentImageMetadata.map(m => [m.filename, m]));
+    
     // Enrich allImages with backend metadata (for sorting by resolution/date)
     allImages.forEach(img => {
         if (img.key === 'album_art') return;  // Skip album art (no metadata)
         
         // Extract filename from URL to match with backend metadata
         const filename = img.url.split('/').pop();
-        const meta = currentImageMetadata.find(m => m.filename === filename);
+        const meta = metadataMap.get(filename);  // O(1) lookup
         if (meta) {
             img.width = meta.width;
             img.height = meta.height;
@@ -1437,9 +1453,11 @@ function renderImageGrid() {
         }
     });
     
-    // Load excluded images from storage
-    loadExcludedImages();
+    // NOTE: loadExcludedImages() commented out - data already loaded by showSlideshowModal()
+    // loadExcludedImages();
     const excluded = excludedImages[artistName] || [];
+    const excludedSet = new Set(excluded);  // O(1) lookups
+    const favoritesSet = new Set(favoriteImages[artistName] || []);  // O(1) lookups
     
     // Create dynamic provider chips before sorting/filtering
     updateProviderChips(allImages);
@@ -1450,8 +1468,8 @@ function renderImageGrid() {
     // Apply filtering
     displayImages = filterImages(displayImages, artistName);
     
-    // Count included images (using keys from original allImages for accurate count)
-    const includedCount = allImages.filter(img => !excluded.includes(img.key)).length;
+    // Count included images using Set for O(1) lookup
+    let includedCount = allImages.filter(img => !excludedSet.has(img.key)).length;
     if (countEl) {
         countEl.textContent = `${includedCount}/${allImages.length} images`;
     }
@@ -1461,7 +1479,7 @@ function renderImageGrid() {
 
         const card = document.createElement('div');
         card.className = 'slideshow-image-card';
-        if (excluded.includes(img.key)) {
+        if (excludedSet.has(img.key)) {
             card.classList.add('excluded');
         } else {
             card.classList.add('selected');
@@ -1500,9 +1518,8 @@ function renderImageGrid() {
         favBtn.innerHTML = '★';
         favBtn.title = 'Toggle favorite';
         
-        // Check if this image is favorited
-        const favorites = favoriteImages[artistName] || [];
-        if (favorites.includes(img.key)) {
+        // Check if this image is favorited (using Set for O(1) lookup)
+        if (favoritesSet.has(img.key)) {
             favBtn.classList.add('active');
         }
         
@@ -1522,11 +1539,14 @@ function renderImageGrid() {
             card.classList.toggle('excluded');
             card.classList.toggle('selected');
             
-            // Update count
-            const newExcluded = excludedImages[artistName] || [];
-            const newIncluded = allImages.filter(i => !newExcluded.includes(i.key)).length;
+            // Update count using counter variable (O(1) instead of O(n) filter)
+            if (card.classList.contains('excluded')) {
+                includedCount--;
+            } else {
+                includedCount++;
+            }
             if (countEl) {
-                countEl.textContent = `${newIncluded}/${allImages.length} images`;
+                countEl.textContent = `${includedCount}/${allImages.length} images`;
             }
         });
         
@@ -1550,7 +1570,8 @@ function toggleImageExclusion(url, artistName) {
     }
     
     saveExcludedImages();
-    loadImagePoolForCurrentArtist();
+    // NOTE: loadImagePoolForCurrentArtist() commented out - pool updates on modal close
+    // loadImagePoolForCurrentArtist();
 }
 
 /**
@@ -1877,12 +1898,12 @@ function updateProviderChips(images) {
     const container = document.getElementById('slideshow-filter-chips');
     if (!container) return;
     
-    // Get unique base provider names (e.g., "FanArt 1" → "fanart")
-    const providers = new Set();
+    // Get unique base provider names and count images per provider
+    const providerCounts = new Map();
     images.forEach(img => {
         if (img.source && img.source !== 'Album Art') {
             const baseProvider = img.source.replace(/\s+\d+$/, '').toLowerCase();
-            providers.add(baseProvider);
+            providerCounts.set(baseProvider, (providerCounts.get(baseProvider) || 0) + 1);
         }
     });
     
@@ -1894,13 +1915,15 @@ function updateProviderChips(images) {
     const favoritesChip = container.querySelector('[data-filter="favorites"]');
     if (!favoritesChip) return;
     
-    // Create and insert provider chips
-    const sortedProviders = Array.from(providers).sort();
+    // Create and insert provider chips with count
+    const sortedProviders = Array.from(providerCounts.keys()).sort();
     sortedProviders.forEach(provider => {
+        const count = providerCounts.get(provider);
         const chip = document.createElement('button');
         chip.className = 'slideshow-filter-chip dynamic-provider';
         chip.dataset.filter = provider;
-        chip.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);  // Capitalize
+        const displayName = provider.charAt(0).toUpperCase() + provider.slice(1);  // Capitalize
+        chip.textContent = `${displayName} (${count})`;  // Show count
         if (activeFilters.has(provider)) {
             chip.classList.add('active');
         }
