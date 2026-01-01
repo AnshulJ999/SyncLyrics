@@ -174,6 +174,11 @@ let nextUpCardVisible = false;
 let nextUpTrackId = null; // Cache to avoid redundant fetches
 let nextUpLastFetchAttempt = 0; // Timestamp to throttle retries on error
 
+// ========== IMAGE RETRY CONSTANTS ==========
+// Retry fetching artist images if initial fetch returns empty (backend may still be downloading)
+const IMAGE_RETRY_DELAY_MS = 40000;  // 40 seconds - give backend time to download
+let imageRetryTimer = null;  // Timer reference for cancellation on artist change
+
 /**
  * Update next-up preview card based on track position
  * Shows card in the last 30 seconds of a song
@@ -297,6 +302,53 @@ function resetOutroState() {
     nextUpTrackId = null;
     const card = document.getElementById('next-up-card');
     if (card) card.classList.add('hidden');
+}
+
+/**
+ * Retry fetching artist images after initial fetch returned empty.
+ * Called after IMAGE_RETRY_DELAY_MS to give backend time to download.
+ * Includes multiple guards to prevent stale data and unnecessary fetches.
+ * 
+ * @param {string} artistId - Artist ID that was originally requested
+ */
+async function retryImageFetch(artistId) {
+    imageRetryTimer = null;  // Clear reference
+    
+    // Guard 1: Artist still current?
+    if (lastTrackInfo?.artist_id !== artistId) {
+        console.log('[Main] Image retry cancelled: artist changed');
+        return;
+    }
+    
+    // Guard 2: Already have images? (modal or another source may have loaded them)
+    if (currentArtistImages.length > 0) {
+        console.log('[Main] Image retry cancelled: images already loaded');
+        return;
+    }
+    
+    console.log('[Main] Retrying artist image fetch for:', artistId);
+    
+    try {
+        const data = await fetchArtistImages(artistId, true);
+        
+        // Guard 3: Artist still current after fetch?
+        if (lastTrackInfo?.artist_id !== artistId) {
+            console.log('[Main] Image retry discarded: artist changed during fetch');
+            return;
+        }
+        
+        if (data.images?.length > 0) {
+            setCurrentArtistImages(data.images);
+            setCurrentArtistImageMetadata(data.metadata || []);
+            loadImagePoolForCurrentArtist();
+            // Note: Don't call startSlideshow() - it's already running or user disabled it
+            console.log(`[Main] Image retry successful: loaded ${data.images.length} images`);
+        } else {
+            console.log('[Main] Image retry returned no images, backend may not have any');
+        }
+    } catch (e) {
+        console.warn('[Main] Image retry failed:', e);
+    }
 }
 
 // ========== MAIN UPDATE LOOP ==========
@@ -441,6 +493,11 @@ async function updateLoop() {
                 lastArtistId = newArtistId;
                 
                 // Only clear and refetch images when artist changes
+                // Cancel any pending image retry for old artist
+                if (imageRetryTimer) {
+                    clearTimeout(imageRetryTimer);
+                    imageRetryTimer = null;
+                }
                 setCurrentArtistImages([]);
                 setCurrentArtistImageMetadata([]);
                 if (trackInfo.artist_id) {
@@ -457,6 +514,14 @@ async function updateLoop() {
                         // Art mode will access album art from lastTrackInfo when needed
                         setCurrentArtistImages(data.images || []);
                         setCurrentArtistImageMetadata(data.metadata || []);
+                        
+                        // Schedule ONE retry if no images found (backend may still be downloading)
+                        if ((data.images || []).length === 0) {
+                            console.log(`[Main] No artist images found, scheduling retry in ${IMAGE_RETRY_DELAY_MS/1000}s`);
+                            imageRetryTimer = setTimeout(() => {
+                                retryImageFetch(artistIdAtFetch);
+                            }, IMAGE_RETRY_DELAY_MS);
+                        }
                         
                         // Update slideshow image pool and restart if enabled
                         loadImagePoolForCurrentArtist();
