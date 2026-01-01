@@ -224,6 +224,8 @@
     /* Auto-hide scrollbar */
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    /* Performance: Isolate layout calculations */
+    contain: layout paint;
 }
 
 /* Webkit scrollbar - auto-hide effect */
@@ -251,7 +253,11 @@
     overflow: hidden;
     cursor: pointer;
     /* No border for seamless mosaic - only excluded gets border */
-    transition: all 0.2s ease;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* Performance: GPU acceleration and skip off-screen rendering */
+    will-change: transform;
+    content-visibility: auto;
+    contain-intrinsic-size: 140px 140px;
 }
 
 .slideshow-image-card:hover {

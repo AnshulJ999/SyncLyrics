@@ -1524,6 +1524,7 @@ function renderImageGrid() {
         const imgEl = document.createElement('img');
         imgEl.src = img.url;
         imgEl.loading = 'lazy';
+        imgEl.decoding = 'async';  // Non-blocking decode on background thread
         imgEl.alt = img.source;
         
         const overlay = document.createElement('div');
