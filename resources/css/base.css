@@ -803,7 +803,7 @@ body[data-minimal="true"] .lyrics-toggle-btn {
     transition: opacity 0.3s ease;
 }
 
-/* Icon sizing - Phosphor icons are slightly smaller than Bootstrap at same font-size */
+/* Icon sizing for Bootstrap stars icon */
 .word-sync-toggle-btn i {
     font-size: 1.2rem;
 }
