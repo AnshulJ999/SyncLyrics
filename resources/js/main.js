@@ -444,8 +444,15 @@ async function updateLoop() {
                 setCurrentArtistImages([]);
                 setCurrentArtistImageMetadata([]);
                 if (trackInfo.artist_id) {
+                    // Capture artist ID at fetch time to detect stale responses
+                    const artistIdAtFetch = trackInfo.artist_id;
                     // Fetch with metadata so modal has resolution data available
                     fetchArtistImages(trackInfo.artist_id, true).then(data => {
+                        // Guard: Discard stale response if artist changed during fetch
+                        if (lastTrackInfo?.artist_id !== artistIdAtFetch) {
+                            console.log('[Main] Artist changed during image fetch, discarding stale data');
+                            return;
+                        }
                         // Don't prepend album art - slideshow handles it separately
                         // Art mode will access album art from lastTrackInfo when needed
                         setCurrentArtistImages(data.images || []);
