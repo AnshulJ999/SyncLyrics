@@ -1133,32 +1133,54 @@ export function setupControlCenter() {
         });
     });
     
-    // Select All / Deselect All
+    // Select All / Deselect All (with double-tap confirmation)
     const selectAllBtn = document.getElementById('slideshow-select-all');
     const deselectAllBtn = document.getElementById('slideshow-deselect-all');
+    let selectAllLastClick = 0;
+    let deselectAllLastClick = 0;
     
     if (selectAllBtn) {
         selectAllBtn.addEventListener('click', () => {
-            const artistName = lastTrackInfo?.artist || 'unknown';
-            excludedImages[artistName] = [];
-            saveExcludedImages();
-            renderImageGrid();
-            loadImagePoolForCurrentArtist();
+            const now = Date.now();
+            if (now - selectAllLastClick < 600) {
+                // Double-tap confirmed - execute
+                const artistName = lastTrackInfo?.artist || 'unknown';
+                excludedImages[artistName] = [];
+                saveExcludedImages();
+                renderImageGrid();
+                loadImagePoolForCurrentArtist();
+                selectAllLastClick = 0;
+                showToast('All images selected', 'success', 1000);
+            } else {
+                // First tap - show confirmation prompt
+                showToast('Tap again to select all', 'info', 1500);
+                selectAllLastClick = now;
+            }
         });
     }
     
     if (deselectAllBtn) {
         deselectAllBtn.addEventListener('click', () => {
-            const artistName = lastTrackInfo?.artist || 'unknown';
-            const allImages = [...currentArtistImages];
-            const albumArt = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path;
-            if (albumArt && !allImages.includes(albumArt)) {
-                allImages.unshift(albumArt);
+            const now = Date.now();
+            if (now - deselectAllLastClick < 600) {
+                // Double-tap confirmed - execute
+                const artistName = lastTrackInfo?.artist || 'unknown';
+                const allImages = [...currentArtistImages];
+                const albumArt = lastTrackInfo?.album_art_url || lastTrackInfo?.album_art_path;
+                if (albumArt && !allImages.includes(albumArt)) {
+                    allImages.unshift(albumArt);
+                }
+                excludedImages[artistName] = allImages;
+                saveExcludedImages();
+                renderImageGrid();
+                loadImagePoolForCurrentArtist();
+                deselectAllLastClick = 0;
+                showToast('All images deselected', 'success', 1000);
+            } else {
+                // First tap - show confirmation prompt
+                showToast('Tap again to deselect all', 'info', 1500);
+                deselectAllLastClick = now;
             }
-            excludedImages[artistName] = allImages;
-            saveExcludedImages();
-            renderImageGrid();
-            loadImagePoolForCurrentArtist();
         });
     }
     

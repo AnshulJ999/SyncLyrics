@@ -168,25 +168,43 @@
     background: rgba(59, 130, 246, 0.1);
 }
 
-/* Selection Bar */
+/* Selection Bar - consolidated row with count, filters, actions, sort */
 .slideshow-selection-bar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 12px;
     margin-bottom: 8px;
     padding: 6px 10px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 8px;
+    flex-wrap: wrap;  /* Allow wrapping on narrow screens */
 }
 
 .slideshow-image-count {
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Filter chips container - grows to fill available space */
+.slideshow-selection-bar .slideshow-filter-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;  /* Take available space */
+    min-width: 0;
 }
 
 .slideshow-selection-buttons {
     display: flex;
-    gap: 8px;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Sort dropdown in selection bar */
+.slideshow-selection-bar .slideshow-sort-select {
+    flex-shrink: 0;
 }
 
 /* Image Grid */
