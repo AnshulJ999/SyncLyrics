@@ -82,6 +82,7 @@ export let visualModeTimerId = null;
 // ========== SLIDESHOW STATE ==========
 // SEPARATED DATA SOURCES to prevent collision between Visual Mode and Idle Mode
 export let currentArtistImages = []; // For Visual Mode (Current Song's Artist)
+export let currentArtistImageMetadata = [];  // Metadata for currentArtistImages [{source, filename, width, height, added_at}]
 export let dashboardImages = [];     // For Idle Mode (Global Random Shuffle)
 export let slideshowInterval = null;
 export let currentSlideIndex = 0;
@@ -153,6 +154,7 @@ export function setManualVisualModeOverride(value) { manualVisualModeOverride = 
 export function setVisualModeTrackId(value) { visualModeTrackId = value; }
 export function setVisualModeTimerId(value) { visualModeTimerId = value; }
 export function setCurrentArtistImages(value) { currentArtistImages = value; }
+export function setCurrentArtistImageMetadata(value) { currentArtistImageMetadata = value; }
 export function setDashboardImages(value) { dashboardImages = value; }
 export function setSlideshowInterval(value) { slideshowInterval = value; }
 export function setCurrentSlideIndex(value) { currentSlideIndex = value; }

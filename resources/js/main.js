@@ -30,6 +30,7 @@ import {
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
+    setCurrentArtistImageMetadata,
     setManualStyleOverride,
     setManualVisualModeOverride,
     setWordSyncEnabled,
@@ -441,11 +442,14 @@ async function updateLoop() {
                 
                 // Only clear and refetch images when artist changes
                 setCurrentArtistImages([]);
-                if (trackInfo.artist_id && visualModeConfig.enabled) {
-                    fetchArtistImages(trackInfo.artist_id).then(images => {
+                setCurrentArtistImageMetadata([]);
+                if (trackInfo.artist_id) {
+                    // Fetch with metadata so modal has resolution data available
+                    fetchArtistImages(trackInfo.artist_id, true).then(data => {
                         // Don't prepend album art - slideshow handles it separately
                         // Art mode will access album art from lastTrackInfo when needed
-                        setCurrentArtistImages(images);
+                        setCurrentArtistImages(data.images || []);
+                        setCurrentArtistImageMetadata(data.metadata || []);
                         
                         // Update slideshow image pool and restart if enabled
                         loadImagePoolForCurrentArtist();

@@ -22,6 +22,7 @@ import {
     slideshowPaused,
     currentSlideIndex,
     currentArtistImages,
+    currentArtistImageMetadata,
     lastTrackInfo,
     displayConfig,
     setSlideshowEnabled,
@@ -29,7 +30,8 @@ import {
     setSlideshowImagePool,
     setSlideshowPaused,
     setCurrentSlideIndex,
-    setCurrentArtistImages
+    setCurrentArtistImages,
+    setCurrentArtistImageMetadata
 } from './state.js';
 
 import { showToast } from './dom.js';
@@ -922,8 +924,8 @@ let excludedImages = {};  // { artistName: [filename, ...] }
 // Track favorite images per artist (synced with backend)
 let favoriteImages = {};  // { artistName: [filename, ...] }
 
-// Current image metadata cache (loaded from backend when modal opens)
-let currentImageMetadata = [];  // [{source, filename, width, height, added_at}, ...]
+// NOTE: Image metadata is now stored globally in state.js as currentArtistImageMetadata
+// This ensures metadata is available before modal opens (preloaded by main.js)
 
 // Sorting state (persisted to localStorage)
 const SORT_OPTIONS = ['original', 'name', 'resolution', 'provider', 'date'];
@@ -965,7 +967,9 @@ export async function showSlideshowModal() {
     updateModalUIFromConfig();
     
     const grid = document.getElementById('slideshow-image-grid');
-    const needsFetch = currentArtistImages.length === 0 && lastTrackInfo?.artist_id;
+    // Fetch if images OR metadata is missing (main.js preloads both, but fallback if needed)
+    const needsFetch = (currentArtistImages.length === 0 || currentArtistImageMetadata.length === 0) 
+                       && lastTrackInfo?.artist_id;
     
     // If we need to fetch, show loading state while data loads
     if (needsFetch && grid) {
@@ -978,7 +982,7 @@ export async function showSlideshowModal() {
             const data = await fetchArtistImages(lastTrackInfo.artist_id, true);
             if (data?.images) {
                 setCurrentArtistImages(data.images);
-                currentImageMetadata = data.metadata || [];
+                setCurrentArtistImageMetadata(data.metadata || []);
                 // Also populate preferences from backend response
                 if (data.preferences) {
                     const artist = lastTrackInfo?.artist || '';
@@ -1469,7 +1473,7 @@ function renderImageGrid() {
     });
     
     // Build metadata map for O(1) lookup (instead of O(n) .find per image)
-    const metadataMap = new Map(currentImageMetadata.map(m => [m.filename, m]));
+    const metadataMap = new Map(currentArtistImageMetadata.map(m => [m.filename, m]));
     
     // Enrich allImages with backend metadata (for sorting by resolution/date)
     allImages.forEach(img => {
@@ -1642,7 +1646,7 @@ async function loadExcludedImages() {
                 // Use backend data
                 excludedImages[currentArtist] = data.preferences.excluded || [];
                 favoriteImages[currentArtist] = data.preferences.favorites || [];
-                currentImageMetadata = data.metadata || [];
+                setCurrentArtistImageMetadata(data.metadata || []);
                 currentAutoEnable = data.preferences.auto_enable;  // null, true, or false
                 
                 // Cache to localStorage
