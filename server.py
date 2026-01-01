@@ -1712,10 +1712,29 @@ async def serve_album_art_image(folder_name: str, filename: str):
         elif ext == '.gif': mime = 'image/gif'
         elif ext == '.webp': mime = 'image/webp'
         
+        # Build cache headers with ETag/Last-Modified for efficient revalidation
+        # After max-age expires (24h), browser validates with ETag → 304 if unchanged
+        headers = {'Cache-Control': 'public, max-age=86400, must-revalidate'}
+        
+        try:
+            # Last-Modified: file modification timestamp
+            mtime = os.path.getmtime(str(image_path))
+            from email.utils import formatdate
+            headers['Last-Modified'] = formatdate(mtime, usegmt=True)
+            
+            # ETag: hash of path + mtime (fast, avoids hashing large image files)
+            import hashlib
+            etag_source = f"{image_path}:{mtime}".encode('utf-8')
+            etag = hashlib.md5(etag_source).hexdigest()
+            headers['ETag'] = f'"{etag}"'
+        except Exception:
+            # If mtime fails, just use max-age without ETag (still works)
+            pass
+        
         return Response(
             image_data,
             mimetype=mime,
-            headers={'Cache-Control': 'public, max-age=86400'}  # Cache for 24 hours
+            headers=headers
         )
     except Exception as e:
         logger.error(f"Error serving album art image: {e}")
