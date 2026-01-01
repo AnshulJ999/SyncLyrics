@@ -393,6 +393,11 @@ class SpotifyAPI:
         # Key: artist_id, Value: list of image URLs
         self._artist_image_cache = {}
         
+        # Queue Cache (prevents rate limiting from frequent frontend polling)
+        self._queue_cache = None
+        self._queue_cache_time = 0
+        self._QUEUE_CACHE_TTL = 10  # seconds - balance between freshness and rate limits
+        
         # FIX: Throttle for credential/auth errors to prevent log spam
         self._credentials_error_logged = False
         
@@ -1153,9 +1158,19 @@ class SpotifyAPI:
             return False
 
     async def get_queue(self) -> Optional[Dict[str, Any]]:
-        """Fetch the user's current playback queue."""
+        """Fetch the user's current playback queue with caching.
+        
+        Uses a 10-second cache to prevent rate limiting from frequent
+        frontend polling (Queue Drawer + Next-Up Card).
+        """
         if not self.initialized:
             return None
+        
+        # Check cache first
+        current_time = time.time()
+        if self._queue_cache and (current_time - self._queue_cache_time) < self._QUEUE_CACHE_TTL:
+            logger.debug("Returning cached queue data")
+            return self._queue_cache
             
         try:
             # Track API call (endpoint-specific, total counted by CountingSession)
@@ -1163,11 +1178,17 @@ class SpotifyAPI:
             
             loop = asyncio.get_event_loop()
             queue_data = await loop.run_in_executor(None, self.sp.queue)
+            
+            # Update cache
+            self._queue_cache = queue_data
+            self._queue_cache_time = current_time
+            
             return queue_data
         except Exception as e:
             self.request_stats['errors']['other'] += 1
             logger.error(f"Failed to fetch queue: {e}")
-            return None
+            # Return stale cache on error (better than nothing)
+            return self._queue_cache
 
     async def is_track_liked(self, track_id: str) -> bool:
         """Check if a track is saved in the user's library."""

@@ -51,6 +51,36 @@ def conf(key, default=None):
     # 3. Default
     return default
 
+# Type conversion helpers for environment variables
+# (env vars are always strings, but config values may need to be int/float/bool)
+def _safe_float(val, default: float) -> float:
+    """Safely convert to float, returning default on failure."""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+def _safe_int(val, default):
+    """Safely convert to int, returning default on failure. Supports None default."""
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+def _safe_bool(val, default: bool) -> bool:
+    """Safely convert to bool, handling string 'true'/'false'."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ('true', '1', 'yes', 'on')
+    return bool(val)
+
 # ==========================================
 # EXPORTED CONFIG DICTS
 # ==========================================
@@ -320,20 +350,20 @@ ARTIST_IMAGE = {
 # Audio Recognition (Reaper Integration)
 # Uses ShazamIO for song identification with latency-compensated position tracking
 AUDIO_RECOGNITION = {
-    "enabled": conf("audio_recognition.enabled", False),
+    "enabled": _safe_bool(conf("audio_recognition.enabled", False), False),
     # ENV override: REAPER_AUTO_DETECT=true in .env takes priority over settings.json
-    "reaper_auto_detect": os.getenv("REAPER_AUTO_DETECT", "").lower() == "true" or conf("audio_recognition.reaper_auto_detect", False),
-    "device_id": conf("audio_recognition.device_id"),  # None = auto-detect
+    "reaper_auto_detect": os.getenv("REAPER_AUTO_DETECT", "").lower() == "true" or _safe_bool(conf("audio_recognition.reaper_auto_detect", False), False),
+    "device_id": _safe_int(conf("audio_recognition.device_id"), None),  # None = auto-detect
     "device_name": conf("audio_recognition.device_name", ""),
-    "capture_duration": conf("audio_recognition.capture_duration", 5.0),
-    "recognition_interval": conf("audio_recognition.recognition_interval", 5.0),
-    "latency_offset": conf("audio_recognition.latency_offset", 0.0),
-    "silence_threshold": conf("audio_recognition.silence_threshold", 500),
+    "capture_duration": _safe_float(conf("audio_recognition.capture_duration", 5.0), 5.0),
+    "recognition_interval": _safe_float(conf("audio_recognition.recognition_interval", 5.0), 5.0),
+    "latency_offset": _safe_float(conf("audio_recognition.latency_offset", 0.0), 0.0),
+    "silence_threshold": _safe_int(conf("audio_recognition.silence_threshold", 500), 500),
     # Verification settings (anti-false-positive)
-    "verification_cycles": conf("audio_recognition.verification_cycles", 2),
-    "verification_timeout_cycles": conf("audio_recognition.verification_timeout_cycles", 4),
-    "reaper_validation_enabled": conf("audio_recognition.reaper_validation_enabled", False),
-    "reaper_validation_threshold": conf("audio_recognition.reaper_validation_threshold", 80),
+    "verification_cycles": _safe_int(conf("audio_recognition.verification_cycles", 2), 2),
+    "verification_timeout_cycles": _safe_int(conf("audio_recognition.verification_timeout_cycles", 4), 4),
+    "reaper_validation_enabled": _safe_bool(conf("audio_recognition.reaper_validation_enabled", False), False),
+    "reaper_validation_threshold": _safe_int(conf("audio_recognition.reaper_validation_threshold", 80), 80),
 }
 
 # Helper functions

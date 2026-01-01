@@ -2423,9 +2423,51 @@ async def audio_recognition_configure():
             "capture_duration", "latency_offset", "silence_threshold"
         ]
         
-        for key in valid_keys:
+        # Apply session overrides with STRICT type conversion
+        # This prevents "can only concatenate str to str" errors in the engine
+        
+        # 1. Integers
+        if "device_id" in data:
+            val = data["device_id"]
+            if val is None or val == "":
+                set_session_override("device_id", None)
+            else:
+                try:
+                    set_session_override("device_id", int(val))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid device_id: {val}")
+
+        # 2. Floats
+        float_keys = ["recognition_interval", "capture_duration", "latency_offset"]
+        for key in float_keys:
             if key in data:
-                set_session_override(key, data[key])
+                try:
+                    set_session_override(key, float(data[key]))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid float for {key}: {data[key]}")
+
+        # 2b. Integers (silence_threshold is int, not float)
+        if "silence_threshold" in data:
+            try:
+                set_session_override("silence_threshold", int(data["silence_threshold"]))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid silence_threshold: {data['silence_threshold']}")
+
+        # 3. Booleans
+        bool_keys = ["enabled", "reaper_auto_detect"]
+        for key in bool_keys:
+            if key in data:
+                # Handle string "true"/"false" if sent that way
+                val = data[key]
+                if isinstance(val, str):
+                    val = val.lower() in ('true', '1', 'yes', 'on')
+                set_session_override(key, bool(val))
+
+        # 4. Strings
+        str_keys = ["device_name", "mode"]
+        for key in str_keys:
+            if key in data:
+                set_session_override(key, str(data[key]) if data[key] is not None else None)
         
         # EVENT-DRIVEN: Set runtime flag for immediate effect in main loop
         # This replaces polling session_config on every metadata fetch

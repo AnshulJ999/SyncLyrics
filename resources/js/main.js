@@ -168,8 +168,10 @@ const IDLE_POLL_INTERVAL = 1000; // 1 second when in slow polling mode
 
 // ========== NEXT-UP CARD CONSTANTS ==========
 const NEXT_UP_SHOW_THRESHOLD_MS = 30000; // Show card in last 30 seconds
+const NEXT_UP_RETRY_DELAY_MS = 10000; // 10 seconds between retries on error
 let nextUpCardVisible = false;
 let nextUpTrackId = null; // Cache to avoid redundant fetches
+let nextUpLastFetchAttempt = 0; // Timestamp to throttle retries on error
 
 /**
  * Update next-up preview card based on track position
@@ -187,8 +189,14 @@ async function updateNextUpCard(trackInfo) {
 
     // Check if we're in the last 30 seconds
     if (durationMs > 0 && remainingMs <= NEXT_UP_SHOW_THRESHOLD_MS && remainingMs > 0) {
-        // Fetch queue if not already visible or new song
-        if (!nextUpCardVisible || nextUpTrackId !== trackInfo.track_id) {
+        // Fetch queue if: (1) new song, OR (2) not visible AND retry delay has passed
+        // The retry delay prevents rapid API calls when fetch fails (error case)
+        const now = Date.now();
+        const isNewSong = nextUpTrackId !== trackInfo.track_id;
+        const canRetry = (now - nextUpLastFetchAttempt) > NEXT_UP_RETRY_DELAY_MS;
+        
+        if (isNewSong || (!nextUpCardVisible && canRetry)) {
+            nextUpLastFetchAttempt = now;
             try {
                 const queueData = await fetchQueue();
                 if (queueData && queueData.queue && queueData.queue.length > 0) {
