@@ -1866,18 +1866,37 @@ function filterImages(images, artistName) {
     }
     
     const favs = favoriteImages[artistName] || [];
+    const excluded = excludedImages[artistName] || [];
     
     return images.filter(img => {
+        // Check included filter (images NOT in excluded list)
+        if (activeFilters.has('included') && !excluded.includes(img.key)) {
+            return true;
+        }
+        
+        // Check excluded filter (images IN excluded list)
+        if (activeFilters.has('excluded') && excluded.includes(img.key)) {
+            return true;
+        }
+        
         // Check favorites filter (favorites stored as keys/URLs)
         if (activeFilters.has('favorites') && favs.includes(img.key)) {
             return true;
+        }
+        
+        // Check "others" filter (small providers grouped together)
+        if (activeFilters.has('others')) {
+            const baseSource = (img.source || '').replace(/\s+\d+$/, '').toLowerCase();
+            if (smallProviders.has(baseSource)) {
+                return true;
+            }
         }
         
         // Check provider filters
         // Extract base provider name from source (e.g., "FanArt 1" → "fanart")
         const baseSource = (img.source || '').replace(/\s+\d+$/, '').toLowerCase();
         for (const filter of activeFilters) {
-            if (filter !== 'favorites' && baseSource === filter) {
+            if (filter !== 'favorites' && filter !== 'included' && filter !== 'excluded' && filter !== 'others' && baseSource === filter) {
                 return true;
             }
         }
@@ -1934,13 +1953,19 @@ function updateFilterChips() {
     });
 }
 
+// Track small providers for "Others" filter (populated by updateProviderChips)
+let smallProviders = new Set();
+
 /**
  * Update provider chips dynamically based on available images
+ * Providers with <6 images are collapsed into "Others"
  * @param {Array} images - Array of image objects with source property
  */
 function updateProviderChips(images) {
     const container = document.getElementById('slideshow-filter-chips');
     if (!container) return;
+    
+    const MIN_IMAGES_FOR_CHIP = 6;  // Providers with fewer images go into "Others"
     
     // Get unique base provider names and count images per provider
     const providerCounts = new Map();
@@ -1951,7 +1976,32 @@ function updateProviderChips(images) {
         }
     });
     
-    // Remove existing dynamic provider chips (keep "All", "Favorites", and "Reset")
+    // Separate into main providers and small providers
+    const mainProviders = new Map();
+    smallProviders = new Set();  // Reset global
+    let othersCount = 0;
+    
+    providerCounts.forEach((count, provider) => {
+        if (count >= MIN_IMAGES_FOR_CHIP) {
+            mainProviders.set(provider, count);
+        } else {
+            smallProviders.add(provider);
+            othersCount += count;
+        }
+    });
+    
+    // Update Included/Excluded chip counts
+    const artistName = lastTrackInfo?.artist || '';
+    const excluded = excludedImages[artistName] || [];
+    const excludedCount = images.filter(img => excluded.includes(img.key)).length;
+    const includedCount = images.length - excludedCount;
+    
+    const includedChip = container.querySelector('[data-filter="included"]');
+    const excludedChip = container.querySelector('[data-filter="excluded"]');
+    if (includedChip) includedChip.textContent = `Included (${includedCount})`;
+    if (excludedChip) excludedChip.textContent = `Excluded (${excludedCount})`;
+    
+    // Remove existing dynamic provider chips (keep static chips: All, Included, Excluded, Favorites, Reset)
     const existingDynamicChips = container.querySelectorAll('.slideshow-filter-chip.dynamic-provider');
     existingDynamicChips.forEach(chip => chip.remove());
     
@@ -1959,20 +2009,32 @@ function updateProviderChips(images) {
     const favoritesChip = container.querySelector('[data-filter="favorites"]');
     if (!favoritesChip) return;
     
-    // Create and insert provider chips with count
-    const sortedProviders = Array.from(providerCounts.keys()).sort();
+    // Create and insert main provider chips (sorted alphabetically)
+    const sortedProviders = Array.from(mainProviders.keys()).sort();
     sortedProviders.forEach(provider => {
-        const count = providerCounts.get(provider);
+        const count = mainProviders.get(provider);
         const chip = document.createElement('button');
         chip.className = 'slideshow-filter-chip dynamic-provider';
         chip.dataset.filter = provider;
         const displayName = provider.charAt(0).toUpperCase() + provider.slice(1);  // Capitalize
-        chip.textContent = `${displayName} (${count})`;  // Show count
+        chip.textContent = `${displayName} (${count})`;
         if (activeFilters.has(provider)) {
             chip.classList.add('active');
         }
         container.insertBefore(chip, favoritesChip);
     });
+    
+    // Create "Others" chip if there are small providers
+    if (othersCount > 0) {
+        const othersChip = document.createElement('button');
+        othersChip.className = 'slideshow-filter-chip dynamic-provider';
+        othersChip.dataset.filter = 'others';
+        othersChip.textContent = `Others (${othersCount})`;
+        if (activeFilters.has('others')) {
+            othersChip.classList.add('active');
+        }
+        container.insertBefore(othersChip, favoritesChip);
+    }
 }
 
 
