@@ -79,17 +79,20 @@ async def add_cache_headers(response):
     Add Cache-Control headers to prevent stale content issues.
     - Static assets: 1hr cache with revalidation (cache busting via ?v= handles updates)
     - API/pages: no caching to ensure fresh data
+    - Routes that set their own Cache-Control are respected (e.g., image serving)
     """
     path = request.path
     
     # Static assets (CSS, JS, images) - allow short cache since we use cache busting
     if path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
-    # API endpoints and pages - no caching
+    # API endpoints and pages - no caching (unless route already set its own)
     elif path.startswith('/api/') or path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
+        # Don't overwrite if route already set cache headers (e.g., image serving routes)
+        if 'Cache-Control' not in response.headers:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
     
     return response
 
