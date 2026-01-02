@@ -829,8 +829,19 @@ body[data-minimal="true"] .lyrics-toggle-btn {
 .word-sync-toggle-btn.unavailable {
     opacity: 0.3;
     cursor: not-allowed;
-   /* border-style: dashed;
-    border-color: rgba(255, 255, 255, 0.2); */
+}
+
+/* Diagonal strikethrough line */
+.word-sync-toggle-btn.unavailable::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 70%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.6);
+    transform: translate(-50%, -50%) rotate(45deg);
+    pointer-events: none;
 }
 
 /* Hide in minimal mode */
