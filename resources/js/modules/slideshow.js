@@ -1425,8 +1425,13 @@ function renderImageGrid() {
     // Known provider prefixes (lowercase for matching)
     const knownProviders = ['fanart', 'fanart_tv', 'FanArt.tv', 'fanarttv', 'deezer', 'spotify', 'theaudiodb', 'audiodb', 'spicetify', 'lastfm', 'last_fm', 'last.fm', 'itunes'];
     
+    // URL deduplication: prevent the same image URL from appearing multiple times
+    const seenUrls = new Set();
+    
     currentArtistImages.forEach((img) => {
-        if (img === albumArt) return;  // Skip duplicate
+        if (img === albumArt) return;  // Skip album art duplicate
+        if (seenUrls.has(img)) return; // Skip already-seen URLs
+        seenUrls.add(img);
         
         // Extract filename from URL
         const filename = img.split('/').pop() || '';
