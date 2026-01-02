@@ -1557,6 +1557,69 @@ body.soft-mode .background-overlay {
     text-overflow: ellipsis;
 }
 
+/* Queue Drawer - Mobile Responsive */
+@media (max-width: 600px) {
+    .queue-drawer {
+        /* Fluid width: 220px on 320px screens, scales up to 260px on 600px */
+        width: clamp(200px, 70vw, 260px);
+        max-width: 70vw;
+        padding: 14px;
+        right: calc(-1 * clamp(200px, 70vw, 260px)); /* Match width for hidden state */
+    }
+    
+    .queue-header {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+    }
+    
+    .queue-header h3 {
+        font-size: 1rem;
+    }
+    
+    .queue-item {
+        gap: 8px;
+        padding: 6px;
+        margin-bottom: 4px;
+    }
+    
+    .queue-art {
+        width: 32px;
+        height: 32px;
+        border-radius: 3px;
+    }
+    
+    .queue-title {
+        font-size: 0.8rem;
+    }
+    
+    .queue-artist {
+        font-size: 0.7rem;
+    }
+}
+
+/* Very small screens (320px) */
+@media (max-width: 380px) {
+    .queue-drawer {
+        width: 65vw;
+        max-width: 65vw;
+        padding: 12px;
+        right: -65vw;
+    }
+    
+    .queue-art {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .queue-title {
+        font-size: 0.75rem;
+    }
+    
+    .queue-artist {
+        font-size: 0.65rem;
+    }
+}
+
 /* Background Style Controls in Modal */
 .style-controls-section {
     /* Remove padding and background for cleaner look */
