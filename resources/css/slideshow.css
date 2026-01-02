@@ -346,6 +346,32 @@
         justify-content: flex-start;
     }
     
+    /* Or limit the whole timing buttons row */
+    .slideshow-timing-buttons {
+        flex-wrap: wrap;
+        min-width: 10px;
+        max-width: 100%;
+    }
+    
+    .slideshow-custom-input {
+        width: auto;
+        min-width: 10px;
+        max-width: 60%;
+        font-size: 0.7rem;
+        flex-shrink: 1;
+    }      
+
+    /* Hide custom input by default, show only when Custom is selected */
+    .slideshow-custom-input {
+        display: none;
+    }
+
+    /* Show when Custom button is active (JS adds class to parent or uses :has) */
+    #slideshow-custom-btn.active + .slideshow-custom-input,
+    .slideshow-custom-input:focus {
+        display: block !important;
+    }
+    
     .slideshow-image-grid {
         grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     }
