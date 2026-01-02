@@ -386,12 +386,12 @@ body[data-minimal="true"] .background-overlay {
 }
 
 /* Responsive: Mobile */
-@media (max-width: 480px) {
+/* @media (max-width: 480px) {
     .top-right-controls {
         top: 0.5rem;
         right: 0.5rem;
     }
-}
+} */
 
 /* Hide container in minimal mode */
 body[data-minimal="true"] .top-right-controls {
@@ -882,7 +882,7 @@ body[data-minimal="true"] .slideshow-toggle-btn {
 }
 
 /* ========== MOBILE LAYOUT: Stack buttons vertically ========== */
-@media (max-width: 850px) {
+@media (max-width: 800px) {
     /* Stack vertically along left edge: Slideshow (top), Karaoke (middle), Visual Mode (bottom) */
     .slideshow-toggle-btn {
         left: 16px;
@@ -1973,10 +1973,10 @@ body.art-only-mode.zoom-out-enabled.sharp-mode .art-zoom-img {
 /* ========== NEXT-UP PREVIEW CARD ========== */
 .next-up-card {
     position: fixed;
-    bottom: 110px;                              /* Was: 90px - moved higher */
+    bottom: 110px;
     right: 16px;
     z-index: 150;
-    background: transparent;                    /* Was: rgba(20, 22, 30, 0.9) - now transparent */
+    background: transparent;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-radius: 10px;
@@ -1988,6 +1988,16 @@ body.art-only-mode.zoom-out-enabled.sharp-mode .art-zoom-img {
     cursor: pointer;
     /* Slide-in animation */
     animation: slideInRight 0.3s ease-out;
+}
+
+/* Mobile: Move next-up card above seekbar/controls */
+@media (max-width: 768px) {
+    .next-up-card {
+        bottom: 180px;
+        min-width: 100px;
+        max-width: 240px;
+        padding: 8px 10px;
+    }
 }
 
 @keyframes slideInRight {
