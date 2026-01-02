@@ -322,13 +322,32 @@
 }
 
 /* Responsive - Mobile */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .slideshow-toolbar {
         flex-direction: column;
     }
     
+    /* Selection bar should stack on mobile */
+    .slideshow-selection-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    /* Filter chips take full width and wrap naturally */
+    .slideshow-selection-bar .slideshow-filter-chips {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    /* Selection buttons on their own row */
+    .slideshow-selection-buttons {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
     .slideshow-image-grid {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     }
 }
 
