@@ -52,12 +52,26 @@ _spicetify_state: Dict[str, Any] = {
     'colors': None,             # May be null (Spotify blocks API)
 }
 
+# Queue cache (separate from main state for cleaner management)
+_spicetify_queue_cache: Dict[str, Any] = {
+    'data': None,               # Queue response from bridge
+    'last_update': 0,           # Timestamp when queue was last fetched
+}
+
 # Freshness thresholds
 POSITION_STALE_MS = 1000    # Position older than 1s is stale
 METADATA_STALE_MS = 4000    # Track metadata older than 4s is stale (fast fallback to SMTC)
+QUEUE_CACHE_TTL_S = 5       # Queue cache TTL in seconds (configurable)
 
 # Track when Spicetify was last actively playing (for paused timeout)
 _spicetify_last_active_time: float = 0
+
+# WebSocket reference for sending requests (set in handle_spicetify_connection)
+_active_websocket = None
+
+# Event for queue request/response synchronization
+_queue_response_event: asyncio.Event = None
+_queue_response_data: Dict[str, Any] = None
 
 
 # =============================================================================
@@ -71,6 +85,62 @@ def is_connected() -> bool:
     
     age_ms = (time.time() * 1000) - _spicetify_state['last_update']
     return age_ms < METADATA_STALE_MS
+
+
+async def get_queue() -> Optional[Dict[str, Any]]:
+    """
+    Get queue data from Spicetify bridge.
+    
+    Uses cached data if fresh (within QUEUE_CACHE_TTL_S), otherwise
+    sends request to bridge and waits for response.
+    
+    Returns:
+        Queue data dict with 'current' and 'queue' keys (matching Spotify API format),
+        or None if not connected or request fails.
+    """
+    global _queue_response_event, _queue_response_data
+    
+    if not is_connected() or not _active_websocket:
+        return None
+    
+    # Check cache first
+    cache_age = time.time() - _spicetify_queue_cache['last_update']
+    if _spicetify_queue_cache['data'] and cache_age < QUEUE_CACHE_TTL_S:
+        logger.debug(f"Returning cached Spicetify queue data ({cache_age:.1f}s old)")
+        return _spicetify_queue_cache['data']
+    
+    # Request fresh queue data from bridge
+    try:
+        # Reset event and data
+        _queue_response_event = asyncio.Event()
+        _queue_response_data = None
+        
+        # Send request
+        await _active_websocket.send_json({'type': 'get_queue'})
+        logger.debug("Sent get_queue request to Spicetify bridge")
+        
+        # Wait for response with timeout (500ms should be plenty for local IPC)
+        try:
+            await asyncio.wait_for(_queue_response_event.wait(), timeout=0.5)
+        except asyncio.TimeoutError:
+            logger.warning("Spicetify queue request timed out")
+            return None
+        
+        # Check if we got valid data
+        if _queue_response_data and _queue_response_data.get('success'):
+            # Update cache
+            _spicetify_queue_cache['data'] = _queue_response_data
+            _spicetify_queue_cache['last_update'] = time.time()
+            logger.debug(f"Got Spicetify queue: {_queue_response_data.get('count', 0)} tracks")
+            return _queue_response_data
+        else:
+            error = _queue_response_data.get('error', 'Unknown error') if _queue_response_data else 'No response'
+            logger.warning(f"Spicetify queue request failed: {error}")
+            return None
+            
+    except Exception as e:
+        logger.warning(f"Spicetify queue request error: {e}")
+        return None
 
 
 async def get_current_song_meta_data_spicetify() -> Optional[dict]:
@@ -196,6 +266,8 @@ async def handle_spicetify_connection():
     """
     Handle Spicetify WebSocket connection.
     
+    Note: Uses global _active_websocket to allow queue requests from outside the handler.
+    
     Called from server.py's @app.websocket('/ws/spicetify') endpoint.
     Uses Quart's global `websocket` object for receive/send.
     
@@ -205,9 +277,10 @@ async def handle_spicetify_connection():
     - No locks used for position updates - dict assignments are atomic in Python
     - Track data still awaited since it's less frequent and needs ordering
     """
-    global _spicetify_state, _spicetify_last_active_time, _pending_position_task
+    global _spicetify_state, _spicetify_last_active_time, _pending_position_task, _active_websocket
     
     _spicetify_state['connected'] = True
+    _active_websocket = websocket  # Store reference for queue requests
     logger.info("Spicetify bridge connected")
     
     try:
@@ -229,6 +302,10 @@ async def handle_spicetify_connection():
                     elif msg_type == 'track_data':
                         # Await track data (less frequent, needs ordering)
                         await _handle_track_data(msg)
+                        
+                    elif msg_type == 'queue_data':
+                        # Handle queue response (for get_queue requests)
+                        _handle_queue_response(msg)
                         
                     elif msg_type == 'ping':
                         # Respond to keepalive
@@ -256,12 +333,31 @@ async def handle_spicetify_connection():
         _spicetify_state['duration_ms'] = 0
         _spicetify_state['is_playing'] = False
         _spicetify_state['is_buffering'] = False
+        
+        # Clear queue cache and websocket reference
+        _spicetify_queue_cache['data'] = None
+        _spicetify_queue_cache['last_update'] = 0
+        _active_websocket = None
         logger.info("Spicetify bridge disconnected")
 
 
 # =============================================================================
 # MESSAGE HANDLERS
 # =============================================================================
+
+def _handle_queue_response(data: dict):
+    """
+    Handle queue_data response from Spicetify bridge.
+    
+    This is called synchronously from the WebSocket receive loop.
+    It stores the response and signals the waiting get_queue() coroutine.
+    """
+    global _queue_response_data, _queue_response_event
+    
+    _queue_response_data = data
+    if _queue_response_event:
+        _queue_response_event.set()
+
 
 async def _handle_position_update(data: dict):
     """

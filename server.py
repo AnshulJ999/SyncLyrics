@@ -2157,8 +2157,36 @@ async def save_artist_slideshow_preferences_endpoint():
 
 @app.route("/api/playback/queue", methods=['GET'])
 async def get_playback_queue():
+    """
+    Get playback queue.
+    
+    Uses Spicetify when active (more accurate - includes autoplay tracks),
+    falls back to Spotify Web API otherwise.
+    """
+    # Check if we should use Spicetify (more accurate queue with autoplay tracks)
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'spicetify':
+        # Try Spicetify first (includes autoplay tracks that Web API misses)
+        from system_utils.spicetify import get_queue as get_spicetify_queue, is_connected
+        
+        if is_connected():
+            spicetify_queue = await get_spicetify_queue()
+            if spicetify_queue and spicetify_queue.get('success'):
+                # Return in same format as Spotify API response
+                return jsonify({
+                    "current": spicetify_queue.get('current'),
+                    "queue": spicetify_queue.get('queue', [])[:20],  # Limit to 20 for consistency
+                    "source": "spicetify"  # Let frontend know this is more accurate data
+                })
+            else:
+                logger.debug("Spicetify queue request failed, falling back to Spotify API")
+    
+    # Fallback to Spotify Web API
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     queue_data = await client.get_queue()
     if not queue_data:
@@ -2170,7 +2198,8 @@ async def get_playback_queue():
     
     return jsonify({
         "current": currently_playing,
-        "queue": queue[:20]  # Limit to next 20 songs
+        "queue": queue[:20],  # Limit to next 20 songs
+        "source": "spotify_api"  # Indicate this may not include autoplay
     })
 
 @app.route("/api/playback/liked", methods=['GET'])

@@ -518,6 +518,91 @@
                         sendMessageTo(ws, { type: 'control_ack', command: 'clear_queue', success: false, error: e.message });
                     }
                     break;
+                
+                case 'get_queue':
+                    // Return the real queue including autoplay tracks
+                    // Spicetify.Queue.nextTracks includes tracks the Web API doesn't expose
+                    try {
+                        const queue = Spicetify.Queue;
+                        const nextTracks = queue?.nextTracks || [];
+                        
+                        // Map to simplified format matching Spotify Web API structure
+                        // but with additional provider info for debugging
+                        const queueItems = nextTracks.map(track => {
+                            // Extract album art URL (convert spotify:image: if needed)
+                            let albumArtUrl = track.metadata?.image_xlarge_url || 
+                                              track.metadata?.image_large_url || 
+                                              track.metadata?.image_url || null;
+                            if (albumArtUrl && albumArtUrl.startsWith('spotify:image:')) {
+                                const imageId = albumArtUrl.replace('spotify:image:', '');
+                                albumArtUrl = `https://i.scdn.co/image/${imageId}`;
+                            }
+                            
+                            // Build artist array (may have multiple artists)
+                            const artists = [];
+                            if (track.metadata?.artist_name) {
+                                artists.push({ name: track.metadata.artist_name });
+                            }
+                            
+                            // Get album images in Web API format
+                            const albumImages = albumArtUrl ? [{ url: albumArtUrl }] : [];
+                            
+                            return {
+                                // Match Spotify Web API track structure for frontend compatibility
+                                id: track.uri ? extractSpotifyId(track.uri) : null,
+                                uri: track.uri,
+                                name: track.metadata?.title || null,
+                                artists: artists,
+                                album: {
+                                    name: track.metadata?.album_title || null,
+                                    images: albumImages
+                                },
+                                duration_ms: parseInt(track.metadata?.duration, 10) || null,
+                                // Extra Spicetify-only fields
+                                provider: track.provider || null,  // "context", "autoplay", "queue"
+                                is_autoplay: track.provider === 'autoplay'
+                            };
+                        });
+                        
+                        // Get currently playing track info
+                        const currentTrack = queue?.track;
+                        let currentItem = null;
+                        if (currentTrack) {
+                            let currentArtUrl = currentTrack.metadata?.image_xlarge_url || 
+                                                currentTrack.metadata?.image_large_url || 
+                                                currentTrack.metadata?.image_url || null;
+                            if (currentArtUrl && currentArtUrl.startsWith('spotify:image:')) {
+                                const imageId = currentArtUrl.replace('spotify:image:', '');
+                                currentArtUrl = `https://i.scdn.co/image/${imageId}`;
+                            }
+                            
+                            currentItem = {
+                                id: currentTrack.uri ? extractSpotifyId(currentTrack.uri) : null,
+                                uri: currentTrack.uri,
+                                name: currentTrack.metadata?.title || null,
+                                artists: currentTrack.metadata?.artist_name ? 
+                                    [{ name: currentTrack.metadata.artist_name }] : [],
+                                album: {
+                                    name: currentTrack.metadata?.album_title || null,
+                                    images: currentArtUrl ? [{ url: currentArtUrl }] : []
+                                }
+                            };
+                        }
+                        
+                        sendMessageTo(ws, { 
+                            type: 'queue_data', 
+                            success: true,
+                            current: currentItem,
+                            queue: queueItems,
+                            count: queueItems.length,
+                            timestamp: Date.now()
+                        });
+                        log('Queue data sent:', queueItems.length, 'tracks');
+                    } catch (e) {
+                        sendMessageTo(ws, { type: 'queue_data', success: false, error: e.message });
+                        log('Queue fetch error:', e.message);
+                    }
+                    break;
                     
                 default:
                     log('Unknown message type:', msg.type);
