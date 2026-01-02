@@ -326,10 +326,17 @@ export function loadImagePoolForCurrentArtist() {
     
     // Add artist images (already loaded in state by main.js)
     if (currentArtistImages && currentArtistImages.length > 0) {
-        // Filter out album art duplicate AND excluded images
-        const filteredArtistImages = currentArtistImages.filter(img => 
-            img !== albumArtUrl && !excluded.includes(img)
-        );
+        // URL deduplication: prevent the same image path from appearing multiple times
+        const seenUrls = new Set(pool);  // Start with album art already in pool
+        
+        // Filter out album art duplicate, excluded images, AND any duplicate URLs
+        const filteredArtistImages = currentArtistImages.filter(img => {
+            if (img === albumArtUrl) return false;  // Skip album art duplicate
+            if (excluded.includes(img)) return false;  // Skip excluded
+            if (seenUrls.has(img)) return false;  // Skip duplicate URLs
+            seenUrls.add(img);
+            return true;
+        });
         pool.push(...filteredArtistImages);
     }
     
