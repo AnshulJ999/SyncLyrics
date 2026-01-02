@@ -728,7 +728,12 @@ export async function fetchAndRenderQueue() {
         list.innerHTML = '';
 
         if (data.queue && data.queue.length > 0) {
-            data.queue.forEach(track => {
+            // Limit queue items on mobile for cleaner display
+            const isMobile = window.matchMedia('(max-width: 600px)').matches;
+            const maxItems = isMobile ? 13 : data.queue.length;
+            const displayQueue = data.queue.slice(0, maxItems);
+            
+            displayQueue.forEach(track => {
                 const item = document.createElement('div');
                 item.className = 'queue-item';
 

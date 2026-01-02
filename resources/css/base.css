@@ -1410,7 +1410,20 @@ body.soft-mode .background-overlay {
     padding: 20px;
     /* FIX: Ensure interactions work inside */
     pointer-events: auto; 
+
+    
+    /* Add readable background on tablets too */
+    background: rgba(15, 17, 25, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(16px);
+   /* border-left: 1px solid rgba(255, 255, 255, 0.08); */
 }
+    
+    /* Ensure flush against right edge when open */
+    .queue-drawer.open {
+        right: 0;
+    }
+    
 
 /* Queue Backdrop - Disable strictly for the lyrics area interaction */
 .queue-backdrop {
@@ -1560,11 +1573,23 @@ body.soft-mode .background-overlay {
 /* Queue Drawer - Mobile Responsive */
 @media (max-width: 600px) {
     .queue-drawer {
-        /* Fluid width: 220px on 320px screens, scales up to 260px on 600px */
-        width: clamp(200px, 70vw, 260px);
+        /* Fluid width: scales with viewport */
+        width: clamp(160px, 60vw, 240px);
         max-width: 70vw;
         padding: 14px;
-        right: calc(-1 * clamp(200px, 70vw, 260px)); /* Match width for hidden state */
+        padding-top: 40px; /* Push content below track header area */
+        right: calc(-1 * clamp(160px, 60vw, 240px)); /* Match width for hidden state */
+        
+        /* Add readable background on mobile */
+        background: rgba(15, 17, 25, 0.1);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(16px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    /* Ensure flush against right edge when open */
+    .queue-drawer.open {
+        right: 0;
     }
     
     .queue-header {
@@ -1598,7 +1623,7 @@ body.soft-mode .background-overlay {
 }
 
 /* Very small screens (320px) */
-@media (max-width: 380px) {
+/* @media (max-width: 380px) {
     .queue-drawer {
         width: 65vw;
         max-width: 65vw;
@@ -1618,7 +1643,7 @@ body.soft-mode .background-overlay {
     .queue-artist {
         font-size: 0.65rem;
     }
-}
+} */
 
 /* Background Style Controls in Modal */
 .style-controls-section {
