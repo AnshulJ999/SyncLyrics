@@ -826,13 +826,15 @@ body[data-minimal="true"] .lyrics-toggle-btn {
 }
 
 /* Unavailable state: no word-sync from any provider */
-.word-sync-toggle-btn.unavailable {
+.word-sync-toggle-btn.unavailable,
+.word-sync-toggle-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
 }
 
 /* Diagonal strikethrough line */
-.word-sync-toggle-btn.unavailable::after {
+.word-sync-toggle-btn.unavailable::after,
+.word-sync-toggle-btn:disabled::after {
     content: '';
     position: absolute;
     top: 50%;

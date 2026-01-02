@@ -154,7 +154,9 @@ function updateWordSyncToggleUI() {
     
     // Update unavailable class: toggle is available if ANY provider has word-sync
     // This allows user to enable word-sync even if current provider doesn't have it
-    toggleBtn.classList.toggle('unavailable', !anyProviderHasWordSync);
+    const isUnavailable = !anyProviderHasWordSync;
+    toggleBtn.classList.toggle('unavailable', isUnavailable);
+    toggleBtn.disabled = isUnavailable;  // Actually disable button to prevent interaction
     
     // Also sync the settings checkbox
     const checkbox = document.getElementById('opt-word-sync');
