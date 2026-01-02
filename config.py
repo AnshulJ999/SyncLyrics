@@ -130,7 +130,7 @@ SERVER = {
     "debug": conf("server.debug", False),
     "https": {
         "enabled": conf("server.https.enabled", False),
-        "port": conf("server.https.port", 0),  # 0 = same as HTTP, >0 = dual-stack
+        "port": _safe_int(conf("server.https.port", 0), 0),  # 0 = same as HTTP, >0 = dual-stack
         "auto_generate": conf("server.https.auto_generate", True),
         "cert_file": conf("server.https.cert_file", "certs/server.crt"),
         "key_file": conf("server.https.key_file", "certs/server.key"),
