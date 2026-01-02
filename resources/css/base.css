@@ -982,8 +982,8 @@ body[data-minimal="true"] .album-art {
     }
 
     .album-art {
-        width: clamp(60px, 10vw, 100px);
-        height: clamp(60px, 10vw, 100px);
+        width: clamp(80px, 10vw, 120px);
+        height: clamp(80px, 10vw, 120px);
     }
 
     .track-title {

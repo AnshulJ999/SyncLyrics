@@ -473,6 +473,11 @@
         bottom: auto; /* Override bottom positioning */
         right: 60px;
         left: auto; /* Ensure left is not set */
+
+        /* Rotate the badge vertically */
+        writing-mode: vertical-rl;  /* Text flows top-to-bottom */
+        text-orientation: mixed;
+        right: 14px;
     }
 
     .top-right-controls {
@@ -481,8 +486,11 @@
     }
 
     .provider-badge {
-        padding: 4px 12px;
-        font-size: 0.75rem;
+       /* padding: 4px 12px; */
+        font-size: 0.65rem;
+        padding: 6px 5px;
+        border-radius: 14px;  /* Instead of 12px */
+
     }
 
     .provider-modal-content {
