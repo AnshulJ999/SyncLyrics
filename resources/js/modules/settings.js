@@ -184,10 +184,20 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         sourceToggle.style.display = displayConfig.showAudioSource ? 'block' : 'none';
     }
 
-    // Visual mode toggle button visibility
+    // Bottom-left toggle buttons visibility (all three are controlled together)
     const visualModeToggle = document.getElementById('btn-lyrics-toggle');
+    const wordSyncToggle = document.getElementById('btn-word-sync-toggle');
+    const slideshowToggle = document.getElementById('btn-slideshow-toggle');
+    const showToggles = displayConfig.showVisualModeToggle;
+    
     if (visualModeToggle) {
-        visualModeToggle.style.display = displayConfig.showVisualModeToggle ? 'flex' : 'none';
+        visualModeToggle.style.display = showToggles ? 'flex' : 'none';
+    }
+    if (wordSyncToggle) {
+        wordSyncToggle.style.display = showToggles ? 'flex' : 'none';
+    }
+    if (slideshowToggle) {
+        slideshowToggle.style.display = showToggles ? 'flex' : 'none';
     }
 
     // Track info visibility (independent of album art)
