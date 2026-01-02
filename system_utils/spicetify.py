@@ -106,7 +106,7 @@ async def get_queue() -> Optional[Dict[str, Any]]:
     # Check cache first
     cache_age = time.time() - _spicetify_queue_cache['last_update']
     if _spicetify_queue_cache['data'] and cache_age < QUEUE_CACHE_TTL_S:
-        logger.debug(f"Returning cached Spicetify queue data ({cache_age:.1f}s old)")
+        # logger.debug(f"Returning cached Spicetify queue data ({cache_age:.1f}s old)")
         return _spicetify_queue_cache['data']
     
     # Request fresh queue data from bridge
@@ -117,7 +117,7 @@ async def get_queue() -> Optional[Dict[str, Any]]:
         
         # Send request
         await _active_websocket.send_json({'type': 'get_queue'})
-        logger.debug("Sent get_queue request to Spicetify bridge")
+        # logger.debug("Sent get_queue request to Spicetify bridge")
         
         # Wait for response with timeout (500ms should be plenty for local IPC)
         try:
@@ -131,7 +131,12 @@ async def get_queue() -> Optional[Dict[str, Any]]:
             # Update cache
             _spicetify_queue_cache['data'] = _queue_response_data
             _spicetify_queue_cache['last_update'] = time.time()
-            logger.debug(f"Got Spicetify queue: {_queue_response_data.get('count', 0)} tracks")
+            # Throttle success log to once per 60s
+            if not hasattr(get_queue, '_last_success_log'):
+                get_queue._last_success_log = 0
+            if time.time() - get_queue._last_success_log > 60:
+                logger.debug(f"Got Spicetify queue: {_queue_response_data.get('count', 0)} tracks")
+                get_queue._last_success_log = time.time()
             return _queue_response_data
         else:
             error = _queue_response_data.get('error', 'Unknown error') if _queue_response_data else 'No response'

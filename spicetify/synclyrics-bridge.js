@@ -522,7 +522,7 @@
                 case 'get_queue':
                     // Return the real queue including autoplay tracks
                     // Spicetify.Queue.nextTracks includes tracks the Web API doesn't expose
-                    log('get_queue request received, processing...');
+                    // log('get_queue request received, processing...');
                     try {
                         const queue = Spicetify.Queue;
                         const nextTracks = queue?.nextTracks || [];
@@ -605,7 +605,7 @@
                             count: queueItems.length,
                             timestamp: Date.now()
                         });
-                        log('Queue data sent:', queueItems.length, 'tracks');
+                        // log('Queue data sent:', queueItems.length, 'tracks');
                     } catch (e) {
                         sendMessageTo(ws, { type: 'queue_data', success: false, error: e.message });
                         log('Queue fetch error:', e.message);
