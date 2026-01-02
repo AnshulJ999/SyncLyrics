@@ -1994,7 +1994,7 @@ body.art-only-mode.zoom-out-enabled.sharp-mode .art-zoom-img {
 /* Mobile: Move next-up card above seekbar/controls */
 @media (max-width: 768px) {
     .next-up-card {
-        bottom: 180px;
+        bottom: calc(var(--buttons-base, 180px) + 30px);  /* Same base + offset */
         min-width: 100px;
         max-width: 240px;
         padding: 8px 10px;

@@ -249,7 +249,7 @@ function updateButtonsBasePosition() {
     }
     // Or if standard progress bar is visible
     else if (progressContainer && progressContainer.style.display !== 'none') {
-        baseBottom += 30;  // progress bar height
+        baseBottom += 60;  // progress bar height
     }
     
     document.documentElement.style.setProperty('--buttons-base', baseBottom + 'px');
