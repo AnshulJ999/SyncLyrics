@@ -172,7 +172,10 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'album_art_path': None,  # Set during enrichment in metadata.py
             'background_image_url': enhanced_album_art_url,  # Default bg to album art
             'background_image_path': None,  # Set during enrichment in metadata.py
-            'audio_analysis': _spicetify_state.get('audio_analysis'),
+            # DISABLED: audio_analysis was causing 400-500KB per /current-track poll (18GB/hour!)
+            # Frontend uses /api/playback/audio-analysis endpoint instead.
+            # DB saving still works - happens in _handle_track_data() WebSocket handler.
+            # 'audio_analysis': _spicetify_state.get('audio_analysis'),
             'last_active_time': _spicetify_last_active_time,
             # Spotify-specific fields for Visual Mode and UI features
             'artist_id': track.get('artist_id'),  # For Visual Mode artist slideshow

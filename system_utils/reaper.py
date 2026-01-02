@@ -693,8 +693,9 @@ class ReaperAudioSource:
             "album_art_url": song.get("album_art_url"),
             # Colors from enrichment or default
             "colors": colors,
-            # NEW: Audio analysis from Spicetify DB (for waveform/spectrum)
-            "audio_analysis": song.get("audio_analysis"),
+            # DISABLED: audio_analysis was causing 400-500KB per /current-track poll (18GB/hour!)
+            # Frontend uses /api/playback/audio-analysis endpoint instead.
+            # "audio_analysis": song.get("audio_analysis"),
             # Debug metadata
             "_audio_rec_mode": self.mode,
             "_audio_rec_state": self._engine.state.value if self._engine else None,
