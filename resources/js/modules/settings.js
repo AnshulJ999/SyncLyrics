@@ -216,6 +216,43 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
     if (updateBackgroundFn) {
         updateBackgroundFn();
     }
+    
+    // Update bottom-left buttons position based on visible elements
+    updateButtonsBasePosition();
+}
+
+/**
+ * Update the CSS variable --buttons-base for dynamic bottom-left button positioning
+ * Called when display config changes to keep buttons above visible player elements
+ */
+function updateButtonsBasePosition() {
+    const bottomNav = document.getElementById('bottom-nav');
+    const playbackControls = document.getElementById('playback-controls');
+    const waveformContainer = document.getElementById('waveform-container');
+    const progressContainer = document.getElementById('progress-container');
+    
+    let baseBottom = 20;  // Minimum distance from bottom edge
+    
+    // Add height if bottom nav is visible
+    if (bottomNav && !bottomNav.classList.contains('hidden')) {
+        baseBottom += 50;  // nav bar height
+    }
+    
+    // Add height if playback controls are visible
+    if (playbackControls && playbackControls.style.display !== 'none') {
+        baseBottom += 60;  // controls bar height
+    }
+    
+    // Add height if waveform seekbar is visible
+    if (waveformContainer && waveformContainer.style.display !== 'none') {
+        baseBottom += 80;  // waveform height
+    }
+    // Or if standard progress bar is visible
+    else if (progressContainer && progressContainer.style.display !== 'none') {
+        baseBottom += 30;  // progress bar height
+    }
+    
+    document.documentElement.style.setProperty('--buttons-base', baseBottom + 'px');
 }
 
 // ========== SETTINGS PANEL ==========

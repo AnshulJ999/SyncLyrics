@@ -882,19 +882,20 @@ body[data-minimal="true"] .slideshow-toggle-btn {
 }
 
 /* ========== MOBILE LAYOUT: Stack buttons vertically ========== */
-@media (max-width: 800px) {
+/* Uses CSS variable --buttons-base set by JS based on visible player elements */
+@media (max-width: 825px) {
     /* Stack vertically along left edge: Slideshow (top), Karaoke (middle), Visual Mode (bottom) */
     .slideshow-toggle-btn {
         left: 16px;
-        bottom: 180px;
+        bottom: calc(var(--buttons-base, 80px) + 100px);
     }
     .word-sync-toggle-btn {
         left: 16px;
-        bottom: 130px;
+        bottom: calc(var(--buttons-base, 80px) + 50px);
     }
     .lyrics-toggle-btn {
         left: 16px;
-        bottom: 80px;
+        bottom: var(--buttons-base, 80px);
     }
 }
 
@@ -1003,7 +1004,7 @@ body[data-minimal="true"] .album-art {
     .play-pause-btn {
         width: 48px;
         height: 48px;
-        font-size: 1.15rem;
+        font-size: 1.6rem;
     }
 
     /* Adjust container position for mobile */
@@ -1016,7 +1017,7 @@ body[data-minimal="true"] .album-art {
     }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 280px) {
     .track-header {
         top: 0.5rem;
         left: 0.5rem;
