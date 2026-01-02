@@ -280,7 +280,7 @@ async def handle_spicetify_connection():
     global _spicetify_state, _spicetify_last_active_time, _pending_position_task, _active_websocket
     
     _spicetify_state['connected'] = True
-    _active_websocket = websocket  # Store reference for queue requests
+    _active_websocket = websocket._get_current_object()  # Store actual object, not proxy
     logger.info("Spicetify bridge connected")
     
     try:
