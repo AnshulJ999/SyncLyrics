@@ -522,17 +522,22 @@
                 case 'get_queue':
                     // Return the real queue including autoplay tracks
                     // Spicetify.Queue.nextTracks includes tracks the Web API doesn't expose
+                    log('get_queue request received, processing...');
                     try {
                         const queue = Spicetify.Queue;
                         const nextTracks = queue?.nextTracks || [];
                         
                         // Map to simplified format matching Spotify Web API structure
-                        // but with additional provider info for debugging
-                        const queueItems = nextTracks.map(track => {
+                        // IMPORTANT: Queue items have structure { contextTrack: { uri, metadata }, provider }
+                        const queueItems = nextTracks.map(item => {
+                            // Access the nested contextTrack structure
+                            const track = item.contextTrack || {};
+                            const metadata = track.metadata || {};
+                            
                             // Extract album art URL (convert spotify:image: if needed)
-                            let albumArtUrl = track.metadata?.image_xlarge_url || 
-                                              track.metadata?.image_large_url || 
-                                              track.metadata?.image_url || null;
+                            let albumArtUrl = metadata.image_xlarge_url || 
+                                              metadata.image_large_url || 
+                                              metadata.image_url || null;
                             if (albumArtUrl && albumArtUrl.startsWith('spotify:image:')) {
                                 const imageId = albumArtUrl.replace('spotify:image:', '');
                                 albumArtUrl = `https://i.scdn.co/image/${imageId}`;
@@ -540,8 +545,8 @@
                             
                             // Build artist array (may have multiple artists)
                             const artists = [];
-                            if (track.metadata?.artist_name) {
-                                artists.push({ name: track.metadata.artist_name });
+                            if (metadata.artist_name) {
+                                artists.push({ name: metadata.artist_name });
                             }
                             
                             // Get album images in Web API format
@@ -551,26 +556,29 @@
                                 // Match Spotify Web API track structure for frontend compatibility
                                 id: track.uri ? extractSpotifyId(track.uri) : null,
                                 uri: track.uri,
-                                name: track.metadata?.title || null,
+                                name: metadata.title || null,
                                 artists: artists,
                                 album: {
-                                    name: track.metadata?.album_title || null,
+                                    name: metadata.album_title || null,
                                     images: albumImages
                                 },
-                                duration_ms: parseInt(track.metadata?.duration, 10) || null,
+                                duration_ms: parseInt(metadata.duration, 10) || null,
                                 // Extra Spicetify-only fields
-                                provider: track.provider || null,  // "context", "autoplay", "queue"
-                                is_autoplay: track.provider === 'autoplay'
+                                provider: item.provider || null,  // "context", "autoplay", "queue"
+                                is_autoplay: item.provider === 'autoplay'
                             };
                         });
                         
-                        // Get currently playing track info
-                        const currentTrack = queue?.track;
+                        // Get currently playing track info (same structure as queue items)
+                        const currentItem_raw = queue?.track;
                         let currentItem = null;
-                        if (currentTrack) {
-                            let currentArtUrl = currentTrack.metadata?.image_xlarge_url || 
-                                                currentTrack.metadata?.image_large_url || 
-                                                currentTrack.metadata?.image_url || null;
+                        if (currentItem_raw) {
+                            const currentTrack = currentItem_raw.contextTrack || {};
+                            const currentMeta = currentTrack.metadata || {};
+                            
+                            let currentArtUrl = currentMeta.image_xlarge_url || 
+                                                currentMeta.image_large_url || 
+                                                currentMeta.image_url || null;
                             if (currentArtUrl && currentArtUrl.startsWith('spotify:image:')) {
                                 const imageId = currentArtUrl.replace('spotify:image:', '');
                                 currentArtUrl = `https://i.scdn.co/image/${imageId}`;
@@ -579,11 +587,11 @@
                             currentItem = {
                                 id: currentTrack.uri ? extractSpotifyId(currentTrack.uri) : null,
                                 uri: currentTrack.uri,
-                                name: currentTrack.metadata?.title || null,
-                                artists: currentTrack.metadata?.artist_name ? 
-                                    [{ name: currentTrack.metadata.artist_name }] : [],
+                                name: currentMeta.title || null,
+                                artists: currentMeta.artist_name ? 
+                                    [{ name: currentMeta.artist_name }] : [],
                                 album: {
-                                    name: currentTrack.metadata?.album_title || null,
+                                    name: currentMeta.album_title || null,
                                     images: currentArtUrl ? [{ url: currentArtUrl }] : []
                                 }
                             };
