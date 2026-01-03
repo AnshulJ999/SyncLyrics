@@ -530,12 +530,33 @@ function clampZoom(zoom) {
 }
 
 /**
- * Reset zoom and pan to defaults
+ * Reset zoom and pan to defaults (returns to cover baseline, not natural size)
  */
 export function resetArtZoom() {
     zoomLevel = 1;
     panX = 0;
     panY = 0;
+    
+    // If zoom-out mode is active, explicitly apply cover baseline to BOTH images
+    // using their OWN dimensions (not just the active one's dimensions)
+    if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
+        const imgA = document.getElementById('art-zoom-img-a');
+        const imgB = document.getElementById('art-zoom-img-b');
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        
+        // Apply correct transform to each image using its own dimensions
+        [imgA, imgB].forEach(img => {
+            if (img && img.naturalWidth && img.naturalHeight) {
+                const baseScale = calculateBaseScale(img.naturalWidth, img.naturalHeight, vw, vh);
+                const transformValue = `translate(-50%, -50%) scale(${baseScale})`;
+                img.style.setProperty('transform', transformValue, 'important');
+            }
+        });
+        return;  // Skip updateTransform() since we've already applied the transforms
+    }
+    
+    // Fallback for non-zoom-out mode
     updateTransform();
 }
 
