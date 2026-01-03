@@ -407,16 +407,25 @@ function applyAutoEnableForCurrentArtist(artistName) {
         // "Always" - enable slideshow for this artist
         if (!slideshowEnabled) {
             console.log(`[Slideshow] Auto-enabling for "${artistName}" (preference: Always)`);
+            wasAutoEnabled = true;  // Track that auto-enable turned it on
             enableSlideshow();
         }
     } else if (currentAutoEnable === false) {
         // "Never" - disable slideshow for this artist
+        wasAutoEnabled = false;  // Clear flag since we're forcing off
         if (slideshowEnabled) {
             console.log(`[Slideshow] Auto-disabling for "${artistName}" (preference: Never)`);
             disableSlideshow();
         }
+    } else {
+        // null = "Default" - revert if auto-enable previously turned it on
+        if (wasAutoEnabled) {
+            console.log(`[Slideshow] Reverting auto-enable for "${artistName}" (no preference)`);
+            disableSlideshow();
+            wasAutoEnabled = false;
+        }
+        // If wasAutoEnabled is false (user manually enabled or never auto-enabled), keep current state
     }
-    // null = "Default" - keep current global state, do nothing
 }
 
 // ========== SLIDESHOW CONTROL ==========
@@ -943,6 +952,10 @@ let activeFilters = new Set(['all']);  // 'all', provider names, 'favorites'
 
 // Auto-enable state for current artist (loaded from backend preferences)
 let currentAutoEnable = null;  // null (use global), true (always), false (never)
+
+// Track if slideshow was turned on by auto_enable = true
+// Used to properly revert when switching to artists with auto_enable = null
+let wasAutoEnabled = false;
 
 // Manual override flag - set true when user manually toggles slideshow
 // Prevents auto-enable from overriding user's choice until artist changes
