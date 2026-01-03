@@ -311,13 +311,20 @@ function resetOutroState() {
  * Called after IMAGE_RETRY_DELAY_MS to give backend time to download.
  * Includes multiple guards to prevent stale data and unnecessary fetches.
  * 
- * @param {string} artistId - Artist ID that was originally requested
+ * @param {string} artistId - Artist ID that was originally requested (may be null)
+ * @param {string} artistName - Artist name as fallback for comparison
  */
-async function retryImageFetch(artistId) {
+async function retryImageFetch(artistId, artistName) {
     imageRetryTimer = null;  // Clear reference
     
-    // Guard 1: Artist still current?
-    if (lastTrackInfo?.artist_id !== artistId) {
+    // Guard 1: Artist still current? (use artist_id if available, otherwise artist name)
+    const currentArtistId = lastTrackInfo?.artist_id;
+    const currentArtistName = lastTrackInfo?.artist;
+    const artistMatch = artistId 
+        ? (currentArtistId === artistId)
+        : (currentArtistName === artistName);
+    
+    if (!artistMatch) {
         console.log('[Main] Image retry cancelled: artist changed');
         return;
     }
@@ -328,13 +335,19 @@ async function retryImageFetch(artistId) {
         return;
     }
     
-    console.log('[Main] Retrying artist image fetch for:', artistId);
+    console.log('[Main] Retrying artist image fetch for:', artistId || artistName);
     
     try {
         const data = await fetchArtistImages(artistId, true);
         
         // Guard 3: Artist still current after fetch?
-        if (lastTrackInfo?.artist_id !== artistId) {
+        const newCurrentArtistId = lastTrackInfo?.artist_id;
+        const newCurrentArtistName = lastTrackInfo?.artist;
+        const stillMatch = artistId 
+            ? (newCurrentArtistId === artistId)
+            : (newCurrentArtistName === artistName);
+        
+        if (!stillMatch) {
             console.log('[Main] Image retry discarded: artist changed during fetch');
             return;
         }
@@ -502,13 +515,23 @@ async function updateLoop() {
                 }
                 setCurrentArtistImages([]);
                 setCurrentArtistImageMetadata([]);
-                if (trackInfo.artist_id) {
-                    // Capture artist ID at fetch time to detect stale responses
+                // Fetch artist images - artist_id is optional, backend uses artist name from current metadata
+                // This allows Windows Media tracks to load images even without Spotify enrichment
+                if (trackInfo.artist_id || trackInfo.artist) {
+                    // Capture artist info at fetch time to detect stale responses
                     const artistIdAtFetch = trackInfo.artist_id;
+                    const artistNameAtFetch = trackInfo.artist;
                     // Fetch with metadata so modal has resolution data available
                     fetchArtistImages(trackInfo.artist_id, true).then(data => {
                         // Guard: Discard stale response if artist changed during fetch
-                        if (lastTrackInfo?.artist_id !== artistIdAtFetch) {
+                        // Use artist_id if available, otherwise compare artist name
+                        const currentArtistId = lastTrackInfo?.artist_id;
+                        const currentArtistName = lastTrackInfo?.artist;
+                        const artistMatch = artistIdAtFetch 
+                            ? (currentArtistId === artistIdAtFetch)
+                            : (currentArtistName === artistNameAtFetch);
+                        
+                        if (!artistMatch) {
                             console.log('[Main] Artist changed during image fetch, discarding stale data');
                             return;
                         }
@@ -521,7 +544,7 @@ async function updateLoop() {
                         if ((data.images || []).length === 0) {
                             console.log(`[Main] No artist images found, scheduling retry in ${IMAGE_RETRY_DELAY_MS/1000}s`);
                             imageRetryTimer = setTimeout(() => {
-                                retryImageFetch(artistIdAtFetch);
+                                retryImageFetch(artistIdAtFetch, artistNameAtFetch);
                             }, IMAGE_RETRY_DELAY_MS);
                         }
                         

@@ -363,18 +363,26 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
 /**
  * Fetch artist images from backend
  * 
- * @param {string} artistId - Spotify artist ID
+ * @param {string} artistId - Spotify artist ID (optional - backend uses artist name from current track)
  * @param {boolean} includeMetadata - If true, return full object with metadata and preferences
  * @returns {Promise<Array<string>|Object>} URL array (default) or full response object (if includeMetadata)
  */
 export async function fetchArtistImages(artistId, includeMetadata = false) {
-    if (!artistId) {
-        console.warn('No artist ID provided for image fetch');
-        return includeMetadata ? { images: [], metadata: [], preferences: {} } : [];
-    }
+    // Note: artistId is optional - backend gets artist name from current track metadata
+    // artistId is only used for Spotify API fallback, other sources use artist name
 
     try {
-        const url = `/api/artist/images?artist_id=${encodeURIComponent(artistId)}${includeMetadata ? '&include_metadata=true' : ''}`;
+        // Build URL with optional artist_id param
+        const params = new URLSearchParams();
+        if (artistId) {
+            params.set('artist_id', artistId);
+        }
+        if (includeMetadata) {
+            params.set('include_metadata', 'true');
+        }
+        const queryString = params.toString();
+        const url = `/api/artist/images${queryString ? '?' + queryString : ''}`;
+        
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
