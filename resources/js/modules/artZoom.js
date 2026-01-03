@@ -55,6 +55,7 @@ let manualImageTimeout = null;  // Failsafe timeout to reset the flag
 // ========== ZOOM-OUT FEATURE (Art Mode) ==========
 // Track which zoom img is currently active for crossfade
 let activeZoomImg = 'a';  // 'a' or 'b'
+let crossfadeRequestId = 0;  // Counter to track latest crossfade request (prevents stale callbacks)
 
 /**
  * Get the URL of the currently visible image
@@ -142,6 +143,9 @@ function crossfadeZoomImg(newUrl) {
     
     if (!currentImg || !nextImg) return;
     
+    // Increment request ID - used to detect if this request becomes stale
+    const thisRequestId = ++crossfadeRequestId;
+    
     // Setup next image (hidden initially)
     nextImg.src = newUrl;
     nextImg.style.opacity = '0';
@@ -154,6 +158,12 @@ function crossfadeZoomImg(newUrl) {
     
     // Crossfade after image loads - calculate scale for NEW image dimensions
     const doFade = () => {
+        // If a newer crossfade was requested while we were loading, ignore this one
+        // This prevents rapid cycling from causing stale images to appear
+        if (thisRequestId !== crossfadeRequestId) {
+            return;
+        }
+        
         // Calculate proper scale for this image's dimensions
         const vw = window.innerWidth;
         const vh = window.innerHeight;
