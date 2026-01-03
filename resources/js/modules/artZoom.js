@@ -455,7 +455,7 @@ function updateTransform() {
     // Determine target element based on feature flag
     let target;
     if (isEnabled && artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
-        // Apply transform to BOTH zoom imgs (they share transform state)
+        // Apply transform to BOTH zoom imgs using their OWN dimensions
         const imgA = document.getElementById('art-zoom-img-a');
         const imgB = document.getElementById('art-zoom-img-b');
         
@@ -463,41 +463,27 @@ function updateTransform() {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         
-        // Get the active image to read natural dimensions
+        // Apply bounds checking for panning (use a reference baseScale for bounds)
+        // We use the active image for bounds calculation to keep pan consistent
         const activeImg = activeZoomImg === 'a' ? imgA : imgB;
-        if (!activeImg || !activeImg.naturalWidth) {
-            // Image not loaded yet, skip
-            return;
+        if (activeImg && activeImg.naturalWidth) {
+            const refBaseScale = calculateBaseScale(activeImg.naturalWidth, activeImg.naturalHeight, vw, vh);
+            const maxPanX = vw * 0.75 * zoomLevel;
+            const maxPanY = vh * 0.75 * zoomLevel;
+            panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+            panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
         }
         
-        // Calculate the base scale based on fill mode preference
-        const imgW = activeImg.naturalWidth;
-        const imgH = activeImg.naturalHeight;
-        const baseScale = calculateBaseScale(imgW, imgH, vw, vh);
-        
-        // Apply zoom level on top of base scale
-        // At zoomLevel=1, we match the fill mode behavior
-        // At zoomLevel<1, we reveal more of the image (zoom out)
-        // At zoomLevel>1, we zoom in further
-        const finalScale = baseScale * zoomLevel;
-        
-        // Apply bounds checking for panning
-        const maxPanX = vw * 0.75 * zoomLevel;
-        const maxPanY = vh * 0.75 * zoomLevel;
-        panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
-        panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
-        
-        // Combine centering + scale + pan
-        // Order: translate center, then scale, then translate for pan
-        // This matches the input formula (deltaX / zoomLevel) so pan feels consistent
-        const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX}px, ${panY}px)`;
-        
-        if (imgA) {
-            imgA.style.setProperty('transform', transformValue, 'important');
-        }
-        if (imgB) {
-            imgB.style.setProperty('transform', transformValue, 'important');
-        }
+        // Apply transform to EACH image using ITS OWN baseScale
+        // This ensures each image covers the viewport correctly at zoomLevel=1
+        [imgA, imgB].forEach(img => {
+            if (img && img.naturalWidth && img.naturalHeight) {
+                const baseScale = calculateBaseScale(img.naturalWidth, img.naturalHeight, vw, vh);
+                const finalScale = baseScale * zoomLevel;
+                const transformValue = `translate(-50%, -50%) scale(${finalScale}) translate(${panX}px, ${panY}px)`;
+                img.style.setProperty('transform', transformValue, 'important');
+            }
+        });
         return;
     }
     
@@ -536,27 +522,6 @@ export function resetArtZoom() {
     zoomLevel = 1;
     panX = 0;
     panY = 0;
-    
-    // If zoom-out mode is active, explicitly apply cover baseline to BOTH images
-    // using their OWN dimensions (not just the active one's dimensions)
-    if (artModeZoomOutEnabled && document.body.classList.contains('zoom-out-enabled')) {
-        const imgA = document.getElementById('art-zoom-img-a');
-        const imgB = document.getElementById('art-zoom-img-b');
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        
-        // Apply correct transform to each image using its own dimensions
-        [imgA, imgB].forEach(img => {
-            if (img && img.naturalWidth && img.naturalHeight) {
-                const baseScale = calculateBaseScale(img.naturalWidth, img.naturalHeight, vw, vh);
-                const transformValue = `translate(-50%, -50%) scale(${baseScale})`;
-                img.style.setProperty('transform', transformValue, 'important');
-            }
-        });
-        return;  // Skip updateTransform() since we've already applied the transforms
-    }
-    
-    // Fallback for non-zoom-out mode
     updateTransform();
 }
 
