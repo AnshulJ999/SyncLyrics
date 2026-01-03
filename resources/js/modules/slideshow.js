@@ -988,8 +988,9 @@ export async function showSlideshowModal() {
     
     const grid = document.getElementById('slideshow-image-grid');
     // Fetch if images OR metadata is missing (main.js preloads both, but fallback if needed)
+    // Use artist_id OR artist name - backend uses name from current metadata
     const needsFetch = (currentArtistImages.length === 0 || currentArtistImageMetadata.length === 0) 
-                       && lastTrackInfo?.artist_id;
+                       && (lastTrackInfo?.artist_id || lastTrackInfo?.artist);
     
     // If we need to fetch, show loading state while data loads
     if (needsFetch && grid) {
@@ -999,6 +1000,7 @@ export async function showSlideshowModal() {
     // Now fetch data if needed (modal is already visible)
     if (needsFetch) {
         try {
+            // artist_id is optional - backend gets artist name from current track metadata
             const data = await fetchArtistImages(lastTrackInfo.artist_id, true);
             if (data?.images) {
                 setCurrentArtistImages(data.images);
@@ -1663,9 +1665,10 @@ async function loadExcludedImages() {
     }
     
     try {
-        // Try backend first
+        // Try backend first - artist_id is optional, backend uses artist name from current metadata
         const artistId = lastTrackInfo?.artist_id;
-        if (artistId) {
+        const hasArtistInfo = artistId || lastTrackInfo?.artist;
+        if (hasArtistInfo) {
             const data = await fetchArtistImages(artistId, true);
             if (data?.preferences) {
                 // Use backend data
