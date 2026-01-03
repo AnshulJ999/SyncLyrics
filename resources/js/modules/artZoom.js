@@ -463,19 +463,26 @@ function updateTransform() {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         
-        // Apply bounds checking for panning (use a reference baseScale for bounds)
-        // We use the active image for bounds calculation to keep pan consistent
+        // Apply bounds checking for panning (use active image for bounds calculation)
+        // This keeps pan consistent regardless of which image is visible
         const activeImg = activeZoomImg === 'a' ? imgA : imgB;
         if (activeImg && activeImg.naturalWidth) {
-            const refBaseScale = calculateBaseScale(activeImg.naturalWidth, activeImg.naturalHeight, vw, vh);
-            const maxPanX = vw * 0.75 * zoomLevel;
+            const maxPanX = vw * 0.75 * zoomLevel;  // 75% can go offscreen = 25% visible
             const maxPanY = vh * 0.75 * zoomLevel;
             panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
             panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
         }
         
         // Apply transform to EACH image using ITS OWN baseScale
-        // This ensures each image covers the viewport correctly at zoomLevel=1
+        // calculateBaseScale() uses the user's fill mode preference (cover/contain/etc from localStorage)
+        // 
+        // Zoom level behavior:
+        // - At zoomLevel=1, we match the fill mode (e.g., cover = image fills viewport)
+        // - At zoomLevel<1, we reveal more of the image (zoom out from baseline)
+        // - At zoomLevel>1, we zoom in further than baseline
+        //
+        // Transform order: translate center → scale → translate pan
+        // This matches the input formula (deltaX / zoomLevel) so pan feels consistent
         [imgA, imgB].forEach(img => {
             if (img && img.naturalWidth && img.naturalHeight) {
                 const baseScale = calculateBaseScale(img.naturalWidth, img.naturalHeight, vw, vh);
