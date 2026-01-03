@@ -146,6 +146,10 @@ function crossfadeZoomImg(newUrl) {
     nextImg.src = newUrl;
     nextImg.style.opacity = '0';
     nextImg.style.zIndex = '902';  // Above current
+    
+    // Set transition on BOTH images for smooth crossfade
+    // (currentImg needs it too so it fades out smoothly, not just snaps)
+    currentImg.style.transition = `opacity ${duration}s ease`;
     nextImg.style.transition = `opacity ${duration}s ease`;
     
     // Crossfade after image loads - calculate scale for NEW image dimensions
