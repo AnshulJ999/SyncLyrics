@@ -1049,6 +1049,11 @@ body:not(.hide-nav) .slideshow-toggle-btn {
 
 /* ========== RESPONSIVE DESIGN FOR NEW COMPONENTS ========== */
 @media (max-width: 768px) {
+    /* Hide bottom nav on mobile - it's off by default and causes layout issues */
+    .bottom-nav {
+        display: none !important;
+    }
+
     .track-header {
         max-width: 250px;
     }

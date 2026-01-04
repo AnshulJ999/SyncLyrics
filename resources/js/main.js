@@ -767,11 +767,12 @@ async function main() {
             }
             
             // Update URL without page reload
+            // Since default is now false, we set explicit param for both states
             const url = new URL(window.location.href);
-            if (!newState) {
-                url.searchParams.set('wordSync', 'false');
+            if (newState) {
+                url.searchParams.set('wordSync', 'true');
             } else {
-                url.searchParams.delete('wordSync');
+                url.searchParams.delete('wordSync');  // Default is false, so delete = false
             }
             history.replaceState(null, '', url.toString());
         });
