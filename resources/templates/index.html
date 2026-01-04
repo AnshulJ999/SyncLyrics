@@ -236,6 +236,21 @@
             <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
                 <i class="bi bi-fullscreen"></i>
             </button>
+            <div class="power-menu-container">
+                <button id="power-menu-btn" class="settings-header-btn" title="Power Options">
+                    <i class="bi bi-power"></i>
+                </button>
+                <div id="power-menu" class="power-menu hidden">
+                    <button id="btn-restart" class="power-menu-item">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span>Restart Server</span>
+                    </button>
+                    <button id="btn-exit" class="power-menu-item power-menu-danger">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>Exit Application</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
     <div class="settings-options">
@@ -245,15 +260,15 @@
         <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
         <label><input type="checkbox" id="opt-waveform"> Waveform Seekbar</label>
         <label><input type="checkbox" id="opt-spectrum"> Spectrum Visualizer</label>
-        <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
+        <label><input type="checkbox" id="opt-bottom-nav"> Show Bottom Navigation</label>
         <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
         <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
         <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Icons</label>
         <label><input type="checkbox" id="opt-colors"> Use Album Colors</label>
         <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
-        <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
+        <label><input type="checkbox" id="opt-soft-art-bg" checked> Soft Album Art Background</label>
         <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
-        <label><input type="checkbox" id="opt-word-sync" checked> Word-Sync Lyrics (Karaoke)</label>
+        <label><input type="checkbox" id="opt-word-sync"> Word-Sync Lyrics (Karaoke)</label>
     </div>
     <button id="copy-url-btn" class="settings-action-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -168,7 +168,6 @@ body {
     }
 }
 
-/* ========== BOTTOM NAVIGATION ========== */
 .bottom-nav {
     /* Stick to bottom of viewport */
     position: fixed;
@@ -176,17 +175,17 @@ body {
     left: 0;
     right: 0;
     /* Semi-transparent background with blur effect */
-    background: rgba(26, 27, 38, 0.8);
+    background: rgba(26, 27, 38, 0.5);
     backdrop-filter: blur(10px);
-    /* Responsive padding */
-    padding: clamp(0.3rem, 2vh, 0.8rem);
+    /* Thinner padding for compact appearance */
+    padding: clamp(0.2rem, 1vh, 0.4rem);
     /* Layout controls */
     display: flex;
     justify-content: space-between;
     align-items: center;
     height: auto;
-    min-height: 40px;
-    max-height: 60px;
+    min-height: 30px;
+    max-height: 50px;
     /* Subtle top border */
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     /* Ensure nav stays above other content */
@@ -537,6 +536,57 @@ body[data-minimal="true"] .top-right-controls {
     max-height: 80px;
     overflow-y: auto;
     flex-shrink: 0;
+}
+
+/* ========== POWER MENU (Settings Header) ========== */
+.power-menu-container {
+    position: relative;
+}
+
+.power-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: rgba(26, 27, 38, 0.98);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+    min-width: 160px;
+    z-index: 1001;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.power-menu.hidden {
+    display: none;
+}
+
+.power-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    text-align: left;
+}
+
+.power-menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.power-menu-item.power-menu-danger {
+    color: rgba(239, 68, 68, 0.9);
+}
+
+.power-menu-item.power-menu-danger:hover {
+    background: rgba(239, 68, 68, 0.1);
 }
 
 /* ========== TRACK HEADER ========== */
@@ -987,6 +1037,14 @@ body[data-minimal="true"] .album-art {
 /* ========== BOTTOM NAV TOGGLE ========== */
 .bottom-nav.hidden {
     display: none !important;
+}
+
+/* ========== BUTTON POSITIONING WHEN BOTTOM NAV VISIBLE ========== */
+/* Push bottom-left toggle buttons up when navigation bar is shown */
+body:not(.hide-nav) .lyrics-toggle-btn,
+body:not(.hide-nav) .word-sync-toggle-btn,
+body:not(.hide-nav) .slideshow-toggle-btn {
+    bottom: 56px; /* Above the thinner nav bar */
 }
 
 /* ========== RESPONSIVE DESIGN FOR NEW COMPONENTS ========== */

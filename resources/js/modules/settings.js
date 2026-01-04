@@ -90,9 +90,9 @@ export function initializeDisplay() {
         displayConfig.showProgress = false;
     }
 
-    // Word-sync toggle (enabled by default, can be disabled via URL)
+    // Word-sync toggle (disabled by default, can be enabled via URL)
     if (params.has('wordSync')) {
-        setWordSyncEnabled(params.get('wordSync') !== 'false');
+        setWordSyncEnabled(params.get('wordSync') === 'true');
     }
 
     // Minimal mode overrides all
@@ -411,6 +411,64 @@ export function setupSettingsPanel() {
         });
     }
 
+    // Power menu toggle and actions
+    const powerMenuBtn = document.getElementById('power-menu-btn');
+    const powerMenu = document.getElementById('power-menu');
+
+    if (powerMenuBtn && powerMenu) {
+        // Toggle power menu
+        powerMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            powerMenu.classList.toggle('hidden');
+        });
+
+        // Restart button
+        const restartBtn = document.getElementById('btn-restart');
+        if (restartBtn) {
+            restartBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to restart the server?')) {
+                    fetch('/restart', { method: 'POST' })
+                        .then(response => {
+                            if (response.ok) {
+                                showToast('Server restarting...', 'success');
+                                setTimeout(() => window.location.reload(), 5000);
+                            } else {
+                                showToast('Restart failed', 'error');
+                            }
+                        })
+                        .catch(() => showToast('Restart failed', 'error'));
+                }
+                powerMenu.classList.add('hidden');
+            });
+        }
+
+        // Exit button
+        const exitBtn = document.getElementById('btn-exit');
+        if (exitBtn) {
+            exitBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to exit the application?')) {
+                    fetch('/exit-application')
+                        .then(response => {
+                            if (response.ok) {
+                                showToast('Application shutting down...', 'success');
+                            } else {
+                                showToast('Exit failed', 'error');
+                            }
+                        })
+                        .catch(() => showToast('Exit failed', 'error'));
+                }
+                powerMenu.classList.add('hidden');
+            });
+        }
+
+        // Close power menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!powerMenuBtn.contains(e.target) && !powerMenu.contains(e.target)) {
+                powerMenu.classList.add('hidden');
+            }
+        });
+    }
+
     updateUrlDisplay();
 }
 
@@ -528,21 +586,26 @@ export function generateCurrentUrl() {
     if (!displayConfig.showTrackInfo) params.set('showTrackInfo', 'false');
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
-    if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
+    // showBottomNav is now default=false, so only add param if true
+    if (displayConfig.showBottomNav) params.set('showBottomNav', 'true');
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
     if (!displayConfig.showAudioSource) params.set('showAudioSource', 'false');
     if (!displayConfig.showVisualModeToggle) params.set('showVisualModeToggle', 'false');
-    if (!wordSyncEnabled) params.set('wordSync', 'false');
+    // wordSync is now default=false, so only add param if true
+    if (wordSyncEnabled) params.set('wordSync', 'true');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
 
-    // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt, or sharpAlbumArt
+    // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt (now default), or sharpAlbumArt
+    // softAlbumArt is now default=true, so only add param if another mode is active or ALL are off
     if (displayConfig.sharpAlbumArt) {
         params.set('sharpAlbumArt', 'true');
-    } else if (displayConfig.softAlbumArt) {
-        params.set('softAlbumArt', 'true');
     } else if (displayConfig.artBackground) {
         params.set('artBackground', 'true');
+    } else if (!displayConfig.softAlbumArt) {
+        // Explicitly turned off (none of the three are active)
+        params.set('softAlbumArt', 'false');
     }
+    // else: softAlbumArt=true is default, no param needed
 
     // Waveform and spectrum visualizer settings
     if (displayConfig.showWaveform) params.set('showWaveform', 'true');

@@ -19,7 +19,7 @@ export let wordSyncedLyrics = null;  // Current word-synced lyrics data from API
 export let hasWordSync = false;       // Whether current song has word-sync available
 export let wordSyncProvider = null;   // Which provider is serving word-sync data
 export let wordSyncStyle = 'pop';    // 'fade' or 'pop' - animation style for word highlighting
-export let wordSyncEnabled = true;    // Global toggle for word-sync (can be disabled via URL or button)
+export let wordSyncEnabled = false;    // Default OFF - users enable via URL param or button    // Global toggle for word-sync (can be disabled via URL or button)
 
 // Word-sync interpolation state (for smooth 60-144fps animation between 100ms polls)
 export let wordSyncAnchorPosition = 0;    // Last known playback position (seconds)
@@ -59,13 +59,13 @@ export let displayConfig = {
     showTrackInfo: true,
     showControls: true,
     showProgress: true,
-    showBottomNav: true,
+    showBottomNav: false,  // Default OFF - cleaner UI, users enable via URL param or settings
     showProvider: true,
     showAudioSource: true,      // Audio source menu (top left)
     showVisualModeToggle: true, // Visual mode toggle button (bottom left)
     useAlbumColors: false,
     artBackground: false,
-    softAlbumArt: false,  // Soft album art background (medium blur, no scaling, balanced)
+    softAlbumArt: true,   // Soft album art background - DEFAULT ON for optimal experience
     sharpAlbumArt: false, // Sharp album art background (no blur, no scaling, super sharp and clear)
     showWaveform: false,  // Waveform seekbar (mutually exclusive with showProgress)
     showSpectrum: false   // Spectrum analyzer visualizer (full-width behind content)

@@ -14,6 +14,11 @@
     transform: none;
 }
 
+/* Push provider badge up when bottom nav is visible */
+body:not(.hide-nav) .provider-info {
+    bottom: 56px;
+}
+
 .provider-info.hidden {
     opacity: 0;
     pointer-events: none;
