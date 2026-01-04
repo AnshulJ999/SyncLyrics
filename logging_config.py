@@ -31,6 +31,27 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 CONSOLE_FORMAT = '(%(filename)s:%(lineno)d) %(levelname)s - %(message)s'
 FILE_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
 
+def log_namer(default_name: str) -> str:
+    """
+    Custom namer for RotatingFileHandler to keep .log extension.
+    Transforms: 'app.log.1' -> 'app.1.log'
+    This ensures rotated log files retain the .log extension for easy opening.
+    """
+    # default_name comes as: /path/to/app.log.1
+    # We want: /path/to/app.1.log
+    
+    # Split off the numeric suffix (e.g., '.1', '.2')
+    base, numeric_ext = os.path.splitext(default_name)  # ('app.log', '.1')
+    
+    # Check if it's actually a numeric rotation suffix
+    if numeric_ext and numeric_ext[1:].isdigit():
+        # Remove .log from base and reconstruct with number before .log
+        if base.endswith('.log'):
+            base_without_log = base[:-4]  # Remove '.log'
+            return f"{base_without_log}{numeric_ext}.log"
+    
+    return default_name
+
 # Track if logging has been initialized
 _logging_initialized = False
 
@@ -88,6 +109,7 @@ def setup_logging(
         backupCount=15, 
         encoding='utf-8'
     )
+    info_file_handler.namer = log_namer
     
     # Force rotation if file exists and has content (New session = new file)
     if info_log_path.exists() and info_log_path.stat().st_size > 0:
@@ -105,6 +127,7 @@ def setup_logging(
         backupCount=15, 
         encoding='utf-8'
     )
+    debug_file_handler.namer = log_namer
     
     # Force rotation if file exists and has content
     if debug_log_path.exists() and debug_log_path.stat().st_size > 0:
