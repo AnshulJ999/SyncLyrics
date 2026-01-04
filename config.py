@@ -29,7 +29,7 @@ else:
 # ==========================================
 # Version
 # ==========================================
-VERSION = "1.3.0"
+VERSION = "1.6.0"
 
 # FIX: Only load .env if it exists (optimization)
 env_file = ROOT_DIR / '.env'
@@ -107,7 +107,7 @@ DEBUG = {
     "enabled": conf("debug.enabled", False),
     "log_file": conf("debug.log_file", "synclyrics.log"),
     # FIX: Default to WARNING for frozen builds (less log noise in production)
-    "log_level": conf("debug.log_level", "WARNING" if getattr(sys, 'frozen', False) else "INFO"),
+    "log_level": conf("debug.log_level", "INFO" if getattr(sys, 'frozen', False) else "INFO"),
     "log_providers": conf("debug.log_providers", True),
     "log_polling": conf("debug.log_polling", True),
     # FIX: Default False for frozen EXE (no console window)
@@ -116,7 +116,7 @@ DEBUG = {
     "performance_logging": conf("debug.performance_logging", False),
     "log_rotation": {
         "max_bytes": conf("debug.log_rotation.max_bytes", 10485760),
-        "backup_count": conf("debug.log_rotation.backup_count", 5)
+        "backup_count": conf("debug.log_rotation.backup_count", 10)
     }
 }
 
@@ -129,8 +129,8 @@ SERVER = {
     "secret_key": os.getenv("QUART_SECRET_KEY") or secrets.token_hex(32),
     "debug": conf("server.debug", False),
     "https": {
-        "enabled": conf("server.https.enabled", False),
-        "port": _safe_int(conf("server.https.port", 0), 0),  # 0 = same as HTTP, >0 = dual-stack
+        "enabled": conf("server.https.enabled", True),
+        "port": _safe_int(conf("server.https.port", 9013), 9013),  # 0 = same as HTTP, >0 = dual-stack
         "auto_generate": conf("server.https.auto_generate", True),
         "cert_file": conf("server.https.cert_file", "certs/server.crt"),
         "key_file": conf("server.https.key_file", "certs/server.key"),
