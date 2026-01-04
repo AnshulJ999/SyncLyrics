@@ -115,14 +115,15 @@ export async function getConfig() {
         }
 
         // Set soft album art mode from server config only if URL didn't explicitly set it
+        // IMPORTANT: Frontend default is now TRUE, so only apply server config if it's enabling
+        // (server returning false should NOT override frontend default of true)
         const urlParams = new URLSearchParams(window.location.search);
-        if (config.softAlbumArt !== undefined && !urlParams.has('softAlbumArt')) {
-            displayConfig.softAlbumArt = config.softAlbumArt;
-            if (displayConfig.softAlbumArt) {
-                displayConfig.artBackground = false;
-                displayConfig.sharpAlbumArt = false;
-            }
+        if (config.softAlbumArt === true && !urlParams.has('softAlbumArt')) {
+            displayConfig.softAlbumArt = true;
+            displayConfig.artBackground = false;
+            displayConfig.sharpAlbumArt = false;
         }
+        // Note: If server says false, we respect the frontend default (which is true)
 
         // Set sharp album art mode from server config
         if (config.sharpAlbumArt !== undefined && !urlParams.has('sharpAlbumArt')) {
