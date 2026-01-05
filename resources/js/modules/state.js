@@ -132,7 +132,9 @@ export const providerDisplayNames = {
     "spotify": "Spotify",
     "netease": "NetEase",
     "qq": "QQ",
-    "musixmatch": "Musixmatch"
+    "musixmatch": "Musixmatch",
+    "Instrumental (cached)": "Instrumental"
+
 };
 
 // ========== STATE SETTERS ==========
