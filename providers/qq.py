@@ -302,18 +302,24 @@ class QQMusicProvider(LyricsProvider):
             # Find best matching song using multi-factor scoring
             best_song, best_score = self._find_best_match(songs, artist, title, album, duration)
             
-            # Use best match if confident, otherwise fall back to first result
+            # Use best match if confident, otherwise reject the result
             if best_score >= self.MIN_CONFIDENCE_THRESHOLD:
                 song = best_song
                 song_name = song.get('name', 'Unknown')
                 song_artist = song['singer'][0]['name'] if song.get('singer') and len(song['singer']) > 0 else 'Unknown'
                 logger.info(f"QQ - Selected '{song_name}' by '{song_artist}' (score: {best_score})")
             else:
-                # Fallback to first result (preserves existing behavior)
-                song = songs[0]
-                song_name = song.get('name', 'Unknown')
-                song_artist = song['singer'][0]['name'] if song.get('singer') and len(song['singer']) > 0 else 'Unknown'
-                logger.warning(f"QQ - Low confidence match (score: {best_score}), falling back to first result: '{song_name}' by '{song_artist}'")
+                # No confident match - return None instead of accepting wrong lyrics
+                logger.info(f"QQ - No confident match found (best score: {best_score}), first result: '{song_name}' by '{song_artist}', skipping")
+                return None
+                
+                # [OLD FALLBACK - commented out for reference]
+                # Previously fell back to first result regardless of match quality,
+                # which caused wrong lyrics (e.g., Chinese songs for English instrumentals)
+                # song = songs[0]
+                # song_name = song.get('name', 'Unknown')
+                # song_artist = song['singer'][0]['name'] if song.get('singer') and len(song['singer']) > 0 else 'Unknown'
+                # logger.warning(f"QQ - Low confidence match (score: {best_score}), falling back to first result: '{song_name}' by '{song_artist}'")
             
             # Get lyrics - ensure song has 'mid' field
             if 'mid' not in song:
