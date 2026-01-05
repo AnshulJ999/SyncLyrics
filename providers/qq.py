@@ -31,8 +31,8 @@ logger = get_logger(__name__)
 class QQMusicProvider(LyricsProvider):
     """QQ Music lyrics provider"""
     
-    # Minimum score threshold for confident match (title must match)
-    MIN_CONFIDENCE_THRESHOLD = 40
+    # Minimum score threshold for confident match (aligned with NetEase)
+    MIN_CONFIDENCE_THRESHOLD = 65
     
     def __init__(self) -> None:
         """Initialize QQ Music provider with config settings"""
@@ -58,12 +58,12 @@ class QQMusicProvider(LyricsProvider):
         Score a search result based on how well it matches the target song.
         Higher score = better match.
         
-        Scoring:
-        - Title exact match: +80
-        - Title contains target: +50
-        - Artist match: +30
-        - Album match: +15
-        - Duration within 5s: +10
+        Scoring (aligned with NetEase):
+        - Title exact match: +55
+        - Title contains target: +45
+        - Artist match: +40
+        - Album match: +20
+        - Duration within 3s: +20
         """
         score = 0
         
@@ -80,24 +80,24 @@ class QQMusicProvider(LyricsProvider):
         
         # Title scoring (most important)
         if song_title == target_title_lower:
-            score += 80  # Exact match
+            score += 55  # Exact match
         elif target_title_lower in song_title or song_title in target_title_lower:
-            score += 50  # Partial match
+            score += 45  # Partial match
         
         # Artist scoring
         if any(target_artist_lower in artist or artist in target_artist_lower for artist in song_artists):
-            score += 30
+            score += 40
         
         # Album scoring (if provided)
         if target_album:
             target_album_lower = target_album.lower().strip()
             if target_album_lower in song_album or song_album in target_album_lower:
-                score += 15
+                score += 20
         
-        # Duration scoring (if provided, within 5 second tolerance)
+        # Duration scoring (if provided, within 3 second tolerance)
         if target_duration and song_duration_s:
-            if abs(song_duration_s - target_duration) <= 5:
-                score += 10
+            if abs(song_duration_s - target_duration) <= 3:
+                score += 20
         
         return score
     
@@ -310,7 +310,11 @@ class QQMusicProvider(LyricsProvider):
                 logger.info(f"QQ - Selected '{song_name}' by '{song_artist}' (score: {best_score})")
             else:
                 # No confident match - return None instead of accepting wrong lyrics
-                logger.info(f"QQ - No confident match found (best score: {best_score}), first result: '{song_name}' by '{song_artist}', skipping")
+                # Get first result info for debugging
+                first_song = songs[0]
+                first_name = first_song.get('name', 'Unknown')
+                first_artist = first_song['singer'][0]['name'] if first_song.get('singer') and len(first_song['singer']) > 0 else 'Unknown'
+                logger.info(f"QQ - No confident match found (best score: {best_score}), first result: '{first_name}' by '{first_artist}', skipping")
                 return None
                 
                 # [OLD FALLBACK - commented out for reference]
