@@ -33,12 +33,12 @@ Visual mode hides lyrics and shows the album art prominently. Useful during inst
 
 ### Triggering Visual Mode
 - **Automatic**: Enters during instrumental sections (detected by ♪ markers)
-- **Manual**: Click the **music note icon** (🎵) in the bottom-left
-- **Long-press**: Hold the album art to enter art-only mode
+- **Manual**: Click the **visual mode button** (♩) in the bottom-left corner
+- **Long-press**: Hold the visual mode button (♩) to enter art-only mode
 
 ### Art-Only Mode
 A variant where only the album art is shown:
-- Triple-tap anywhere to exit
+- Long-press corners
 - Supports pinch-to-zoom on touch devices
 
 ---
@@ -103,6 +103,14 @@ album_art_database/[Artist Name]/your_image.jpg
 Any `.jpg`, `.png`, `.webp`, or `.gif` file is auto-discovered and added to the rotation. Names don't matter, but simple short names will be better to avoid issues. 
 
 Standard naming like 'Custom1' and 'Custom2' is recommended.
+
+> **Tip**: The filename (without extension) becomes the label in the image selection UI. Use descriptive names like `Concert_2024.jpg` or `Album_Promo.jpg` rather than `image1.jpg`.
+
+### Album-Specific Art
+For specific album covers (not slideshow images), use the album folder:
+```
+album_art_database/[Artist Name] - [Album Name]/cover.jpg
+```
 
 ---
 

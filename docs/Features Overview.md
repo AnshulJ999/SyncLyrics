@@ -78,6 +78,8 @@ See [Spicetify Integration](Spicetify%20Integration.md) for installation.
 
 ## Quick Links
 
+- [Quick Start](Quick%20Start.md) - Get running in 5 minutes
+- [FAQ](FAQ.md) - Common questions
 - [Configuration Reference](Configuration%20Reference.md) - All settings
 - [Docker Reference](Docker%20Reference.md) - Docker/HASS setup
 - [Troubleshooting](Troubleshooting.md) - Common issues

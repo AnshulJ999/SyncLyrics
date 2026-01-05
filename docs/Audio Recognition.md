@@ -1,6 +1,6 @@
 # Audio Recognition
 
-SyncLyrics includes Shazam-powered audio recognition for identifying songs when standard media sources aren't available.
+SyncLyrics includes Shazam-like audio recognition for identifying songs when standard media sources aren't available.
 
 ## When to Use
 
@@ -23,6 +23,10 @@ Captures audio directly from your system using a loopback device.
 1. Install a virtual audio cable or loopback driver
 2. Configure your audio to route through the loopback
 3. Select the loopback device in SyncLyrics
+
+I've only tested hardware loopback (MOTU M4) but this should work with any loopback. Cannot work without a loopback AKA it does not recognize audio just from your speakers.
+
+It CAN work with any mic / input line on your system that can record audio.
 
 ### Frontend Mode (Browser Microphone)
 Uses your browser's microphone to capture audio.
@@ -53,10 +57,27 @@ Uses your browser's microphone to capture audio.
 
 ### Advanced Settings
 Expand "Advanced Settings" to configure:
-- **Recognition Interval**: How often to sample (default: 5s)
-- **Capture Duration**: How long to record per sample (default: 5s)
+- **Recognition Interval**: How often to sample - this can be kept low as it is just the 'gap' between recording captures. 
+- **Capture Duration**: How long to record per sample - higher values can lead to more accuracy so a balance is recommended.
 - **Latency Offset**: Adjust timing if lyrics are offset
 - **Silence Threshold**: Skip recognition when audio is too quiet
+- **Verification Cycles**: Number of consecutive matches needed before accepting a new song (default: 2). Set to 1 for instant matching, higher for noisy environments to prevent flickering.
+
+## ACRCloud Fallback
+
+If Shazam fails to identify a song, SyncLyrics can fall back to ACRCloud (optional).
+
+**Setup**:
+1. Create account at [console.acrcloud.com](https://console.acrcloud.com/)
+2. Create a project and attach the "ACRCloud Music" bucket
+3. Set environment variables:
+   - `ACRCLOUD_HOST`: Your project host
+   - `ACRCLOUD_ACCESS_KEY`: Access key
+   - `ACRCLOUD_ACCESS_SECRET`: Access secret
+   - `ACRCLOUD_DAILY_LIMIT`: Daily request limit (default: 100)
+   - `ACRCLOUD_COOLDOWN`: Seconds between requests (default: 30)
+
+ACRCloud is only called when Shazam returns no match. Results bypass verification (high confidence).
 
 ## Reaper DAW Integration
 

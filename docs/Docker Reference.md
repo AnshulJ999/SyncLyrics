@@ -19,7 +19,7 @@ docker run -d \
 
 ### Using Docker Compose
 
-1. Download the [docker-compose.yml](docker-compose.yml) file
+1. Download the [docker-compose.yml](../docker/docker-compose.yml) file
 2. Edit and add your Spotify credentials
 3. Run:
 

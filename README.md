@@ -4,7 +4,7 @@ A feature-rich desktop and web application that displays synchronized lyrics for
 
 This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). SyncLyrics aims to be a visual companion to the music experience, built for tablet dashboards.
 
-> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
+> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. Now supports Docker. 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
@@ -153,6 +153,8 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 ## 📚 Documentation
 
 Detailed guides for all features:
+- [Quick Start](docs/Quick%20Start.md) - Get running in 5 minutes
+- [FAQ](docs/FAQ.md) - Common questions answered
 - [Features Overview](docs/Features%20Overview.md)
 - [Word Sync and Karaoke](docs/Word%20Sync%20and%20Karaoke.md)
 - [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
@@ -197,7 +199,7 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## ⚠️ Disclaimer (AI Usage)
 
-This project was built with significant AI assistance (yes, vibe-coded 🤖 over 100+ hours). It works great for my use case, but if you find rough edges, PRs are always welcome!
+This project was built with significant AI assistance (yes, vibe-coded 🤖 over 200+ hours). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
 
 ---
 

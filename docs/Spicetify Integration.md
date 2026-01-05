@@ -2,6 +2,8 @@
 
 Spicetify is a powerful customization tool for Spotify Desktop. SyncLyrics includes a custom bridge extension that provides significant improvements over standard Spotify API polling.
 
+> **Requirement**: Spicetify only works with the **Spotify Desktop Application** (Windows/Linux/macOS). It does not work with the Web Player or mobile apps.
+
 ## What Spicetify Enables
 
 | Feature | Without Spicetify | With Spicetify |
