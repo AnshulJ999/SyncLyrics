@@ -156,6 +156,12 @@ export async function updateWaveform(trackInfo) {
     // Show/hide container based on config
     container.style.display = 'block';
 
+    // Ensure canvas is properly sized (only if needed - avoids overhead on every poll)
+    // This handles the case where canvas was initialized while container was hidden (0x0 dimensions)
+    if (canvas.width === 0 || canvas.height === 0) {
+        resizeCanvas(canvas);
+    }
+
     // Check if track OR source changed (need to re-fetch waveform)
     const currentTrackId = trackInfo?.track_id;
     const currentSource = trackInfo?.source;
