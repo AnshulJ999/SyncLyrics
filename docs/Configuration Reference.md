@@ -147,4 +147,4 @@ Key environment variables for Docker/HASS:
 | `DEBUG_ENABLED` | Enable debug mode |
 | `DEBUG_LOG_LEVEL` | Log level (DEBUG/INFO/WARNING/ERROR) |
 
-See [docker/DOCKER.md](../docker/DOCKER.md) for complete Docker configuration.
+See [Docker Reference](Docker%20Reference.md) for complete Docker configuration.

@@ -156,6 +156,7 @@ Detailed guides for all features:
 - [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
 - [Audio Recognition](docs/Audio%20Recognition.md)
 - [Spicetify Integration](docs/Spicetify%20Integration.md)
+- [Docker Reference](docs/Docker%20Reference.md)
 - [Configuration Reference](docs/Configuration%20Reference.md)
 - [Troubleshooting](docs/Troubleshooting.md)
 - [Development Reference](docs/Development%20Reference.md)

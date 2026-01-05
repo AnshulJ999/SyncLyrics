@@ -123,7 +123,7 @@ Mount `/data` volume:
 - Set `SPOTIFY_REDIRECT_URI` to your actual access URL (not localhost)
 - Ensure Spotify Developer Dashboard has this URL in Redirect URIs
 
-See [docker/DOCKER.md](../docker/DOCKER.md) for complete Docker documentation.
+See [Docker Reference](Docker%20Reference.md) for complete Docker documentation.
 
 ---
 

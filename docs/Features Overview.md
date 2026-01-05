@@ -79,5 +79,6 @@ See [Spicetify Integration](Spicetify%20Integration.md) for installation.
 ## Quick Links
 
 - [Configuration Reference](Configuration%20Reference.md) - All settings
+- [Docker Reference](Docker%20Reference.md) - Docker/HASS setup
 - [Troubleshooting](Troubleshooting.md) - Common issues
 - [Development Reference](Development%20Reference.md) - API and architecture

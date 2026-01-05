@@ -93,10 +93,16 @@ Album art is cached locally for faster loading:
 - Dominant colors extracted for background effects
 
 ### Adding Custom Images
-Place images in the artist's folder:
+Place images directly in the artist's folder:
 ```
 album_art_database/[Artist Name]/custom_*.jpg
+or
+album_art_database/[Artist Name]/your_image.jpg
 ```
+
+Any `.jpg`, `.png`, `.webp`, or `.gif` file is auto-discovered and added to the rotation. Names don't matter, but simple short names will be better to avoid issues. 
+
+Standard naming like 'Custom1' and 'Custom2' is recommended.
 
 ---
 
