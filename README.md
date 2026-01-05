@@ -21,7 +21,8 @@ _Video demo showcasing the app's main features_
 ## ✨ Features
 
 ### 🎵 Lyrics
-- **4 Providers:** Spotify, LRCLib, NetEase, QQ Music
+- **5 Providers:** Spotify, LRCLib, Musixmatch, NetEase, QQ Music
+- **Word-Sync (Karaoke):** Highlights each word as it's sung
 - **Parallel Search:** Queries all providers simultaneously for fastest results
 - **Local Caching:** Saves lyrics offline for instant future access
 - **Provider Selection:** Manually choose your preferred provider per song
@@ -45,11 +46,20 @@ _Video demo showcasing the app's main features_
 - Like/Unlike tracks (Spotify)
 - View playback queue
 - Seek bar with progress display
+- Waveform seekbar with audio analysis visualization (Spicetify Required)
+- Spectrum visualizer (Spicetify Required)
+
+### ⚡ Spicetify Integration
+- **Real-time Updates:** ~100ms position updates via WebSocket
+- **Audio Analysis:** Enables waveform and spectrum features
+- **Queue with Autoplay:** Full queue including suggested tracks
+- See [Spicetify Integration](docs/Spicetify%20Integration.md) for setup
 
 ### ⚙️ Configuration
 - **Web Settings Page:** Full configuration UI at `/settings`
 - **URL Parameters:** Customize display for embedding/OBS
 - **Environment Variables:** Docker/HASS-friendly configuration
+- **Modular Settings:** See [Configuration Reference](docs/Configuration%20Reference.md)
 
 ---
 
@@ -138,6 +148,20 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 
 ---
 
+## 📚 Documentation
+
+Detailed guides for all features:
+- [Features Overview](docs/Features%20Overview.md)
+- [Word Sync and Karaoke](docs/Word%20Sync%20and%20Karaoke.md)
+- [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
+- [Audio Recognition](docs/Audio%20Recognition.md)
+- [Spicetify Integration](docs/Spicetify%20Integration.md)
+- [Configuration Reference](docs/Configuration%20Reference.md)
+- [Troubleshooting](docs/Troubleshooting.md)
+- [Development Reference](docs/Development%20Reference.md)
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Spotify Authentication
@@ -151,6 +175,8 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 ### Audio Recognition Not Working
 - **Backend mode:** Ensure you have a loopback audio device (e.g., VB-Cable, WASAPI loopback)
 - **Frontend mode:** HTTPS is required for browser microphone access
+
+See [Troubleshooting Guide](docs/Troubleshooting.md) for detailed solutions.
 
 ---
 
