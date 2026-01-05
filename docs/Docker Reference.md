@@ -34,8 +34,12 @@ docker-compose up -d
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new app
-3. Set the Redirect URI to `http://localhost:9012/callback` (or your host's URL)
+3. Set the Redirect URI:
+   - For localhost: `http://localhost:9012/callback` (HTTP works)
+   - For remote/network access: `https://<YOUR_IP>:9013/callback` (HTTPS required)
 4. Copy the Client ID and Client Secret
+
+> **Note**: Spotify OAuth requires HTTPS for any address other than `127.0.0.1` or `localhost`.
 
 ## Environment Variables
 

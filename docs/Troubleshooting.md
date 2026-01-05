@@ -16,6 +16,16 @@ Common issues and solutions for SyncLyrics.
 - Check the Spotify Developer Dashboard for the exact redirect URI
 - Make sure you're accessing SyncLyrics from the same host as the redirect URI
 
+### HTTPS Required for Remote Access
+Spotify OAuth requires either:
+- `127.0.0.1` or `localhost` (HTTP works)
+- **Any other address must use HTTPS**
+
+For HASS/Docker/remote access, use HTTPS on port 9013:
+```
+https://<YOUR_IP>:9013/callback
+```
+
 ---
 
 ## Lyrics Not Showing

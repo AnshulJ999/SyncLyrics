@@ -108,6 +108,8 @@ The app works best with a Spotify API connection, which requires you to create a
 | `FANART_TV_API_KEY` | FanArt.tv API key for artist images |
 | `LASTFM_API_KEY` | Last.fm API key for album art |
 
+> **Note**: Spotify OAuth works with `localhost`/`127.0.0.1` over HTTP, but requires HTTPS for any other address. For remote access, use `https://<YOUR_IP>:9013/callback`.
+
 ### URL Parameters
 
 Append these to the URL for custom displays (e.g., `http://localhost:9012/?minimal=true`):
