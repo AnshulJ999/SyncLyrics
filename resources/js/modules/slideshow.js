@@ -965,6 +965,10 @@ let manualOverrideActive = false;
 let artistChangeDebounceTimer = null;
 const ARTIST_CHANGE_DEBOUNCE_MS = 1500;  // Wait 500ms before applying auto-enable
 
+// Saved custom interval value (persisted to localStorage separately from active interval)
+// This allows the custom value to be remembered even when switching to presets
+let savedCustomIntervalSeconds = null;
+
 // Default settings for reset
 const DEFAULT_SETTINGS = {
     intervalSeconds: 6,
@@ -1087,13 +1091,15 @@ export function setupControlCenter() {
         });
     });
     
-    // Custom button - applies immediately with default or current value
+    // Custom button - applies immediately with saved or default value
     const customBtn = document.getElementById('slideshow-custom-btn');
     const customInput = document.getElementById('slideshow-custom-timing');
     if (customBtn && customInput) {
         customBtn.addEventListener('click', () => {
-            // Get current value or default to 6
-            const currentValue = parseInt(customInput.value) || 6;
+            // Use saved custom value first, then input value, then fallback to 12
+            const currentValue = savedCustomIntervalSeconds 
+                || parseInt(customInput.value) 
+                || 12;
             
             // Apply custom timing immediately
             handleTimingClick(currentValue, true);
@@ -1289,17 +1295,21 @@ function handleTimingClick(seconds, isCustom = false) {
     
     // Handle custom button and input
     if (isCustom || !presets.includes(seconds)) {
-        // Custom value - show input with value, mark custom button active
+        // Custom value - save it and show input with value, mark custom button active
+        savedCustomIntervalSeconds = seconds;
         if (customBtn) customBtn.classList.add('active');
         if (customInput) {
             customInput.value = seconds;
             customInput.classList.remove('hidden');
         }
     } else {
-        // Preset value - clear custom UI
+        // Preset value - hide custom input but preserve the saved custom value
         if (customBtn) customBtn.classList.remove('active');
         if (customInput) {
-            customInput.value = '';
+            // Keep the saved custom value visible in the hidden input for when user reopens
+            if (savedCustomIntervalSeconds !== null) {
+                customInput.value = savedCustomIntervalSeconds;
+            }
             customInput.classList.add('hidden');
         }
     }
@@ -1328,6 +1338,7 @@ function handleResetToDefaults() {
     slideshowConfig.kenBurnsEnabled = DEFAULT_SETTINGS.kenBurnsEnabled;
     slideshowConfig.kenBurnsIntensity = DEFAULT_SETTINGS.kenBurnsIntensity;
     slideshowConfig.transitionDuration = DEFAULT_SETTINGS.transitionDuration;
+    savedCustomIntervalSeconds = null;  // Clear saved custom value
     
     // Clear excluded images for current artist
     const artistName = lastTrackInfo?.artist || 'unknown';
@@ -1352,10 +1363,15 @@ function updateModalUIFromConfig() {
         btn.classList.toggle('active', parseInt(btn.dataset.timing) === slideshowConfig.intervalSeconds);
     });
     
-    // Custom input
+    // Custom input - show saved custom value if available
     const customInput = document.getElementById('slideshow-custom-timing');
-    if (customInput && ![3, 6, 9].includes(slideshowConfig.intervalSeconds)) {
-        customInput.value = slideshowConfig.intervalSeconds;
+    const presets = [3, 6, 9, 15, 30];
+    if (customInput) {
+        if (savedCustomIntervalSeconds !== null) {
+            customInput.value = savedCustomIntervalSeconds;
+        } else if (!presets.includes(slideshowConfig.intervalSeconds)) {
+            customInput.value = slideshowConfig.intervalSeconds;
+        }
     }
     
     // Shuffle button
@@ -2080,6 +2096,7 @@ function saveSettingsToLocalStorage() {
     try {
         localStorage.setItem('slideshowSettings', JSON.stringify({
             intervalSeconds: slideshowConfig.intervalSeconds,
+            savedCustomIntervalSeconds: savedCustomIntervalSeconds,
             shuffle: slideshowConfig.shuffle,
             kenBurnsEnabled: slideshowConfig.kenBurnsEnabled,
             kenBurnsIntensity: slideshowConfig.kenBurnsIntensity,
@@ -2099,6 +2116,7 @@ export function loadSettingsFromLocalStorage() {
         if (saved) {
             const settings = JSON.parse(saved);
             if (settings.intervalSeconds) slideshowConfig.intervalSeconds = settings.intervalSeconds;
+            if (settings.savedCustomIntervalSeconds) savedCustomIntervalSeconds = settings.savedCustomIntervalSeconds;
             if (settings.shuffle !== undefined) slideshowConfig.shuffle = settings.shuffle;
             if (settings.kenBurnsEnabled !== undefined) slideshowConfig.kenBurnsEnabled = settings.kenBurnsEnabled;
             if (settings.kenBurnsIntensity) slideshowConfig.kenBurnsIntensity = settings.kenBurnsIntensity;
