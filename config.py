@@ -39,8 +39,10 @@ if env_file.exists():
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
     # 1. Check Env Var (Highest Priority - good for docker/dev)
+    # Note: Empty string is treated as "not set" to avoid accidental overrides
+    # from .env files with placeholder entries like: SPOTIFY_CLIENT_ID=
     env_val = os.getenv(key.upper().replace('.', '_'))
-    if env_val is not None:
+    if env_val is not None and env_val != '':
         return env_val
     
     # 2. Check Settings JSON
@@ -57,6 +59,9 @@ def _safe_float(val, default: float) -> float:
     """Safely convert to float, returning default on failure."""
     if val is None:
         return default
+    # Treat empty string as "not set"
+    if isinstance(val, str) and val.strip() == '':
+        return default
     try:
         return float(val)
     except (ValueError, TypeError):
@@ -66,19 +71,31 @@ def _safe_int(val, default):
     """Safely convert to int, returning default on failure. Supports None default."""
     if val is None:
         return default
+    # Treat empty string as "not set"
+    if isinstance(val, str) and val.strip() == '':
+        return default
     try:
         return int(val)
     except (ValueError, TypeError):
         return default
 
 def _safe_bool(val, default: bool) -> bool:
-    """Safely convert to bool, handling string 'true'/'false'."""
+    """Safely convert to bool, handling string 'true'/'false'.
+    Unknown strings return default (not False) to make typos safer."""
     if val is None:
         return default
     if isinstance(val, bool):
         return val
     if isinstance(val, str):
-        return val.lower() in ('true', '1', 'yes', 'on')
+        lower = val.lower().strip()
+        if lower == '':
+            return default  # Empty string → use default
+        if lower in ('true', '1', 'yes', 'on'):
+            return True
+        if lower in ('false', '0', 'no', 'off'):
+            return False
+        # Unrecognized string → use default (safer than blindly returning False)
+        return default
     return bool(val)
 
 # ==========================================
@@ -122,11 +139,39 @@ DEBUG = {
 
 import secrets
 
+def _get_or_create_secret_key() -> str:
+    """Get persistent secret key from env var or file, creating one if needed.
+    This ensures Quart sessions survive restarts."""
+    # 1. Check env var first (highest priority, e.g., for Docker)
+    env_key = os.getenv("QUART_SECRET_KEY")
+    if env_key and env_key.strip():
+        return env_key.strip()
+    
+    # 2. Check for persistent key file
+    key_file = ROOT_DIR / ".quart_secret"
+    try:
+        if key_file.exists():
+            stored_key = key_file.read_text().strip()
+            if stored_key:
+                return stored_key
+    except (OSError, PermissionError):
+        pass  # Fall through to generate new key
+    
+    # 3. Generate new key and persist it
+    new_key = secrets.token_hex(32)
+    try:
+        key_file.write_text(new_key)
+    except (OSError, PermissionError):
+        # Can't persist, but still return the key for this session
+        print(f"Warning: Could not persist secret key to {key_file}")
+    
+    return new_key
+
 SERVER = {
     "port": _safe_int(conf("server.port"), 9012),
     "host": conf("server.host", "0.0.0.0"),
-    # FIX: Generate secure random key if not provided (required for session security)
-    "secret_key": os.getenv("QUART_SECRET_KEY") or secrets.token_hex(32),
+    # FIX: Persistent secret key - survives restarts (required for session security)
+    "secret_key": _get_or_create_secret_key(),
     "debug": _safe_bool(conf("server.debug"), False),
     "https": {
         "enabled": _safe_bool(conf("server.https.enabled"), True),

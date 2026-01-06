@@ -50,6 +50,7 @@ verification_result.txt
 .env
 .env.*
 !.env.example
+.quart_secret
 
 # IDEs
 .idea/
