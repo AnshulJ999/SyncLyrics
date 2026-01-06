@@ -279,6 +279,12 @@ async def ensure_album_art_db(
     Returns:
         Tuple of (preferred_url, resolution_str) of the selected art, or None if failed.
     """
+    # Early return if artist is empty (no point calling providers - they all require artist)
+    # This prevents wasted work for non-music files like personal recordings
+    if not artist:
+        logger.debug(f"Skipping album art fetch: empty artist {artist} for title '{title}'")
+        return None
+    
     # Prevent infinite recursion for self-healing
     if retry_count > 1:
         logger.warning(f"Aborting ensure_album_art_db for {artist} - {title} after {retry_count} retries")

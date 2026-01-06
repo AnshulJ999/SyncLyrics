@@ -676,7 +676,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         logger.debug(f"Audio rec: Using preferred artist image for background: {artist}")
                 
                 # C. Background fetch (like Windows/Spotify pattern) - only if not already in DB
-                if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+                # FIX: Check negative cache first (prevents retry spam for non-music files)
+                if checked_key in state._no_art_found_cache:
+                    cache_time = state._no_art_found_cache[checked_key]
+                    if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                        pass  # Skip - no art found recently
+                    else:
+                        del state._no_art_found_cache[checked_key]  # TTL expired
+                
+                if not album_art_found_in_db and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
                     if audio_rec_track_id not in state._running_art_upgrade_tasks:
                         # Mark as checked to prevent duplicate tasks
                         state._db_checked_tracks[checked_key] = time.time()
@@ -701,8 +709,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     captured_art_url
                                 )
                                 if not db_result:
-                                    # Failed - allow retry on next poll
-                                    state._db_checked_tracks.pop(captured_checked_key, None)
+                                    # FIX: Add to negative cache instead of removing from checked
+                                    state._no_art_found_cache[captured_checked_key] = time.time()
+                                    if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                                        oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                                        del state._no_art_found_cache[oldest]
                                 else:
                                     # Success - update the cached result so next poll picks it up
                                     cached_url, cached_path = db_result
@@ -725,7 +736,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     logger.debug(f"Audio rec: Background enrichment complete for {captured_artist} - {captured_title}")
                             except Exception as e:
                                 logger.error(f"Audio rec: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
-                                state._db_checked_tracks.pop(captured_checked_key, None)
+                                # On exception, also add to negative cache
+                                state._no_art_found_cache[captured_checked_key] = time.time()
                             finally:
                                 state._running_art_upgrade_tasks.pop(captured_track_id, None)
                         
@@ -850,7 +862,15 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             logger.debug(f"Spicetify: Using preferred artist image for background: {artist}")
                     
                     # C. Background fetch (like Windows/Spotify pattern) - only if not already in DB
-                    if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+                    # FIX: Check negative cache first (prevents retry spam for non-music files)
+                    if checked_key in state._no_art_found_cache:
+                        cache_time = state._no_art_found_cache[checked_key]
+                        if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                            pass  # Skip - no art found recently
+                        else:
+                            del state._no_art_found_cache[checked_key]  # TTL expired
+                    
+                    if not album_art_found_in_db and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
                         if track_id not in state._running_art_upgrade_tasks:
                             # Mark as checked to prevent duplicate tasks
                             state._db_checked_tracks[checked_key] = time.time()
@@ -875,8 +895,11 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                         captured_art_url
                                     )
                                     if not db_result:
-                                        # Failed - allow retry on next poll
-                                        state._db_checked_tracks.pop(captured_checked_key, None)
+                                        # FIX: Add to negative cache instead of removing from checked
+                                        state._no_art_found_cache[captured_checked_key] = time.time()
+                                        if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                                            oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                                            del state._no_art_found_cache[oldest]
                                     else:
                                         # Success - update the cached enrichment result
                                         cached_url, cached_path = db_result
@@ -897,7 +920,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                         logger.debug(f"Spicetify: Background enrichment complete for {captured_artist} - {captured_title}")
                                 except Exception as e:
                                     logger.error(f"Spicetify: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
-                                    state._db_checked_tracks.pop(captured_checked_key, None)
+                                    # On exception, also add to negative cache
+                                    state._no_art_found_cache[captured_checked_key] = time.time()
                                 finally:
                                     state._running_art_upgrade_tasks.pop(captured_track_id, None)
                             

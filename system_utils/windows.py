@@ -515,7 +515,17 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # This ensures background fetch triggers even when artist image fallback is used
         # Use 'win::' namespace to avoid blocking Spotify fetcher which might have better URLs
         checked_key = f"win::{current_track_id}"
-        if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+        
+        # FIX: Check negative cache first (prevents retry spam for non-music files)
+        if checked_key in state._no_art_found_cache:
+            cache_time = state._no_art_found_cache[checked_key]
+            if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                pass  # Skip - no art found recently, don't retry yet
+            else:
+                # TTL expired, remove from negative cache to allow retry
+                del state._no_art_found_cache[checked_key]
+        
+        if not album_art_found_in_db and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
             if current_track_id not in state._running_art_upgrade_tasks:
                  state._db_checked_tracks[checked_key] = time.time()
                  if len(state._db_checked_tracks) > state._MAX_DB_CHECKED_SIZE:
@@ -525,18 +535,21 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      try:
                          # Fetch and save to DB (no spotify_url available)
                          result = await ensure_album_art_db(artist, album, title, None)
-                         # Check result; if failed, uncheck to allow retry on next poll
+                         # FIX: On None result, add to negative cache instead of removing from checked
+                         # This prevents infinite retry loop for tracks with no art (non-music files)
                          if not result:
-                             # Failed (network error, etc) - remove from checked so we retry later
-                             if checked_key in state._db_checked_tracks:
-                                 del state._db_checked_tracks[checked_key]
+                             # No art found - add to negative cache (don't retry for _NO_ART_FOUND_TTL seconds)
+                             state._no_art_found_cache[checked_key] = time.time()
+                             if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                                 oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                                 del state._no_art_found_cache[oldest]
                          # We don't need to do anything else; the NEXT poll loop 
                          # will see the file in DB (step 1 above) and auto-upgrade the UI.
                      except Exception as e:
                          logger.debug(f"Windows background art fetch failed: {e}")
-                         # Remove from checked on error to allow retry
-                         if checked_key in state._db_checked_tracks:
-                             del state._db_checked_tracks[checked_key]
+                         # On exception (network error), also add to negative cache
+                         # This prevents retry spam when network is down
+                         state._no_art_found_cache[checked_key] = time.time()
                      finally:
                          # CRITICAL FIX: Always remove from running tasks, even if task creation failed
                          state._running_art_upgrade_tasks.pop(current_track_id, None)

@@ -400,7 +400,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
         # CRITICAL FIX: Only run this once per track to prevent infinite loops
         # Use 'spot::' namespace to distinguish from Windows fetcher checks
         checked_key = f"spot::{captured_track_id}"
-        if (not db_is_complete or has_invalid_resolution) and captured_track_id not in state._running_art_upgrade_tasks and checked_key not in state._db_checked_tracks:
+        
+        # FIX: Check negative cache first (prevents retry spam for non-music files)
+        if checked_key in state._no_art_found_cache:
+            cache_time = state._no_art_found_cache[checked_key]
+            if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                pass  # Skip - no art found recently
+            else:
+                del state._no_art_found_cache[checked_key]  # TTL expired
+        
+        if (not db_is_complete or has_invalid_resolution) and captured_track_id not in state._running_art_upgrade_tasks and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
             # Mark as checked immediately to prevent re-entry on next poll
             state._db_checked_tracks[checked_key] = time.time()
             
@@ -419,16 +428,17 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         raw_spotify_url,
                         retry_count=1
                     )
-                    # Check result; if failed, uncheck to allow retry on next poll
+                    # FIX: On None result, add to negative cache instead of removing from checked
                     if not result:
-                        if checked_key in state._db_checked_tracks:
-                            del state._db_checked_tracks[checked_key]
+                        state._no_art_found_cache[checked_key] = time.time()
+                        if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                            oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                            del state._no_art_found_cache[oldest]
                     return result
                 except Exception as e:
                     logger.debug(f"Background DB refresh failed: {e}")
-                    # Remove from checked on error to allow retry
-                    if checked_key in state._db_checked_tracks:
-                        del state._db_checked_tracks[checked_key]
+                    # On exception, also add to negative cache
+                    state._no_art_found_cache[checked_key] = time.time()
                 finally:
                     state._running_art_upgrade_tasks.pop(captured_track_id, None)
             
@@ -503,7 +513,16 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                     # This ensures background task runs even when artist image fallback is used
                     # Use 'spot::' namespace to distinguish from Windows fetcher checks
                     checked_key = f"spot::{captured_track_id}"
-                    if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+                    
+                    # FIX: Check negative cache first (prevents retry spam for non-music files)
+                    if checked_key in state._no_art_found_cache:
+                        cache_time = state._no_art_found_cache[checked_key]
+                        if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                            pass  # Skip - no art found recently
+                        else:
+                            del state._no_art_found_cache[checked_key]  # TTL expired
+                    
+                    if not album_art_found_in_db and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
                         if captured_track_id in state._running_art_upgrade_tasks:
                             # Task already running - only log once per track to prevent spam
                             if not hasattr(_get_current_song_meta_data_spotify, '_last_logged_art_upgrade_running_track_id') or \
@@ -537,10 +556,12 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         # Use the result from DB population directly (avoid redundant fetch)
                                         high_res_result = await ensure_album_art_db(captured_artist, captured_album, captured_title, original_spotify_url)
                                         
-                                        # Check result; if failed, uncheck to allow retry on next poll
+                                        # FIX: On None result, add to negative cache instead of removing from checked
                                         if not high_res_result:
-                                            if checked_key in state._db_checked_tracks:
-                                                del state._db_checked_tracks[checked_key]
+                                            state._no_art_found_cache[checked_key] = time.time()
+                                            if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                                                oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                                                del state._no_art_found_cache[oldest]
                                         
                                         # Update the provider cache immediately
                                         if high_res_result:
@@ -552,9 +573,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                             
                                     except Exception as e:
                                         logger.error(f"ensure_album_art_db failed: {e}")
-                                        # Remove from checked on error to allow retry
-                                        if checked_key in state._db_checked_tracks:
-                                            del state._db_checked_tracks[checked_key]
+                                        # On exception, also add to negative cache
+                                        state._no_art_found_cache[checked_key] = time.time()
                                     
                                     # REMOVED: Redundant call to art_provider.get_high_res_art
                                     # This prevents the double-flicker (once for remote high-res, once for local DB)
@@ -581,9 +601,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         logger.info(f"Upgraded album art from Spotify to high-res source for {captured_artist} - {captured_title}: {high_res_result[1]}")
                                 except Exception as e:
                                     logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
-                                    # Remove from checked on error to allow retry
-                                    if checked_key in state._db_checked_tracks:
-                                        del state._db_checked_tracks[checked_key]
+                                    # On exception, also add to negative cache
+                                    state._no_art_found_cache[checked_key] = time.time()
                                 finally:
                                     # Remove from running tasks when done
                                     state._running_art_upgrade_tasks.pop(captured_track_id, None)

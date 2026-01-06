@@ -35,9 +35,11 @@ _MAX_METADATA_CACHE_SIZE = 50
 _MAX_DISCOVERY_CACHE_SIZE = 50
 _MAX_ARTIST_IMAGE_CACHE_SIZE = 50
 _MAX_DB_CHECKED_SIZE = 100
+_MAX_NO_ART_FOUND_CACHE_SIZE = 200  # For negative caching of "no art found" results
 
 # Cache TTLs
 _ARTIST_IMAGE_CACHE_TTL = 15  # Cache for 15 seconds
+_NO_ART_FOUND_TTL = 360  # 6 minutes before retrying album art lookup for tracks with no art
 
 # Throttle intervals
 _ARTIST_IMAGE_LOG_THROTTLE_SECONDS = 60  # Log at most once per minute per artist
@@ -122,6 +124,11 @@ _artist_image_load_cache: Dict[tuple, tuple] = {}
 # Cache for ensure_artist_image_db results to prevent spamming checks
 # Key: artist, Value: (timestamp, result_list)
 _artist_db_check_cache: Dict[str, tuple] = {}
+
+# Negative cache for "no art found" results (prevents retry spam for non-music files)
+# Key: checked_key (e.g., "win::artist_title"), Value: timestamp when cached
+# Tracks where album art lookup returned no results; retried after _NO_ART_FOUND_TTL
+_no_art_found_cache: Dict[str, float] = {}
 
 # ==========================================
 # THROTTLES
