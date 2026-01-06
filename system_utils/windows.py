@@ -457,6 +457,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
+        # NOTE: This feature is limited - WinRT thumbnail API often times out for browser sources
+        # due to how browser media players expose SMTC. Works better for native apps.
         if not album_art_found_in_db:
             try:
                 thumbnail_ref = info.thumbnail
@@ -465,62 +467,60 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 thumb_filename = f"thumb_{current_track_id}.jpg"
                 thumb_path = CACHE_DIR / thumb_filename
                 
-                # Only extract if we haven't already for this track OR if file doesn't exist
-                if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
-                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
+                # FIX: Only try extraction ONCE per track (track ID change triggers new attempt)
+                # Don't retry based on file existence - that causes infinite loops on failure
+                if thumbnail_ref and current_track_id != state._last_windows_track_id:
+                    # CRITICAL: Mark as tried FIRST, before any async operations
+                    # This prevents retry spam regardless of outcome (success, timeout, or error)
+                    state._last_windows_track_id = current_track_id
+                    
+                    # WinRT thumbnail extraction with short timeout
+                    # Use 1.0s timeout - if it doesn't respond quickly, it won't respond at all
+                    stream = None
                     try:
                         stream = await asyncio.wait_for(
                             thumbnail_ref.open_read_async(),
-                            timeout=2.0
+                            timeout=1.0
                         )
                     except asyncio.TimeoutError:
-                        logger.debug("TRACE: Windows thumbnail open_read_async timed out")
-                        stream = None
-                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
-                        # We won't retry thumbnail extraction for this track until it changes
-                        state._last_windows_track_id = current_track_id
+                        pass  # Silent fail - this is expected for many browser sources
+                    except Exception:
+                        pass  # WinRT errors - don't spam logs
                     
-                    if stream:
-                        reader = DataReader(stream)
+                    if stream and stream.size > 0:
                         try:
+                            reader = DataReader(stream)
                             await asyncio.wait_for(
                                 reader.load_async(stream.size),
-                                timeout=2.0
+                                timeout=1.0
                             )
-                        except asyncio.TimeoutError:
-                            logger.debug("TRACE: Windows thumbnail load_async timed out")
-                            stream = None
-                            # Also mark as processed on load timeout
-                            state._last_windows_track_id = current_track_id
-                        else:
                             byte_data = bytearray(stream.size)
                             reader.read_bytes(byte_data)
                             
-                            # Save directly to unique file (no race condition possible)
+                            # Save to file in executor (non-blocking)
                             loop = asyncio.get_running_loop()
                             save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
                             
                             if save_ok:
-                                state._last_windows_track_id = current_track_id
-                                
-                                # Cleanup: Delete OLD thumbnails to keep cache small
-                                # We only keep the current one
+                                # Cleanup old thumbnails (we only keep current)
                                 for f in CACHE_DIR.glob("thumb_*.jpg"):
                                     if f.name != thumb_filename:
                                         try:
                                             os.remove(f)
                                         except:
                                             pass
+                        except asyncio.TimeoutError:
+                            pass  # Silent fail
+                        except Exception:
+                            pass  # Silent fail
                 
-                # If the file exists (either just saved or already there), use it
+                # If the file exists (either just saved or from previous run), use it
                 if thumb_path.exists():
-                    # Use file's mtime for stable URL (not time.time() which changes every second)
                     thumb_mtime = int(thumb_path.stat().st_mtime)
                     album_art_url = f"/cover-art?id={current_track_id}&t={thumb_mtime}"
                     result_extra_fields = {"album_art_path": str(thumb_path)}
-            except Exception as e:
-                pass
+            except Exception:
+                pass  # Outer exception handler - silent fail
 
         # 3. Background High-Res Fetch (Progressive Upgrade)
         # Only if not found in DB and not checked this session
