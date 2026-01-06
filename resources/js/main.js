@@ -500,7 +500,8 @@ async function updateLoop() {
             }
 
             // Smart artist reset: only reset if artist changes
-            const newArtistId = trackInfo.artist_id || '';
+            // Use artist_id if available (Spotify), otherwise fall back to artist name (Windows Media)
+            const newArtistId = trackInfo.artist_id || trackInfo.artist || '';
             const sameArtist = newArtistId === lastArtistId;
             if (!sameArtist) {
                 resetImageIndex();
