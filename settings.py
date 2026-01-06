@@ -191,8 +191,8 @@ class SettingsManager:
             "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "Deprecated", "Enable GSettings", "switch", deprecated=True),
             "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "Deprecated", "Require Playerctl", "switch", deprecated=True),
             
-            # New Blocklist Setting
-            "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "list"),
+            # New Blocklist Setting (empty by default - users can add via dropdown)
+            "system.windows.app_blocklist": Setting("App Blocklist", list, [], False, "System", "Apps to ignore (partial match)", "list"),
             "system.windows.paused_timeout": Setting("Paused Timeout", int, 600, False, "System", "Accept paused Windows media for N seconds (0=forever)", "number"),
             "system.spotify.paused_timeout": Setting("Spotify Paused Timeout", int, 600, False, "System", "Accept paused Spotify for N seconds (0=forever)", "number"),
             "system.spicetify.paused_timeout": Setting("Spicetify Paused Timeout", int, 600, False, "System", "Accept paused Spicetify for N seconds (0=forever)", "number"),

@@ -123,12 +123,17 @@
                                         {% endfor %}
                                     </select>
                                     {% elif setting.widget_type == "slider" %}
+                                    {# Dynamic step: 0.05 for update_interval, 1 for integers, 0.1 for other floats #}
+                                    {% set step_val = '0.05' if 'update_interval' in key else ('1' if setting.type == 'int' else '0.1') %}
                                     <div class="slider-wrapper">
                                         <input type="range" class="form-range" id="{{ key }}" name="{{ key }}"
-                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}" step="0.05"
+                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}" step="{{ step_val }}"
                                             value="{{ setting.value }}"
-                                            oninput="updateSliderDisplay('{{ key }}', this.value)">
-                                        <span class="slider-value" id="val-{{ key }}">{{ setting.value }}s</span>
+                                            oninput="syncSliderToInput('{{ key }}', this.value)">
+                                        <input type="number" class="slider-input" id="input-{{ key }}"
+                                            value="{{ setting.value }}" step="{{ step_val }}"
+                                            min="{{ setting.min_val }}" max="{{ setting.max_val }}"
+                                            onchange="syncInputToSlider('{{ key }}', this.value)">
                                     </div>
                                     {% elif setting.widget_type == "color" %}
                                     <div class="input-group">
@@ -156,8 +161,24 @@
                                             {% endfor %}
                                             {% endif %}
                                         </div>
+                                        {% if 'blocklist' in key %}
+                                        <!-- Quick-add dropdown for blocklist -->
                                         <div class="input-group mt-2">
-                                            <input type="text" class="form-control list-input" placeholder="Add item..."
+                                            <select class="form-select" id="quick-{{ key }}"
+                                                    onchange="quickAddTag('{{ key }}', this.value); this.selectedIndex=0;">
+                                                <option value="">Add common browser...</option>
+                                                <option value="chrome">Chrome</option>
+                                                <option value="msedge">Microsoft Edge</option>
+                                                <option value="firefox">Firefox</option>
+                                                <option value="brave">Brave</option>
+                                                <option value="opera">Opera</option>
+                                                <option value="vivaldi">Vivaldi</option>
+                                                <option value="arc">Arc</option>
+                                            </select>
+                                        </div>
+                                        {% endif %}
+                                        <div class="input-group mt-2">
+                                            <input type="text" class="form-control list-input" placeholder="Add custom app..."
                                                 id="input-{{ key }}"
                                                 onkeypress="if(event.key==='Enter'){event.preventDefault();addTag('{{ key }}');}">
                                             <button type="button" class="btn btn-outline-secondary"
@@ -431,6 +452,37 @@
         font-size: 0.9rem;
     }
 
+    /* Slider Input (editable number field) */
+    .slider-input {
+        width: 80px;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #60a5fa;
+        border-radius: 6px;
+        padding: 0.3rem 0.5rem;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .slider-input:focus {
+        outline: none;
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    }
+
+    /* Hide number input spinners for cleaner look */
+    .slider-input::-webkit-outer-spin-button,
+    .slider-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        appearance: none;
+        margin: 0;
+    }
+    .slider-input[type=number] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
+
     /* List Widget */
     .list-widget {
         width: 100%;
@@ -658,8 +710,50 @@
         document.getElementById('hidden-' + key).value = JSON.stringify(values);
     }
 
+    // Slider <-> Input sync functions
+    function syncSliderToInput(key, value) {
+        const input = document.getElementById('input-' + key);
+        if (input) input.value = value;
+    }
+
+    function syncInputToSlider(key, value) {
+        const slider = document.getElementById(key);
+        if (slider) {
+            // Clamp value to valid range
+            let val = parseFloat(value);
+            const min = parseFloat(slider.min);
+            const max = parseFloat(slider.max);
+            if (isNaN(val)) val = min;
+            val = Math.max(min, Math.min(max, val));
+            slider.value = val;
+            // Also update input to show clamped value
+            const input = document.getElementById('input-' + key);
+            if (input) input.value = val;
+        }
+    }
+
+    // Quick-add for blocklist dropdown (prevents duplicates)
+    function quickAddTag(key, value) {
+        if (!value) return;
+        const container = document.getElementById('tags-' + key);
+        // Check if already exists
+        const existing = Array.from(container.querySelectorAll('.tag')).map(t => 
+            t.textContent.replace('×', '').trim().toLowerCase()
+        );
+        if (existing.includes(value.toLowerCase())) return;
+        
+        // Add tag using same pattern as addTag()
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.innerHTML = value + '<button type="button" class="tag-remove" onclick="removeTag(this)">×</button>';
+        container.appendChild(tag);
+        updateHiddenInput(key);
+    }
+
+    // Legacy function kept for backwards compatibility
     function updateSliderDisplay(key, value) {
-        document.getElementById('val-' + key).textContent = value + 's';
+        const el = document.getElementById('val-' + key);
+        if (el) el.textContent = value + 's';
     }
 
     document.addEventListener('DOMContentLoaded', function () {
