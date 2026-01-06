@@ -73,6 +73,76 @@ def _save_windows_thumbnail_sync(path: Path, data: bytes) -> bool:
         return False
 
 
+def _extract_thumbnail_sync(thumbnail_ref, track_id: str) -> Optional[bytes]:
+    """
+    Extract Windows SMTC thumbnail in a SYNC function using an isolated event loop.
+    
+    This MUST be called from a thread (via run_in_executor) to avoid deadlocking
+    the main Hypercorn ASGI event loop. WinRT async operations don't properly
+    yield to Python's asyncio when run inside an ASGI server's event loop.
+    
+    Args:
+        thumbnail_ref: WinRT RandomAccessStreamReference from SMTC
+        track_id: Track identifier for logging
+        
+    Returns:
+        Thumbnail bytes if successful, None otherwise
+    """
+    if not thumbnail_ref:
+        return None
+    
+    # Create a NEW event loop for this thread (isolated from main ASGI loop)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        async def _do_extract():
+            try:
+                # Open the stream with timeout
+                stream = await asyncio.wait_for(
+                    thumbnail_ref.open_read_async(),
+                    timeout=3.0  # Slightly longer than before since we're in dedicated thread
+                )
+                
+                if not stream or stream.size == 0:
+                    logger.debug(f"Windows thumbnail: stream empty for '{track_id}'")
+                    return None
+                
+                logger.debug(f"Windows thumbnail: stream opened, size={stream.size} for '{track_id}'")
+                
+                # Read the data
+                reader = DataReader(stream)
+                await asyncio.wait_for(
+                    reader.load_async(stream.size),
+                    timeout=3.0
+                )
+                
+                byte_data = bytearray(stream.size)
+                reader.read_bytes(byte_data)
+                
+                logger.debug(f"Windows thumbnail: read {len(byte_data)} bytes for '{track_id}'")
+                return bytes(byte_data)
+                
+            except asyncio.TimeoutError:
+                logger.debug(f"Windows thumbnail: extraction timed out (3.0s) for '{track_id}'")
+                return None
+            except Exception as e:
+                logger.debug(f"Windows thumbnail: extraction failed for '{track_id}': {type(e).__name__}: {e}")
+                return None
+        
+        # Run in the isolated event loop
+        return loop.run_until_complete(_do_extract())
+        
+    except Exception as e:
+        logger.debug(f"Windows thumbnail: thread extraction failed for '{track_id}': {e}")
+        return None
+    finally:
+        try:
+            loop.close()
+        except:
+            pass
+
+
 # ==========================================
 # WINDOWS PLAYBACK CONTROLS
 # ==========================================
@@ -465,45 +535,34 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 thumb_filename = f"thumb_{current_track_id}.jpg"
                 thumb_path = CACHE_DIR / thumb_filename
                 
-                # Only extract if we haven't already for this track OR if file doesn't exist
-                if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
-                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
-                    try:
-                        stream = await asyncio.wait_for(
-                            thumbnail_ref.open_read_async(),
-                            timeout=2.0
-                        )
-                    except asyncio.TimeoutError:
-                        logger.debug("TRACE: Windows thumbnail open_read_async timed out")
-                        stream = None
-                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
-                        # We won't retry thumbnail extraction for this track until it changes
-                        state._last_windows_track_id = current_track_id
+                # FIX: Only extract if track changed (don't retry same track even if file doesn't exist)
+                # This prevents infinite retry loops when thumbnail extraction fails/times out
+                should_extract = thumbnail_ref and current_track_id != state._last_windows_track_id
+                
+                if should_extract:
+                    # CRITICAL: Mark as tried FIRST, before any async operations
+                    # This prevents retry spam even if the extraction fails
+                    state._last_windows_track_id = current_track_id
                     
-                    if stream:
-                        reader = DataReader(stream)
-                        try:
-                            await asyncio.wait_for(
-                                reader.load_async(stream.size),
-                                timeout=2.0
-                            )
-                        except asyncio.TimeoutError:
-                            logger.debug("TRACE: Windows thumbnail load_async timed out")
-                            stream = None
-                            # Also mark as processed on load timeout
-                            state._last_windows_track_id = current_track_id
-                        else:
-                            byte_data = bytearray(stream.size)
-                            reader.read_bytes(byte_data)
-                            
-                            # Save directly to unique file (no race condition possible)
+                    # Diagnostic logging (throttled - only on track change, so max once per song)
+                    logger.debug(f"Windows thumbnail: attempting extraction for '{current_track_id}' (has_ref: True)")
+                    
+                    # CRITICAL FIX: Run WinRT calls in a separate thread with isolated event loop
+                    # This avoids deadlocks with Hypercorn's ASGI event loop - WinRT async ops
+                    # don't properly yield to Python asyncio when run inside an ASGI server
+                    try:
+                        byte_data = await asyncio.wait_for(
+                            asyncio.to_thread(_extract_thumbnail_sync, thumbnail_ref, current_track_id),
+                            timeout=5.0  # Extra margin for thread scheduling
+                        )
+                        
+                        if byte_data:
+                            # Save the thumbnail
                             loop = asyncio.get_running_loop()
                             save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
                             
                             if save_ok:
-                                state._last_windows_track_id = current_track_id
-                                
+                                logger.debug(f"Windows thumbnail: saved to {thumb_path}")
                                 # Cleanup: Delete OLD thumbnails to keep cache small
                                 # We only keep the current one
                                 for f in CACHE_DIR.glob("thumb_*.jpg"):
@@ -512,6 +571,15 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                                             os.remove(f)
                                         except:
                                             pass
+                            else:
+                                logger.debug(f"Windows thumbnail: save failed for '{current_track_id}'")
+                        else:
+                            logger.debug(f"Windows thumbnail: no data returned for '{current_track_id}'")
+                            
+                    except asyncio.TimeoutError:
+                        logger.debug(f"Windows thumbnail: thread extraction timed out (5.0s) for '{current_track_id}'")
+                    except Exception as e:
+                        logger.debug(f"Windows thumbnail: thread extraction error for '{current_track_id}': {type(e).__name__}: {e}")
                 
                 # If the file exists (either just saved or already there), use it
                 if thumb_path.exists():
@@ -520,7 +588,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                     album_art_url = f"/cover-art?id={current_track_id}&t={thumb_mtime}"
                     result_extra_fields = {"album_art_path": str(thumb_path)}
             except Exception as e:
-                pass
+                logger.debug(f"Windows thumbnail: unexpected error: {e}")
 
         # 3. Background High-Res Fetch (Progressive Upgrade)
         # Only if not found in DB and not checked this session
