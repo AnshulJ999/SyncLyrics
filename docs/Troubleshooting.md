@@ -89,7 +89,7 @@ Browser security requires HTTPS. Access via `https://localhost:9013` and accept 
 ### App not appearing as source
 - Verify the app supports SMTC (System Media Transport Controls)
 - Some apps (MusicBee) require plugins for SMTC
-- Check `system.windows.app_blocklist` - browsers are blocked by default
+- Check `system.windows.app_blocklist` - you may want to block problematic apps like browsers
 
 ### Stuck on previous track
 - Check `system.windows.paused_timeout` setting
@@ -133,14 +133,14 @@ Browser media players often can't provide album art via SMTC:
 - Falls back to album art database (iTunes, Last.fm, Spotify)
 - YouTube videos with non-music content won't find album art
 
-### Why Browsers Are Blocked by Default
+### Why You Might Want to Block Browsers
 
-The default blocklist includes `chrome`, `msedge`, `firefox`, `brave` because:
-1. Position data is unreliable (lyrics won't sync)
-2. Thumbnails often fail
+The blocklist is **empty by default**, but you may want to add browsers (`chrome`, `msedge`, `firefox`, `brave`) if:
+1. Position data is unreliable (lyrics won't sync properly)
+2. Thumbnails often fail to extract
 3. YouTube video metadata is inconsistent (channel name as artist, video title as song)
 
-To allow a browser, edit `system.windows.app_blocklist` in settings.
+To add apps to the blocklist, edit `system.windows.app_blocklist` in settings.
 
 ---
 

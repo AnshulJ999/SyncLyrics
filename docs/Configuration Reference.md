@@ -42,9 +42,9 @@ Settings are loaded in this priority order (highest wins):
 | `lyrics.display.latency_compensation` | -0.1 | Sync offset (seconds) |
 | `lyrics.display.spotify_latency_compensation` | -0.5 | Spotify-specific offset |
 | `lyrics.display.spicetify_latency_compensation` | 0.0 | Spicetify offset |
-| `lyrics.display.word_sync_latency_compensation` | 0.0 | Word-sync offset |
+| `lyrics.display.word_sync_latency_compensation` | -0.1 | Word-sync offset |
 | `lyrics.display.idle_interval` | 3.0 | Polling when idle (seconds) |
-| `lyrics.display.smart_race_timeout` | 3.0 | Max wait for providers (seconds) |
+| `lyrics.display.smart_race_timeout` | 4.0 | Max wait for providers (seconds) |
 
 ## Providers
 
@@ -54,9 +54,9 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 |----------|-----------------|---------------|
 | Spotify | 1 | ✅ |
 | LRCLib | 2 | ❌ |
-| NetEase | 3 | ✅ (YRC) |
 | Musixmatch | 3 | ✅ (RichSync) |
-| QQ | 4 | ❌ |
+| NetEase | 4 | ✅ (YRC) |
+| QQ | 5 | ❌ |
 
 ## Spotify API
 
@@ -99,7 +99,7 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 | `slideshow.interval_seconds` | 6 | Seconds per image |
 | `slideshow.ken_burns_enabled` | true | Zoom/pan animation |
 | `slideshow.ken_burns_intensity` | subtle | subtle/medium/cinematic |
-| `slideshow.shuffle` | false | Random order |
+| `slideshow.shuffle` | true | Random order |
 
 ## Audio Recognition
 
@@ -107,9 +107,10 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 |---------|---------|-------------|
 | `audio_recognition.enabled` | false | Enable recognition |
 | `audio_recognition.reaper_auto_detect` | false | Auto-start for Reaper |
-| `audio_recognition.capture_duration` | 5.0 | Audio capture length (seconds) |
-| `audio_recognition.recognition_interval` | 5.0 | Time between recognition attempts |
-| `audio_recognition.silence_threshold` | 500 | Min amplitude to detect |
+| `audio_recognition.capture_duration` | 6.0 | Audio capture length (seconds) |
+| `audio_recognition.recognition_interval` | 4.0 | Time between recognition attempts |
+| `audio_recognition.silence_threshold` | 350 | Min amplitude to detect |
+| `audio_recognition.verification_cycles` | 2 | Matches needed to accept song |
 
 ## Features
 
@@ -118,7 +119,7 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 | `features.save_lyrics_locally` | true | Cache lyrics to disk |
 | `features.parallel_provider_fetch` | true | Query providers concurrently |
 | `features.album_art_db` | true | Cache album art |
-| `features.word_sync_auto_switch` | true | Prefer providers with word-sync |
+| `features.word_sync_auto_switch` | false | Prefer providers with word-sync |
 | `features.word_sync_default_enabled` | true | Enable word-sync by default |
 | `features.spicetify_database` | true | Cache audio analysis |
 
@@ -126,7 +127,7 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `system.windows.app_blocklist` | [chrome, msedge, ...] | Apps to ignore |
+| `system.windows.app_blocklist` | [] | Apps to ignore (empty by default) |
 | `system.windows.paused_timeout` | 600 | Accept paused media for N seconds |
 
 ---
