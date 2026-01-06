@@ -133,7 +133,8 @@
                                         <input type="number" class="slider-input" id="input-{{ key }}"
                                             value="{{ setting.value }}" step="{{ step_val }}"
                                             min="{{ setting.min_val }}" max="{{ setting.max_val }}"
-                                            onchange="syncInputToSlider('{{ key }}', this.value)">
+                                            onchange="syncInputToSlider('{{ key }}', this.value)"
+                                            onkeydown="if(event.key==='Enter'){event.preventDefault(); syncInputToSlider('{{ key }}', this.value);}">
                                     </div>
                                     {% elif setting.widget_type == "color" %}
                                     <div class="input-group">
@@ -436,7 +437,7 @@
     .slider-wrapper {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 0.75rem;
         width: 100%;
     }
 
@@ -444,30 +445,33 @@
         flex: 1;
     }
 
-    .slider-value {
+  /*  .slider-value {
         min-width: 60px;
         text-align: right;
         color: #60a5fa;
         font-weight: 500;
         font-size: 0.9rem;
-    }
+    } */
 
     /* Slider Input (editable number field) */
     .slider-input {
-        width: 80px;
+        width: 85px;
+        height: 36px;
         text-align: center;
         background: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
         color: #60a5fa;
         border-radius: 6px;
-        padding: 0.3rem 0.5rem;
+        padding: 0.4rem 0.5rem;
         font-weight: 500;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
+        flex-shrink: 0;
     }
 
     .slider-input:focus {
         outline: none;
         border-color: #60a5fa;
+        background: rgba(0, 0, 0, 0.4);
         box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
     }
 
