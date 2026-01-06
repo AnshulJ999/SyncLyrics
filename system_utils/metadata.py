@@ -714,6 +714,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
                                         oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
                                         del state._no_art_found_cache[oldest]
+                                    # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                    state._db_checked_tracks.pop(captured_checked_key, None)
                                 else:
                                     # Success - update the cached result so next poll picks it up
                                     cached_url, cached_path = db_result
@@ -738,6 +740,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                 logger.error(f"Audio rec: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
                                 # On exception, also add to negative cache
                                 state._no_art_found_cache[captured_checked_key] = time.time()
+                                # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                state._db_checked_tracks.pop(captured_checked_key, None)
                             finally:
                                 state._running_art_upgrade_tasks.pop(captured_track_id, None)
                         
@@ -900,6 +904,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                         if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
                                             oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
                                             del state._no_art_found_cache[oldest]
+                                        # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                        state._db_checked_tracks.pop(captured_checked_key, None)
                                     else:
                                         # Success - update the cached enrichment result
                                         cached_url, cached_path = db_result
@@ -922,6 +928,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                                     logger.error(f"Spicetify: Background enrichment failed for {captured_artist} - {captured_title}: {e}")
                                     # On exception, also add to negative cache
                                     state._no_art_found_cache[captured_checked_key] = time.time()
+                                    # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                    state._db_checked_tracks.pop(captured_checked_key, None)
                                 finally:
                                     state._running_art_upgrade_tasks.pop(captured_track_id, None)
                             

@@ -434,11 +434,15 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                         if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
                             oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
                             del state._no_art_found_cache[oldest]
+                        # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                        state._db_checked_tracks.pop(checked_key, None)
                     return result
                 except Exception as e:
                     logger.debug(f"Background DB refresh failed: {e}")
                     # On exception, also add to negative cache
                     state._no_art_found_cache[checked_key] = time.time()
+                    # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                    state._db_checked_tracks.pop(checked_key, None)
                 finally:
                     state._running_art_upgrade_tasks.pop(captured_track_id, None)
             
@@ -562,6 +566,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                             if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
                                                 oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
                                                 del state._no_art_found_cache[oldest]
+                                            # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                            state._db_checked_tracks.pop(checked_key, None)
                                         
                                         # Update the provider cache immediately
                                         if high_res_result:
@@ -575,6 +581,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                         logger.error(f"ensure_album_art_db failed: {e}")
                                         # On exception, also add to negative cache
                                         state._no_art_found_cache[checked_key] = time.time()
+                                        # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                        state._db_checked_tracks.pop(checked_key, None)
                                     
                                     # REMOVED: Redundant call to art_provider.get_high_res_art
                                     # This prevents the double-flicker (once for remote high-res, once for local DB)
@@ -603,6 +611,8 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
                                     logger.error(f"Background art upgrade failed for {captured_artist} - {captured_title}: {type(e).__name__}: {e}", exc_info=True)
                                     # On exception, also add to negative cache
                                     state._no_art_found_cache[checked_key] = time.time()
+                                    # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                                    state._db_checked_tracks.pop(checked_key, None)
                                 finally:
                                     # Remove from running tasks when done
                                     state._running_art_upgrade_tasks.pop(captured_track_id, None)

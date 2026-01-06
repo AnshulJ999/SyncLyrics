@@ -556,6 +556,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                              if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
                                  oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
                                  del state._no_art_found_cache[oldest]
+                             # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                             state._db_checked_tracks.pop(checked_key, None)
                          # We don't need to do anything else; the NEXT poll loop 
                          # will see the file in DB (step 1 above) and auto-upgrade the UI.
                      except Exception as e:
@@ -563,6 +565,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                          # On exception (network error), also add to negative cache
                          # This prevents retry spam when network is down
                          state._no_art_found_cache[checked_key] = time.time()
+                         # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                         state._db_checked_tracks.pop(checked_key, None)
                      finally:
                          # CRITICAL FIX: Always remove from running tasks, even if task creation failed
                          state._running_art_upgrade_tasks.pop(current_track_id, None)

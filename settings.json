@@ -125,8 +125,7 @@
         "chrome",
         "msedge",
         "firefox",
-        "brave",
-        "comet"
+        "brave"
     ],
     "system.windows.media_session.enabled": true,
     "system.windows.media_session.preferred": true,
