@@ -94,7 +94,7 @@ class SettingsManager:
             "debug.log_detailed": Setting("Detailed Logging", bool, False, False, "Debug", "Include detailed info", "switch"),
             "debug.performance_logging": Setting("Performance Logging", bool, False, False, "Debug", "Log timing stats", "switch"),
             "debug.log_rotation.max_bytes": Setting("Max Log Size", int, 10485760, False, "Debug", "Max log file size (bytes)", "number"),
-            "debug.log_rotation.backup_count": Setting("Log Backups", int, 5, False, "Debug", "Number of backups to keep", "number"),
+            "debug.log_rotation.backup_count": Setting("Log Backups", int, 10, False, "Debug", "Number of backups to keep", "number"),
 
             # Server
             "server.port": Setting("Port", int, 9012, True, "Server", "Server port", "number"),
