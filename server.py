@@ -710,7 +710,7 @@ async def get_available_providers():
     artist = song_data.get("artist", "")
     title = song_data.get("title", "")
     
-    if not artist or not title:
+    if not artist and not title:
         return jsonify({"error": "Invalid song data"}), 400
     
     providers_list = get_available_providers_for_song(artist, title)

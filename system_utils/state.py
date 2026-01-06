@@ -138,6 +138,11 @@ _no_art_found_cache: Dict[str, float] = {}
 # Key: artist name, Value: last log timestamp
 _artist_image_log_throttle: Dict[str, float] = {}
 
+# Throttle for Windows SMTC empty artist skip log (prevents spam)
+# Only logs once per 60 seconds when skipping tracks with no artist
+_SMTC_EMPTY_ARTIST_LOG_INTERVAL = 60  # seconds
+_smtc_empty_artist_last_log_time: float = 0
+
 # ==========================================
 # COUNTERS & TRACKING STATE
 # ==========================================

@@ -1369,8 +1369,8 @@ async def _update_song():
     async with _update_lock:
         new_song_data = await get_current_song_meta_data()
 
-        # If no song or empty song, clear lyrics
-        if new_song_data is None or (not new_song_data["artist"].strip() and not new_song_data["title"].strip()):
+        # If no song or empty song or no artist or no title, clear lyrics
+        if new_song_data is None or (not new_song_data["artist"].strip() or not new_song_data["title"].strip()):
             current_song_lyrics = None
             current_song_data = new_song_data
             # BUGFIX: Also clear word-sync state when no song is playing

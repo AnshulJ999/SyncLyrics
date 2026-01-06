@@ -249,6 +249,19 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         title = info.title
         album = info.album_title
 
+        # ================================================================
+        # FIX: Skip tracks with no artist metadata (non-music files)
+        # This prevents wasted API calls for lyrics/album art that will fail anyway.
+        # Uncomment to enable this fix.
+        # ================================================================
+        # if not artist:
+        #     # Throttled log: only log once every 60 seconds to prevent spam
+        #     current_time = time.time()
+        #     if current_time - state._smtc_empty_artist_last_log_time >= state._SMTC_EMPTY_ARTIST_LOG_INTERVAL:
+        #         state._smtc_empty_artist_last_log_time = current_time
+        #         logger.debug(f"Windows SMTC: Skipping track with no artist: '{title}'")
+        #     return None
+
         if not album:
             title = _remove_text_inside_parentheses_and_brackets(title)
             # artist = ""  # [REMOVED] Don't wipe artist name just because album is missing
