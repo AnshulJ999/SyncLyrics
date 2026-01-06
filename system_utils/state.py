@@ -143,6 +143,10 @@ _artist_image_log_throttle: Dict[str, float] = {}
 _SMTC_EMPTY_ARTIST_LOG_INTERVAL = 60  # seconds
 _smtc_empty_artist_last_log_time: float = 0
 
+# Throttle for lyrics skip log (when artist or title is empty)
+_LYRICS_SKIP_LOG_INTERVAL = 60  # seconds
+_lyrics_skip_last_log_time: float = 0
+
 # ==========================================
 # COUNTERS & TRACKING STATE
 # ==========================================

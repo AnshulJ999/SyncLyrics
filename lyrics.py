@@ -1371,6 +1371,17 @@ async def _update_song():
 
         # If no song or empty song or no artist or no title, clear lyrics
         if new_song_data is None or (not new_song_data["artist"].strip() or not new_song_data["title"].strip()):
+            # Throttled log: only log once every 60 seconds to prevent spam
+            if new_song_data is not None:
+                import time
+                from system_utils import state
+                current_time = time.time()
+                if current_time - state._lyrics_skip_last_log_time >= state._LYRICS_SKIP_LOG_INTERVAL:
+                    state._lyrics_skip_last_log_time = current_time
+                    artist = new_song_data.get("artist", "") or "(empty)"
+                    title = new_song_data.get("title", "") or "(empty)"
+                    logger.debug(f"Skipping lyrics: incomplete metadata - artist: '{artist}', title: '{title}'")
+            
             current_song_lyrics = None
             current_song_data = new_song_data
             # BUGFIX: Also clear word-sync state when no song is playing
