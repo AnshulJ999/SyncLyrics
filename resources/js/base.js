@@ -5,6 +5,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.setAttribute('data-minimal', 'true');
     }
 
+    /* DEPRECATED: Slider value displays are now handled by:
+     * - audioSource.js setupSlider() for index.html sliders (with proper units like "s")
+     * - settings.html inline slider-input elements (editable number inputs)
+     * This code created duplicate displays and used incorrect "%" suffix for all values.
     // Initialize range sliders to show the current value
     const ranges = document.querySelectorAll('input[type="range"]');
     for (const range of ranges) {
@@ -14,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         range.insertAdjacentElement('afterend', percentElement);
         range.addEventListener('input', () => percentElement.innerHTML = `${range.value}`);
     }
+    */
 
     // Initialize doNotFollowLinks
     const doNotFollowLinks = document.querySelectorAll("a[data-do-not-follow-link]");
