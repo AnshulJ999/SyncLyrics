@@ -39,10 +39,10 @@ if env_file.exists():
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
     # 1. Check Env Var (Highest Priority - good for docker/dev)
-    # Note: Empty string is treated as "not set" to avoid accidental overrides
-    # from .env files with placeholder entries like: SPOTIFY_CLIENT_ID=
+    # Note: Empty string or whitespace-only is treated as "not set" to avoid
+    # accidental overrides from .env files with placeholder entries like: SPOTIFY_CLIENT_ID=
     env_val = os.getenv(key.upper().replace('.', '_'))
-    if env_val is not None and env_val != '':
+    if env_val is not None and env_val.strip():
         return env_val
     
     # 2. Check Settings JSON
@@ -147,8 +147,8 @@ def _get_or_create_secret_key() -> str:
     if env_key and env_key.strip():
         return env_key.strip()
     
-    # 2. Check for persistent key file
-    key_file = ROOT_DIR / ".quart_secret"
+    # 2. Check for persistent key file (stored in certs dir for Docker/HAOS persistence)
+    key_file = CERTS_DIR / ".quart_secret"
     try:
         if key_file.exists():
             stored_key = key_file.read_text().strip()
