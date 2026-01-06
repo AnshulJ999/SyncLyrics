@@ -1104,11 +1104,10 @@ export function setupControlCenter() {
             // Apply custom timing immediately
             handleTimingClick(currentValue, true);
             
-            // Show input for adjustment
+            // Show input for adjustment (user can click input to edit)
             customInput.classList.remove('hidden');
             customInput.value = currentValue;
-            customInput.focus();
-            customInput.select();
+            // Note: No auto-focus - user clicks input separately to edit
         });
         
         // Apply on blur (when input loses focus)
