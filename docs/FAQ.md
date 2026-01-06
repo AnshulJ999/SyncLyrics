@@ -14,6 +14,20 @@ Not directly. However, you can use **Audio Recognition** to identify songs from 
 
 However any music playing on your Windows device can be recognized via the SMTC integration.
 
+**Apple Music**: Use Audio Recognition to identify songs playing through your speakers.
+
+**YouTube Music (browser)**: Windows Media detection works, but has limitations:
+- Position updates are unreliable (lyrics may drift out of sync)
+- Thumbnails often fail to load
+- Better option: Use **Spicetify** with its YouTube Music extension for real-time sync
+
+**YouTube videos**: Not recommended for lyrics sync:
+- Video metadata (channel name, video title) doesn't match song databases
+- Position rarely updates from browsers
+- Consider blocking browsers in `system.windows.app_blocklist`
+
+See [Troubleshooting - Windows SMTC Limitations](Troubleshooting.md#windows-smtc-limitations) for details.
+
 ### What's the difference between Spotify API and Spicetify?
 | Aspect | Spotify API | Spicetify |
 |--------|-------------|-----------|

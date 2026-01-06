@@ -97,6 +97,53 @@ Browser security requires HTTPS. Access via `https://localhost:9013` and accept 
 
 ---
 
+## Windows SMTC Limitations
+
+Windows System Media Transport Controls (SMTC) is how SyncLyrics detects media from non-Spotify apps. However, **browser-based media players have significant limitations**.
+
+### Browser Position/Playback Issues
+
+**Symptoms:**
+- Progress bar frozen or inaccurate
+- Lyrics out of sync despite correct song detection
+- Position stays at 0:00 while music plays
+
+**Cause:** Browsers (Chrome, Edge, Comet, Firefox) implement minimal SMTC:
+- Play/pause and track info work
+- **Position timeline rarely updates** (or never)
+- Background tabs may stop updates entirely
+
+| Source | Position Updates | Thumbnails | Recommendation |
+|--------|-----------------|------------|----------------|
+| Spotify (native) | ✅ Every 1-2s | ✅ | Best choice |
+| MusicBee | ✅ Good | ⚠️ Varies | Good |
+| Browsers (YouTube) | ❌ Rarely/never | ⚠️ Often fails | Not recommended |
+| YouTube Music via Spicetify | ✅ Real-time | ✅ | **Use this instead** |
+
+**Solutions:**
+1. **Use native apps** (Spotify, MusicBee) instead of browser players
+2. **For YouTube Music**: Install the Spicetify extension for real-time sync
+3. **For YouTube videos**: Consider blocking browsers (`system.windows.app_blocklist`)
+4. **Audio Recognition**: Use Shazam mode for manual identification
+
+### Thumbnail Extraction
+
+Browser media players often can't provide album art via SMTC:
+- WinRT thumbnail API times out (1 second limit)
+- Falls back to album art database (iTunes, Last.fm, Spotify)
+- YouTube videos with non-music content won't find album art
+
+### Why Browsers Are Blocked by Default
+
+The default blocklist includes `chrome`, `msedge`, `firefox`, `brave` because:
+1. Position data is unreliable (lyrics won't sync)
+2. Thumbnails often fail
+3. YouTube video metadata is inconsistent (channel name as artist, video title as song)
+
+To allow a browser, edit `system.windows.app_blocklist` in settings.
+
+---
+
 ## Spicetify Issues
 
 ### Extension not connecting
