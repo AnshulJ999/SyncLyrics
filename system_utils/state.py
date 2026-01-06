@@ -39,7 +39,7 @@ _MAX_NO_ART_FOUND_CACHE_SIZE = 200  # For negative caching of "no art found" res
 
 # Cache TTLs
 _ARTIST_IMAGE_CACHE_TTL = 15  # Cache for 15 seconds
-_NO_ART_FOUND_TTL = 360  # 6 minutes before retrying album art lookup for tracks with no art
+_NO_ART_FOUND_TTL = 240  # 4 minutes before retrying album art lookup for tracks with no art
 
 # Throttle intervals
 _ARTIST_IMAGE_LOG_THROTTLE_SECONDS = 60  # Log at most once per minute per artist
