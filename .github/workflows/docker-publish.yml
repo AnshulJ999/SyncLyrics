@@ -82,7 +82,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ !contains(steps.version.outputs.tag, 'beta') }}
           labels: |
             org.opencontainers.image.title=SyncLyrics
             org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
@@ -116,7 +116,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ !contains(steps.version.outputs.tag, 'beta') }}
           labels: |
             org.opencontainers.image.title=SyncLyrics
             org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
