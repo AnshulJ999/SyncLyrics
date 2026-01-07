@@ -1,6 +1,6 @@
 # Publish Docker images to Docker Hub and GitHub Container Registry
 # Triggers on new version tags (v*) or manual dispatch
-# GHCR is primary, Docker Hub is secondary (won't fail workflow if Docker Hub is down)
+# GHCR is primary, Docker Hub is secondary (independent - won't fail if Docker Hub is down)
 
 name: Docker Publish
 
@@ -70,6 +70,7 @@ jobs:
 
       # ============================================
       # STEP 1: Build and push to GHCR (Primary)
+      # This step MUST succeed for the workflow to pass
       # ============================================
       - name: Extract GHCR metadata
         id: ghcr-meta
@@ -81,7 +82,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
             type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ !contains(steps.version.outputs.tag, 'beta') }}
           labels: |
             org.opencontainers.image.title=SyncLyrics
             org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
@@ -100,29 +101,39 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ============================================
-      # STEP 2: Push to Docker Hub (Secondary)
-      # Uses imagetools to copy from GHCR - no rebuild needed
-      # continue-on-error: Docker Hub issues won't fail the workflow
+      # STEP 2: Build and push to Docker Hub (Secondary)
+      # This is independent - failure won't affect GHCR
+      # continue-on-error ensures workflow succeeds even if this fails
       # ============================================
-      - name: Push to Docker Hub
+      - name: Extract Docker Hub metadata
+        id: dockerhub-meta
+        if: steps.dockerhub-login.outcome == 'success'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
+            type=raw,value=latest,enable=${{ !contains(steps.version.outputs.tag, 'beta') }}
+          labels: |
+            org.opencontainers.image.title=SyncLyrics
+            org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
+            org.opencontainers.image.vendor=AnshulJ999
+
+      - name: Build and push to Docker Hub
         if: steps.dockerhub-login.outcome == 'success'
         continue-on-error: true
-        run: |
-          echo "Copying images from GHCR to Docker Hub..."
-          
-          # Copy the main version tag
-          docker buildx imagetools create \
-            --tag ${{ env.DOCKERHUB_IMAGE }}:${{ steps.version.outputs.tag }} \
-            ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
-          
-          # Copy latest tag if this is a main branch release
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            docker buildx imagetools create \
-              --tag ${{ env.DOCKERHUB_IMAGE }}:latest \
-              ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
-          fi
-          
-          echo "✅ Successfully pushed to Docker Hub"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.dockerhub-meta.outputs.tags }}
+          labels: ${{ steps.dockerhub-meta.outputs.labels }}
+          cache-from: type=gha
 
       - name: Update Docker Hub description
         if: steps.dockerhub-login.outcome == 'success'
@@ -131,8 +142,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: anshulj99/synclyrics
-          readme-filepath: ./docker/DOCKER.md
+          repository: ${{ env.DOCKERHUB_IMAGE }}
+          readme-filepath: "./docs/Docker Reference.md"
           short-description: "Real-time synchronized lyrics for Spotify 🎵"
 
       - name: Summary

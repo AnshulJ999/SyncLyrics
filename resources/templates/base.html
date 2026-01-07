@@ -6,18 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#1db954">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="SyncLyrics">
+    <!-- Cache control for embedded contexts (Home Assistant iFrame) -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/icon-192.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/icon.ico')}}" type="image/x-icon">
     <title> SyncLyrics </title>
+    <!-- Preload critical CSS for faster first paint -->
+    <link rel="preload" href="{{ url_for('static', filename='css/base.css')}}?v={{ cache_version }}" as="style">
+    <link rel="preload" href="{{ url_for('static', filename='css/bootstrap.min.css')}}?v={{ cache_version }}" as="style">
+    <!-- Preload icon fonts to prevent FOUT (Flash of Unstyled Text) -->
+    <link rel="preload" href="{{ url_for('static', filename='css/fonts/bootstrap-icons.woff2')}}" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ url_for('static', filename='css/phosphor/Phosphor-Fill.woff2')}}" as="font" type="font/woff2" crossorigin>
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-icons.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/provider.css')}}?v={{ cache_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/audio-source.css')}}?v={{ cache_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/slideshow.css')}}?v={{ cache_version }}">
+    <!-- Phosphor Icons (self-hosted for faster loading) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phosphor/style.css')}}?v={{ cache_version }}">
     {% block styles %} {% endblock %}
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js')}}?v={{ cache_version }}" defer></script>
     <script src="{{ url_for('static', filename='js/base.js')}}?v={{ cache_version }}" defer></script>
@@ -71,6 +86,8 @@
 </head>
 
 <body class="d-flex flex-column vh-100">
+    <!-- Early class application to prevent flash of full UI in minimal mode -->
+    <script>(function(){var p=new URLSearchParams(window.location.search);if(p.get('minimal')==='true')document.body.setAttribute('data-minimal','true');})();</script>
     <div id="content" class="flex-grow-1">
         {% with messages = get_flashed_messages(with_categories=True) %}
         {% if messages %}

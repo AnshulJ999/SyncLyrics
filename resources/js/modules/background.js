@@ -30,6 +30,9 @@ import {
     setManualStyleOverride
 } from './state.js';
 
+// Import from artZoom to check if user is manually browsing artist images
+import { isManualArtistImageActive, syncZoomImgIfInArtMode } from './artZoom.js';
+
 // Forward reference for slideshow functions (will be imported dynamically when needed)
 let startSlideshowFn = null;
 let stopSlideshowFn = null;
@@ -51,6 +54,13 @@ export function setSlideshowFunctions(startFn, stopFn) {
 export function updateBackground() {
     const bgLayer = document.getElementById('background-layer');
     const bgOverlay = document.getElementById('background-overlay');
+
+    // Skip update if user is manually browsing artist images in art-only mode
+    // This preserves their selected image when track changes (same artist)
+    if (isManualArtistImageActive()) {
+        console.log('[Background] Skipping update - user has manual artist image selected');
+        return;
+    }
 
     // In minimal mode, always keep the gradient background
     if (displayConfig.minimal) {
@@ -91,6 +101,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.softAlbumArt && lastTrackInfo && backgroundUrl) {
         const safeUrl = encodeURI(backgroundUrl);
@@ -98,6 +110,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.artBackground && lastTrackInfo && backgroundUrl) {
         const safeUrl = encodeURI(backgroundUrl);
@@ -105,6 +119,8 @@ export function updateBackground() {
         bgLayer.classList.add('visible');
         bgOverlay.classList.add('visible');
         document.body.style.background = 'transparent';
+        // Sync zoom img if in art mode
+        syncZoomImgIfInArtMode(safeUrl);
     }
     else if (displayConfig.useAlbumColors && currentColors) {
         bgLayer.classList.remove('visible');
@@ -169,6 +185,25 @@ export function getCurrentBackgroundStyle() {
  * @param {string} style - Style to apply ('sharp', 'soft', 'blur', or 'none')
  */
 export function applyBackgroundStyle(style) {
+    // Skip style changes if user is manually browsing artist images
+    // This prevents soft mode from overriding sharp mode in art-only mode on track change
+    if (isManualArtistImageActive()) {
+        console.log('[Background] Skipping style change - user has manual artist image selected');
+        return;
+    }
+    
+    // Skip style changes if slideshow is running in art-only mode
+    // Import slideshowEnabled from state would create circular dep, so check DOM state
+    if (document.body.classList.contains('art-only-mode')) {
+        // Check if any slideshow images exist (indicates slideshow is active)
+        const bgLayer = document.getElementById('background-layer');
+        const hasSlideshowImages = bgLayer && bgLayer.querySelector('.slideshow-image');
+        if (hasSlideshowImages) {
+            console.log('[Background] Skipping style change - slideshow active in art-only mode');
+            return;
+        }
+    }
+
     // Reset all styles
     displayConfig.sharpAlbumArt = false;
     displayConfig.softAlbumArt = false;
@@ -305,7 +340,11 @@ export function checkForVisualMode(data, trackId) {
             setVisualModeTrackId(null);
         }
 
-        if (visualModeActive && !manualVisualModeOverride) {
+        // Check if we're in outro (lyrics show "End") - don't auto-exit during outro
+        const lyrics = data?.lyrics || data;
+        const isInOutro = Array.isArray(lyrics) && lyrics.length >= 2 && lyrics[1] === 'End';
+
+        if (visualModeActive && !manualVisualModeOverride && !isInOutro) {
             console.log('[Visual Mode] Lyrics available, exiting');
             exitVisualMode();
         }
@@ -340,16 +379,14 @@ export function enterVisualMode() {
     // if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal && hasArtBgEnabled) {
     //
     // CURRENT BEHAVIOR: Always apply sharp in visual mode (ignores URL art params)
-    if (visualModeConfig.autoSharp && !manualStyleOverride && !displayConfig.minimal) {
+    if (visualModeConfig.autoSharp && !displayConfig.minimal) {
         if (savedBackgroundState !== 'sharp') {
             applyBackgroundStyle('sharp');
         }
     }
-
-    // Start slideshow if available
-    if (currentArtistImages.length > 0 && !displayConfig.minimal && startSlideshowFn) {
-        startSlideshowFn('artist');
-    }
+    
+    // NOTE: Slideshow is completely independent of visual mode
+    // User controls slideshow via dedicated button, 'S' key, or 4-finger gesture
 }
 
 /**
@@ -361,10 +398,9 @@ export function exitVisualMode() {
     console.log('Exiting Visual Mode');
     setVisualModeActive(false);
 
-    // Stop slideshow
-    if (stopSlideshowFn) {
-        stopSlideshowFn();
-    }
+    // NOTE: Slideshow is now independent of visual mode
+    // We no longer stop slideshow when exiting visual mode
+    // The user controls slideshow via the dedicated button or 'S' key
 
     // Show lyrics container
     const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
@@ -406,10 +442,8 @@ export function resetVisualModeState() {
         lyricsContainer.classList.remove('visual-mode-hidden');
     }
 
-    // Stop slideshow
-    if (stopSlideshowFn) {
-        stopSlideshowFn();
-    }
+    // NOTE: Slideshow is NOT stopped here - it's an independent feature
+    // managed by main.js based on artist change logic
 
     // Restore background style
     if (savedBackgroundState) {

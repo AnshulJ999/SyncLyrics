@@ -14,6 +14,11 @@
     transform: none;
 }
 
+/* Push provider badge up when bottom nav is visible */
+body:not(.hide-nav) .provider-info {
+    bottom: 56px;
+}
+
 .provider-info.hidden {
     opacity: 0;
     pointer-events: none;
@@ -101,10 +106,10 @@
     background: rgba(30, 32, 48, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
-    padding: 32px;
-    max-width: 800px; /* Reverted to original size */
-    width: 95%; /* Wider on mobile */
-    max-height: 85vh; /* Reverted to original size */
+    padding: 20px;
+    max-width: 900px;
+    width: 95%;
+    max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.95) translateY(20px);
@@ -126,13 +131,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 6px;
     padding-bottom: 0;
 }
 
 .provider-modal-header h3 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #fff;
     letter-spacing: -0.5px;
@@ -201,6 +206,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;  /* Allow badges to wrap when space is tight */
 }
 
 .provider-item-name {
@@ -263,11 +269,45 @@
     cursor: default;
 }
 
+/* Provider item buttons container */
+.provider-item-buttons {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Word-sync provider button */
+.provider-ws-btn {
+    background: transparent;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: rgba(139, 92, 246, 0.9);
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.provider-ws-btn:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #a78bfa;
+}
+
+.provider-ws-btn.active {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #a78bfa;
+    cursor: default;
+}
+
 /* Modal Footer */
 .provider-modal-footer {
-    margin-top: 28px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 16px;
+    padding-top: 12px;
+    /* border-top: 1px solid rgba(255, 255, 255, 0.1); */
     display: flex;
     justify-content: center;
     gap: 12px;
@@ -354,6 +394,29 @@
     color: #93c5fd;
 }
 
+/* Reload Settings Button */
+.btn-reload {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-reload:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+}
+
 /* Scrollbar for modal */
 .provider-modal-content::-webkit-scrollbar {
     width: 6px;
@@ -384,7 +447,7 @@
     padding: 14px 24px;
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    z-index: 3000;
+    z-index: 30000;
     opacity: 0;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     font-weight: 500;
@@ -411,36 +474,103 @@
 /* Responsive */
 @media (max-width: 600px) {
     .provider-info {
-        top: 24px; /* Match settings icon top position */
+        top: 50px; /* Match settings icon top position */
         bottom: auto; /* Override bottom positioning */
-        right: calc(20px + 40px + 8px); /* To the left of 40px settings icon with 8px gap */
+        right: 60px;
         left: auto; /* Ensure left is not set */
+
+        /* Rotate the badge vertically */
+        writing-mode: vertical-rl;  /* Text flows top-to-bottom */
+        text-orientation: mixed;
+        right: 14px;
+    }
+
+    .top-right-controls {
+        top: 0.5rem;
+        right: 0.5rem;
     }
 
     .provider-badge {
-        padding: 4px 12px;
-        font-size: 0.75rem;
+       /* padding: 4px 12px; */
+        font-size: 0.65rem;
+        padding: 6px 5px;
+        border-radius: 14px;  /* Instead of 12px */
     }
 
     .provider-modal-content {
-        padding: 20px;
+        padding: 16px;
         width: 95%;
+    }
+    
+    /* Provider items: stack content and buttons vertically */
+    .provider-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+    }
+    
+    .provider-item-buttons {
+        width: 100%;
+        flex-wrap: wrap;
+        flex-shrink: 1;
+    }
+    
+    .provider-select-btn,
+    .provider-ws-btn {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    
+    /* Art grid: 2 columns with smaller gap */
+    .art-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+    
+    /* Style controls: stack on mobile */
+    .style-controls-section h4 {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .style-buttons {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+    
+    /* Footer buttons: smaller on mobile */
+    .provider-modal-footer {
+        gap: 8px;
+    }
+    
+    .btn-secondary,
+    .btn-danger {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+    
+    /* Provider tabs: allow scrolling if needed */
+    .provider-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .provider-tab {
+        padding: 10px 14px;
+        font-size: 0.85rem;
+        white-space: nowrap;
     }
 }
 
-/* Very small mobile - match smaller settings icon position */
-@media (max-width: 480px) {
-    .provider-info {
-        top: 0.5rem; /* Match settings icon on very small mobile */
-        right: calc(0.5rem + 40px + 8px);
-    }
-}
 
 /* ========== PROVIDER TABS ========== */
 .provider-tabs {
     display: flex;
     gap: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -473,6 +603,74 @@
 
 .provider-tab-content.active {
     display: block;
+}
+
+/* ========== LYRICS HEADER ROW (with latency controls) ========== */
+.lyrics-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+    /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
+}
+
+.lyrics-header-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.latency-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.latency-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    /* Prevent touch delays and scroll interference on mobile */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.latency-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
+
+.latency-btn:active {
+    transform: scale(0.95);
+}
+
+.latency-value {
+    min-width: 50px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Highlight when offset is non-zero */
+.latency-value.adjusted {
+    color: #60a5fa;
 }
 
 /* ========== ALBUM ART GRID ========== */
@@ -597,9 +795,9 @@
 /* DESKTOP SPLIT VIEW (New) */
 @media (min-width: 768px) {
     .provider-modal-content {
-        max-width: 800px;
-        width: 90%;
-        max-height: 80vh; /* Reverted to original size */
+        max-width: 93vw;
+        width: 95%;
+        max-height: 90vh; /* Reverted to original size */
         min-height: 500px; /* Ensure modal has minimum height for split view */
         overflow-y: hidden; /* Prevent body scroll, use inner scroll */
         display: flex;
@@ -608,8 +806,8 @@
 
     .provider-content-wrapper {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 32px;
+        grid-template-columns: 2fr 3fr;
+        gap: 16px;
         overflow: hidden;
         flex: 1; /* Take remaining height */
         min-height: 0; /* CRITICAL: Allows nested flex/grid scrolling to work properly */
@@ -644,12 +842,12 @@
     .provider-tab-content::before {
         content: attr(data-title);
         display: block;
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: 700;
         color: #fff;
-        margin-bottom: 16px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 8px;
+        padding-bottom: 0;
+        /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
         flex-shrink: 0; /* Prevent header from being squished when content is long */
     }
     
@@ -665,13 +863,13 @@
     padding: 0;
     background: transparent;
     border-radius: 0;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
     text-align: left; /* Align with content */
     display: flex;
     align-items: center;
     justify-content: space-between; /* Spread title and buttons */
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 12px;
+    /* border-bottom: 1px solid rgba(255,255,255,0.1); */
+    padding-bottom: 2px;
 }
 
 .style-controls-section h4 {
@@ -720,10 +918,10 @@
 /* FIX: Grid Overlapping */
 .art-grid {
     display: grid;
-    /* Use auto-fill with a fixed minimum to ensure consistent rows */
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
+    /* Fixed 2 columns for consistent layout */
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
     /* Ensure the grid respects the container width */
     width: 100%; 
     /* Ensure content flows naturally */

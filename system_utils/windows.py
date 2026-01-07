@@ -158,28 +158,26 @@ async def windows_previous() -> bool:
             logger.warning(f"Windows previous failed: {e}")
     return False
 
-
-# DISABLED: Seek functionality - backend ready, frontend not implemented yet
-# async def windows_seek(position_ms: int) -> bool:
-#     """Seek to position in current Windows media session.
-#     
-#     Args:
-#         position_ms: Position in milliseconds
-#         
-#     Returns:
-#         True if successful, False otherwise
-#     """
-#     session = await _get_current_session()
-#     if session:
-#         try:
-#             # Windows uses 100-nanosecond units (10,000 per millisecond)
-#             position_100ns = position_ms * 10000
-#             await session.try_change_playback_position_async(position_100ns)
-#             logger.debug(f"Windows playback: seek to {position_ms}ms")
-#             return True
-#         except Exception as e:
-#             logger.warning(f"Windows seek failed: {e}")
-#     return False
+async def windows_seek(position_ms: int) -> bool:
+    """Seek to position in current Windows media session.
+    
+    Args:
+        position_ms: Position in milliseconds
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    session = await _get_current_session()
+    if session:
+        try:
+            # Windows uses 100-nanosecond units (10,000 per millisecond)
+            position_100ns = position_ms * 10000
+            await session.try_change_playback_position_async(position_100ns)
+            logger.debug(f"Windows playback: seek to {position_ms}ms")
+            return True
+        except Exception as e:
+            logger.warning(f"Windows seek failed: {e}")
+    return False
 
 
 async def _get_current_song_meta_data_windows() -> Optional[dict]:
@@ -250,6 +248,19 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         artist = info.artist
         title = info.title
         album = info.album_title
+
+        # ================================================================
+        # FIX: Skip tracks with no artist metadata (non-music files)
+        # This prevents wasted API calls for lyrics/album art that will fail anyway.
+        # Uncomment to enable this fix.
+        # ================================================================
+        # if not artist:
+        #     # Throttled log: only log once every 60 seconds to prevent spam
+        #     current_time = time.time()
+        #     if current_time - state._smtc_empty_artist_last_log_time >= state._SMTC_EMPTY_ARTIST_LOG_INTERVAL:
+        #         state._smtc_empty_artist_last_log_time = current_time
+        #         logger.debug(f"Windows SMTC: Skipping track with no artist: '{title}'")
+        #     return None
 
         if not album:
             title = _remove_text_inside_parentheses_and_brackets(title)
@@ -337,7 +348,9 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # 2. Check for artist image preference for background (separate from album art)
         # If user selected an artist image, use it for background instead of album art
         # FIX: Run in executor to avoid blocking event loop during file I/O
-        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist)
+        # FIX 6.1: Use album or title fallback to match server.py preference save path
+        album_or_title = album if album else title
+        artist_image_result = await loop.run_in_executor(None, load_artist_image_from_db, artist, album_or_title)
         if artist_image_result:
             artist_image_path = artist_image_result["path"]
             if artist_image_path.exists():
@@ -444,6 +457,8 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
 
         # 2. Windows Thumbnail Extraction (Fallback)
         # Only if not found in DB
+        # NOTE: This feature is limited - WinRT thumbnail API often times out for browser sources
+        # due to how browser media players expose SMTC. Works better for native apps.
         if not album_art_found_in_db:
             try:
                 thumbnail_ref = info.thumbnail
@@ -452,62 +467,60 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 thumb_filename = f"thumb_{current_track_id}.jpg"
                 thumb_path = CACHE_DIR / thumb_filename
                 
-                # Only extract if we haven't already for this track OR if file doesn't exist
-                if thumbnail_ref and (not thumb_path.exists() or current_track_id != state._last_windows_track_id):
-                    # CRITICAL FIX: Wrap WinRT calls in timeout to prevent indefinite hangs
-                    # The WinRT thumbnail API can hang if the source app becomes unresponsive
+                # FIX: Only try extraction ONCE per track (track ID change triggers new attempt)
+                # Don't retry based on file existence - that causes infinite loops on failure
+                if thumbnail_ref and current_track_id != state._last_windows_track_id:
+                    # CRITICAL: Mark as tried FIRST, before any async operations
+                    # This prevents retry spam regardless of outcome (success, timeout, or error)
+                    state._last_windows_track_id = current_track_id
+                    
+                    # WinRT thumbnail extraction with short timeout
+                    # Use 1.0s timeout - if it doesn't respond quickly, it won't respond at all
+                    stream = None
                     try:
                         stream = await asyncio.wait_for(
                             thumbnail_ref.open_read_async(),
-                            timeout=2.0
+                            timeout=1.0
                         )
                     except asyncio.TimeoutError:
-                        logger.debug("TRACE: Windows thumbnail open_read_async timed out")
-                        stream = None
-                        # CRITICAL FIX: Mark track as processed to prevent retry loop (causes flickering)
-                        # We won't retry thumbnail extraction for this track until it changes
-                        state._last_windows_track_id = current_track_id
+                        pass  # Silent fail - this is expected for many browser sources
+                    except Exception:
+                        pass  # WinRT errors - don't spam logs
                     
-                    if stream:
-                        reader = DataReader(stream)
+                    if stream and stream.size > 0:
                         try:
+                            reader = DataReader(stream)
                             await asyncio.wait_for(
                                 reader.load_async(stream.size),
-                                timeout=2.0
+                                timeout=1.0
                             )
-                        except asyncio.TimeoutError:
-                            logger.debug("TRACE: Windows thumbnail load_async timed out")
-                            stream = None
-                            # Also mark as processed on load timeout
-                            state._last_windows_track_id = current_track_id
-                        else:
                             byte_data = bytearray(stream.size)
                             reader.read_bytes(byte_data)
                             
-                            # Save directly to unique file (no race condition possible)
+                            # Save to file in executor (non-blocking)
                             loop = asyncio.get_running_loop()
                             save_ok = await loop.run_in_executor(None, _save_windows_thumbnail_sync, thumb_path, byte_data)
                             
                             if save_ok:
-                                state._last_windows_track_id = current_track_id
-                                
-                                # Cleanup: Delete OLD thumbnails to keep cache small
-                                # We only keep the current one
+                                # Cleanup old thumbnails (we only keep current)
                                 for f in CACHE_DIR.glob("thumb_*.jpg"):
                                     if f.name != thumb_filename:
                                         try:
                                             os.remove(f)
                                         except:
                                             pass
+                        except asyncio.TimeoutError:
+                            pass  # Silent fail
+                        except Exception:
+                            pass  # Silent fail
                 
-                # If the file exists (either just saved or already there), use it
+                # If the file exists (either just saved or from previous run), use it
                 if thumb_path.exists():
-                    # Use file's mtime for stable URL (not time.time() which changes every second)
                     thumb_mtime = int(thumb_path.stat().st_mtime)
                     album_art_url = f"/cover-art?id={current_track_id}&t={thumb_mtime}"
                     result_extra_fields = {"album_art_path": str(thumb_path)}
-            except Exception as e:
-                pass
+            except Exception:
+                pass  # Outer exception handler - silent fail
 
         # 3. Background High-Res Fetch (Progressive Upgrade)
         # Only if not found in DB and not checked this session
@@ -515,7 +528,17 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
         # This ensures background fetch triggers even when artist image fallback is used
         # Use 'win::' namespace to avoid blocking Spotify fetcher which might have better URLs
         checked_key = f"win::{current_track_id}"
-        if not album_art_found_in_db and checked_key not in state._db_checked_tracks:
+        
+        # FIX: Check negative cache first (prevents retry spam for non-music files)
+        if checked_key in state._no_art_found_cache:
+            cache_time = state._no_art_found_cache[checked_key]
+            if time.time() - cache_time < state._NO_ART_FOUND_TTL:
+                pass  # Skip - no art found recently, don't retry yet
+            else:
+                # TTL expired, remove from negative cache to allow retry
+                del state._no_art_found_cache[checked_key]
+        
+        if not album_art_found_in_db and checked_key not in state._db_checked_tracks and checked_key not in state._no_art_found_cache:
             if current_track_id not in state._running_art_upgrade_tasks:
                  state._db_checked_tracks[checked_key] = time.time()
                  if len(state._db_checked_tracks) > state._MAX_DB_CHECKED_SIZE:
@@ -525,18 +548,25 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                      try:
                          # Fetch and save to DB (no spotify_url available)
                          result = await ensure_album_art_db(artist, album, title, None)
-                         # Check result; if failed, uncheck to allow retry on next poll
+                         # FIX: On None result, add to negative cache instead of removing from checked
+                         # This prevents infinite retry loop for tracks with no art (non-music files)
                          if not result:
-                             # Failed (network error, etc) - remove from checked so we retry later
-                             if checked_key in state._db_checked_tracks:
-                                 del state._db_checked_tracks[checked_key]
+                             # No art found - add to negative cache (don't retry for _NO_ART_FOUND_TTL seconds)
+                             state._no_art_found_cache[checked_key] = time.time()
+                             if len(state._no_art_found_cache) > state._MAX_NO_ART_FOUND_CACHE_SIZE:
+                                 oldest = min(state._no_art_found_cache, key=state._no_art_found_cache.get)
+                                 del state._no_art_found_cache[oldest]
+                             # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                             state._db_checked_tracks.pop(checked_key, None)
                          # We don't need to do anything else; the NEXT poll loop 
                          # will see the file in DB (step 1 above) and auto-upgrade the UI.
                      except Exception as e:
                          logger.debug(f"Windows background art fetch failed: {e}")
-                         # Remove from checked on error to allow retry
-                         if checked_key in state._db_checked_tracks:
-                             del state._db_checked_tracks[checked_key]
+                         # On exception (network error), also add to negative cache
+                         # This prevents retry spam when network is down
+                         state._no_art_found_cache[checked_key] = time.time()
+                         # CRITICAL: Also pop from _db_checked_tracks so TTL retry can work
+                         state._db_checked_tracks.pop(checked_key, None)
                      finally:
                          # CRITICAL FIX: Always remove from running tasks, even if task creation failed
                          state._running_art_upgrade_tasks.pop(current_track_id, None)

@@ -6,9 +6,12 @@ Uses stdlib wave module for audio conversion (no FFmpeg/pydub dependency).
 """
 
 import io
+import json
+import struct
 import time
 import wave
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -22,6 +25,15 @@ from logging_config import get_logger
 from .capture import AudioChunk
 
 logger = get_logger(__name__)
+
+# Match quality thresholds for rejecting suspicious Shazam matches
+# If exceeded, the match is rejected and ACRCloud fallback is attempted
+TIMESKEW_REJECT_THRESHOLD = 0.01   # Reject if abs(timeskew) > 1%
+FREQSKEW_REJECT_THRESHOLD = 0.012   # Reject if abs(frequencyskew) > 1%
+
+# Audio resampling flag - ShazamIO handles sample rates internally (downsamples to 16kHz)
+# Set to True only if you experience recognition issues with 48kHz audio
+ENABLE_RESAMPLING = False
 
 
 @dataclass
@@ -50,6 +62,8 @@ class RecognitionResult:
         background_image_url: Background image for visual modes
         genre: Primary genre
         shazam_lyrics_text: Raw lyrics text from Shazam (unsynced)
+        recognition_provider: Which service matched ("shazam" or "acrcloud")
+        duration: Song duration in seconds (if available)
     """
     title: str
     artist: str
@@ -68,6 +82,8 @@ class RecognitionResult:
     background_image_url: Optional[str] = None
     genre: Optional[str] = None
     shazam_lyrics_text: Optional[str] = None
+    recognition_provider: str = "shazam"  # "shazam" or "acrcloud"
+    duration: Optional[float] = None  # Song duration in seconds
     
     def get_current_position(self) -> float:
         """
@@ -135,25 +151,35 @@ class RecognitionResult:
 
 class ShazamRecognizer:
     """
-    Handles song recognition via ShazamIO.
+    Handles song recognition via ShazamIO with ACRCloud fallback.
     
     Features:
     - Converts audio using stdlib wave (no FFmpeg dependency)
     - Automatic latency compensation in results
     - Silence detection to avoid unnecessary API calls
+    - ACRCloud fallback when Shazamio fails (if configured)
     """
     
     MIN_AUDIO_LEVEL = 100  # Minimum amplitude for valid audio
     
     def __init__(self):
-        """Initialize Shazam client."""
+        """Initialize Shazam client and optional ACRCloud fallback."""
         self._no_match_count = 0  # For throttled logging
+        self._wav_bytes_cache: bytes = b''  # Cache WAV for ACRCloud fallback
         
         if Shazam is None:
             logger.error("shazamio not installed. Song recognition unavailable.")
             self._shazam = None
         else:
             self._shazam = Shazam()
+        
+        # Initialize ACRCloud fallback (auto-disabled if not configured)
+        try:
+            from .acrcloud import ACRCloudRecognizer
+            self._acrcloud = ACRCloudRecognizer()
+        except ImportError:
+            self._acrcloud = None
+            logger.debug("ACRCloud module not available")
             
     @staticmethod
     def is_available() -> bool:
@@ -173,6 +199,44 @@ class ShazamRecognizer:
             except Exception:
                 pass  # Best effort cleanup
             self._shazam = None
+    
+    def _save_debug_audio(self, wav_bytes: bytes) -> None:
+        """Save last recognition audio to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = cache_dir / "last_recognition_audio.wav"
+            with open(audio_path, 'wb') as f:
+                f.write(wav_bytes)
+            
+            # Verify WAV header sample rate matches expected
+            self._verify_wav_header(wav_bytes)
+        except Exception as e:
+            logger.debug(f"Failed to save debug audio: {e}")
+    
+    def _verify_wav_header(self, wav_bytes: bytes) -> None:
+        """Verify WAV header sample rate is correct."""
+        try:
+            if len(wav_bytes) < 28:
+                return
+            # WAV format: bytes 24-27 contain sample rate (little-endian uint32)
+            header_rate = struct.unpack('<I', wav_bytes[24:28])[0]
+            expected_rate = 44100
+            if header_rate != expected_rate:
+                logger.warning(f"WAV header sample rate mismatch: {header_rate} Hz (expected {expected_rate} Hz)")
+        except Exception as e:
+            logger.debug(f"Failed to verify WAV header: {e}")
+    
+    def _save_debug_match(self, provider: str, result: dict) -> None:
+        """Save last match response to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            match_path = cache_dir / f"last_{provider}_match.json"
+            with open(match_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"Failed to save debug match: {e}")
     
     async def recognize(self, audio: AudioChunk) -> Optional[RecognitionResult]:
         """
@@ -205,16 +269,8 @@ class ShazamRecognizer:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(audio)
             
-            # DEBUG: Save audio to file for inspection (set to True to enable)
-            DEBUG_SAVE_AUDIO = False
-            if DEBUG_SAVE_AUDIO:
-                from pathlib import Path
-                debug_dir = Path("cache/debug_audio")
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                debug_path = debug_dir / f"capture_{int(time.time())}.wav"
-                with open(debug_path, 'wb') as f:
-                    f.write(wav_bytes)
-                logger.info(f"DEBUG: Saved audio to {debug_path}")
+            # Save last recognition audio to cache for debugging
+            self._save_debug_audio(wav_bytes)
             
             logger.debug(f"Sending to ShazamIO ({len(wav_bytes) / 1024:.1f} KB)...")
             
@@ -227,9 +283,19 @@ class ShazamRecognizer:
                 self._no_match_count += 1
                 # Throttled INFO logging: 1st and every 4th
                 if self._no_match_count == 1 or self._no_match_count % 4 == 0:
-                    logger.info(f"No matches found (attempt #{self._no_match_count})")
+                    logger.info(f"Shazamio: No matches found (attempt #{self._no_match_count})")
                 else:
-                    logger.debug(f"No matches found (attempt #{self._no_match_count})")
+                    logger.debug(f"Shazamio: No matches found (attempt #{self._no_match_count})")
+                
+                # Try ACRCloud fallback if available
+                if self._acrcloud and self._acrcloud.is_available():
+                    logger.info("Trying ACRCloud fallback...")
+                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    if acrcloud_result:
+                        self._no_match_count = 0  # Reset on ACRCloud success
+                        return acrcloud_result
+                    logger.debug("ACRCloud fallback: No match")
+                
                 return None
             
             # Extract track info
@@ -287,6 +353,38 @@ class ShazamRecognizer:
             # Extract lyrics if available (unsynced text)
             shazam_lyrics_text = self._extract_lyrics(track)
             
+            # Extract skew values for quality check
+            time_skew_val = match.get('timeskew', 0.0)
+            freq_skew_val = match.get('frequencyskew', 0.0)
+            
+            # Quality check: Reject matches with high skew values (likely false positives)
+            # If rejected, ACRCloud fallback will be attempted
+            if abs(time_skew_val) > TIMESKEW_REJECT_THRESHOLD:
+                logger.warning(
+                    f"Shazamio: REJECTED - timeskew {time_skew_val:.6f} exceeds threshold "
+                    f"({TIMESKEW_REJECT_THRESHOLD}) for '{artist} - {title}'"
+                )
+                # Try ACRCloud fallback
+                if self._acrcloud and self._acrcloud.is_available():
+                    logger.info("Trying ACRCloud fallback after skew rejection...")
+                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    if acrcloud_result:
+                        return acrcloud_result
+                return None
+            
+            if abs(freq_skew_val) > FREQSKEW_REJECT_THRESHOLD:
+                logger.warning(
+                    f"Shazamio: REJECTED - frequencyskew {freq_skew_val:.6f} exceeds threshold "
+                    f"({FREQSKEW_REJECT_THRESHOLD}) for '{artist} - {title}'"
+                )
+                # Try ACRCloud fallback
+                if self._acrcloud and self._acrcloud.is_available():
+                    logger.info("Trying ACRCloud fallback after skew rejection...")
+                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    if acrcloud_result:
+                        return acrcloud_result
+                return None
+            
             # Build result with latency compensation and all metadata
             recognition = RecognitionResult(
                 title=title,
@@ -295,8 +393,8 @@ class ShazamRecognizer:
                 capture_start_time=audio.capture_start_time,
                 recognition_time=recognition_time,
                 confidence=1.0,  # Shazam doesn't expose confidence directly
-                time_skew=match.get('timeskew', 0.0),
-                frequency_skew=match.get('frequencyskew', 0.0),
+                time_skew=time_skew_val,
+                frequency_skew=freq_skew_val,
                 track_id=track.get('key'),
                 album=album,
                 album_art_url=album_art_url,
@@ -305,18 +403,25 @@ class ShazamRecognizer:
                 spotify_url=spotify_url,
                 background_image_url=background_image_url,
                 genre=genre,
-                shazam_lyrics_text=shazam_lyrics_text
+                shazam_lyrics_text=shazam_lyrics_text,
+                recognition_provider="shazam"
             )
             
             latency = recognition.get_latency()
             current_pos = recognition.get_current_position()
+            time_skew = match.get('timeskew', 0.0)
+            freq_skew = match.get('frequencyskew', 0.0)
             
             logger.info(
                 f"Recognized: {artist} - {title} | "
                 f"Offset: {offset:.1f}s | "
                 f"Latency: {latency:.1f}s | "
-                f"Current: {current_pos:.1f}s"
+                f"Current: {current_pos:.1f}s | "
+                f"Skew: t={time_skew:.6f}, f={freq_skew:.4f}"
             )
+            
+            # Save last match to cache for debugging
+            self._save_debug_match('shazam', result)
             
             return recognition
             
@@ -344,7 +449,9 @@ class ShazamRecognizer:
         channels = audio.channels
         
         # Resample to 44100 Hz if needed (WASAPI devices often return 48000 Hz)
-        if sample_rate != TARGET_SAMPLE_RATE:
+        # NOTE: ShazamIO internally downsamples to 16kHz, so this step is optional
+        # Set ENABLE_RESAMPLING = True at module level if you experience issues
+        if ENABLE_RESAMPLING and sample_rate != TARGET_SAMPLE_RATE:
             try:
                 # Try scipy for high-quality resampling
                 from scipy import signal

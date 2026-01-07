@@ -22,7 +22,7 @@ itsdangerous>=2.1.2
 
 # Image Processing
 numpy>=1.26.4
-matplotlib>=3.8.0
+# matplotlib>=3.8.0  # Not used - was kept for potential future use
 
 # Utilities
 colorama>=0.4.6
@@ -37,7 +37,6 @@ hypercorn>=0.14.3
 pyinstaller>=6.0.0
 
 # Lyrics Providers
-musicxmatch_api
 zeroconf>=0.131.0
 spotipy>=2.23.0
 
@@ -46,4 +45,4 @@ shazamio>=0.8.1            # Audio fingerprinting via Shazam
 sounddevice>=0.5.0         # Cross-platform audio capture
 psutil>=5.9.0              # Process detection for Reaper (optional, has fallbacks)
 cryptography>=41.0.0  # Required for HTTPS support
-scipy>=1.10.0          # High-quality audio resampling for Shazam
+# scipy removed - using numpy fallback for audio resampling (saves ~100MB)

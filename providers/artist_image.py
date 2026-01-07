@@ -484,17 +484,9 @@ class ArtistImageProvider:
                         'width': 1920,  # Typically HD backgrounds
                         'height': 1080
                     })
-                    
-            # 3. Logo/Clearart (Transparent PNG logos)
-            if artist_data.get('strArtistLogo'):
-                images.append({
-                    'url': artist_data['strArtistLogo'],
-                    'source': 'TheAudioDB',
-                    'type': 'logo',
-                    'width': 0,  # Will be verified on download
-                    'height': 0
-                })
-                
+            
+            # NOTE: Logos (strArtistLogo) intentionally NOT fetched - we only want photos
+            
             result['images'] = images
             if images:
                 logger.debug(f"TheAudioDB: Found {len(images)} image(s) for {artist}, MBID: {result['mbid']}")
@@ -558,7 +550,27 @@ class ArtistImageProvider:
                         'width': 1920,
                         'height': 1080
                     })
-                
+            
+            # 4K Artist Backgrounds (artist4kbackground - 3840x2160)
+            # Note: FanArt.tv uses "artist4kbackground", not "hdartistbackground"
+            hd_backgrounds = data.get('artist4kbackground', [])
+            has_likes_hd = any(safe_likes(bg) > 0 for bg in hd_backgrounds)
+            if has_likes_hd:
+                hd_backgrounds.sort(key=safe_likes, reverse=True)
+                logger.debug(f"FanArt.tv: Sorted {len(hd_backgrounds)} 4K backgrounds by likes")
+            elif hd_backgrounds:
+                logger.debug(f"FanArt.tv: No likes data available, using API order for {len(hd_backgrounds)} 4K backgrounds")
+            
+            for bg in hd_backgrounds:
+                if isinstance(bg, dict) and bg.get('url'):
+                    images.append({
+                        'url': bg['url'],
+                        'source': 'FanArt.tv',
+                        'type': 'background_4k',
+                        'width': 3840,
+                        'height': 2160
+                    })
+            
             # Artist Thumbnails (Main artist photos, typically 1000x1000+)
             # Sort by likes for quality ranking, with fallback to API order
             thumbs = data.get('artistthumb', [])
@@ -585,20 +597,27 @@ class ArtistImageProvider:
             
             # Album Covers (High-quality album artwork, typically 1000x1000+)
             # Only fetch if enabled (can be disabled if too many duplicates with album art DB)
+            # Note: Album covers are NESTED inside the 'albums' dict, not at top level
             if self.enable_fanart_albumcover:
-                # Sort by likes for quality ranking (get best album covers first) using safe helper function
-                # FALLBACK: If no likes data, use API order
-                album_covers = data.get('albumcover', [])
+                album_covers = []
+                albums_dict = data.get('albums', {})
+                if isinstance(albums_dict, dict):
+                    for album_id, album_data in albums_dict.items():
+                        if isinstance(album_data, dict):
+                            covers = album_data.get('albumcover', [])
+                            if isinstance(covers, list):
+                                album_covers.extend(covers)
+                
+                # Sort by likes for quality ranking (get best album covers first)
                 has_likes_covers = any(safe_likes(cover) > 0 for cover in album_covers)
                 if has_likes_covers:
                     album_covers.sort(key=safe_likes, reverse=True)
                     logger.debug(f"FanArt.tv: Sorted {len(album_covers)} album covers by likes")
-                else:
+                elif album_covers:
                     logger.debug(f"FanArt.tv: No likes data available, using API order for {len(album_covers)} album covers")
                 
-                # Limit to top 5 highest-quality album covers to avoid flooding
-                # (Artist images should focus on artist photos, not entire discography)
-                for cover in album_covers[:5]:
+                # Limit to top 10 album covers
+                for cover in album_covers[:12]:
                     if isinstance(cover, dict) and cover.get('url'):
                         images.append({
                             'url': cover['url'],

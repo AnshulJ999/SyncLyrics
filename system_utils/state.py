@@ -35,9 +35,11 @@ _MAX_METADATA_CACHE_SIZE = 50
 _MAX_DISCOVERY_CACHE_SIZE = 50
 _MAX_ARTIST_IMAGE_CACHE_SIZE = 50
 _MAX_DB_CHECKED_SIZE = 100
+_MAX_NO_ART_FOUND_CACHE_SIZE = 200  # For negative caching of "no art found" results
 
 # Cache TTLs
 _ARTIST_IMAGE_CACHE_TTL = 15  # Cache for 15 seconds
+_NO_ART_FOUND_TTL = 240  # 4 minutes before retrying album art lookup for tracks with no art
 
 # Throttle intervals
 _ARTIST_IMAGE_LOG_THROTTLE_SECONDS = 60  # Log at most once per minute per artist
@@ -51,6 +53,9 @@ _art_update_lock = asyncio.Lock()
 
 # Global lock to prevent race conditions during metadata updates
 _meta_data_lock = asyncio.Lock()
+
+# Lock for Spicetify shared state access (prevents torn reads during updates)
+_spicetify_state_lock = asyncio.Lock()
 
 # Semaphore to limit concurrent background downloads
 # Prevents network saturation if user skips many tracks quickly
@@ -112,13 +117,18 @@ _album_art_metadata_cache: Dict[str, tuple] = {}
 _discovery_cache: Dict[str, tuple] = {}
 
 # Cache for load_artist_image_from_db() results
-# Key: artist (str), Value: (timestamp, result_dict)
+# Key: (artist, album) tuple, Value: (timestamp, result_dict)
 # Caches the result to avoid calling discover_custom_images on every poll cycle (10x per second)
-_artist_image_load_cache: Dict[str, tuple] = {}
+_artist_image_load_cache: Dict[tuple, tuple] = {}
 
 # Cache for ensure_artist_image_db results to prevent spamming checks
 # Key: artist, Value: (timestamp, result_list)
 _artist_db_check_cache: Dict[str, tuple] = {}
+
+# Negative cache for "no art found" results (prevents retry spam for non-music files)
+# Key: checked_key (e.g., "win::artist_title"), Value: timestamp when cached
+# Tracks where album art lookup returned no results; retried after _NO_ART_FOUND_TTL
+_no_art_found_cache: Dict[str, float] = {}
 
 # ==========================================
 # THROTTLES
@@ -128,12 +138,21 @@ _artist_db_check_cache: Dict[str, tuple] = {}
 # Key: artist name, Value: last log timestamp
 _artist_image_log_throttle: Dict[str, float] = {}
 
+# Throttle for Windows SMTC empty artist skip log (prevents spam)
+# Only logs once per 60 seconds when skipping tracks with no artist
+_SMTC_EMPTY_ARTIST_LOG_INTERVAL = 60  # seconds
+_smtc_empty_artist_last_log_time: float = 0
+
+# Throttle for lyrics skip log (when artist or title is empty)
+_LYRICS_SKIP_LOG_INTERVAL = 60  # seconds
+_lyrics_skip_last_log_time: float = 0
+
 # ==========================================
 # COUNTERS & TRACKING STATE
 # ==========================================
 
 # Track metadata fetch calls (not the same as API calls - one fetch may use cache)
-_metadata_fetch_counters: Dict[str, int] = {'spotify': 0, 'windows_media': 0}
+_metadata_fetch_counters: Dict[str, int] = {'spotify': 0, 'windows_media': 0, 'spicetify': 0}
 
 # Last state log time
 _last_state_log_time: float = 0

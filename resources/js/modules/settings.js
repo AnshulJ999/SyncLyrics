@@ -9,11 +9,14 @@
 
 import {
     displayConfig,
+    wordSyncEnabled,
+    setWordSyncEnabled,
     setManualStyleOverride
 } from './state.js';
 import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
 import { applySoftMode, applySharpMode, updateBackground } from './background.js';
+import { showSpectrum, hideSpectrum } from './spectrum.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -75,6 +78,22 @@ export function initializeDisplay() {
     if (params.has('showVisualModeToggle')) {
         displayConfig.showVisualModeToggle = params.get('showVisualModeToggle') === 'true';
     }
+    if (params.has('showWaveform')) {
+        displayConfig.showWaveform = params.get('showWaveform') === 'true';
+    }
+    if (params.has('showSpectrum')) {
+        displayConfig.showSpectrum = params.get('showSpectrum') === 'true';
+    }
+
+    // Enforce mutual exclusivity: Waveform <-> Progress (can't have both)
+    if (displayConfig.showWaveform) {
+        displayConfig.showProgress = false;
+    }
+
+    // Word-sync toggle (disabled by default, can be enabled via URL)
+    if (params.has('wordSync')) {
+        setWordSyncEnabled(params.get('wordSync') === 'true');
+    }
 
     // Minimal mode overrides all
     if (displayConfig.minimal) {
@@ -128,8 +147,22 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         trackHeader.style.display = (displayConfig.showAlbumArt || displayConfig.showTrackInfo) ? 'flex' : 'none';
     }
 
+    // Progress container: hide when waveform is enabled (mutually exclusive)
     if (progressContainer) {
-        progressContainer.style.display = displayConfig.showProgress ? 'block' : 'none';
+        const showProgress = displayConfig.showProgress && !displayConfig.showWaveform;
+        progressContainer.style.display = showProgress ? 'block' : 'none';
+    }
+
+    // Waveform container: show only when enabled
+    const waveformContainer = document.getElementById('waveform-container');
+    if (waveformContainer) {
+        waveformContainer.style.display = displayConfig.showWaveform ? 'block' : 'none';
+    }
+
+    // Spectrum container: show only when enabled
+    const spectrumContainer = document.getElementById('spectrum-container');
+    if (spectrumContainer) {
+        spectrumContainer.style.display = displayConfig.showSpectrum ? 'block' : 'none';
     }
 
     if (playbackControls) {
@@ -151,10 +184,20 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         sourceToggle.style.display = displayConfig.showAudioSource ? 'block' : 'none';
     }
 
-    // Visual mode toggle button visibility
+    // Bottom-left toggle buttons visibility (all three are controlled together)
     const visualModeToggle = document.getElementById('btn-lyrics-toggle');
+    const wordSyncToggle = document.getElementById('btn-word-sync-toggle');
+    const slideshowToggle = document.getElementById('btn-slideshow-toggle');
+    const showToggles = displayConfig.showVisualModeToggle;
+    
     if (visualModeToggle) {
-        visualModeToggle.style.display = displayConfig.showVisualModeToggle ? 'flex' : 'none';
+        visualModeToggle.style.display = showToggles ? 'flex' : 'none';
+    }
+    if (wordSyncToggle) {
+        wordSyncToggle.style.display = showToggles ? 'flex' : 'none';
+    }
+    if (slideshowToggle) {
+        slideshowToggle.style.display = showToggles ? 'flex' : 'none';
     }
 
     // Track info visibility (independent of album art)
@@ -173,6 +216,43 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
     if (updateBackgroundFn) {
         updateBackgroundFn();
     }
+    
+    // Update bottom-left buttons position based on visible elements
+    updateButtonsBasePosition();
+}
+
+/**
+ * Update the CSS variable --buttons-base for dynamic bottom-left button positioning
+ * Called when display config changes to keep buttons above visible player elements
+ */
+function updateButtonsBasePosition() {
+    const bottomNav = document.getElementById('bottom-nav');
+    const playbackControls = document.getElementById('playback-controls');
+    const waveformContainer = document.getElementById('waveform-container');
+    const progressContainer = document.getElementById('progress-container');
+    
+    let baseBottom = 20;  // Minimum distance from bottom edge
+    
+    // Add height if bottom nav is visible
+    if (bottomNav && !bottomNav.classList.contains('hidden')) {
+        baseBottom += 50;  // nav bar height
+    }
+    
+    // Add height if playback controls are visible
+    if (playbackControls && playbackControls.style.display !== 'none') {
+        baseBottom += 60;  // controls bar height
+    }
+    
+    // Add height if waveform seekbar is visible
+    if (waveformContainer && waveformContainer.style.display !== 'none') {
+        baseBottom += 80;  // waveform height
+    }
+    // Or if standard progress bar is visible
+    else if (progressContainer && progressContainer.style.display !== 'none') {
+        baseBottom += 60;  // progress bar height
+    }
+    
+    document.documentElement.style.setProperty('--buttons-base', baseBottom + 'px');
 }
 
 // ========== SETTINGS PANEL ==========
@@ -221,7 +301,9 @@ export function setupSettingsPanel() {
         'opt-sharp-art-bg': 'sharpAlbumArt',
         'opt-show-provider': 'showProvider',
         'opt-audio-source': 'showAudioSource',
-        'opt-visual-mode-toggle': 'showVisualModeToggle'
+        'opt-visual-mode-toggle': 'showVisualModeToggle',
+        'opt-waveform': 'showWaveform',
+        'opt-spectrum': 'showSpectrum'
     };
 
     // Initialize checkboxes
@@ -243,6 +325,30 @@ export function setupSettingsPanel() {
             });
         }
     });
+
+    // Word-sync checkbox (separate from displayConfig)
+    const wordSyncCheckbox = document.getElementById('opt-word-sync');
+    if (wordSyncCheckbox) {
+        // Initialize from current state
+        wordSyncCheckbox.checked = wordSyncEnabled;
+        
+        wordSyncCheckbox.addEventListener('change', (e) => {
+            setWordSyncEnabled(e.target.checked);
+            
+            // Update the toggle button state too
+            const toggleBtn = document.getElementById('btn-word-sync-toggle');
+            if (toggleBtn) {
+                toggleBtn.classList.toggle('active', e.target.checked);
+            }
+            
+            // Save to localStorage
+            localStorage.setItem('wordSyncEnabled', e.target.checked);
+            
+            // Update URL
+            history.replaceState(null, '', generateCurrentUrl());
+            updateUrlDisplay();
+        });
+    }
 
     // Fullscreen toggle button (icon-only, updates title for accessibility)
     const fullscreenBtn = document.getElementById('fullscreen-btn');
@@ -270,6 +376,20 @@ export function setupSettingsPanel() {
                 if (icon) icon.className = 'bi bi-fullscreen';
             }
         });
+
+        // 'F' keyboard shortcut for fullscreen toggle
+        document.addEventListener('keydown', (e) => {
+            // Ignore if typing in input/textarea
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            if (e.key.toLowerCase() === 'f') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
     }
 
     // Copy URL button (preserves SVG icon)
@@ -288,6 +408,64 @@ export function setupSettingsPanel() {
                     copyUrlBtn.innerHTML = originalHTML;
                 }, 2000);
             });
+        });
+    }
+
+    // Power menu toggle and actions
+    const powerMenuBtn = document.getElementById('power-menu-btn');
+    const powerMenu = document.getElementById('power-menu');
+
+    if (powerMenuBtn && powerMenu) {
+        // Toggle power menu
+        powerMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            powerMenu.classList.toggle('hidden');
+        });
+
+        // Restart button
+        const restartBtn = document.getElementById('btn-restart');
+        if (restartBtn) {
+            restartBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to restart the server?')) {
+                    fetch('/restart', { method: 'POST' })
+                        .then(response => {
+                            if (response.ok) {
+                                showToast('Server restarting...', 'success');
+                                setTimeout(() => window.location.reload(), 5000);
+                            } else {
+                                showToast('Restart failed', 'error');
+                            }
+                        })
+                        .catch(() => showToast('Restart failed', 'error'));
+                }
+                powerMenu.classList.add('hidden');
+            });
+        }
+
+        // Exit button
+        const exitBtn = document.getElementById('btn-exit');
+        if (exitBtn) {
+            exitBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to exit the application?')) {
+                    fetch('/exit-application')
+                        .then(response => {
+                            if (response.ok) {
+                                showToast('Application shutting down...', 'success');
+                            } else {
+                                showToast('Exit failed', 'error');
+                            }
+                        })
+                        .catch(() => showToast('Exit failed', 'error'));
+                }
+                powerMenu.classList.add('hidden');
+            });
+        }
+
+        // Close power menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!powerMenuBtn.contains(e.target) && !powerMenu.contains(e.target)) {
+                powerMenu.classList.add('hidden');
+            }
         });
     }
 
@@ -340,6 +518,37 @@ function handleCheckboxChange(id, checked) {
         }
     }
 
+    // Handle mutually exclusive waveform/progress bar options
+    if (id === 'opt-waveform') {
+        displayConfig.showWaveform = checked;
+        if (checked) {
+            // Waveform replaces standard progress bar
+            displayConfig.showProgress = false;
+            const progressCheckbox = document.getElementById('opt-progress');
+            if (progressCheckbox) progressCheckbox.checked = false;
+        }
+    }
+    if (id === 'opt-progress') {
+        displayConfig.showProgress = checked;
+        if (checked) {
+            // Standard progress bar replaces waveform
+            displayConfig.showWaveform = false;
+            const waveformCheckbox = document.getElementById('opt-waveform');
+            if (waveformCheckbox) waveformCheckbox.checked = false;
+        }
+    }
+
+    // Spectrum visualizer (independent setting)
+    if (id === 'opt-spectrum') {
+        displayConfig.showSpectrum = checked;
+        // Manually start/stop animation to avoid needing page reload
+        if (checked) {
+            showSpectrum();
+        } else {
+            hideSpectrum();
+        }
+    }
+
     applyDisplayConfig();
     applySoftMode();
     applySharpMode();
@@ -377,20 +586,30 @@ export function generateCurrentUrl() {
     if (!displayConfig.showTrackInfo) params.set('showTrackInfo', 'false');
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
-    if (!displayConfig.showBottomNav) params.set('showBottomNav', 'false');
+    // showBottomNav is now default=false, so only add param if true
+    if (displayConfig.showBottomNav) params.set('showBottomNav', 'true');
     if (!displayConfig.showProvider) params.set('showProvider', 'false');
     if (!displayConfig.showAudioSource) params.set('showAudioSource', 'false');
     if (!displayConfig.showVisualModeToggle) params.set('showVisualModeToggle', 'false');
+    // wordSync is now default=false, so only add param if true
+    if (wordSyncEnabled) params.set('wordSync', 'true');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
 
-    // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt, or sharpAlbumArt
+    // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt (now default), or sharpAlbumArt
+    // softAlbumArt is now default=true, so only add param if another mode is active or ALL are off
     if (displayConfig.sharpAlbumArt) {
         params.set('sharpAlbumArt', 'true');
-    } else if (displayConfig.softAlbumArt) {
-        params.set('softAlbumArt', 'true');
     } else if (displayConfig.artBackground) {
         params.set('artBackground', 'true');
+    } else if (!displayConfig.softAlbumArt) {
+        // Explicitly turned off (none of the three are active)
+        params.set('softAlbumArt', 'false');
     }
+    // else: softAlbumArt=true is default, no param needed
+
+    // Waveform and spectrum visualizer settings
+    if (displayConfig.showWaveform) params.set('showWaveform', 'true');
+    if (displayConfig.showSpectrum) params.set('showSpectrum', 'true');
 
     return params.toString() ? `${base}?${params.toString()}` : base;
 }

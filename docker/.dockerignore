@@ -1,0 +1,64 @@
+# Git
+.git
+.gitattributes
+.gitignore
+.github
+
+# IDE and editor files
+.vscode
+.cursor
+.kiro
+.agent
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+*.egg
+.pytest_cache
+.mypy_cache
+
+# Local development files
+.env
+.env.local
+.cache
+*.log
+
+# Local databases and data (will be mounted as volumes)
+lyrics_database
+album_art_database
+spicetify_database
+cache
+logs
+certs
+backups
+
+# Build artifacts
+build
+build_final
+dist
+*.exe
+*.spec
+
+# Windows-specific
+*.bat
+*.vbs
+Run*.vbs
+
+# Documentation and non-essential
+AI Docs
+Unused
+tests
+screenshots
+full_project_code.txt
+
+# Misc
+*.md
+!requirements.txt
+Reaper DAW

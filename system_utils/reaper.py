@@ -8,6 +8,7 @@ This integrates with system_utils/metadata.py as a media source.
 """
 
 import asyncio
+import os
 import platform
 import time
 from typing import Optional, Dict, Any
@@ -45,6 +46,13 @@ def _check_audio_rec_available() -> bool:
 
 # Shutdown guard - prevents auto-restart during app cleanup
 _shutting_down = False
+
+# Auto-detect state tracking
+_auto_detect_task = None       # Background task handle
+_auto_started = False          # True if WE started the engine (not user)
+_manual_override = False       # True if user manually started/stopped
+_last_reaper_state = False     # Last known Reaper window state
+_reaper_session_active = False # True if Reaper was detected while engine running
 
 
 class ReaperAudioSource:
@@ -353,13 +361,20 @@ class ReaperAudioSource:
         Args:
             manual: True if user-triggered (won't auto-stop when Reaper closes)
         """
-        global _shutting_down
+        global _shutting_down, _auto_started, _manual_override
         
         # Fix M2: Check shutdown flag AGAIN right before starting
         # This prevents race where: check passes -> cleanup starts -> we start engine
         if _shutting_down:
             logger.debug("Ignoring start request - shutdown in progress")
             return
+        
+        # Track manual override for auto-detect logic
+        if manual:
+            _manual_override = True   # User took control - don't auto-stop
+            _auto_started = False     # This wasn't an auto-start
+        else:
+            _auto_started = True      # This was an auto-start
         
         # Fix M2: Only reset shutdown guard on MANUAL start (user-triggered)
         # Auto-starts should NOT reset this flag to prevent race condition during cleanup
@@ -380,6 +395,7 @@ class ReaperAudioSource:
         
         # Create metadata enricher callback using Spotify API
         metadata_enricher = None
+        title_search_enricher = None
         try:
             from providers.spotify_api import get_shared_spotify_client
             spotify_client = get_shared_spotify_client()
@@ -395,7 +411,100 @@ class ReaperAudioSource:
                         isrc
                     )
                 metadata_enricher = spotify_enricher
-                logger.debug("Spotify metadata enricher configured")
+                
+                # NEW: Create async wrapper for artist+title search (fallback)
+                # Includes validation to prevent wrong song enrichment
+                async def title_enricher(artist: str, title: str, album: str = None):
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        spotify_client.search_track,
+                        artist, title
+                    )
+                    
+                    if not result:
+                        return None
+                    
+                    # VALIDATION: Ensure Spotify result matches Shazam/ACRCloud detection
+                    # This prevents enriching with wrong song metadata
+                    result_artist = (result.get('artist') or '').lower().strip()
+                    result_title = (result.get('title') or '').lower().strip()
+                    result_album = (result.get('album') or '').lower().strip()
+                    input_artist = (artist or '').lower().strip()
+                    input_title = (title or '').lower().strip()
+                    input_album = (album or '').lower().strip()
+                    
+                    # Artist match: Must have significant overlap
+                    # Handles cases like "ERRA" vs "Erra", "Plini" vs "plini"
+                    artist_match = (
+                        input_artist in result_artist or 
+                        result_artist in input_artist or
+                        _fuzzy_match(input_artist, result_artist)
+                    )
+                    
+                    # Title match: Must have significant overlap
+                    # Handles cases like "Drift" vs "Drift (Deluxe Version)"
+                    title_match = (
+                        input_title in result_title or 
+                        result_title in input_title or
+                        _fuzzy_match(input_title, result_title)
+                    )
+                    
+                    # Album match: Optional (different regions may have different album names)
+                    # But if both exist and match, it's a strong signal
+                    album_match = True  # Default to true (optional)
+                    if input_album and result_album:
+                        album_match = (
+                            input_album in result_album or 
+                            result_album in input_album or
+                            _fuzzy_match(input_album, result_album)
+                        )
+                    
+                    # REQUIRE: Artist AND Title must match
+                    # Album is a bonus validation but not required
+                    if not (artist_match and title_match):
+                        logger.warning(
+                            f"Title search REJECTED - mismatch detected: "
+                            f"wanted '{artist} - {title}' (album: {album}), "
+                            f"got '{result.get('artist')} - {result.get('title')}' (album: {result.get('album')})"
+                        )
+                        return None
+                    
+                    if not album_match:
+                        logger.debug(
+                            f"Title search: album mismatch ('{input_album}' vs '{result_album}') "
+                            f"but proceeding since artist+title match"
+                        )
+                    
+                    logger.info(f"Title search ACCEPTED: {artist} - {title}")
+                    
+                    # search_track returns slightly different format, normalize it
+                    return {
+                        'artist': result.get('artist', artist),
+                        'title': result.get('title', title),
+                        'album': result.get('album'),
+                        'track_id': None,  # search_track doesn't return this
+                        'duration_ms': result.get('duration_ms', 0),
+                        'album_art_url': result.get('album_art'),
+                        'url': result.get('url'),
+                        '_enrichment_source': 'title_search',
+                    }
+                
+                def _fuzzy_match(str1: str, str2: str, threshold: float = 0.7) -> bool:
+                    """Simple fuzzy match based on word overlap."""
+                    if not str1 or not str2:
+                        return False
+                    words1 = set(str1.split())
+                    words2 = set(str2.split())
+                    if not words1 or not words2:
+                        return False
+                    overlap = len(words1 & words2)
+                    total = min(len(words1), len(words2))
+                    return (overlap / total) >= threshold if total > 0 else False
+                
+                title_search_enricher = title_enricher
+                
+                logger.debug("Spotify metadata enricher configured (ISRC + title search)")
             else:
                 logger.debug("Spotify not available for metadata enrichment")
         except Exception as e:
@@ -412,13 +521,26 @@ class ReaperAudioSource:
             capture_duration=self._capture_duration,
             latency_offset=self._latency_offset,
             metadata_enricher=metadata_enricher,
+            title_search_enricher=title_search_enricher,
             on_song_change=self._on_song_change
         )
         
         await self._engine.start()
     
-    async def stop(self):
-        """Stop audio recognition."""
+    async def stop(self, manual: bool = True):
+        """
+        Stop audio recognition.
+        
+        Args:
+            manual: True if user-triggered, False if auto-stopped by system
+        """
+        global _auto_started, _manual_override
+        
+        # Track manual override for auto-detect logic
+        if manual:
+            _manual_override = True   # User took control - don't auto-start
+            _auto_started = False
+        
         # Clear runtime flag so main loop stops checking for audio rec immediately
         try:
             from system_utils.metadata import set_audio_rec_runtime_enabled
@@ -522,18 +644,44 @@ class ReaperAudioSource:
         if position is None:
             position = 0
         
+        # Calculate duration in both formats for frontend compatibility
+        # Frontend expects duration_ms for progress bar/waveform
+        duration_ms = song.get("duration_ms", 0) or 0
+        duration_sec = duration_ms // 1000 if duration_ms else 0
+        
+        # DEBUG: Trace values for progress bar debugging
+        # provider = song.get("recognition_provider", "unknown")
+        # if provider == "acrcloud":
+         #   logger.debug(f"ACRCloud metadata: position={position:.1f}s, duration_ms={duration_ms}, duration_sec={duration_sec}, enriched={song.get('_spotify_enriched', False)}")
+        
         # Return in standard system_utils format
-        # Now includes enriched Spotify metadata when available
+        # Now includes enriched Spotify/Spicetify metadata when available
+        
+        # Use colors from enrichment if available, otherwise default
+        colors = song.get("colors")
+        if not colors or (isinstance(colors, dict) and not colors):
+            colors = ("#24273a", "#363b54")  # Default theme colors
+        
         return {
             "artist": song["artist"],  # From Spotify if enriched, else Shazam
             "title": song["title"],    # From Spotify if enriched, else Shazam
             "album": song.get("album"),
             "position": position,
-            "duration": song.get("duration_ms", 0) // 1000 if song.get("duration_ms") else 0,
+            "duration": duration_sec,      # Seconds for backend compatibility
+            "duration_ms": duration_ms,    # Milliseconds for frontend (progress bar/waveform)
             "is_playing": self._engine.is_playing,
-            "source": "audio_recognition",
+            "source": "audio_recognition",  # For internal routing
+            # Recognition provider (shazam or acrcloud) for display
+            "recognition_provider": song.get("recognition_provider", "shazam"),
+            # NEW: Spotify ID for Like button
+            "id": song.get("id") or song.get("track_id"),
             # Track ID from Spotify enrichment (for album art cache busting, etc.)
             "track_id": song.get("track_id"),
+            # NEW: Artist fields for Visual Mode
+            "artist_id": song.get("artist_id"),
+            "artist_name": song.get("artist_name") or song.get("artist"),
+            # NEW: Spotify URL for clicking album art
+            "url": song.get("url") or song.get("spotify_url"),
             # Shazam/Spotify metadata fields
             "isrc": song.get("isrc"),
             "shazam_url": song.get("shazam_url"),
@@ -543,13 +691,17 @@ class ReaperAudioSource:
             "shazam_lyrics_text": song.get("shazam_lyrics_text"),
             # Album art URL (enriched from Spotify or fallback to Shazam)
             "album_art_url": song.get("album_art_url"),
-            # Default colors (will be overridden by album art extraction)
-            "colors": ("#24273a", "#363b54"),
+            # Colors from enrichment or default
+            "colors": colors,
+            # DISABLED: audio_analysis was causing 400-500KB per /current-track poll (18GB/hour!)
+            # Frontend uses /api/playback/audio-analysis endpoint instead.
+            # "audio_analysis": song.get("audio_analysis"),
             # Debug metadata
             "_audio_rec_mode": self.mode,
             "_audio_rec_state": self._engine.state.value if self._engine else None,
             "_reaper_detected": self._reaper_running,
             "_spotify_enriched": song.get("_spotify_enriched", False),
+            "_enrichment_source": song.get("_enrichment_source"),
             "_shazam_artist": song.get("_shazam_artist"),  # Original Shazam artist
             "_shazam_title": song.get("_shazam_title"),    # Original Shazam title
         }
@@ -637,3 +789,169 @@ async def init_reaper_source(
     )
     
     logger.info(f"Reaper audio source initialized (enabled={enabled}, auto_detect={auto_detect})")
+
+
+# =============================================================================
+# Reaper Auto-Detect Background Task
+# =============================================================================
+
+# ENV override: REAPER_CHECK_INTERVAL=10 in .env for faster detection (default: 30s)
+REAPER_CHECK_INTERVAL = int(os.getenv("REAPER_CHECK_INTERVAL", "30"))
+
+
+def _is_other_source_playing() -> bool:
+    """
+    Check if another source (Spotify/Windows/Spicetify) is actively playing music.
+    
+    This is a lightweight check that doesn't trigger heavy imports.
+    Returns True if we should NOT start audio recognition.
+    """
+    try:
+        # Check the last metadata result without fetching new data
+        from system_utils.metadata import get_current_song_meta_data
+        
+        # Access cached result if available
+        if hasattr(get_current_song_meta_data, '_last_result'):
+            last_result = get_current_song_meta_data._last_result
+            if last_result:
+                source = last_result.get('source', '')
+                is_playing = last_result.get('is_playing', False)
+                
+                # If another source is actively playing, don't start audio recognition
+                if source and source != 'audio_recognition' and is_playing:
+                    logger.debug(f"Other source active: {source} (playing={is_playing})")
+                    return True
+        
+        return False
+    except Exception as e:
+        logger.debug(f"Error checking other sources: {e}")
+        return False
+
+
+async def _reaper_auto_detect_loop():
+    """
+    Background task that checks for Reaper every 30 seconds.
+    
+    Logic:
+    - If Reaper window is open AND no other music playing → start engine
+    - If Reaper window closes AND we auto-started → stop engine
+    - If user manually started/stopped → respect their choice
+    """
+    global _auto_started, _manual_override, _last_reaper_state, _shutting_down, _reaper_session_active
+    
+    logger.info(f"Reaper auto-detect started (checking every {REAPER_CHECK_INTERVAL}s)")
+    
+    while not _shutting_down:
+        try:
+            await asyncio.sleep(REAPER_CHECK_INTERVAL)
+            
+            if _shutting_down:
+                break
+            
+            # Check if Reaper window is open (pure ctypes - instant, no imports)
+            reaper_open = ReaperAudioSource.is_reaper_running()
+            
+            # Log state changes
+            if reaper_open != _last_reaper_state:
+                logger.debug(f"Reaper window state changed: {'open' if reaper_open else 'closed'}")
+                _last_reaper_state = reaper_open
+                
+                # Reset manual override when Reaper state changes
+                # This allows auto-detect to work again after Reaper is closed and reopened
+                if not reaper_open:
+                    # Reaper just closed - reset override so next open can auto-start
+                    _manual_override = False
+            
+            source = get_reaper_source()
+            
+            if reaper_open:
+                # Reaper is open - should we start the engine?
+                
+                if source.is_active:
+                    # Engine already running - mark this as a Reaper session
+                    # This ties engine lifecycle to Reaper (even if manually restarted)
+                    _reaper_session_active = True
+                    continue
+                
+                if _manual_override:
+                    # User manually stopped - don't auto-start
+                    logger.debug("Reaper open but manual override active - not auto-starting")
+                    continue
+                
+                if _is_other_source_playing():
+                    # Other music is playing (Spotify/Windows) - don't interrupt
+                    continue
+                
+                # All conditions met - auto-start the engine
+                logger.info("Reaper detected, no other sources active - auto-starting audio recognition")
+                try:
+                    await source.start(manual=False)  # manual=False marks this as auto-started
+                    _auto_started = True
+                    _reaper_session_active = True  # Mark as Reaper session
+                    
+                    # Set runtime flag so metadata uses audio recognition
+                    from system_utils.metadata import set_audio_rec_runtime_enabled
+                    set_audio_rec_runtime_enabled(True, True)
+                except Exception as e:
+                    logger.error(f"Failed to auto-start audio recognition: {e}")
+            
+            else:
+                # Reaper is closed - should we stop the engine?
+                
+                if not source.is_active:
+                    # Engine not running - nothing to do
+                    _reaper_session_active = False  # Clear session flag
+                    continue
+                
+                if not _reaper_session_active:
+                    # Not a Reaper session (e.g. started without Reaper ever being detected)
+                    logger.debug("Reaper not running and not a Reaper session - not auto-stopping")
+                    continue
+                
+                # Reaper was part of this session and is now closed - stop the engine
+                logger.info("Reaper closed - auto-stopping audio recognition")
+                try:
+                    await source.stop(manual=False)  # manual=False marks this as auto-stopped
+                    _auto_started = False
+                    _reaper_session_active = False  # Clear session flag
+                except Exception as e:
+                    logger.error(f"Failed to auto-stop audio recognition: {e}")
+        
+        except asyncio.CancelledError:
+            logger.debug("Reaper auto-detect task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in Reaper auto-detect loop: {e}")
+
+
+async def start_reaper_auto_detect():
+    """
+    Start the Reaper auto-detect background task.
+    
+    Call this at app startup if reaper_auto_detect is enabled.
+    Safe to call even if already running.
+    """
+    global _auto_detect_task
+    
+    if _auto_detect_task is not None and not _auto_detect_task.done():
+        logger.debug("Reaper auto-detect already running")
+        return
+    
+    _auto_detect_task = asyncio.create_task(_reaper_auto_detect_loop())
+    logger.debug("Reaper auto-detect task started")
+
+
+def stop_reaper_auto_detect():
+    """
+    Stop the Reaper auto-detect background task.
+    
+    Call this on app shutdown. Safe to call even if not running.
+    """
+    global _auto_detect_task, _shutting_down
+    
+    _shutting_down = True
+    
+    if _auto_detect_task is not None:
+        _auto_detect_task.cancel()
+        _auto_detect_task = None
+        logger.debug("Reaper auto-detect task stopped")
