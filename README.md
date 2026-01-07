@@ -71,6 +71,16 @@ _Video demo showcasing the app's main features_
 3. Run `SyncLyrics.exe`
 4. (Optional) Configure `.env` for Spotify API credentials and other advanced features.
 
+#### **Updating:** When updating the app, please delete these 2 folders: 
+
+`_internal`
+
+`resources`
+
+You can also delete `SyncLyrics.exe` for safety.
+
+Then extract the new version and replace any old files. This should maintain your existing database and settings (including Spotify cache) while avoiding any conflict from previous versions.
+
 ### Option 2: Home Assistant Addon
 1. Add https://github.com/AnshulJ999/homeassistant-addons as a repository to your Home Assistant addon store
 2. Install the SyncLyrics addon
