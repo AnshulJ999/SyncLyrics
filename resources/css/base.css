@@ -299,8 +299,8 @@ input[type="range"] {
     
     /* Larger lyrics for better readability on mobile */
     .current { font-size: clamp(1.6rem, 4vw, 3rem); }
-    .previous, .next { font-size: clamp(1.1rem, 2.5vw, 1.8rem); }
-    .far-previous, .far-next { font-size: clamp(0.9rem, 2vw, 1.4rem); }
+    .previous, .next { font-size: clamp(1rem, 2.5vw, 1.8rem); }
+    .far-previous, .far-next { font-size: clamp(0.8rem, 2vw, 1.4rem); }
 }
 
 /* ========== HOME ASSISTANT MODE ========== */
