@@ -67,9 +67,9 @@ _Video demo showcasing the app's main features_
 
 ### Option 1: Windows Executable
 1. Go to **[Releases](../../releases)**
-2. Download and extract `SyncLyrics.zip`
+2. Download and extract `SyncLyrics.zip` anywhere on your computer. Ensure all files are within a dedicated folder.
 3. Run `SyncLyrics.exe`
-4. (Optional) Configure `.env` for Spotify API credentials and other advanced features.
+4. (Optional) Configure `.env.example` for Spotify API credentials and other advanced features then rename it to `.env`.
 
 #### **Updating:** When updating the app, please delete these 2 folders: 
 
@@ -95,11 +95,27 @@ You can use the included run.bat or 'Run SyncLyrics Hidden.vbs' to run the app d
 
 ```bash
 git clone https://github.com/AnshulJ999/SyncLyrics.git
+
 cd SyncLyrics
+
 pip install -r requirements.txt
-copy .env.example .env  # Edit with your credentials
+
+# Edit with your credentials
+copy .env.example .env  
+
 python sync_lyrics.py
 ```
+
+### Option 4: Docker
+
+You can also install the Docker image `anshulj99/synclyrics` from Docker Hub.
+
+1. Download [docker-compose.yml](docker/docker-compose.yml)
+2. Edit with your Spotify credentials
+3. Run: `docker-compose up -d`
+4. Open: http://localhost:9012
+
+➡️ [Docker Reference](docs/Docker%20Reference.md) for all configuration options.
 
 ---
 
