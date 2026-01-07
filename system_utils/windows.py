@@ -287,7 +287,7 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
                 elapsed = time.time() - timeline.last_updated_time.timestamp()
                 # Cap interpolation to 5 seconds to prevent runaway drift
                 # SMTC updates every 4-5s; this limits pause-detection lag
-                elapsed = min(elapsed, 5.0)
+                elapsed = min(elapsed, 500.0)
                 position = seconds + elapsed
             else:
                 # Paused - use raw position without interpolation
