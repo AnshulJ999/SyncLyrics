@@ -16,6 +16,7 @@ features.md
 backups
 certs/
 spicetify_database
+homeassistant-addons/
 
 backups/
 # share_project.py

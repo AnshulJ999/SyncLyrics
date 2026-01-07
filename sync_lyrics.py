@@ -8,6 +8,22 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+# Fix MIME types for PyInstaller builds on Windows
+# Python's mimetypes module reads from Windows Registry which may have incorrect mappings
+# (e.g., .js mapped to text/plain instead of application/javascript)
+# This MUST be done before importing Quart/Flask as they cache mimetypes at import time
+import mimetypes
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('application/javascript', '.mjs')
+mimetypes.add_type('text/css', '.css')
+mimetypes.add_type('text/html', '.html')
+mimetypes.add_type('application/json', '.json')
+mimetypes.add_type('font/woff2', '.woff2')
+mimetypes.add_type('font/woff', '.woff')
+mimetypes.add_type('image/svg+xml', '.svg')
+mimetypes.add_type('image/png', '.png')
+mimetypes.add_type('image/x-icon', '.ico')
+
 import asyncio
 import webbrowser
 import threading as th
@@ -161,7 +177,17 @@ def force_exit():
     os.kill(os.getpid(), signal.SIGTERM)
 
 def restart():
-    """Restart the application"""
+    """Restart the application by spawning a new process and exiting.
+    
+    Handles three scenarios:
+    1. Terminal mode (run.bat): Opens new console window via CREATE_NEW_CONSOLE
+    2. Windowless mode (VBS/pythonw): Uses DETACHED_PROCESS for reliable restart
+    3. Frozen EXE (console=False): Same as windowless mode
+    
+    Fixes applied:
+    - Closes log file handlers before spawn to prevent file lock race condition
+    - Uses conditional creationflags based on windowless detection
+    """
     logger.info("Initiating restart sequence...")
     
     # Stop the tray icon directly
@@ -178,26 +204,59 @@ def restart():
         except Exception as e:
             logger.error(f"Error joining tray thread: {e}")
 
-    # FIX: Use subprocess for Windows/PyInstaller compatibility
-    # os.execl doesn't work reliably on Windows with frozen executables
     import subprocess
+    import logging as logging_module  # Avoid shadowing module-level logger
+    
+    logger.info("Closing log handlers and spawning new instance...")
+    
+    # FIX: Close all log file handlers BEFORE spawning new process
+    # This prevents race condition where new process can't access log files
+    # because old process still holds file locks
+    root_logger = logging_module.getLogger()
+    for handler in root_logger.handlers[:]:  # Iterate over copy of list
+        if isinstance(handler, logging_module.FileHandler):
+            try:
+                handler.close()
+                root_logger.removeHandler(handler)
+            except Exception:
+                pass  # Best effort - we're exiting anyway
+    
+    # FIX: Use conditional creation flags based on whether we're running windowless
+    # - pythonw.exe: No console, stdout is None
+    # - Frozen EXE with console=False: No console, stdout not a TTY
+    # - Terminal/run.bat: Has console, CREATE_NEW_CONSOLE gives new window
+    #
+    # CREATE_NEW_CONSOLE + windowless app = undefined behavior (intermittent failures)
+    # DETACHED_PROCESS = child runs independently without console (reliable for windowless)
+    if os.name == 'nt':
+        # Detect if running windowless (pythonw, frozen no-console EXE, VBS hidden)
+        is_windowless = (
+            sys.stdout is None or  # pythonw sets stdout to None
+            not hasattr(sys.stdout, 'isatty') or  # Edge case: stdout replacement
+            not sys.stdout.isatty()  # No TTY = no real console attached
+        )
+        
+        if is_windowless:
+            # Windowless: use DETACHED_PROCESS for reliable restart
+            # CREATE_NEW_PROCESS_GROUP for signal isolation (Ctrl+C won't affect child)
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            # Console mode: CREATE_NEW_CONSOLE spawns visible terminal window
+            creationflags = subprocess.CREATE_NEW_CONSOLE
+    else:
+        creationflags = 0
     
     if getattr(sys, 'frozen', False):
-        # PyInstaller frozen executable
-        # Add delay to allow log file handles to close before new instance starts
-        logger.info("Spawning new instance...")
-        # Use CREATE_NEW_CONSOLE on Windows to detach from parent
-        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        # PyInstaller frozen executable - use sys.argv[1:] to avoid doubling script name
         subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=creationflags)
-        time.sleep(0.5)  # Brief delay to ensure new process starts
-        os._exit(0)  # Force exit without cleanup (cleanup already done)
     else:
-        # Development mode - FIX: Use subprocess instead of os.execl (fails on Windows)
-        logger.info("Spawning new Python instance...")
-        creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        # Development mode - include full sys.argv (script name + args)
         subprocess.Popen([sys.executable] + sys.argv, creationflags=creationflags)
-        time.sleep(0.5)
-        os._exit(0)
+    
+    # Delay to ensure new process initializes before we exit
+    # Increased to 1.0s to prevent Windows Terminal freezing when spawning consecutive windows
+    time.sleep(1.0)
+    os._exit(0)  # Force exit - file handlers already closed above
 
 async def cleanup() -> None:
     """Cleanup resources before exit"""
@@ -225,11 +284,14 @@ async def cleanup() -> None:
     logger.debug("CLEANUP: Stopping audio recognition...")
     if 'system_utils.reaper' in sys.modules:
         try:
-            from system_utils.reaper import get_reaper_source
+            from system_utils.reaper import get_reaper_source, stop_reaper_auto_detect
             import system_utils.reaper as reaper_module
             
             # Set shutdown flag to prevent auto-restart race condition during cleanup
             reaper_module._shutting_down = True
+            
+            # Stop the auto-detect background task
+            stop_reaper_auto_detect()
             
             source = get_reaper_source()
             if source and source.is_active:
@@ -303,6 +365,19 @@ async def cleanup() -> None:
 
     queue.put("exit")
     await asyncio.sleep(0.5)
+    
+    # Close log file handlers for clean exit
+    # This ensures file locks are released before process terminates
+    import logging as logging_module
+    logger.info("Cleanup complete, closing log handlers...")
+    root_logger = logging_module.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging_module.FileHandler):
+            try:
+                handler.close()
+                root_logger.removeHandler(handler)
+            except Exception:
+                pass
     
     # Signal watchdog that cleanup completed successfully
     _cleanup_complete_event.set()
@@ -513,6 +588,17 @@ async def main() -> NoReturn:
             from system_utils.metadata import set_audio_rec_runtime_enabled
             set_audio_rec_runtime_enabled(False, False)
             logger.info("Audio recognition disabled for this session")
+    
+    # Start Reaper auto-detect background task if enabled in settings
+    # This is SEPARATE from --reaper flag - runs a lightweight check every 30s
+    from config import AUDIO_RECOGNITION
+    if AUDIO_RECOGNITION.get("reaper_auto_detect", False):
+        try:
+            from system_utils.reaper import start_reaper_auto_detect
+            await start_reaper_auto_detect()
+            logger.info("Reaper auto-detect enabled")
+        except Exception as e:
+            logger.error(f"Failed to start Reaper auto-detect: {e}")
 
     # Get active display methods
     # CRITICAL FIX: Use .get() with default to prevent crash if state file is missing representationMethods key

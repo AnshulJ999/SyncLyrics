@@ -144,15 +144,15 @@ class AudioCaptureManager:
         "vb-cable",      # Priority 4: Virtual audio cable
         "vb-audio",      # Priority 5: VB-Audio virtual devices
         "voicemeeter",   # Priority 6: Voicemeeter
-        "wave out",      # Priority 7: Generic wave out
-        "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
+    #    "wave out",      # Priority 7: Generic wave out
+    #    "motu",          # Priority 8: Generic MOTU (LAST - too broad, matches physical inputs!)
     ]
     
     # Generic devices to exclude from listing (duplicates/mappers that clutter the list)
     EXCLUDE_PATTERNS = [
         "microsoft sound mapper",
         "primary sound capture driver",
-        "communications",  # Usually just a role alias
+    #    "communications",  # Usually just a role alias
     ]
     
     # Fix 2.1: Class-level cache for auto-detected loopback device
@@ -365,8 +365,39 @@ class AudioCaptureManager:
         if not loopback_devices:
             logger.debug("No loopback devices found")
             return None
-            
-        # Sort by: 1) API preference (MME > WASAPI), 2) pattern priority
+        
+        # Option A: Check env variable override BEFORE auto-detect sorting
+        import os
+        env_device_name = os.getenv("AUDIO_RECOGNITION_DEVICE_NAME")
+        env_device_id = os.getenv("AUDIO_RECOGNITION_DEVICE_ID")
+        
+        if env_device_name:
+            # Find device matching env name
+            env_name_lower = env_device_name.lower()
+            for device in loopback_devices:
+                if env_name_lower in device['name'].lower():
+                    logger.info(f"Using env AUDIO_RECOGNITION_DEVICE_NAME: {device['name']} (ID: {device['index']})")
+                    # Cache this result
+                    cls._loopback_cache = {'index': device['index'], 'name': device['name']}
+                    cls._loopback_cache_time = time.time()
+                    return device['index']
+            logger.warning(f"Env AUDIO_RECOGNITION_DEVICE_NAME='{env_device_name}' not found in loopback devices")
+        
+        if env_device_id:
+            try:
+                env_id = int(env_device_id)
+                # Verify this ID exists in our loopback list
+                for device in loopback_devices:
+                    if device['index'] == env_id:
+                        logger.info(f"Using env AUDIO_RECOGNITION_DEVICE_ID: {device['name']} (ID: {env_id})")
+                        cls._loopback_cache = {'index': device['index'], 'name': device['name']}
+                        cls._loopback_cache_time = time.time()
+                        return env_id
+                logger.warning(f"Env AUDIO_RECOGNITION_DEVICE_ID={env_id} not found in loopback devices")
+            except ValueError:
+                logger.warning(f"Invalid AUDIO_RECOGNITION_DEVICE_ID: {env_device_id}")
+        
+        # Sort by: 1) API preference (MME > WASAPI), 2) exact loopback > loopback mix, 3) pattern priority
         def priority_key(device):
             # API priority: MME=0, WASAPI=1, other=2
             api = device.get('api', '').upper()
@@ -377,15 +408,24 @@ class AudioCaptureManager:
             else:
                 api_priority = 2
             
-            # Pattern priority (MOTU > VB-Cable > Voicemeeter > other)
+            # Option B: Prefer exact "Loopback" over "Loopback Mix"
+            # loopback_preference: 0 = exact loopback (no mix), 1 = loopback mix, 2 = other
             name_lower = device['name'].lower()
+            if 'loopback' in name_lower and 'mix' not in name_lower:
+                loopback_preference = 0  # Exact "Loopback" - highest priority
+            elif 'loopback' in name_lower and 'mix' in name_lower:
+                loopback_preference = 1  # "Loopback Mix" - lower priority
+            else:
+                loopback_preference = 2  # Other loopback devices
+            
+            # Pattern priority (MOTU > VB-Cable > Voicemeeter > other)
             pattern_priority = len(cls.LOOPBACK_PATTERNS)
             for i, pattern in enumerate(cls.LOOPBACK_PATTERNS):
                 if pattern in name_lower:
                     pattern_priority = i
                     break
             
-            return (api_priority, pattern_priority)
+            return (api_priority, loopback_preference, pattern_priority)
             
         loopback_devices.sort(key=priority_key)
         

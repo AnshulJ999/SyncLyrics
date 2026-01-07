@@ -179,6 +179,23 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
     """
     import requests
     
+    # FIX: Convert spotify:image:xxx URIs to proper HTTPS URLs
+    # Spicetify sometimes sends spotify:image:xxx format instead of HTTPS URLs
+    # Format: spotify:image:ab67616d00001e023cea3f53137fcb2cc86a481c -> https://i.scdn.co/image/ab67616d00001e023cea3f53137fcb2cc86a481c
+    if url and url.startswith('spotify:image:'):
+        image_id = url.replace('spotify:image:', '')
+        url = f'https://i.scdn.co/image/{image_id}'
+        logger.debug(f"Converted spotify:image URI to HTTPS: {url}")
+        
+        # FIX: Also enhance to 1400px after conversion
+        # The URI often contains low-res quality codes (e.g., 00001e02 = 300px)
+        # Enhancement function is idempotent and cached, so safe to call multiple times
+        from providers.spotify_api import enhance_spotify_image_url_sync
+        enhanced_url = enhance_spotify_image_url_sync(url)
+        if enhanced_url != url:
+            logger.debug(f"Enhanced Spotify URL to 1400px: {enhanced_url}")
+            url = enhanced_url
+    
     # Add User-Agent and Referer headers (required by Wikimedia Commons and best practice)
     # Use same User-Agent as ArtistImageProvider for consistency
     # Referer header prevents hotlinking protection and reduces 403 errors
@@ -243,7 +260,8 @@ def _download_and_save_sync(url: str, path: Path) -> Tuple[bool, str]:
 
 
 async def ensure_album_art_db(
-    artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, retry_count: int = 0
+    artist: str, album: Optional[str], title: str, spotify_url: Optional[str] = None, 
+    retry_count: int = 0, force: bool = False
 ) -> Optional[Tuple[str, str]]:
     """
     Background task to fetch all album art options and save them to the database.
@@ -255,10 +273,18 @@ async def ensure_album_art_db(
         album: Album name (optional)
         title: Track title
         spotify_url: Spotify album art URL (optional)
+        retry_count: Internal retry counter for self-healing
+        force: If True, re-download images even if they already exist (for manual refetch)
         
     Returns:
         Tuple of (preferred_url, resolution_str) of the selected art, or None if failed.
     """
+    # Early return if artist is empty (no point calling providers - they all require artist)
+    # This prevents wasted work for non-music files like personal recordings
+    if not artist:
+        logger.debug(f"Skipping album art fetch: empty artist {artist} for title '{title}'")
+        return None
+    
     # Prevent infinite recursion for self-healing
     if retry_count > 1:
         logger.warning(f"Aborting ensure_album_art_db for {artist} - {title} after {retry_count} retries")
@@ -365,8 +391,8 @@ async def ensure_album_art_db(
                         should_upgrade = True
                         logger.info(f"Found existing 640px Spotify image, attempting upgrade to 1400px for {artist} - {title}")
 
-                # Download image if we don't have it, if it's missing, or if we should upgrade
-                if not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
+                # Download image if we don't have it, if it's missing, if we should upgrade, or if force=True
+                if force or not file_exists_on_disk or (existing_metadata and provider_name not in existing_metadata.get("providers", {})) or should_upgrade:
                     try:
                         # FIX: Use unique temp filename to prevent concurrent downloads from overwriting each other
                         # This prevents race conditions when the same provider downloads for the same album simultaneously

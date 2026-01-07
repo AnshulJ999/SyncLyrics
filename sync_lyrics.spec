@@ -9,7 +9,7 @@ a = Analysis(
     datas=[
         ('resources', 'resources'),
         ('.env.example', '.'),
-        ('certs', 'certs'),  # HTTPS certificates directory
+        # Note: certs folder is generated at runtime when HTTPS is enabled
     ],
     hiddenimports=[
         # === Windows SDK & System Tray ===
@@ -46,14 +46,7 @@ a = Analysis(
         'numpy.core._multiarray_umath',
         'numpy.linalg',
         'numpy.fft',
-        'scipy',
-        'scipy.signal',
-        'scipy.signal._sigtools',
-        'scipy.signal._upfirdn_apply',
-        'scipy.interpolate',
-        'scipy.sparse',
-        'scipy.sparse.csgraph',
-        'scipy.special',
+        # scipy removed - using numpy fallback for audio resampling (saves ~100MB in build)
         'psutil',
         
         # === Audio Recognition Custom Modules ===
@@ -62,6 +55,7 @@ a = Analysis(
         'audio_recognition.shazam',
         'audio_recognition.engine',
         'audio_recognition.buffer',
+        'audio_recognition.acrcloud',
         
         # === System Utils Package (Refactored) ===
         'system_utils',
@@ -76,6 +70,8 @@ a = Analysis(
         'system_utils.gnome',
         'system_utils.reaper',
         'system_utils.session_config',
+        'system_utils.spicetify',
+        'system_utils.spicetify_db',
         
         # === Providers Package ===
         'providers',
@@ -83,7 +79,7 @@ a = Analysis(
         'providers.lrclib',
         'providers.netease',
         'providers.qq',
-        'providers.musicxmatch',
+        'providers.musixmatch',
         'providers.spotify_api',
         'providers.spotify_lyrics',
         'providers.album_art',
@@ -98,7 +94,6 @@ a = Analysis(
         'spotipy',
         'spotipy.oauth2',
         'spotipy.cache_handler',
-        'musicxmatch_api',
         'aiohttp',
         
         # === HTTPS/SSL Support ===
@@ -115,10 +110,6 @@ a = Analysis(
         'benedict',
         'desktop_notifier',
         'desktop_notifier.winrt',
-        'matplotlib',
-        'matplotlib.colors',
-        'matplotlib.backends',
-        'matplotlib.backends.backend_agg',
         'colorama',
         'yaml',
         'urllib3',
@@ -143,7 +134,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'scipy',      # Optional pydub dependency - not needed (ENABLE_RESAMPLING=False)
+        'matplotlib', # Transitive scipy dependency - not used
+        'tkinter',    # GUI toolkit - not used (saves ~10MB)
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

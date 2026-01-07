@@ -14,6 +14,7 @@ import {
     getAudioRecognitionStatus
 } from './api.js';
 
+import { showToast } from './dom.js';
 import audioCapture from './audioCapture.js';
 
 // =============================================================================
@@ -26,6 +27,7 @@ let currentConfig = null;
 let isActive = false;
 let isFrontendCapture = false; // True if currently using frontend mic capture
 let currentTrackSource = 'Spotify'; // Default display
+let lastKnownProvider = null; // Last known recognition provider (prevents flashing)
 
 // DOM Elements (cached on init)
 let elements = {};
@@ -411,21 +413,42 @@ function updateStatusDisplay(status) {
     // Update button text - show current source
     if (elements.sourceName) {
         if (status.active) {
-            // Audio recognition is active
-            const sourceName = status.capture_mode === 'frontend' ? 'Mic' : 'Shazam';
-            elements.sourceName.textContent = sourceName;
+            // Audio recognition is active - show actual recognition provider
+            if (status.capture_mode === 'frontend') {
+                elements.sourceName.textContent = 'Mic';
+            } else {
+                // Use recognition_provider from current_song
+                // IMPORTANT: Always use current provider, don't cache stale values
+                const provider = status.current_song?.recognition_provider;
+                if (provider === 'acrcloud') {
+                    elements.sourceName.textContent = 'ACRCloud';
+                } else if (provider === 'shazam') {
+                    elements.sourceName.textContent = 'Shazam';
+                } else if (status.current_song) {
+                    // Have a song but no provider - default to Shazam (the primary recognizer)
+                    elements.sourceName.textContent = 'Shazam';
+                } else {
+                    // No song yet - show generic
+                    elements.sourceName.textContent = 'Audio';
+                }
+            }
         } else {
-            // Audio recognition not active - show current track source
+            // Audio recognition not active - reset provider tracking
+            lastKnownProvider = null;
+            
+            // Show current track source
             const sourceMap = {
                 'spotify': 'Spotify',
                 'spotify_hybrid': 'Hybrid',
                 'spotifyhybrid': 'Hybrid',
+                'spicetify': 'Spicetify',
                 'windows': 'Windows',
                 'windows_media': 'Windows',
                 'windowsmedia': 'Windows',
                 'audio_recognition': 'Shazam',
                 'audiorecognition': 'Shazam',
                 'shazam': 'Shazam',
+                'acrcloud': 'ACRCloud',
                 'reaper': 'Reaper'
             };
             const displaySource = sourceMap[currentTrackSource] || 'Spotify';
@@ -508,12 +531,18 @@ function stopPolling() {
 // Recognition Control
 // =============================================================================
 
-async function handleStart() {
+async function handleStart(overrideMode = null) {
     const select = elements.deviceSelect;
     if (!select) return;
 
     const value = select.value;
-    const [mode, deviceId] = value.split(':');
+    let [mode, deviceId] = value.split(':');
+    
+    // Use override mode if provided (from Quick Start)
+    if (overrideMode) {
+        mode = overrideMode;
+        deviceId = overrideMode === 'frontend' ? 'default' : 'auto';
+    }
 
     // Check HTTPS for frontend mode
     if (mode === 'frontend' && !isSecureContext()) {
@@ -618,6 +647,9 @@ async function handleStop() {
             console.error('Failed to stop backend recognition:', result.error);
         }
 
+        // Reset provider tracking for next session
+        lastKnownProvider = null;
+
         await refreshStatus();
 
     } catch (error) {
@@ -656,9 +688,12 @@ function isSecureContext() {
 }
 
 function showHttpsWarning() {
+    // Show inline warning in modal (if visible)
     if (elements.httpsWarning) {
         elements.httpsWarning.classList.add('visible');
     }
+    // Also show a toast so user definitely sees the message
+    showToast('🎤 Browser microphone requires HTTPS. Use System Audio instead, or switch to HTTPS.', 'error', 5000);
 }
 
 function hideHttpsWarning() {
@@ -789,7 +824,7 @@ export function init() {
 
 // Quick-start handler
 async function handleQuickStart(mode) {
-    // Set device select to appropriate value
+    // Set device select to appropriate value (for visual consistency)
     if (elements.deviceSelect) {
         if (mode === 'backend') {
             elements.deviceSelect.value = 'backend:auto';
@@ -797,8 +832,8 @@ async function handleQuickStart(mode) {
             elements.deviceSelect.value = 'frontend:default';
         }
     }
-    // Trigger start
-    await handleStart();
+    // Pass mode directly to avoid race condition with dropdown options
+    await handleStart(mode);
 }
 
 // Setup slider with value display and immediate apply

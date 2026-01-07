@@ -1,3 +1,15 @@
+/* ========== FOUC PREVENTION ========== */
+/* Hide content until JavaScript initializes to prevent flash of unstyled content */
+/* The js-ready class is added by main.js on successful initialization */
+/* Fallback animation reveals content after 2s if JS fails */
+html:not(.js-ready) body {
+    visibility: hidden;
+    animation: fouc-fallback 0s 2s forwards;
+}
+@keyframes fouc-fallback {
+    to { visibility: visible; }
+}
+
 /* ========== RESET STYLES ========== */
 * {
     /* Remove default margins from all elements */
@@ -156,7 +168,6 @@ body {
     }
 }
 
-/* ========== BOTTOM NAVIGATION ========== */
 .bottom-nav {
     /* Stick to bottom of viewport */
     position: fixed;
@@ -164,17 +175,17 @@ body {
     left: 0;
     right: 0;
     /* Semi-transparent background with blur effect */
-    background: rgba(26, 27, 38, 0.8);
+    background: rgba(26, 27, 38, 0.5);
     backdrop-filter: blur(10px);
-    /* Responsive padding */
-    padding: clamp(0.3rem, 2vh, 0.8rem);
+    /* Thinner padding for compact appearance */
+    padding: clamp(0.2rem, 1vh, 0.4rem);
     /* Layout controls */
     display: flex;
     justify-content: space-between;
     align-items: center;
     height: auto;
-    min-height: 40px;
-    max-height: 60px;
+    min-height: 30px;
+    max-height: 50px;
     /* Subtle top border */
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     /* Ensure nav stays above other content */
@@ -285,6 +296,11 @@ input[type="range"] {
         gap: 0.5rem;
         padding: 1rem;
     }
+    
+    /* Larger lyrics for better readability on mobile */
+    .current { font-size: clamp(1.6rem, 4vw, 3rem); }
+    .previous, .next { font-size: clamp(1rem, 2.5vw, 1.8rem); }
+    .far-previous, .far-next { font-size: clamp(0.8rem, 2vw, 1.4rem); }
 }
 
 /* ========== HOME ASSISTANT MODE ========== */
@@ -374,12 +390,12 @@ body[data-minimal="true"] .background-overlay {
 }
 
 /* Responsive: Mobile */
-@media (max-width: 480px) {
+/* @media (max-width: 480px) {
     .top-right-controls {
         top: 0.5rem;
         right: 0.5rem;
     }
-}
+} */
 
 /* Hide container in minimal mode */
 body[data-minimal="true"] .top-right-controls {
@@ -527,6 +543,57 @@ body[data-minimal="true"] .top-right-controls {
     flex-shrink: 0;
 }
 
+/* ========== POWER MENU (Settings Header) ========== */
+.power-menu-container {
+    position: relative;
+}
+
+.power-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: rgba(26, 27, 38, 0.98);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+    min-width: 160px;
+    z-index: 1001;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.power-menu.hidden {
+    display: none;
+}
+
+.power-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    text-align: left;
+}
+
+.power-menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.power-menu-item.power-menu-danger {
+    color: rgba(239, 68, 68, 0.9);
+}
+
+.power-menu-item.power-menu-danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
 /* ========== TRACK HEADER ========== */
 .track-header {
     position: fixed;
@@ -558,8 +625,8 @@ body[data-minimal="true"] .top-right-controls {
 }
 
 .album-art {
-    width: clamp(90px, 12vw, 110px);
-    height: clamp(90px, 12vw, 110px);
+    width: clamp(80px, 12vw, 120px);
+    height: clamp(80px, 12vw, 120px);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     /* Smooth fade transition for image changes (prevents flickering during DB population) */
@@ -724,7 +791,10 @@ body.hide-nav #player-ui-container {
     gap: 1.5rem; /* Space between Prev/Play/Next */
 }
 
-/* New Lyric Toggle Button (Bottom Left) */
+/* ========== BOTTOM-LEFT TOGGLE BUTTONS ========== */
+/* Visual Mode, Word-Sync (Karaoke), and Slideshow toggle buttons */
+
+/* Visual Mode Toggle Button (Bottom Left) */
 .lyrics-toggle-btn {
     position: fixed;
     bottom: 24px;
@@ -755,9 +825,146 @@ body.hide-nav #player-ui-container {
     font-size: 1.25rem;
 }
 
+/* Active state for visual mode (when in visual/art mode) */
+.lyrics-toggle-btn.active {
+    color: white;
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
 /* Hide in minimal mode */
 body[data-minimal="true"] .lyrics-toggle-btn {
     display: none !important;
+}
+
+/* Word-Sync Toggle Button (next to visual mode) */
+.word-sync-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 76px;
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.word-sync-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Icon sizing for Bootstrap stars icon */
+.word-sync-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+/* Active state when word-sync is enabled and active */
+.word-sync-toggle-btn.active {
+    color: white;
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Inactive state: word-sync toggle off but available - matches default appearance */
+.word-sync-toggle-btn.inactive {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Unavailable state: no word-sync from any provider */
+.word-sync-toggle-btn.unavailable,
+.word-sync-toggle-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Diagonal strikethrough line */
+.word-sync-toggle-btn.unavailable::after,
+.word-sync-toggle-btn:disabled::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 99%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.6);
+    transform: translate(-50%, -50%) rotate(45deg);
+    pointer-events: none;
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .word-sync-toggle-btn {
+    display: none !important;
+}
+
+/* Slideshow Toggle Button (next to word-sync) */
+.slideshow-toggle-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 128px;
+    z-index: 150;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.slideshow-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Phosphor icon sizing */
+.slideshow-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+/* Active state when slideshow is enabled */
+.slideshow-toggle-btn.active {
+    color: white;
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .slideshow-toggle-btn {
+    display: none !important;
+}
+
+/* ========== MOBILE LAYOUT: Stack buttons vertically ========== */
+/* Uses CSS variable --buttons-base set by JS based on visible player elements */
+@media (max-width: 825px) {
+    /* Stack vertically along left edge: Slideshow (top), Karaoke (middle), Visual Mode (bottom) */
+    .slideshow-toggle-btn {
+        left: 16px;
+        bottom: calc(var(--buttons-base, 80px) + 100px);
+    }
+    .word-sync-toggle-btn {
+        left: 16px;
+        bottom: calc(var(--buttons-base, 80px) + 50px);
+    }
+    .lyrics-toggle-btn {
+        left: 16px;
+        bottom: var(--buttons-base, 80px);
+    }
 }
 
 .control-btn {
@@ -837,15 +1044,28 @@ body[data-minimal="true"] .album-art {
     display: none !important;
 }
 
+/* ========== BUTTON POSITIONING WHEN BOTTOM NAV VISIBLE ========== */
+/* Push bottom-left toggle buttons up when navigation bar is shown */
+body:not(.hide-nav) .lyrics-toggle-btn,
+body:not(.hide-nav) .word-sync-toggle-btn,
+body:not(.hide-nav) .slideshow-toggle-btn {
+    bottom: 56px; /* Above the thinner nav bar */
+}
+
 /* ========== RESPONSIVE DESIGN FOR NEW COMPONENTS ========== */
 @media (max-width: 768px) {
+    /* Hide bottom nav on mobile - it's off by default and causes layout issues */
+    .bottom-nav {
+        display: none !important;
+    }
+
     .track-header {
         max-width: 250px;
     }
 
     .album-art {
-        width: clamp(60px, 10vw, 100px);
-        height: clamp(60px, 10vw, 100px);
+        width: clamp(80px, 10vw, 120px);
+        height: clamp(80px, 10vw, 120px);
     }
 
     .track-title {
@@ -865,7 +1085,7 @@ body[data-minimal="true"] .album-art {
     .play-pause-btn {
         width: 48px;
         height: 48px;
-        font-size: 1.15rem;
+        font-size: 1.6rem;
     }
 
     /* Adjust container position for mobile */
@@ -878,7 +1098,7 @@ body[data-minimal="true"] .album-art {
     }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 280px) {
     .track-header {
         top: 0.5rem;
         left: 0.5rem;
@@ -976,7 +1196,7 @@ body.sharp-mode .background-overlay {
     backdrop-filter: blur(0.0px) saturate(130%) !important;
     -webkit-backdrop-filter: blur(0.0px) saturate(130%) !important;
     /* Very transparent background (5%) to let the art shine */
-    background: rgba(0, 0, 0, 0.05) !important;
+    background: rgba(0, 0, 0, 0.03) !important;
 
     /* OPTIONAL: If you want it even clearer, use 0.1 or 0.0 */
     /* background: rgba(0, 0, 0, 0.1) !important; */
@@ -1225,58 +1445,6 @@ body.soft-mode .background-overlay {
     pointer-events: none;
 }
 
-/* Slideshow Base */
-.slideshow-image {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-size: cover;
-    background-position: center;
-    opacity: 0;
-    transition: opacity 2s ease-in-out;
-    z-index: 0;
-}
-
-.slideshow-image.active {
-    opacity: 1;
-}
-
-/* Ken Burns Effect - Pan and Zoom */
-.ken-burns-effect {
-    animation: kenBurns 8s ease-out forwards;
-}
-
-@keyframes kenBurns {
-    0% {
-        transform: scale(1) translate(0, 0);
-    }
-    100% {
-        transform: scale(1.1) translate(-2%, -2%);
-    }
-}
-
-/* Alternate Ken Burns animations for variety */
-.ken-burns-effect:nth-child(even) {
-    animation: kenBurnsAlt 8s ease-out forwards;
-}
-
-@keyframes kenBurnsAlt {
-    0% {
-        transform: scale(1.05) translate(-1%, 0);
-    }
-    100% {
-        transform: scale(1.15) translate(1%, -3%);
-    }
-}
-
-/* Ensure background layer can contain slideshow images */
-.background-layer {
-    position: fixed; /* Changed back to fixed */
-    overflow: hidden;
-}
-
 /* Like Button Active State */
 
 #btn-like.liked {
@@ -1310,7 +1478,20 @@ body.soft-mode .background-overlay {
     padding: 20px;
     /* FIX: Ensure interactions work inside */
     pointer-events: auto; 
+
+    
+    /* Add readable background on tablets too */
+    background: rgba(15, 17, 25, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(16px);
+   /* border-left: 1px solid rgba(255, 255, 255, 0.08); */
 }
+    
+    /* Ensure flush against right edge when open */
+    .queue-drawer.open {
+        right: 0;
+    }
+    
 
 /* Queue Backdrop - Disable strictly for the lyrics area interaction */
 .queue-backdrop {
@@ -1457,6 +1638,81 @@ body.soft-mode .background-overlay {
     text-overflow: ellipsis;
 }
 
+/* Queue Drawer - Mobile Responsive */
+@media (max-width: 600px) {
+    .queue-drawer {
+        /* Fluid width: scales with viewport */
+        width: clamp(160px, 60vw, 240px);
+        max-width: 70vw;
+        padding: 14px;
+        padding-top: 40px; /* Push content below track header area */
+        right: calc(-1 * clamp(160px, 60vw, 240px)); /* Match width for hidden state */
+        
+        /* Add readable background on mobile */
+        background: rgba(15, 17, 25, 0.1);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(16px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    /* Ensure flush against right edge when open */
+    .queue-drawer.open {
+        right: 0;
+    }
+    
+    .queue-header {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+    }
+    
+    .queue-header h3 {
+        font-size: 1rem;
+    }
+    
+    .queue-item {
+        gap: 8px;
+        padding: 6px;
+        margin-bottom: 4px;
+    }
+    
+    .queue-art {
+        width: 32px;
+        height: 32px;
+        border-radius: 3px;
+    }
+    
+    .queue-title {
+        font-size: 0.8rem;
+    }
+    
+    .queue-artist {
+        font-size: 0.7rem;
+    }
+}
+
+/* Very small screens (320px) */
+/* @media (max-width: 380px) {
+    .queue-drawer {
+        width: 65vw;
+        max-width: 65vw;
+        padding: 12px;
+        right: -65vw;
+    }
+    
+    .queue-art {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .queue-title {
+        font-size: 0.75rem;
+    }
+    
+    .queue-artist {
+        font-size: 0.65rem;
+    }
+} */
+
 /* Background Style Controls in Modal */
 .style-controls-section {
     /* Remove padding and background for cleaner look */
@@ -1468,7 +1724,7 @@ body.soft-mode .background-overlay {
     display: flex;
     align-items: center;
     justify-content: space-between; /* Spread title and buttons */
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    /* border-bottom: 1px solid rgba(255,255,255,0.1); */
     padding-bottom: 12px;
 }
 
@@ -1548,3 +1804,528 @@ body.soft-mode .background-overlay {
 
 }
 
+/* ========== WORD-SYNCED LYRICS STYLES ========== */
+/* Karaoke-style word highlighting for providers with word-sync data */
+
+/* Register CSS custom property for smooth gradient animation */
+/* This allows browsers to interpolate the percentage value smoothly */
+@property --word-progress {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 0%;
+}
+
+/* Container for word-synced current line */
+.current.word-sync-active {
+    /* Override default animation for word-sync mode */
+    animation: none;
+    
+    /* Smooth line transitions - faster for snappy feel */
+    transition: opacity 0.075s ease-out, transform 0.075s ease-out;
+}
+
+/* Fade out old line before replacement */
+.current.word-sync-active.line-exiting {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+/* Fade in new line after replacement */
+.current.word-sync-active.line-entering {
+    animation: lineEnter 0.075s ease-out forwards;
+}
+
+@keyframes lineEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Instrumental gap (♪) entrance animation - uses line-entering without word-sync-active */
+.current.line-entering:not(.word-sync-active) {
+    animation: gapEnter 0.2s ease-out forwards;
+}
+
+@keyframes gapEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(12px) scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Individual word spans in word-synced mode */
+.word-sync-word {
+    display: inline-block;
+    position: relative;
+    padding: 0 0.05em;
+    
+    /* GPU acceleration - force composite layer */
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    contain: layout style;
+    
+    /* Specific properties only - NOT 'all' (expensive) */
+    transition: opacity 0.12s ease-out, color 0.12s ease-out;
+    
+    /* Prevent subpixel rendering jitter */
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Words not yet sung (upcoming) */
+.word-upcoming {
+    opacity: 0.6;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Words already sung */
+.word-sung {
+    opacity: 1;
+    color: white;
+}
+
+/* Currently active word - FADE style */
+/* Uses CSS gradient mask to reveal the word progressively */
+.word-active {
+    opacity: 1;
+    color: white;
+    font-weight: 600;
+    /* Subtle glow for active word */
+    text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+}
+
+/* Fade style: gradient reveal from left to right */
+.word-sync-fade .word-active {
+    background: linear-gradient(
+        90deg,
+        white 0%,
+        white var(--word-progress, 0%),
+        rgba(255, 255, 255, 0.5) var(--word-progress, 0%),
+        rgba(255, 255, 255, 0.5) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Smooth gradient transition using registered property */
+    transition: --word-progress 0.05s linear;
+}
+
+/* Pop style: scale animation on active word */
+.word-sync-pop .word-active {
+    /* Scale is applied via inline style in JS for smooth animation */
+    transition: transform 0.08s ease-out;
+    will-change: transform;
+}
+
+/* Ensure word-sung words have full visibility in both modes */
+.word-sync-fade .word-sung,
+.word-sync-pop .word-sung {
+    opacity: 1;
+    color: white;
+    font-weight: 500;
+}
+
+/* Reduced motion preference - disable word animations */
+@media (prefers-reduced-motion: reduce) {
+    .word-sync-word {
+        transition: none;
+        will-change: auto;
+    }
+    
+    .word-sync-pop .word-active {
+        transform: none !important;
+    }
+    
+    .word-sync-fade .word-active {
+        background: none;
+        -webkit-text-fill-color: white;
+    }
+}
+
+/* ========== DEBUG TIMING OVERLAY ========== */
+
+.debug-timing-overlay {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Roboto Mono', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+    z-index: 10000;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    min-width: 220px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.debug-timing-overlay .debug-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.debug-timing-overlay .debug-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+}
+
+.debug-timing-overlay .debug-warn {
+    color: #ff6b6b;
+    font-weight: 600;
+}
+
+/* ========== WAVEFORM SEEKBAR ========== */
+.waveform-container {
+    position: relative;
+    width: clamp(300px, 60%, 500px);
+    height: 60px;  /* Increased height for canvas + time display */
+    text-align: center;
+    margin-bottom: 30px;  /* Ensure time display doesn't overlap controls */
+    pointer-events: auto;
+    margin-left: auto;
+    margin-right: auto;
+    opacity: 1;
+    z-index: 100;  /* Above background layers, below controls */
+}
+
+.waveform-container canvas {
+    width: 100%;
+    height: 40px;
+    display: block;
+    border-radius: 4px;
+    opacity: 1;
+    /* Boost brightness and saturation for better visibility */
+    filter: brightness(1.2) saturate(1.2);
+}
+
+.waveform-container .progress-time {
+    margin-top: 6px;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ========== SPECTRUM VISUALIZER ========== */
+/* Full-width ambient visualizer at bottom edge of screen */
+.spectrum-container {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: -40px;  /* Aligned to bottom edge */
+    height: 120px;  /* Shorter height, less intrusive */
+    z-index: 1;  /* Behind content but above background */
+    pointer-events: none;  /* Don't block clicks */
+    display: flex;
+    align-items: flex-end;  /* Bars grow upward from bottom */
+    justify-content: center;
+    overflow: hidden;
+}
+
+.spectrum-container canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* No position adjustment needed for hide-nav since we're at bottom: 0 */
+body.hide-nav .spectrum-container {
+    bottom: 0;
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .spectrum-container,
+body[data-minimal="true"] .waveform-container {
+    display: none !important;
+}
+
+/* ========== ART-ONLY MODE ========== */
+/* Long-press visual mode button to enter: hides all UI, shows only background art with auto-sharp */
+body.art-only-mode .lyrics-container,
+body.art-only-mode .track-header,
+body.art-only-mode #player-ui-container,
+body.art-only-mode .top-right-controls,
+body.art-only-mode .bottom-nav,
+body.art-only-mode .lyrics-toggle-btn,
+body.art-only-mode .word-sync-toggle-btn,
+body.art-only-mode .slideshow-toggle-btn,
+body.art-only-mode #provider-info,
+body.art-only-mode #next-up-card,
+body.art-only-mode .provider-modal,
+body.art-only-mode .settings-panel,
+body.art-only-mode .audio-source-modal,
+body.art-only-mode .queue-drawer {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Keep background visible in art-only mode and enable zoom/pan */
+body.art-only-mode .background-layer {
+    display: block !important;
+    z-index: 900 !important;  /* Above everything except modals/toast so it receives events */
+    pointer-events: auto !important;  /* Ensure it receives touch/mouse events */
+    touch-action: none !important;  /* Disable browser's default pan/zoom - JS handles it */
+    -webkit-user-select: none !important;  /* Prevent text selection on long-press */
+    user-select: none !important;
+    /* transform is set by artZoom.js - don't override here */
+    /* Slower transition to help mask image loading flicker */
+    transition: background-image 0.4s ease-in-out !important;
+}
+
+/* Ensure overlay stays visible in art-only mode with saturation boost */
+body.art-only-mode .background-overlay {
+    display: block !important;
+    z-index: 902 !important;  /* Just below background-layer */
+    pointer-events: none !important;  /* Let events pass through to background-layer */
+}
+
+/* ========== ART MODE ZOOM IMAGES ========== */
+/* Hidden by default - shown only in art mode with zoom-out enabled */
+.art-zoom-img {
+    display: none;
+    position: fixed;
+    /* Center the image - transform will add scale */
+    top: 50%;
+    left: 50%;
+    /* NO size constraints - image displays at natural dimensions */
+    width: auto;
+    height: auto;
+    z-index: -5;
+    pointer-events: none;
+    /* Base centering transform - scale added by JS */
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    background-color: black;
+    /* Smooth transitions for opacity (fade) */
+    transition: opacity 0.8s ease;
+}
+
+/* When art mode is active AND zoom-out is enabled */
+body.art-only-mode.zoom-out-enabled .art-zoom-img {
+    display: block;
+    z-index: 901;  /* Above background-layer (900) */
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Hide background layer when zoom imgs are active */
+body.art-only-mode.zoom-out-enabled #background-layer {
+    visibility: hidden !important;
+}
+
+/* Transition for crossfade between zoom imgs */
+.art-zoom-img {
+    transition: opacity 0.8s ease;  /* Matches slideshowConfig.transitionDuration */
+}
+
+/* Apply saturation boost in sharp mode (matches overlay's backdrop-filter effect) */
+body.art-only-mode.zoom-out-enabled.sharp-mode .art-zoom-img {
+    filter: saturate(110%);
+}
+
+/* ========== NEXT-UP PREVIEW CARD ========== */
+.next-up-card {
+    position: fixed;
+    bottom: 110px;
+    right: 16px;
+    z-index: 150;
+    background: transparent;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 10px;
+    padding: 10px 12px;
+    min-width: 160px;
+    max-width: 280px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    /* Slide-in animation */
+    animation: slideInRight 0.3s ease-out;
+}
+
+/* Mobile: Move next-up card above seekbar/controls */
+@media (max-width: 768px) {
+    .next-up-card {
+        bottom: calc(var(--buttons-base, 180px) + 30px);  /* Same base + offset */
+        min-width: 100px;
+        max-width: 240px;
+        padding: 8px 10px;
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.next-up-card.hidden {
+    display: none;
+}
+
+.next-up-card:hover {
+    background: rgba(30, 33, 45, 0.5);          /* Was: 0.95 - lighter on hover */
+    transform: scale(1.02);
+}
+
+/* Label hidden - context is clear from position */
+.next-up-label {
+    display: none;                              /* Hidden - was visible before */
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 6px;
+}
+
+.next-up-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.next-up-art {
+    width: 64px;
+    height: 64px;
+    border-radius: 6px;
+    object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+}
+
+.next-up-art:not([src]),
+.next-up-art[src=""] {
+    display: none;
+}
+
+.next-up-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.next-up-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-up-artist {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+/* Hide next-up card in minimal mode */
+body[data-minimal="true"] .next-up-card {
+    display: none !important;
+}
+
+/* ========== SETTINGS HEADER BUTTONS ========== */
+.settings-header-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Style the settings link (anchor) same as button */
+a.settings-header-btn {
+    text-decoration: none;
+}
+
+/* ========== FILL MODE BUTTONS ========== */
+/* Match style-btn for consistent look */
+.fill-btn {
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.fill-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.fill-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* ========== BACKGROUND FILL MODES ========== */
+.background-layer.fill-cover {
+    background-size: cover;
+    background-position: center;
+}
+
+.background-layer.fill-contain {
+    background-size: contain;
+    background-position: center;
+}
+
+.background-layer.fill-stretch {
+    background-size: 100% 100%;
+    background-position: center;
+}
+
+.background-layer.fill-original {
+    background-size: auto;
+    background-position: center;
+}
+
+/* ========== SLIDESHOW IMAGES ========== */
+/* Slideshow images overlay on background-layer for crossfade transitions */
+.slideshow-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    will-change: opacity, transform;
+    /* Ensure slideshow images are on top of base background */
+    z-index: 1;
+}
+
+/* Active state - fade in */
+.slideshow-image.active {
+    opacity: 1;
+}

@@ -4,7 +4,7 @@ A feature-rich desktop and web application that displays synchronized lyrics for
 
 This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). SyncLyrics aims to be a visual companion to the music experience, built for tablet dashboards.
 
-> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. 
+> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. Now supports Docker. 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
@@ -21,7 +21,8 @@ _Video demo showcasing the app's main features_
 ## ✨ Features
 
 ### 🎵 Lyrics
-- **4 Providers:** Spotify, LRCLib, NetEase, QQ Music
+- **5 Providers:** Spotify, LRCLib, Musixmatch, NetEase, QQ Music
+- **Word-Sync (Karaoke):** Highlights each word as it's sung
 - **Parallel Search:** Queries all providers simultaneously for fastest results
 - **Local Caching:** Saves lyrics offline for instant future access
 - **Provider Selection:** Manually choose your preferred provider per song
@@ -45,11 +46,20 @@ _Video demo showcasing the app's main features_
 - Like/Unlike tracks (Spotify)
 - View playback queue
 - Seek bar with progress display
+- Waveform seekbar with audio analysis visualization (Spicetify Required)
+- Spectrum visualizer (Spicetify Required)
+
+### ⚡ Spicetify Integration
+- **Real-time Updates:** ~100ms position updates via WebSocket
+- **Audio Analysis:** Enables waveform and spectrum features
+- **Queue with Autoplay:** Full queue including suggested tracks
+- See [Spicetify Integration](docs/Spicetify%20Integration.md) for setup
 
 ### ⚙️ Configuration
 - **Web Settings Page:** Full configuration UI at `/settings`
 - **URL Parameters:** Customize display for embedding/OBS
 - **Environment Variables:** Docker/HASS-friendly configuration
+- **Modular Settings:** See [Configuration Reference](docs/Configuration%20Reference.md)
 
 ---
 
@@ -98,6 +108,8 @@ The app works best with a Spotify API connection, which requires you to create a
 | `FANART_TV_API_KEY` | FanArt.tv API key for artist images |
 | `LASTFM_API_KEY` | Last.fm API key for album art |
 
+> **Note**: Spotify OAuth works with `localhost`/`127.0.0.1` over HTTP, but requires HTTPS for any other address. For remote access, use `https://<YOUR_IP>:9013/callback`.
+
 ### URL Parameters
 
 Append these to the URL for custom displays (e.g., `http://localhost:9012/?minimal=true`):
@@ -138,6 +150,23 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 
 ---
 
+## 📚 Documentation
+
+Detailed guides for all features:
+- [Quick Start](docs/Quick%20Start.md) - Get running in 5 minutes
+- [FAQ](docs/FAQ.md) - Common questions answered
+- [Features Overview](docs/Features%20Overview.md)
+- [Word Sync and Karaoke](docs/Word%20Sync%20and%20Karaoke.md)
+- [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
+- [Audio Recognition](docs/Audio%20Recognition.md)
+- [Spicetify Integration](docs/Spicetify%20Integration.md)
+- [Docker Reference](docs/Docker%20Reference.md)
+- [Configuration Reference](docs/Configuration%20Reference.md)
+- [Troubleshooting](docs/Troubleshooting.md)
+- [Development Reference](docs/Development%20Reference.md)
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Spotify Authentication
@@ -151,6 +180,8 @@ Output: `build_final/SyncLyrics/SyncLyrics.exe`
 ### Audio Recognition Not Working
 - **Backend mode:** Ensure you have a loopback audio device (e.g., VB-Cable, WASAPI loopback)
 - **Frontend mode:** HTTPS is required for browser microphone access
+
+See [Troubleshooting Guide](docs/Troubleshooting.md) for detailed solutions.
 
 ---
 
@@ -168,7 +199,7 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## ⚠️ Disclaimer (AI Usage)
 
-This project was built with significant AI assistance (yes, vibe-coded 🤖 over 100+ hours). It works great for my use case, but if you find rough edges, PRs are always welcome!
+This project was built with significant AI assistance (yes, vibe-coded 🤖 over 200+ hours). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
 
 ---
 

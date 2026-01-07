@@ -87,14 +87,14 @@ class SettingsManager:
             # Debug
             "debug.enabled": Setting("Debug Mode", bool, False, True, "Debug", "Enable debug features", "switch"),
             "debug.log_file": Setting("Log File", str, "synclyrics.log", True, "Debug", "Log file name"),
-            "debug.log_level": Setting("Log Level", str, "WARNING", True, "Debug", "Logging verbosity", "select", options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+            "debug.log_level": Setting("Log Level", str, "INFO", True, "Debug", "Logging verbosity", "select", options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
             "debug.log_providers": Setting("Log Providers", bool, True, False, "Debug", "Log provider requests", "switch"),
             "debug.log_polling": Setting("Log Polling", bool, True, False, "Debug", "Log polling events", "switch"),
             "debug.log_to_console": Setting("Log to Console", bool, True, False, "Debug", "Print logs to terminal", "switch"),
             "debug.log_detailed": Setting("Detailed Logging", bool, False, False, "Debug", "Include detailed info", "switch"),
             "debug.performance_logging": Setting("Performance Logging", bool, False, False, "Debug", "Log timing stats", "switch"),
             "debug.log_rotation.max_bytes": Setting("Max Log Size", int, 10485760, False, "Debug", "Max log file size (bytes)", "number"),
-            "debug.log_rotation.backup_count": Setting("Log Backups", int, 5, False, "Debug", "Number of backups to keep", "number"),
+            "debug.log_rotation.backup_count": Setting("Log Backups", int, 10, False, "Debug", "Number of backups to keep", "number"),
 
             # Server
             "server.port": Setting("Port", int, 9012, True, "Server", "Server port", "number"),
@@ -125,12 +125,16 @@ class SettingsManager:
             # Lyrics
             "lyrics.display.buffer_size": Setting("Buffer Size", int, 6, False, "Lyrics", "Lines to buffer", "number", min_val=1, max_val=20),
             "lyrics.display.update_interval": Setting("Update Interval", float, 0.1, False, "Lyrics", "UI refresh rate (s)", "slider", min_val=0.05, max_val=1.0),
-            "lyrics.display.idle_interval": Setting("Idle Interval", float, 3.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
+            "lyrics.display.idle_interval": Setting("Idle Interval", float, 2.0, False, "Lyrics", "Check rate when idle (s)", "slider", min_val=1.0, max_val=30.0),
             "lyrics.display.latency_compensation": Setting("Latency Comp", float, -0.1, False, "Lyrics", "Sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
             "lyrics.display.spotify_latency_compensation": Setting("Spotify Latency", float, -0.5, False, "Lyrics", "Spotify sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.2, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
-            "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 3.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=10.0),
-            "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 3.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
+            "lyrics.display.audio_recognition_latency_compensation": Setting("Audio Rec Latency", float, 0.1, False, "Lyrics", "Audio rec sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.spicetify_latency_compensation": Setting("Spicetify Latency", float, 0.0, False, "Lyrics", "Spicetify sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.word_sync_latency_compensation": Setting("Word-Sync Latency", float, -0.1, False, "Lyrics", "Word-sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+            "lyrics.display.musixmatch_word_sync_offset": Setting("Musixmatch Offset", float, -0.1, False, "Lyrics", "Musixmatch word-sync timing adjustment (s)", "slider", min_val=-1.0, max_val=1.0),
+            "lyrics.display.netease_word_sync_offset": Setting("NetEase Offset", float, -0.1, False, "Lyrics", "NetEase word-sync timing adjustment (s)", "slider", min_val=-1.0, max_val=1.0),
+            "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 10.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=30.0),
+            "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 4.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),
@@ -147,22 +151,22 @@ class SettingsManager:
             "providers.spotify.cache_duration": Setting("Cache", int, 3600, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.qq.enabled": Setting("QQ", bool, True, True, "Providers", "Enable QQ Music", "switch"),
-            "providers.qq.priority": Setting("QQ Priority", int, 4, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.qq.priority": Setting("QQ Priority", int, 5, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
             "providers.qq.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
             "providers.qq.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
             "providers.qq.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             "providers.netease.enabled": Setting("NetEase", bool, True, True, "Providers", "Enable NetEase", "switch"),
-            "providers.netease.priority": Setting("NetEase Priority", int, 3, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.netease.priority": Setting("NetEase Priority", int, 4, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
             "providers.netease.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
             "providers.netease.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
             "providers.netease.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
-            "providers.musicxmatch.enabled": Setting("Musicxmatch", bool, False, True, "Providers", "Enable Musicxmatch", "switch"),
-            "providers.musicxmatch.priority": Setting("Musicxmatch Priority", int, 5, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
-            "providers.musicxmatch.timeout": Setting("Timeout", int, 10, False, "Providers", "Request timeout (s)", "number", advanced=True),
-            "providers.musicxmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
-            "providers.musicxmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
+            "providers.musixmatch.enabled": Setting("Musixmatch", bool, True, True, "Providers", "Enable Musixmatch", "switch"),
+            "providers.musixmatch.priority": Setting("Musixmatch Priority", int, 3, False, "Providers", "Fetch priority (lower = first)", "number", min_val=1, max_val=10),
+            "providers.musixmatch.timeout": Setting("Timeout", int, 15, False, "Providers", "Request timeout (s)", "number", advanced=True),
+            "providers.musixmatch.retries": Setting("Retries", int, 3, False, "Providers", "Max retries", "number", advanced=True),
+            "providers.musixmatch.cache_duration": Setting("Cache", int, 86400, False, "Providers", "Cache TTL (s)", "number", advanced=True),
 
             # Storage - Deprecated (not wired up to cleanup logic)
             "storage.lyrics_db.enabled": Setting("DB Enabled", bool, True, False, "Deprecated", "Enable local DB", "switch", deprecated=True),
@@ -187,15 +191,19 @@ class SettingsManager:
             "system.linux.gsettings_enabled": Setting("GSettings", bool, True, True, "Deprecated", "Enable GSettings", "switch", deprecated=True),
             "system.linux.playerctl_required": Setting("Playerctl", bool, True, True, "Deprecated", "Require Playerctl", "switch", deprecated=True),
             
-            # New Blocklist Setting
-            "system.windows.app_blocklist": Setting("App Blocklist", list, ["chrome", "msedge", "firefox", "brave", "comet"], False, "System", "Apps to ignore (partial match)", "list"),
+            # New Blocklist Setting (empty by default - users can add via dropdown)
+            "system.windows.app_blocklist": Setting("App Blocklist", list, [], False, "System", "Apps to ignore (partial match)", "list"),
             "system.windows.paused_timeout": Setting("Paused Timeout", int, 600, False, "System", "Accept paused Windows media for N seconds (0=forever)", "number"),
             "system.spotify.paused_timeout": Setting("Spotify Paused Timeout", int, 600, False, "System", "Accept paused Spotify for N seconds (0=forever)", "number"),
+            "system.spicetify.paused_timeout": Setting("Spicetify Paused Timeout", int, 600, False, "System", "Accept paused Spicetify for N seconds (0=forever)", "number"),
 
             # Features - Active
             "features.save_lyrics_locally": Setting("Save Lyrics Locally", bool, True, False, "Features", "Save lyrics to disk", "switch"),
             "features.parallel_provider_fetch": Setting("Parallel Fetch", bool, True, False, "Features", "Fetch from providers concurrently", "switch"),
             "features.album_art_db": Setting("Album Art Database", bool, True, False, "Features", "Enable album art database", "switch"),
+            "features.word_sync_auto_switch": Setting("Word-Sync Auto-Switch", bool, False, False, "Features", "Auto-switch to provider with word-sync even if another is preferred", "switch"),
+            "features.word_sync_default_enabled": Setting("Word-Sync Default On", bool, True, False, "Features", "Enable word-sync by default (frontend can still toggle)", "switch"),
+            "features.spicetify_database": Setting("Spicetify Database", bool, True, False, "Features", "Cache audio analysis for waveform/spectrum", "switch"),
             
             # Features - Deprecated (not wired up)
             "features.minimal_ui": Setting("Minimal UI", bool, False, False, "Deprecated", "Enable minimal mode", "switch", deprecated=True),
@@ -211,6 +219,8 @@ class SettingsManager:
             "media_source.windows_media.priority": Setting("Priority", int, 1, False, "Media", "Source priority", "number"),
             "media_source.gnome.enabled": Setting("Gnome Source", bool, False, True, "Media", "Enable Gnome source", "switch"),
             "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
+            "media_source.spicetify.enabled": Setting("Spicetify Source", bool, True, True, "Media", "Enable Spicetify bridge (Spotify Desktop)", "switch"),
+            "media_source.spicetify.priority": Setting("Priority", int, 0, False, "Media", "Source priority (0 = highest)", "number"),
             
             # Spotify API
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
@@ -240,15 +250,27 @@ class SettingsManager:
             "visual_mode.slideshow.enabled": Setting("Slideshow", bool, False, False, "Visual Mode", "Enable slideshow when no music", "switch"),
             "visual_mode.slideshow.interval_seconds": Setting("Slideshow Speed", int, 8, False, "Visual Mode", "Seconds per image", "slider", min_val=3, max_val=3600),
 
+            # Slideshow (Art Cycling)
+            "slideshow.default_enabled": Setting("Slideshow Default", bool, False, False, "Slideshow", "Start with slideshow enabled", "switch"),
+            "slideshow.interval_seconds": Setting("Slideshow Interval", int, 6, False, "Slideshow", "Seconds per image", "slider", min_val=1, max_val=600),
+            "slideshow.ken_burns_enabled": Setting("Ken Burns Effect", bool, True, False, "Slideshow", "Enable subtle zoom/pan animation", "switch"),
+            "slideshow.ken_burns_intensity": Setting("Ken Burns Intensity", str, "subtle", False, "Slideshow", "Animation intensity (subtle/medium/cinematic)", "select", options=["subtle", "medium", "cinematic"]),
+            "slideshow.shuffle": Setting("Shuffle Mode", bool, True, False, "Slideshow", "Random image order", "switch"),
+            "slideshow.transition_duration": Setting("Transition Duration", float, 1.0, False, "Slideshow", "Crossfade duration (s)", "slider", min_val=0.2, max_val=2.0),
+
             # Audio Recognition (Reaper Integration)
             "audio_recognition.enabled": Setting("Audio Recognition", bool, False, False, "Audio Recognition", "Enable audio fingerprinting", "switch"),
             "audio_recognition.reaper_auto_detect": Setting("Reaper Auto-Detect", bool, False, False, "Audio Recognition", "Auto-start when Reaper detected", "switch"),
             "audio_recognition.device_id": Setting("Device ID", int, None, False, "Audio Recognition", "Audio device ID (blank = auto)", "number"),
             "audio_recognition.device_name": Setting("Device Name", str, "", False, "Audio Recognition", "Preferred device name"),
-            "audio_recognition.capture_duration": Setting("Capture Duration", float, 5.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=10.0),
-            "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 5.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=3.0, max_val=30.0),
+            "audio_recognition.capture_duration": Setting("Capture Duration", float, 6.0, False, "Audio Recognition", "Audio capture length (s)", "slider", min_val=3.0, max_val=60.0),
+            "audio_recognition.recognition_interval": Setting("Recognition Interval", float, 4.0, False, "Audio Recognition", "Time between recognitions (s)", "slider", min_val=1.0, max_val=30.0),
             "audio_recognition.latency_offset": Setting("Latency Offset", float, 0.0, False, "Audio Recognition", "Manual latency adjustment (s)", "slider", min_val=-5.0, max_val=5.0),
-            "audio_recognition.silence_threshold": Setting("Silence Threshold", int, 500, False, "Audio Recognition", "Min amplitude to detect audio", "slider", min_val=50, max_val=2000),
+            "audio_recognition.silence_threshold": Setting("Silence Threshold", int, 350, False, "Audio Recognition", "Min amplitude to detect audio", "slider", min_val=50, max_val=2000),
+            "audio_recognition.verification_cycles": Setting("Verification Cycles", int, 2, False, "Audio Recognition", "Shazam matches needed to accept new song (1=instant)", "number", min_val=1, max_val=5),
+            "audio_recognition.verification_timeout_cycles": Setting("Verification Timeout", int, 4, False, "Audio Recognition", "Clear pending if no confirmation in N cycles", "number", min_val=2, max_val=10),
+            "audio_recognition.reaper_validation_enabled": Setting("Reaper Validation", bool, False, False, "Audio Recognition", "Validate against Reaper window title", "switch"),
+            "audio_recognition.reaper_validation_threshold": Setting("Reaper Match Threshold", int, 80, False, "Audio Recognition", "Fuzzy match score (0-100) for Reaper validation", "number", min_val=50, max_val=100),
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, True, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),

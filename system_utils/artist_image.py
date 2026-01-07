@@ -29,16 +29,22 @@ from providers.spotify_api import get_shared_spotify_client
 logger = get_logger(__name__)
 
 
-def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
+def load_artist_image_from_db(artist: str, album: str = None) -> Optional[Dict[str, Any]]:
     """
     Load preferred artist image from database if available.
     Returns the preferred image path if found.
     
     OPTIMIZATION: Results are cached to avoid calling discover_custom_images on every poll cycle (10x per second).
-    Cache refreshes when artist changes or after 15 seconds.
+    Cache refreshes when artist/album changes or after 15 seconds.
+    
+    PER-ALBUM PREFERENCES (6.1):
+    - Preference is read from ALBUM folder (ArtistName - AlbumName/metadata.json)
+    - Image files are still read from ARTIST folder (ArtistName/)
+    - This allows different albums to have different background preferences
     
     Args:
         artist: Artist name
+        album: Album name (optional, for per-album preferences)
         
     Returns:
         Dictionary with 'path' (Path to image) and 'metadata' (full metadata dict) if found, None otherwise
@@ -47,99 +53,172 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
     if not FEATURES.get("album_art_db", True):
         return None
     
+    # LEGACY MODE FLAG: Set to True to use artist-wide preferences (old behavior)
+    # When False (default), uses per-album preferences
+    ARTIST_IMAGE_LEGACY_MODE = False
+    
+    # ----------------------------------------------------------------------
+    # DEAD CODE: Legacy artist-wide preference logic
+    # Flip ARTIST_IMAGE_LEGACY_MODE = True above to restore this behavior
+    # ----------------------------------------------------------------------
+    if ARTIST_IMAGE_LEGACY_MODE:
+        # Use artist-only folder for preference lookup (old behavior)
+        preference_folder = get_album_db_folder(artist, None)
+    else:
+        # NEW: Use album folder for preference lookup (per-album behavior)
+        # If album is None/empty, fall back to artist folder
+        if album:
+            preference_folder = get_album_db_folder(artist, album)
+        else:
+            preference_folder = get_album_db_folder(artist, None)
+    # ----------------------------------------------------------------------
+    
+    # Artist folder always used for actual image files
+    artist_folder = get_album_db_folder(artist, None)
+    
+    # Cache key includes album for per-album caching
+    cache_key = (artist, album) if album else (artist, None)
+    
     # OPTIMIZATION: Check cache first to avoid repeated file I/O and discovery calls
     current_time = time.time()
-    if artist in state._artist_image_load_cache:
-        cached_time, cached_result = state._artist_image_load_cache[artist]
+    if cache_key in state._artist_image_load_cache:
+        cached_time, cached_result = state._artist_image_load_cache[cache_key]
         # Use cache if less than TTL seconds old
         if (current_time - cached_time) < state._ARTIST_IMAGE_CACHE_TTL:
             return cached_result
     
     try:
-        folder = get_album_db_folder(artist, None)  # Artist-only folder
-        metadata_path = folder / "metadata.json"
+        # Check for preference in album folder first (new per-album behavior)
+        preference_metadata_path = preference_folder / "metadata.json"
+        artist_metadata_path = artist_folder / "metadata.json"
         
-        if not metadata_path.exists():
-            # Cache None result to avoid repeated checks
+        preferred_filename = None
+        preferred_provider = None
+        
+        # Try to load preference from album folder
+        if preference_metadata_path.exists():
+            try:
+                with open(preference_metadata_path, 'r', encoding='utf-8') as f:
+                    pref_metadata = json.load(f)
+                
+                # Look for the new per-album preference field
+                preferred_filename = pref_metadata.get("preferred_artist_image_filename")
+                # Also check legacy fields for backward compatibility (if reading from artist folder in legacy mode)
+                if not preferred_filename and ARTIST_IMAGE_LEGACY_MODE:
+                    preferred_filename = pref_metadata.get("preferred_image_filename")
+                    preferred_provider = pref_metadata.get("preferred_provider")
+            except Exception as e:
+                logger.debug(f"Failed to load preference metadata: {e}")
+        
+        # ===========================================================================
+        # CRITICAL: Load artist metadata and run self-healing BEFORE preference check
+        # This ensures orphaned entries get cleaned up even when no preference is set
+        # ===========================================================================
+        
+        # Load artist images metadata (from artist folder) - needed for self-healing
+        if not artist_metadata_path.exists():
+            # No metadata file - cache and return early
             if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
                 oldest_key = next(iter(state._artist_image_load_cache))
                 del state._artist_image_load_cache[oldest_key]
-            state._artist_image_load_cache[artist] = (current_time, None)
+            state._artist_image_load_cache[cache_key] = (current_time, None)
             return None
         
-        # Load metadata
-        with open(metadata_path, 'r', encoding='utf-8') as f:
+        with open(artist_metadata_path, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
         
         # Check if this is artist images metadata
         if metadata.get("type") != "artist_images":
-            # Cache None result
             if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
                 oldest_key = next(iter(state._artist_image_load_cache))
                 del state._artist_image_load_cache[oldest_key]
-            state._artist_image_load_cache[artist] = (current_time, None)
+            state._artist_image_load_cache[cache_key] = (current_time, None)
             return None
         
         # CRITICAL FIX: Auto-discover custom images that aren't in metadata
         # This allows users to drop images into folders without manual JSON editing
         # Uses mtime caching to avoid performance impact on every metadata load
-        metadata = discover_custom_images(folder, metadata, is_artist_images=True)
+        metadata = discover_custom_images(artist_folder, metadata, is_artist_images=True)
         
         # If new images were discovered, save updated metadata
-        # Check if discovery found new images by comparing cache
-        # CRITICAL FIX: Handle folder path resolution failures to prevent crashes
-        # This ensures consistent error handling with album art loading path
         try:
-            folder_key = str(folder.resolve())
+            folder_key = str(artist_folder.resolve())
         except (OSError, ValueError) as e:
             logger.debug(f"Could not resolve folder path for cache key: {e}")
-            folder_key = str(folder)  # Fallback to string representation
+            folder_key = str(artist_folder)
         if folder_key in state._discovery_cache:
             _, discovered_count = state._discovery_cache[folder_key]
             if discovered_count > 0:
-                # Save updated metadata with discovered images
-                # Use existing save function which handles locks properly
-                save_album_db_metadata(folder, metadata)
-                # Invalidate cache after save
-                metadata_path_str = str(metadata_path)
+                save_album_db_metadata(artist_folder, metadata)
+                metadata_path_str = str(artist_metadata_path)
                 if metadata_path_str in state._album_art_metadata_cache:
                     del state._album_art_metadata_cache[metadata_path_str]
         
-        preferred_provider = metadata.get("preferred_provider")
-        preferred_filename = metadata.get("preferred_image_filename")  # NEW: Most robust matching method
+        # CRITICAL FIX: Self-healing - remove images from metadata if files are deleted
+        # This ensures metadata stays in sync with actual files on disk
+        # Mirrors the same pattern used in album_art.py for album art providers
+        # NOTE: This runs BEFORE the preference check to clean up orphaned entries
+        #       even when no preference is set (e.g., user never selected an artist image)
         images = metadata.get("images", [])
+        removed_count = 0
+        images_to_keep = []
+        for img in images:
+            filename = img.get("filename")
+            if not filename:
+                images_to_keep.append(img)  # Keep entries without filename (shouldn't happen, but defensive)
+                continue
+            file_path = artist_folder / filename
+            # If file doesn't exist but metadata says it's downloaded, remove it
+            if img.get("downloaded", False) and not file_path.exists():
+                removed_count += 1
+                logger.debug(f"Self-healing: Removing missing artist image '{filename}' from metadata for '{artist}'")
+            else:
+                images_to_keep.append(img)
         
-        # CRITICAL FIX: Only return image if user EXPLICITLY selected one (has preferred_provider or preferred_filename)
-        # This allows album art to be used when no explicit preference exists
-        # The fallback to first available image happens in the fallback code block, not here
-        if not preferred_provider and not preferred_filename:
-            return None  # No explicit preference - let album art be used
+        # Update metadata with cleaned images list
+        if removed_count > 0:
+            metadata["images"] = images_to_keep
+            images = images_to_keep  # Update local reference
+            # Save updated metadata
+            save_album_db_metadata(artist_folder, metadata)
+            # Invalidate cache after save
+            metadata_path_str = str(artist_metadata_path)
+            if metadata_path_str in state._album_art_metadata_cache:
+                del state._album_art_metadata_cache[metadata_path_str]
+            logger.info(f"Self-healing: Removed {removed_count} missing artist image(s) from metadata for '{artist}'")
         
-        # Find preferred image (only if preference exists)
+        # ===========================================================================
+        # NOW check preference - if no preference set, return None
+        # Self-healing has already run above, so orphaned entries are cleaned up
+        # ===========================================================================
+        if not preferred_filename and not preferred_provider:
+            # Cache None result to avoid repeated checks
+            if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(state._artist_image_load_cache))
+                del state._artist_image_load_cache[oldest_key]
+            state._artist_image_load_cache[cache_key] = (current_time, None)
+            return None
+        
+        # Find preferred image
         matching_image = None
         
-        # 1. Match by specific filename (MOST ROBUST - fixes multiple images from same source issue)
+        # 1. Match by specific filename (MOST ROBUST)
         if preferred_filename:
             for img in images:
                 if img.get("filename") == preferred_filename and img.get("downloaded"):
                     matching_image = img
                     break
         
-        # 2. Fallback: Parse provider name (backward compatibility)
+        # 2. Fallback: Parse provider name (backward compatibility for legacy mode)
         if not matching_image and preferred_provider:
-            # Remove "(Artist)" suffix if present (backward compatibility)
             provider_name_clean = preferred_provider.replace(" (Artist)", "")
             
-            # Check if provider name contains filename: "Source (filename)"
             if " (" in provider_name_clean:
-                # Has filename in provider name: "Source (filename)"
                 parts = provider_name_clean.split(" (", 1)
                 if len(parts) == 2:
                     source_name = parts[0]
                     filename_from_provider = parts[1].rstrip(")")
-                    
-                    # Match by source AND filename (case-insensitive source comparison)
-                    source_name_lower = source_name.lower()  # Normalize to lowercase
+                    source_name_lower = source_name.lower()
                     for img in images:
                         source = img.get("source", "")
                         if (source.lower() == source_name_lower and 
@@ -148,7 +227,6 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                             matching_image = img
                             break
                 else:
-                    # Fallback: just source name (case-insensitive)
                     source_name = parts[0]
                     source_name_lower = source_name.lower()
                     for img in images:
@@ -157,76 +235,69 @@ def load_artist_image_from_db(artist: str) -> Optional[Dict[str, Any]]:
                             matching_image = img
                             break
             else:
-                # No filename in provider name - match by source only (gets first match)
-                # CRITICAL FIX: Case-insensitive comparison to handle "Deezer" vs "deezer" mismatches
                 source_name = provider_name_clean
-                source_name_lower = source_name.lower()  # Normalize to lowercase for comparison
+                source_name_lower = source_name.lower()
                 for img in images:
                     source = img.get("source", "")
-                    # Case-insensitive comparison to handle API inconsistencies
                     if source.lower() == source_name_lower and img.get("downloaded") and img.get("filename"):
                         matching_image = img
                         break
         
         if not matching_image:
-            logger.debug(f"Preferred artist image not found for {artist}: preferred_provider={preferred_provider}, preferred_filename={preferred_filename}")
-            return None  # Preferred image not found
+            logger.debug(f"Preferred artist image not found for {artist}: preferred_filename={preferred_filename}")
+            if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
+                oldest_key = next(iter(state._artist_image_load_cache))
+                del state._artist_image_load_cache[oldest_key]
+            state._artist_image_load_cache[cache_key] = (current_time, None)
+            return None
         
         filename = matching_image.get("filename")
-        image_path = folder / filename
+        image_path = artist_folder / filename  # Always from artist folder
         
         if not image_path.exists():
             return None
         
         # OPTIMIZATION: Only update last_accessed if it's been more than 1 hour
-        # This prevents constant disk writes on every poll cycle (every 100ms)
-        # Same optimization as album art to reduce unnecessary metadata.json writes
         should_save = True
         last_accessed_str = metadata.get("last_accessed")
         if last_accessed_str:
             try:
-                # Parse the timestamp (handle Z suffix for UTC)
                 if last_accessed_str.endswith('Z'):
                     last_accessed_str = last_accessed_str[:-1] + '+00:00'
                 last_accessed = datetime.fromisoformat(last_accessed_str)
-                # Convert to naive datetime for comparison with datetime.utcnow()
                 if last_accessed.tzinfo is not None:
                     last_accessed = last_accessed.replace(tzinfo=None)
-                # If less than 1 hour has passed, don't save
                 time_diff = (datetime.utcnow() - last_accessed).total_seconds()
-                if time_diff < 3600:  # 1 hour in seconds
+                if time_diff < 3600:
                     should_save = False
             except (ValueError, AttributeError):
-                # Parse error or missing datetime, save to fix format
                 pass
         
         if should_save:
             metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
-            if save_album_db_metadata(folder, metadata):
-                # Invalidate cache after save (since file mtime changed)
-                metadata_path_str = str(metadata_path)
+            if save_album_db_metadata(artist_folder, metadata):
+                metadata_path_str = str(artist_metadata_path)
                 if metadata_path_str in state._album_art_metadata_cache:
                     del state._album_art_metadata_cache[metadata_path_str]
         
         result = {"path": image_path, "metadata": metadata}
         
-        # OPTIMIZATION: Cache result to avoid repeated file I/O and discovery calls
-        # Cache refreshes when artist changes or after TTL seconds
+        # OPTIMIZATION: Cache result
         if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
             oldest_key = next(iter(state._artist_image_load_cache))
             del state._artist_image_load_cache[oldest_key]
-        state._artist_image_load_cache[artist] = (current_time, result)
+        state._artist_image_load_cache[cache_key] = (current_time, result)
         
         return result
         
     except Exception as e:
         logger.debug(f"Failed to load artist image from DB: {e}")
-        # Cache None result to avoid repeated checks
         if len(state._artist_image_load_cache) >= state._MAX_ARTIST_IMAGE_CACHE_SIZE:
             oldest_key = next(iter(state._artist_image_load_cache))
             del state._artist_image_load_cache[oldest_key]
-        state._artist_image_load_cache[artist] = (current_time, None)
+        state._artist_image_load_cache[cache_key] = (current_time, None)
         return None
+
 
 
 def clear_artist_image_cache(artist: str) -> None:
@@ -235,12 +306,105 @@ def clear_artist_image_cache(artist: str) -> None:
     This is called when the user changes their artist image preference to ensure
     the new preference is immediately reflected without waiting for the cache TTL.
     
+    Since cache keys are now tuples of (artist, album), this clears ALL entries
+    for the given artist across all albums.
+    
     Args:
         artist: Artist name to clear from cache
     """
-    if artist in state._artist_image_load_cache:
-        del state._artist_image_load_cache[artist]
-        logger.debug(f"Cleared artist image cache for '{artist}'")
+    # Cache keys are now tuples of (artist, album)
+    # Clear all entries for this artist (any album)
+    # Also handle legacy string keys for smooth transition
+    keys_to_delete = [key for key in state._artist_image_load_cache.keys() 
+                      if (isinstance(key, tuple) and key[0] == artist) or key == artist]
+    for key in keys_to_delete:
+        state._artist_image_load_cache.pop(key, None)  # Safe delete
+    
+    if keys_to_delete:
+        logger.debug(f"Cleared artist image cache for '{artist}' ({len(keys_to_delete)} entries)")
+
+
+def get_slideshow_preferences(artist: str) -> Dict[str, Any]:
+    """
+    Read slideshow preferences from artist's metadata.json.
+    
+    These preferences are per-artist and stored alongside the artist images.
+    
+    Args:
+        artist: Artist name
+        
+    Returns:
+        Dictionary with:
+        - excluded: List of filenames to exclude from slideshow
+        - auto_enable: True (always on), False (always off), None (use global)
+        - favorites: List of favorite image filenames
+    """
+    folder = get_album_db_folder(artist, None)
+    metadata_path = folder / "metadata.json"
+    
+    default_prefs = {"excluded": [], "auto_enable": None, "favorites": []}
+    
+    if not metadata_path.exists():
+        return default_prefs
+    
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        prefs = metadata.get("slideshow_preferences", {})
+        # Ensure all keys exist with defaults
+        return {
+            "excluded": prefs.get("excluded", []),
+            "auto_enable": prefs.get("auto_enable"),
+            "favorites": prefs.get("favorites", [])
+        }
+    except Exception as e:
+        logger.debug(f"Failed to load slideshow preferences for '{artist}': {e}")
+        return default_prefs
+
+
+def save_slideshow_preferences(artist: str, preferences: Dict[str, Any]) -> bool:
+    """
+    Save slideshow preferences to artist's metadata.json.
+    
+    Merges into existing metadata under key 'slideshow_preferences'.
+    Uses existing save_album_db_metadata() for atomic write.
+    
+    Args:
+        artist: Artist name
+        preferences: Dict with excluded, auto_enable, favorites
+        
+    Returns:
+        True if saved successfully, False otherwise
+    """
+    folder = get_album_db_folder(artist, None)
+    metadata_path = folder / "metadata.json"
+    
+    # Load existing metadata
+    metadata = {}
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+        except Exception as e:
+            logger.debug(f"Failed to load existing metadata for '{artist}': {e}")
+    
+    # Ensure folder exists (for new artists without images yet)
+    folder.mkdir(parents=True, exist_ok=True)
+    
+    # Merge preferences
+    metadata["slideshow_preferences"] = {
+        "excluded": preferences.get("excluded", []),
+        "auto_enable": preferences.get("auto_enable"),
+        "favorites": preferences.get("favorites", [])
+    }
+    
+    success = save_album_db_metadata(folder, metadata)
+    if success:
+        logger.debug(f"Saved slideshow preferences for '{artist}': {len(preferences.get('excluded', []))} excluded, {len(preferences.get('favorites', []))} favorites")
+    else:
+        logger.warning(f"Failed to save slideshow preferences for '{artist}'")
+    
+    return success
 
 
 def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
@@ -308,32 +472,48 @@ def _get_artist_image_fallback(artist: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None) -> List[str]:
+async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] = None, force: bool = False, artist_visuals: Optional[Dict[str, Any]] = None, spicetify_only: bool = False) -> List[str]:
     """
     Background task to fetch artist images and save them to the database.
-    Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spotify, and Last.fm.
+    Fetches from multiple sources: Deezer, TheAudioDB, FanArt.tv, Spicetify GraphQL, Spotify, and Last.fm.
     
     Priority order:
     1. Deezer (free, 1000x1000px, no auth required)
     2. TheAudioDB (free key '123', provides MBID for FanArt.tv)
     3. FanArt.tv (requires FANART_TV_API_KEY in .env + MBID from TheAudioDB)
-    4. Spotify (fallback, if spotify_artist_id provided)
-    5. Last.fm (fallback, if LASTFM_API_KEY in .env)
+    4. Spicetify GraphQL (header + gallery from internal API, if provided)
+    5. Spotify (fallback, if spotify_artist_id provided)
+    6. Last.fm (fallback, if LASTFM_API_KEY in .env)
     
     Note: iTunes is NOT used for artist images (it rarely works for artists).
+    
+    Args:
+        artist: Artist name
+        spotify_artist_id: Spotify artist ID for Spotify API fallback (optional)
+        force: If True, bypass cache and tracker checks (for manual refetch)
+        artist_visuals: Spicetify GraphQL visuals dict with header_image and gallery (optional)
+        spicetify_only: If True, skip API calls and only add Spicetify images to existing collection
     """
+    # force=True overrides spicetify_only (user explicitly wants full refetch)
+    if force:
+        spicetify_only = False
+    # Check if feature is enabled (respects album_art_db setting for both loading AND downloading)
+    if not FEATURES.get("album_art_db", True):
+        return []
+    
     # Import here to avoid circular import
     from .metadata import get_current_song_meta_data
     
-    # Check cache first (debouncing)
+    # Check cache first (debouncing) - SKIP if force=True
     # If we checked this artist recently (within 60 seconds), return cached result
     # This prevents spamming the logic/logs when frontend polls frequently
     current_time = time.time()
-    cached_data = state._artist_db_check_cache.get(artist)
-    if cached_data:
-        timestamp, cached_result = cached_data
-        if current_time - timestamp < 60:
-            return cached_result
+    if not force:
+        cached_data = state._artist_db_check_cache.get(artist)
+        if cached_data:
+            timestamp, cached_result = cached_data
+            if current_time - timestamp < 60:
+                return cached_result
     
     # Clean up old entries to prevent memory leak (keep only recent entries)
     # Remove entries older than 5 minutes to prevent unbounded growth
@@ -349,9 +529,10 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
     # Artist name is stable and prevents duplicate downloads for the same artist
     request_key = artist
     
-    # Prevent duplicate downloads for the same artist
-    if request_key in state._artist_download_tracker:
-        return []
+    # Prevent duplicate downloads for the same artist - SKIP if force=True
+    if not force:
+        if request_key in state._artist_download_tracker:
+            return []
     
     # Fix 5: Add size limit to tracker (Defensive coding)
     # CRITICAL FIX: Instead of clearing all entries (which causes race conditions),
@@ -382,6 +563,7 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 
                 # Check if artist images already exist in DB (optimization)
                 # If images exist, return immediately (no need to re-fetch)
+                # SKIP if force=True (manual refetch request)
                 if metadata_path.exists():
                     try:
                         with open(metadata_path, 'r', encoding='utf-8') as f:
@@ -389,18 +571,26 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         existing_images = existing_metadata.get("images", [])
                         
-                        # If images exist, return immediately (no need to re-fetch)
-                        if len(existing_images) > 0:
-                            encoded_folder = quote(folder.name, safe='')
-                            result_paths = [
-                                f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
-                                for img in existing_images 
-                                if img.get('downloaded') and img.get('filename')
-                            ]
+                        # If images exist AND not force mode, check if we need to add Spicetify images
+                        if len(existing_images) > 0 and not force:
+                            # Check if Spicetify images are missing but we have artist_visuals to add
+                            has_spicetify = any(img.get("source") == "spicetify" for img in existing_images)
                             
-                            # Update cache
-                            state._artist_db_check_cache[artist] = (time.time(), result_paths)
-                            return result_paths
+                            if has_spicetify or not artist_visuals:
+                                # Already has Spicetify images OR no new Spicetify images to add -> return cached
+                                encoded_folder = quote(folder.name, safe='')
+                                result_paths = [
+                                    f"/api/album-art/image/{encoded_folder}/{quote(img.get('filename', ''), safe='')}" 
+                                    for img in existing_images 
+                                    if img.get('downloaded') and img.get('filename')
+                                ]
+                                
+                                # Update cache
+                                state._artist_db_check_cache[artist] = (time.time(), result_paths)
+                                return result_paths
+                            else:
+                                # Missing Spicetify images AND we have new ones to add -> continue to process
+                                logger.debug(f"Adding Spicetify images to existing artist: {artist}")
                             
                     except Exception as e:
                         logger.debug(f"Failed to load cached artist images: {e}")
@@ -417,14 +607,66 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         return []
                 artist_provider = state._artist_image_provider
                 
-                # Fetch from new sources (Deezer, TheAudioDB, FanArt.tv)
-                # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
-                all_images = await artist_provider.get_artist_images(artist)
+                # Fetch images - either from API or use existing
+                if spicetify_only:
+                    # Skip API calls - use existing images from metadata.json
+                    # This is for adding only Spicetify images to existing collection
+                    all_images = []
+                    for img in existing_metadata.get("images", []):
+                        if img.get("url"):
+                            all_images.append({
+                                "url": img.get("url"),
+                                "source": img.get("source"),
+                                "type": img.get("type"),
+                                "width": img.get("width"),
+                                "height": img.get("height")
+                            })
+                    logger.debug(f"Spicetify-only mode: Using {len(all_images)} existing images for {artist}")
+                else:
+                    # Normal mode: fetch from all sources (Deezer, TheAudioDB, FanArt.tv)
+                    # This returns: [{'url':..., 'source':..., 'type':..., 'width':..., 'height':...}]
+                    all_images = await artist_provider.get_artist_images(artist)
+                
+                # Spicetify GraphQL visuals (header + gallery from internal API)
+                # These are high-res images directly from Spotify's internal GraphQL
+                if artist_visuals:
+                    existing_urls = {i['url'] for i in all_images}
+                    added_count = 0
+                    
+                    # Header image (artist-curated banner, up to 2660x1140)
+                    header_img = artist_visuals.get('header_image')
+                    if header_img and header_img.get('url') and header_img['url'] not in existing_urls:
+                        all_images.append({
+                            "url": header_img['url'],
+                            "source": "spicetify",
+                            "type": "header",
+                            "width": header_img.get('width', 2660),
+                            "height": header_img.get('height', 1140)
+                        })
+                        existing_urls.add(header_img['url'])
+                        added_count += 1
+                    
+                    # Gallery images (artist photos, 690x500+)
+                    for img in artist_visuals.get('gallery', []):
+                        if img and img.get('url') and img['url'] not in existing_urls:
+                            all_images.append({
+                                "url": img['url'],
+                                "source": "spicetify",
+                                "type": "gallery",
+                                "width": img.get('width', 690),
+                                "height": img.get('height', 500)
+                            })
+                            existing_urls.add(img['url'])
+                            added_count += 1
+                    
+                    if added_count > 0:
+                        logger.debug(f"Spicetify GraphQL: Added {added_count} artist images for {artist}")
                 
                 # Fallback 1: Spotify (if ID provided) - Keep as backup
                 # CRITICAL FIX: Validate artist ID to prevent race conditions
                 # If track changed while this function was running, spotify_artist_id might be stale
-                if spotify_artist_id:
+                # Skip in spicetify_only mode - we're only adding Spicetify images
+                if spotify_artist_id and not spicetify_only:
                     client = get_shared_spotify_client()
                     if client:
                         try:
@@ -475,10 +717,8 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                 saved_images = existing_metadata.get("images", [])
                 metadata_changed = False  # OPTIMIZATION: Track if we actually need to save to disk
                 
-                # CRITICAL FIX: Track newly downloaded files for cleanup if validation fails
-                # Store original list of existing filenames to identify new downloads
+                # Store original list of existing filenames (used for deduplication check)
                 existing_filenames = {img.get('filename') for img in saved_images if img.get('filename')}
-                newly_downloaded_files = []  # Track (file_path, filename) tuples for cleanup
                 
                 # Simple deduplication set (by URL)
                 existing_urls = {img.get('url') for img in saved_images if img.get('url')}
@@ -707,12 +947,17 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         temp_file_path = result["temp_file_path"]
                         if temp_file_path.exists():
                             try:
+                                # Delete existing file first (Windows doesn't allow overwrite with rename)
+                                if final_file_path.exists():
+                                    final_file_path.unlink()
                                 # Move temp file to final location
                                 temp_file_path.rename(final_file_path)
                             except Exception as e:
                                 logger.debug(f"Failed to rename temp file {temp_file_path} to {final_file_path}: {e}")
                                 # Try copy as fallback
                                 try:
+                                    if final_file_path.exists():
+                                        final_file_path.unlink()
                                     shutil.copy2(temp_file_path, final_file_path)
                                     temp_file_path.unlink()
                                 except Exception as e2:
@@ -742,59 +987,20 @@ async def ensure_artist_image_db(artist: str, spotify_artist_id: Optional[str] =
                         
                         existing_urls.add(url)  # Mark as processed
                         metadata_changed = True  # New image added or upgraded, need to save
-                        
-                        # Track for cleanup if validation fails
-                        if filename not in existing_filenames:
-                            newly_downloaded_files.append((final_file_path, filename))
                 
-                # CRITICAL FIX: Final check before saving metadata - ensure artist hasn't changed
-                # DEBOUNCE FIX: Use retry loop to match first validation block
-                # This prevents false aborts due to SMTC lag after downloads complete
-                final_validation_passed = False
-                for final_retry in range(4):
-                    try:
-                        # REMOVED: get_current_song_meta_data._last_check_time = 0
-                        # Don't bust global cache - causes feedback loops
-                        current_metadata = await get_current_song_meta_data()
-                        if current_metadata:
-                            current_artist = current_metadata.get("artist", "")
-                            current_artist_id = current_metadata.get("artist_id")
-                            
-                            name_changed = current_artist != original_artist
-                            id_mismatch_is_critical = (
-                                original_spotify_id is not None and 
-                                current_artist_id is not None and 
-                                current_artist_id != original_spotify_id
-                            )
-                            
-                            if name_changed or id_mismatch_is_critical:
-                                if final_retry < 3:
-                                    await asyncio.sleep(0.5)
-                                    continue
-                                else:
-                                    logger.info(f"Artist changed from '{original_artist}' to '{current_artist}' (ID: {original_spotify_id} -> {current_artist_id}) before metadata save, discarding")
-                                    
-                                    # CRITICAL FIX: Clean up orphaned files that were downloaded but validation failed
-                                    cleanup_count = 0
-                                    for file_path, filename in newly_downloaded_files:
-                                        try:
-                                            if file_path.exists():
-                                                file_path.unlink()
-                                                cleanup_count += 1
-                                                logger.debug(f"Cleaned up orphaned file: {filename}")
-                                        except Exception as e:
-                                            logger.debug(f"Failed to clean up orphaned file {filename}: {e}")
-                                    
-                                    if cleanup_count > 0:
-                                        logger.info(f"Cleaned up {cleanup_count} orphaned image file(s) after validation failure")
-                                    
-                                    return []  # Don't save metadata for wrong artist
-                            
-                            final_validation_passed = True
-                            break
-                    except Exception as e:
-                        logger.debug(f"Failed to verify artist before metadata save (retry {final_retry}): {e}")
-                        break
+                # INFORMATIONAL: Check if song changed during download (for logging only)
+                # Images are saved for original_artist regardless of current playback,
+                # since all API calls used original parameters and folder was created for original artist
+                try:
+                    current_metadata = await get_current_song_meta_data()
+                    if current_metadata:
+                        current_artist = current_metadata.get("artist", "")
+                        if current_artist != original_artist:
+                            # Log that we saved images for a different artist than currently playing
+                            # This is EXPECTED behavior - images are correct for original_artist
+                            logger.info(f"Song changed during download: saved artist images for '{original_artist}' (now playing: '{current_artist}'). Images are correct.")
+                except Exception as e:
+                    logger.debug(f"Could not check current song after download: {e}")
                 
                 # OPTIMIZATION: Only save metadata if it actually changed OR if file doesn't exist
                 # This prevents unnecessary disk writes when ensure_artist_image_db runs but finds no new images

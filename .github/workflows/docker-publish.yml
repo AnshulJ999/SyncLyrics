@@ -1,0 +1,150 @@
+# Publish Docker images to Docker Hub and GitHub Container Registry
+# Triggers on new version tags (v*) or manual dispatch
+# GHCR is primary, Docker Hub is secondary (won't fail workflow if Docker Hub is down)
+
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g., v1.4.0)'
+        required: true
+        type: string
+
+env:
+  DOCKERHUB_IMAGE: anshulj99/synclyrics
+  GHCR_IMAGE: ghcr.io/anshulj999/synclyrics
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        id: dockerhub-login
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual run: use the input tag (strip 'v' prefix if present)
+            INPUT_TAG="${{ github.event.inputs.tag }}"
+            CLEAN_TAG="${INPUT_TAG#v}"
+            echo "tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+            echo "is_manual=true" >> $GITHUB_OUTPUT
+          else
+            # Tag push: extract from GITHUB_REF (strip 'v' prefix)
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+            CLEAN_TAG="${RAW_TAG#v}"
+            echo "tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+            echo "is_manual=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ============================================
+      # STEP 1: Build and push to GHCR (Primary)
+      # ============================================
+      - name: Extract GHCR metadata
+        id: ghcr-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=semver,pattern={{major}},enable=${{ steps.version.outputs.is_manual == 'false' }}
+            type=raw,value=${{ steps.version.outputs.tag }},enable=${{ steps.version.outputs.is_manual == 'true' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=SyncLyrics
+            org.opencontainers.image.description=Real-time synchronized lyrics display for Spotify
+            org.opencontainers.image.vendor=AnshulJ999
+
+      - name: Build and push to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.ghcr-meta.outputs.tags }}
+          labels: ${{ steps.ghcr-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ============================================
+      # STEP 2: Push to Docker Hub (Secondary)
+      # Uses imagetools to copy from GHCR - no rebuild needed
+      # continue-on-error: Docker Hub issues won't fail the workflow
+      # ============================================
+      - name: Push to Docker Hub
+        if: steps.dockerhub-login.outcome == 'success'
+        continue-on-error: true
+        run: |
+          echo "Copying images from GHCR to Docker Hub..."
+          
+          # Copy the main version tag
+          docker buildx imagetools create \
+            --tag ${{ env.DOCKERHUB_IMAGE }}:${{ steps.version.outputs.tag }} \
+            ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
+          
+          # Copy latest tag if this is a main branch release
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            docker buildx imagetools create \
+              --tag ${{ env.DOCKERHUB_IMAGE }}:latest \
+              ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
+          fi
+          
+          echo "✅ Successfully pushed to Docker Hub"
+
+      - name: Update Docker Hub description
+        if: steps.dockerhub-login.outcome == 'success'
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: anshulj99/synclyrics
+          readme-filepath: ./docker/DOCKER.md
+          short-description: "Real-time synchronized lyrics for Spotify 🎵"
+
+      - name: Summary
+        run: |
+          echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### GHCR (Primary)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully pushed to \`${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Docker Hub (Secondary)" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.dockerhub-login.outcome }}" == "success" ]; then
+            echo "✅ Pushed to \`${{ env.DOCKERHUB_IMAGE }}:${{ steps.version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Docker Hub push skipped (login failed or service unavailable)" >> $GITHUB_STEP_SUMMARY
+          fi

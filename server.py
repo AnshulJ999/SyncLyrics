@@ -6,7 +6,7 @@ import random  # ADD THIS IMPORT
 from functools import wraps
 
 from quart import Quart, render_template, redirect, flash, request, jsonify, url_for, send_from_directory, websocket
-from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, set_manual_instrumental
+from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is_manually_instrumental, _is_cached_instrumental, set_manual_instrumental
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art, clear_artist_image_cache
 from state_manager import *
@@ -39,6 +39,13 @@ _SLIDESHOW_CACHE_TTL = 3600  # 1 hour
 # Key: file path (str), Value: last log timestamp
 _cover_art_log_throttle = {}
 
+# Cache for instrumental markers (avoids disk read every /lyrics poll)
+# Key: (artist, title), Value: list of marker timestamps
+_instrumental_markers_cache = {
+    'key': None,       # (artist, title) tuple
+    'markers': []      # List of timestamps
+}
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -66,7 +73,77 @@ async def inject_cache_version() -> dict:
 async def theme() -> dict: 
     return {"theme": get_attribute_js_notation(get_state(), 'theme')}
 
+@app.after_request
+async def add_cache_headers(response):
+    """
+    Add Cache-Control headers to prevent stale content issues.
+    - Static assets: 6min cache with ETag/Last-Modified for efficient revalidation
+    - API/pages: no caching to ensure fresh data
+    - Routes that set their own Cache-Control are respected (e.g., image serving)
+    
+    ETag and Last-Modified enable 304 Not Modified responses, so even after
+    max-age expires, the browser only downloads new content if files changed.
+    This fixes stale cache issues in Home Assistant iFrame while maintaining performance.
+    """
+    req_path = request.path
+    
+    # Static assets (CSS, JS, images, fonts)
+    if req_path.startswith('/static/'):
+        # Reduced from 3600s (1hr) to 360s (6min) to ensure updates propagate faster
+        # Combined with ETag/Last-Modified, this enables efficient revalidation
+        response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
+        
+        # Add ETag and Last-Modified for static files to enable 304 responses
+        # This makes cache validation very efficient even with shorter max-age
+        try:
+            # Resolve the actual file path from the request URL
+            # /static/js/main.js -> STATIC_DIRECTORY/js/main.js
+            relative_path = req_path[len('/static/'):]  # Remove '/static/' prefix
+            file_path = os.path.join(STATIC_DIRECTORY, relative_path)
+            
+            if os.path.isfile(file_path):
+                # Last-Modified: file modification timestamp
+                mtime = os.path.getmtime(file_path)
+                from email.utils import formatdate
+                response.headers['Last-Modified'] = formatdate(mtime, usegmt=True)
+                
+                # ETag: hash of file path + mtime (fast, no file read needed)
+                # Using mtime ensures ETag changes when file is modified
+                import hashlib
+                etag_source = f"{file_path}:{mtime}".encode('utf-8')
+                etag = hashlib.md5(etag_source).hexdigest()
+                response.headers['ETag'] = f'"{etag}"'
+        except Exception:
+            # If file path resolution fails, skip ETag/Last-Modified
+            # The response will still work, just without validation headers
+            pass
+    # API endpoints and pages - no caching (unless route already set its own)
+    elif req_path.startswith('/api/') or req_path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
+        # Don't overwrite if route already set cache headers (e.g., image serving routes)
+        if 'Cache-Control' not in response.headers:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+    
+    return response
+
 # --- Routes ---
+
+@app.route("/health")
+async def health():
+    """
+    Health check endpoint for Docker/Kubernetes.
+    Returns basic status info for container orchestration.
+    """
+    # Check Spotify authentication status
+    client = get_spotify_client()
+    spotify_status = "authenticated" if client else "not_configured"
+    
+    return {
+        "status": "ok",
+        "uptime_seconds": int(time.time() - APP_START_TIME),
+        "spotify": spotify_status
+    }, 200
 
 @app.route("/")
 async def index() -> str:
@@ -127,6 +204,10 @@ async def lyrics() -> dict:
                 # Manually marked as instrumental - override detection
                 is_instrumental = True
                 has_lyrics = False
+            # Also check cached metadata from providers (e.g., Musixmatch returns is_instrumental flag)
+            elif _is_cached_instrumental(artist, title):
+                is_instrumental = True
+                has_lyrics = False
     
     if isinstance(lyrics_data, str):
         # Handle error messages or status strings
@@ -144,18 +225,97 @@ async def lyrics() -> dict:
             "provider": provider,
             "has_lyrics": False,
             "is_instrumental": is_instrumental,
-            "is_instrumental_manual": is_instrumental_manual
+            "is_instrumental_manual": is_instrumental_manual,
+            "word_synced_lyrics": None,
+            "has_word_sync": False,
+            "word_sync_provider": None
         }
     
     # Check if lyrics are actually empty or just [...]
     # (lyrics_data is a tuple of strings)
     if not lyrics_data or all(not line for line in lyrics_data):
          has_lyrics = False
-         # Check for instrumental text if not manually marked
-         if not is_instrumental_manual and lyrics_data and len(lyrics_data) == 1:
-             text = lyrics_data[0][1].lower().strip() if len(lyrics_data[0]) > 1 else ""
-             if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
-                 is_instrumental = True
+    
+    # FIX: Check instrumental using RAW cached lyrics, not the display tuple
+    # The display tuple always has 6 elements, so len()==1 was never true before
+    # This also checks the metadata is_instrumental flag saved by providers like Musixmatch
+    if not is_instrumental_manual:
+        current_lyrics = lyrics_module.current_song_lyrics
+        if current_lyrics and len(current_lyrics) == 1:
+            text = current_lyrics[0][1].lower().strip() if len(current_lyrics[0]) > 1 else ""
+            if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+                is_instrumental = True
+                has_lyrics = False
+
+    # Get word-synced lyrics data (for karaoke-style display)
+    word_synced_lyrics = lyrics_module.current_song_word_synced_lyrics
+    word_sync_provider = lyrics_module.current_word_sync_provider
+    has_word_sync = word_synced_lyrics is not None and len(word_synced_lyrics) > 0
+    
+    # Check if ANY cached provider has word-sync (for toggle availability)
+    # This allows the toggle to be enabled even if current provider doesn't have word-sync
+    any_provider_has_word_sync = has_word_sync  # Initially same as current
+    if not any_provider_has_word_sync and lyrics_module.current_song_data:
+        artist = lyrics_module.current_song_data.get("artist", "")
+        title = lyrics_module.current_song_data.get("title", "")
+        if artist and title:
+            any_provider_has_word_sync = lyrics_module._has_any_word_sync_cached(artist, title)
+
+    # Extract instrumental markers from line-sync data (for gap detection in word-sync mode)
+    # These are explicit ♪ markers from Spotify/Musixmatch that indicate instrumental breaks
+    # We explicitly check Spotify/Musixmatch from cache (authoritative sources), even if not current provider
+    # PERFORMANCE: Cache markers per song to avoid disk reads every 100ms poll
+    instrumental_markers = []
+    
+    if metadata:
+        artist = metadata.get("artist", "")
+        title = metadata.get("title", "")
+        cache_key = (artist, title) if artist and title else None
+        
+        # Check if we have cached markers for this song
+        if cache_key and _instrumental_markers_cache['key'] == cache_key:
+            # Use cached markers (no disk read needed)
+            instrumental_markers = _instrumental_markers_cache['markers']
+        elif cache_key:
+            # Song changed - invalidate cache and extract markers from disk
+            instrumental_symbols = {'♪', '♫', '♬', '🎵', '🎶'}
+            
+            try:
+                # Get the db path and read cached providers
+                db_path = lyrics_module._get_db_path(artist, title)
+                if db_path and os.path.exists(db_path):
+                    with open(db_path, 'r', encoding='utf-8') as f:
+                        cached_data = json.load(f)
+                    
+                    saved_lyrics = cached_data.get("saved_lyrics", {})
+                    
+                    # Priority: Spotify first, then Musixmatch
+                    for provider_name in ["spotify", "musixmatch"]:
+                        if provider_name in saved_lyrics:
+                            provider_lyrics = saved_lyrics[provider_name]
+                            for line in provider_lyrics:
+                                if len(line) >= 2:
+                                    timestamp, text = line[0], line[1]
+                                    if text.strip() in instrumental_symbols:
+                                        instrumental_markers.append(timestamp)
+                            
+                            # If we found markers, stop (use highest priority source)
+                            if instrumental_markers:
+                                break
+            except Exception as e:
+                logger.debug(f"Could not load Spotify/Musixmatch markers from cache: {e}")
+            
+            # Fallback: If no markers found from Spotify/Musixmatch, check current provider
+            if not instrumental_markers and lyrics_module.current_song_lyrics:
+                for line in lyrics_module.current_song_lyrics:
+                    if len(line) >= 2:
+                        timestamp, text = line[0], line[1]
+                        if text.strip() in instrumental_symbols:
+                            instrumental_markers.append(timestamp)
+            
+            # Update cache for this song
+            _instrumental_markers_cache['key'] = cache_key
+            _instrumental_markers_cache['markers'] = instrumental_markers
 
     return {
         "lyrics": list(lyrics_data),
@@ -163,7 +323,15 @@ async def lyrics() -> dict:
         "provider": provider,
         "has_lyrics": has_lyrics,
         "is_instrumental": is_instrumental,
-        "is_instrumental_manual": is_instrumental_manual
+        "is_instrumental_manual": is_instrumental_manual,
+        # Word-synced lyrics for karaoke-style display
+        "word_synced_lyrics": word_synced_lyrics if has_word_sync else None,
+        "has_word_sync": has_word_sync,
+        "word_sync_provider": word_sync_provider if has_word_sync else None,
+        # Flag for toggle availability: true if ANY cached provider has word-sync
+        "any_provider_has_word_sync": any_provider_has_word_sync,
+        # Instrumental markers for gap detection (timestamps where ♪ appears in line-sync)
+        "instrumental_markers": instrumental_markers if instrumental_markers else None
     }
 
 @app.route("/current-track")
@@ -187,8 +355,11 @@ async def current_track() -> dict:
                 if is_instrumental_manual:
                     # Manually marked as instrumental - override detection
                     is_instrumental = True
+                # Check cached metadata from providers (e.g., Musixmatch returns is_instrumental flag)
+                elif _is_cached_instrumental(artist, title):
+                    is_instrumental = True
                 else:
-                    # Fall back to automatic detection
+                    # Fall back to automatic detection via lyrics text
                     current_lyrics = lyrics_module.current_song_lyrics
                     if current_lyrics and len(current_lyrics) == 1:
                         text = current_lyrics[0][1].lower().strip()
@@ -198,11 +369,220 @@ async def current_track() -> dict:
             
             metadata["is_instrumental"] = is_instrumental
             metadata["is_instrumental_manual"] = is_instrumental_manual
+            
+            # Add latency compensation for word-sync (based on source)
+            # Same logic as _find_current_lyric_index in lyrics.py
+            source = metadata.get("source", "")
+            if source == "spotify":
+                # Spotify-only mode (e.g., HAOS without Windows)
+                latency_comp = LYRICS.get("display", {}).get("spotify_latency_compensation", -0.5)
+            elif source == "spicetify":
+                # Spicetify mode (Spotify Desktop via WebSocket)
+                latency_comp = LYRICS.get("display", {}).get("spicetify_latency_compensation", 0.0)
+            elif source == "audio_recognition":
+                # Audio recognition mode
+                latency_comp = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+            else:
+                # Normal mode (Windows Media, hybrid)
+                latency_comp = LYRICS.get("display", {}).get("latency_compensation", 0.0)
+            metadata["latency_compensation"] = latency_comp
+            
+            # Add separate word-sync latency compensation for fine-tuning karaoke timing
+            word_sync_latency_comp = LYRICS.get("display", {}).get("word_sync_latency_compensation", 0.0)
+            metadata["word_sync_latency_compensation"] = word_sync_latency_comp
+            
+            # Add provider-specific word-sync offset (Musixmatch/NetEase may have different timing)
+            # Use settings.get() instead of LYRICS dict for hot-reload support
+            word_sync_provider = lyrics_module.current_word_sync_provider
+            provider_offset = 0.0
+            if word_sync_provider:
+                offset_key = f"lyrics.display.{word_sync_provider}_word_sync_offset"
+                provider_offset = settings.get(offset_key, 0.0)
+            metadata["provider_word_sync_offset"] = provider_offset
+            metadata["word_sync_provider"] = word_sync_provider
+            
+            # Add word-sync default enabled setting (frontend can still toggle)
+            word_sync_default = settings.get("features.word_sync_default_enabled", True)
+            metadata["word_sync_default_enabled"] = word_sync_default
+            
+            # Add per-song word-sync offset (user adjustment)
+            song_offset = lyrics_module.get_song_word_sync_offset(artist, title)
+            metadata["song_word_sync_offset"] = song_offset
+            
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
         logger.error(f"Track Info Error: {e}")
         return {"error": str(e)}
+
+
+@app.route('/api/word-sync-offset', methods=['POST'])
+async def save_word_sync_offset():
+    """
+    Save per-song word-sync offset adjustment.
+    Frontend calls this when user adjusts latency via UI buttons.
+    """
+    try:
+        data = await request.json
+        artist = data.get('artist')
+        title = data.get('title')
+        
+        # Defensive validation: handle NaN, Infinity, strings, null
+        try:
+            offset = float(data.get('offset', 0.0))
+            if not (-10.0 <= offset <= 10.0) or offset != offset:  # Check NaN
+                offset = 0.0
+        except (TypeError, ValueError):
+            offset = 0.0
+        
+        if not artist or not title:
+            return {"success": False, "error": "Missing artist or title"}
+        
+        success = await lyrics_module.save_song_word_sync_offset(artist, title, offset)
+        
+        if success:
+            return {"success": True, "offset": offset}
+        else:
+            return {"success": False, "error": "Failed to save offset"}
+    except Exception as e:
+        logger.error(f"Word-sync offset error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.route('/api/settings/reload', methods=['POST'])
+async def reload_settings():
+    """
+    Reload settings from disk without restarting the server.
+    Useful for applying backend config changes on the fly.
+    """
+    try:
+        settings.load_settings()
+        logger.info("Settings reloaded from disk")
+        return {"success": True, "message": "Settings reloaded"}
+    except Exception as e:
+        logger.error(f"Failed to reload settings: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# --- Audio Analysis API (for waveform and spectrum visualizer) ---
+
+@app.route('/api/playback/audio-analysis')
+async def get_audio_analysis():
+    """
+    Get audio analysis for current track (waveform + spectrum data).
+    Used by frontend for waveform seekbar and spectrum visualizer.
+    
+    Data sources (in priority order):
+    1. Live Spicetify state (when Spicetify is active)
+    2. Cached database (for previously-played songs from any source)
+    
+    Returns:
+        - waveform: List of {start, amp} where amp is normalized 0-1
+        - segments: List of {start, duration, pitches} for spectrum visualizer
+        - beats: List of {start, duration, confidence} for beat-reactive effects
+        - sections: List of sections for energy scaling
+        - duration: Track duration in seconds
+        - analysis_track_id: Normalized track ID for frontend validation
+    """
+    import asyncio
+    from system_utils.spicetify import _spicetify_state, is_connected as is_spicetify_fresh
+    from system_utils.spicetify_db import load_from_db
+    from system_utils.helpers import _normalize_track_id
+    
+    analysis = None
+    analysis_track_id = None
+    
+    # 1. Try live Spicetify state first (ONLY if Spicetify data is fresh AND has actual data)
+    # If Spicetify is stale, the old data in memory is for a different track
+    if is_spicetify_fresh():
+        live_analysis = _spicetify_state.get('audio_analysis')
+        # Check if it has actual segment data (not just empty arrays)
+        if live_analysis and live_analysis.get('segments'):
+            analysis = live_analysis
+            # Use the track ID from Spicetify state
+            analysis_track_id = _spicetify_state.get('audio_analysis_track_id')
+            # Get track info for logging
+            track_info = _spicetify_state.get('track', {})
+            artist = track_info.get('artist', 'Unknown')
+            title = track_info.get('name', 'Unknown')
+            logger.debug(f"Using live Spicetify audio analysis: {artist} - {title}")
+    
+    # 2. If not in memory, try database cache (works for any source)
+    if not analysis:
+        metadata = await get_current_song_meta_data()
+        if metadata:
+            artist = metadata.get('artist', '')
+            title = metadata.get('title', '')
+            if artist and title:
+                # Non-blocking file I/O using thread pool
+                cached = await asyncio.to_thread(load_from_db, artist, title)
+                if cached and cached.get('audio_analysis'):
+                    analysis = cached['audio_analysis']
+                    # Compute track ID from the metadata we used to load
+                    # This ensures frontend validation works correctly
+                    analysis_track_id = _normalize_track_id(artist, title)
+                    logger.info(f"Loaded audio analysis from Spicetify cache: {artist} - {title}")
+                else:
+                    logger.debug(f"No cached audio analysis for: {artist} - {title}")
+    
+    if not analysis:
+        return jsonify({"error": "No audio analysis available"}), 404
+    
+    # Validate we have segment data
+    if not analysis.get('segments'):
+        return jsonify({"error": "No segments in audio analysis"}), 404
+    
+    segments = analysis.get('segments', [])
+    beats = analysis.get('beats', [])
+    sections = analysis.get('sections', [])
+    duration = analysis.get('duration', 0)
+    
+    # Process waveform: average loudness per segment (RMS-like)
+    # Formula: (loudness_start + loudness_max) / 2, then convert dB to linear
+    waveform = []
+    max_amp = 0
+    
+    for seg in segments:
+        loud_start = max(seg.get('loudness_start', -60), -60)  # Floor at -60dB
+        loud_max = max(seg.get('loudness_max', -60), -60)
+        avg_db = (loud_start + loud_max) / 2
+        amp = pow(10, avg_db / 20)  # dB to linear amplitude
+        max_amp = max(max_amp, amp)
+        waveform.append({
+            'start': round(seg['start'], 3),
+            'amp': amp  # Will normalize after
+        })
+    
+    # Normalize waveform amplitudes to 0-1 range
+    if max_amp > 0:
+        for w in waveform:
+            w['amp'] = round(w['amp'] / max_amp, 3)
+    
+    # Process segments for spectrum: include start, duration, pitches, and timbre
+    spectrum_segments = []
+    for seg in segments:
+        spectrum_segments.append({
+            'start': round(seg.get('start', 0), 3),
+            'duration': round(seg.get('duration', 0), 3),
+            'pitches': seg.get('pitches', [0] * 12),
+            'timbre': seg.get('timbre', [0] * 12),
+            'loudness': round(seg.get('loudness_max', -60), 1)
+        })
+    
+    # Return BOTH raw audio_analysis AND processed fields for backward compatibility
+    return jsonify({
+        # NEW: Full raw audio analysis (tempo, key, bars, tatums, etc.)
+        'audio_analysis': analysis,
+        'analysis_track_id': analysis_track_id,
+        # BACKWARD COMPATIBILITY: Processed fields for existing code
+        'waveform': waveform,
+        'segments': spectrum_segments,
+        'beats': beats,
+        'sections': sections,
+        'duration': duration,
+        'segment_count': len(segments)
+    })
+
 
 # --- PWA Routes ---
 
@@ -290,7 +670,11 @@ async def get_current_provider_info():
     """Get info about the provider currently serving lyrics"""
     from lyrics import get_current_provider, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
     provider_name = get_current_provider()
@@ -316,13 +700,17 @@ async def get_available_providers():
     """Get list of providers that could provide lyrics for current song"""
     from lyrics import get_available_providers_for_song, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
-    if not artist or not title:
+    if not artist and not title:
         return jsonify({"error": "Invalid song data"}), 400
     
     providers_list = get_available_providers_for_song(artist, title)
@@ -333,7 +721,11 @@ async def set_provider_preference():
     """Set preferred provider for current song"""
     from lyrics import set_provider_preference as set_pref, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
     data = await request.get_json()
@@ -342,8 +734,8 @@ async def set_provider_preference():
     if not provider_name:
         return jsonify({"error": "No provider specified"}), 400
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     result = await set_pref(artist, title, provider_name)
     
@@ -351,6 +743,56 @@ async def set_provider_preference():
         return jsonify(result), 200
     else:
         return jsonify(result), 400
+
+@app.route("/api/providers/word-sync-preference", methods=['POST'])
+async def set_word_sync_preference():
+    """Set preferred word-sync provider for current song"""
+    from lyrics import set_word_sync_provider_preference, current_song_data
+    
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    data = await request.get_json()
+    provider_name = data.get('provider')
+    
+    if not provider_name:
+        return jsonify({"error": "No provider specified"}), 400
+    
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
+    
+    result = await set_word_sync_provider_preference(artist, title, provider_name)
+    
+    if result['status'] == 'success':
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 400
+
+@app.route("/api/providers/word-sync-preference", methods=['DELETE'])
+async def clear_word_sync_preference():
+    """Clear word-sync provider preference for current song"""
+    from lyrics import clear_word_sync_provider_preference, current_song_data
+    
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
+        return jsonify({"error": "No song playing"}), 404
+    
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
+    
+    success = await clear_word_sync_provider_preference(artist, title)
+    
+    if success:
+        return jsonify({"status": "success", "message": "Word-sync preference cleared"}), 200
+    else:
+        return jsonify({"error": "Failed to clear preference"}), 400
 
 @app.route("/api/instrumental/mark", methods=['POST'])
 async def mark_instrumental():
@@ -397,11 +839,15 @@ async def clear_provider_preference_endpoint():
     """Clear provider preference for current song"""
     from lyrics import clear_provider_preference as clear_pref, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     success = await clear_pref(artist, title)
     
@@ -415,11 +861,15 @@ async def delete_cached_lyrics_endpoint():
     """Delete all cached lyrics for current song (use when lyrics are wrong)"""
     from lyrics import delete_cached_lyrics, current_song_data
     
-    if not current_song_data:
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
         return jsonify({"error": "No song playing"}), 404
     
-    artist = current_song_data.get("artist", "")
-    title = current_song_data.get("title", "")
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
     
     if not artist or not title:
         return jsonify({"error": "Invalid song data"}), 400
@@ -430,6 +880,76 @@ async def delete_cached_lyrics_endpoint():
         return jsonify(result), 200
     else:
         return jsonify(result), 500
+
+
+@app.route("/api/backfill/lyrics", methods=['POST'])
+async def backfill_lyrics_endpoint():
+    """Manually trigger lyrics refetch from ALL enabled providers"""
+    from lyrics import refetch_lyrics, current_song_data
+    
+    # Use lyrics cache if available, otherwise get fresh metadata (handles paused state)
+    song_data = current_song_data
+    if not song_data:
+        song_data = await get_current_song_meta_data()
+    if not song_data:
+        return jsonify({"status": "error", "message": "No song playing"}), 404
+    
+    artist = song_data.get("artist", "")
+    title = song_data.get("title", "")
+    album = song_data.get("album")
+    duration_ms = song_data.get("duration_ms")
+    duration = duration_ms // 1000 if duration_ms else None
+    
+    if not artist or not title:
+        return jsonify({"status": "error", "message": "Invalid song data"}), 400
+    
+    result = await refetch_lyrics(artist, title, album, duration)
+    return jsonify(result), 200 if result['status'] == 'success' else 500
+
+
+@app.route("/api/backfill/art", methods=['POST'])
+async def backfill_art_endpoint():
+    """Manually trigger album art and artist images refetch"""
+    from system_utils import get_current_song_meta_data, ensure_album_art_db, ensure_artist_image_db
+    
+    metadata = await get_current_song_meta_data()
+    if not metadata:
+        return jsonify({"status": "error", "message": "No song playing"}), 404
+    
+    artist = metadata.get("artist", "")
+    album = metadata.get("album")
+    title = metadata.get("title")
+    spotify_url = metadata.get("album_art_url")
+    artist_id = metadata.get("artist_id")
+    
+    if not artist:
+        return jsonify({"status": "error", "message": "Invalid song data"}), 400
+    
+    logger.info(f"Manual Refetch Art triggered for: {artist} - {title}")
+    
+    # Trigger both album art and artist images refetch with force=True
+    from system_utils.helpers import create_tracked_task
+    from system_utils.spicetify_db import load_from_db
+    
+    # Load artist_visuals from Spicetify DB (if available for this track)
+    artist_visuals = None
+    spicetify_data = load_from_db(artist, title)
+    if spicetify_data:
+        artist_visuals = spicetify_data.get("artist_visuals")
+    
+    async def run_refetch():
+        # Refetch album art
+        await ensure_album_art_db(artist, album, title, spotify_url, retry_count=0, force=True)
+        # Refetch artist images (with Spicetify visuals if available)
+        await ensure_artist_image_db(artist, artist_id, force=True, artist_visuals=artist_visuals)
+    
+    create_tracked_task(run_refetch())
+    
+    return jsonify({
+        "status": "success",
+        "message": "Refetching album art and artist images..."
+    }), 200
+
 
 # --- Album Art Database API ---
 
@@ -504,8 +1024,14 @@ async def get_album_art_options():
             # Check if this is artist images metadata (type: "artist_images")
             if artist_metadata.get("type") == "artist_images":
                 artist_images = artist_metadata.get("images", [])
-                artist_preferred = artist_metadata.get("preferred_provider")
                 folder_name = artist_folder.name
+                
+                # CRITICAL FIX: Read artist image preference from ALBUM folder, not artist folder
+                # Preferences are now stored per-album as preferred_artist_image_filename
+                # The db_result contains album metadata which has this field
+                album_preferred_artist_filename = None
+                if db_result and db_result.get("metadata"):
+                    album_preferred_artist_filename = db_result["metadata"].get("preferred_artist_image_filename")
                 
                 # Convert artist images to options format
                 # CRITICAL FIX: Count images per source to create unique provider names when needed
@@ -554,15 +1080,10 @@ async def get_album_art_options():
                     height = img.get("height", 0)
                     resolution = f"{width}x{height}" if width and height else "unknown"
                     
-                    # Check if this is the preferred artist image
-                    # Match by provider_name (with or without "(Artist)" suffix for backward compatibility), source, or URL
-                    # Also check if saved preference matches the internal format with "(Artist)" suffix
-                    is_preferred = (artist_preferred == provider_name or 
-                                  artist_preferred == f"{provider_name} (Artist)" or
-                                  artist_preferred == source or
-                                  artist_preferred == f"{source} (Artist)" or
-                                  artist_preferred == img_url or
-                                  (not preferred_provider and artist_preferred and source in artist_preferred))
+                    # CRITICAL FIX: Check preferred by FILENAME from album folder preference
+                    # This uses the new per-album system (preferred_artist_image_filename in album metadata)
+                    # Match by filename which is the most reliable identifier
+                    is_preferred = (album_preferred_artist_filename == filename) if album_preferred_artist_filename else False
                     
                     options.append({
                         "provider": provider_name,
@@ -577,10 +1098,13 @@ async def get_album_art_options():
                     })
                 
                 # CRITICAL FIX: Update preferred_provider to reflect artist image preference if set
-                # This ensures the response field accurately reflects the current selection
-                # Priority: Artist image preference > Album art preference (artist images override album art)
-                if artist_preferred:
-                    preferred_provider = artist_preferred
+                # Use the album folder preference (filename-based) to find the source name for display
+                if album_preferred_artist_filename:
+                    # Find the source name for this filename to set as preferred_provider for API response
+                    for img in artist_images:
+                        if img.get("filename") == album_preferred_artist_filename:
+                            preferred_provider = img.get("source", album_preferred_artist_filename)
+                            break
         except Exception as e:
             logger.debug(f"Failed to load artist images metadata: {e}")
     
@@ -678,7 +1202,11 @@ async def set_album_art_preference():
     
     if is_artist_image:
         # Handle artist image preference
-        artist_folder = get_album_db_folder(artist, None)  # Artist-only folder
+        # NEW 6.1: Save preference to ALBUM folder (per-album behavior)
+        # Images still live in artist folder, but preference is per-album
+        album_folder = get_album_db_folder(artist, album_or_title)  # Album folder for preference
+        album_metadata_path = album_folder / "metadata.json"
+        artist_folder = get_album_db_folder(artist, None)  # Artist folder for images
         artist_metadata_path = artist_folder / "metadata.json"
         
         if not artist_metadata_path.exists():
@@ -773,35 +1301,50 @@ async def set_album_art_preference():
             if not matching_image:
                 return jsonify({"error": f"Artist image '{provider_name}' not found in database"}), 404
             
-            # CRITICAL FIX: Save both provider_name (for display) and filename (for robust loading)
-            # The provider_name is what we show in UI, but filename is what we use to actually find the image
-            artist_metadata["preferred_provider"] = provider_name
-            artist_metadata["preferred_image_filename"] = matching_image.get("filename")  # NEW: Save filename for robust matching
-            artist_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            # Get the selected filename for saving
+            selected_filename = matching_image.get("filename")
             
-            # CRITICAL FIX: DO NOT clear album art preference when artist image is selected
-            # Album art preference (top-left thumbnail) and artist image preference (background) are INDEPENDENT
-            # When user selects an artist image:
-            #   - Background should show the artist image (handled by load_artist_image_from_db in system_utils.py)
-            #   - Top-left should keep the user's preferred album art (e.g., iTunes, not auto-selected LastFM)
-            # The system_utils.py logic already handles this correctly:
-            #   - load_album_art_from_db() respects preferred_provider for top-left display
-            #   - load_artist_image_from_db() only returns image if preference is explicitly set
-            #   - get_current_song_meta_data() uses artist image for background if available, but keeps album art for top-left
+            # NEW 6.1: Save preference to ALBUM folder (per-album behavior)
+            # Load or create album metadata
+            try:
+                if album_metadata_path.exists():
+                    with open(album_metadata_path, 'r', encoding='utf-8') as f:
+                        album_pref_metadata = json.load(f)
+                else:
+                    # Create new metadata for this album folder
+                    album_pref_metadata = {
+                        "type": "album_art",  # Keep compatible type
+                        "artist": artist,
+                        "album": album_or_title
+                    }
+            except Exception as e:
+                logger.error(f"Failed to load album metadata for preference: {e}")
+                # Create fresh metadata
+                album_pref_metadata = {
+                    "type": "album_art",
+                    "artist": artist,
+                    "album": album_or_title
+                }
             
-            # Save updated metadata
-            if not save_album_db_metadata(artist_folder, artist_metadata):
+            # Save the per-album artist image preference
+            album_pref_metadata["preferred_artist_image_filename"] = selected_filename
+            album_pref_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            
+            # Ensure album folder exists and save
+            album_folder.mkdir(parents=True, exist_ok=True)
+            if not save_album_db_metadata(album_folder, album_pref_metadata):
                 return jsonify({"error": "Failed to save artist image preference"}), 500
             
             # Log successful preference save for observability
-            logger.info(f"Set artist image preference to '{provider_name}' for {artist}")
+            logger.info(f"Set artist image preference to '{provider_name}' for {artist} - {album_or_title}")
             
             # CRITICAL FIX: Clear artist image cache to ensure new preference is immediately reflected
             # Without this, the cache (15-second TTL) would continue serving the old image until it expires
+            # Clear cache for the (artist, album) pair
             clear_artist_image_cache(artist)
             
             # Store filename for use outside lock
-            filename = matching_image.get("filename")
+            filename = selected_filename
         
         # Copy selected image to cache for immediate use (outside lock to avoid blocking)
         db_image_path = artist_folder / filename
@@ -829,6 +1372,11 @@ async def set_album_art_preference():
             # Update preferred provider
             db_metadata["preferred_provider"] = provider_name
             db_metadata["last_accessed"] = datetime.utcnow().isoformat() + "Z"
+            
+            # CRITICAL FIX: Clear artist image preference from album folder when album art is selected
+            # The preference is stored as preferred_artist_image_filename in the album folder (per-album behavior)
+            # This ensures album art takes priority over any previously selected artist image
+            db_metadata["preferred_artist_image_filename"] = None
             
             # CRITICAL FIX: Clear artist image preference when album art is selected (mutual exclusion)
             # This ensures that selecting album art overrides any previously selected artist image
@@ -946,6 +1494,13 @@ async def set_album_art_preference():
     if hasattr(get_current_song_meta_data, '_last_result'):
         get_current_song_meta_data._last_result = None
     
+    # FIX: Also invalidate Spicetify enrichment cache
+    # This ensures album art selection changes take effect immediately for Spicetify source
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+        get_current_song_meta_data._spicetify_enriched_track = None
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+        get_current_song_meta_data._spicetify_enriched_result = None
+    
     # Add cache busting timestamp
     cache_bust = int(time.time())
     
@@ -1007,9 +1562,15 @@ async def clear_album_art_preference():
                     # CRITICAL FIX: Explicitly set to None so save_album_db_metadata knows to delete it
                     # (pop() would be restored by safety logic in save function)
                     album_data["preferred_provider"] = None
+                    # CRITICAL FIX: Also clear artist image preference from album folder
+                    # This is stored as preferred_artist_image_filename (per-album behavior)
+                    album_data["preferred_artist_image_filename"] = None
                     album_data["last_accessed"] = datetime.utcnow().isoformat() + "Z"
                     save_album_db_metadata(album_folder, album_data)
-                    logger.info(f"Cleared album art preference for {artist} - {album_or_title}")
+                    logger.info(f"Cleared album art and artist image preference for {artist} - {album_or_title}")
+                    
+                    # CRITICAL FIX: Clear artist image cache to ensure changes take effect immediately
+                    clear_artist_image_cache(artist)
             except Exception as e:
                 logger.error(f"Error clearing album art preference: {e}")
 
@@ -1017,6 +1578,12 @@ async def clear_album_art_preference():
     get_current_song_meta_data._last_check_time = 0
     if hasattr(get_current_song_meta_data, '_last_result'):
         get_current_song_meta_data._last_result = None
+    
+    # FIX: Also invalidate Spicetify enrichment cache
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+        get_current_song_meta_data._spicetify_enriched_track = None
+    if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+        get_current_song_meta_data._spicetify_enriched_result = None
 
     return jsonify({"status": "success", "message": "Art preferences cleared"})
 
@@ -1091,6 +1658,17 @@ async def set_background_style():
             # This ensures the "Auto" reset takes effect immediately in the UI
             get_current_song_meta_data._last_check_time = 0
             
+            # FIX: Clear _last_result to invalidate audio recognition cache (stores background_style with _audio_rec_enriched flag)
+            if hasattr(get_current_song_meta_data, '_last_result'):
+                get_current_song_meta_data._last_result = None
+            
+            # FIX: Also invalidate Spicetify enrichment cache which stores background_style separately
+            # Without this, clicking "Auto" doesn't work for Spicetify source (stale cached style persists)
+            if hasattr(get_current_song_meta_data, '_spicetify_enriched_track'):
+                get_current_song_meta_data._spicetify_enriched_track = None
+            if hasattr(get_current_song_meta_data, '_spicetify_enriched_result'):
+                get_current_song_meta_data._spicetify_enriched_result = None
+            
             return jsonify({"status": "success", "style": style, "message": f"Saved {style} preference"})
         else:
             return jsonify({"error": "Failed to save preference"}), 500
@@ -1134,10 +1712,29 @@ async def serve_album_art_image(folder_name: str, filename: str):
         elif ext == '.gif': mime = 'image/gif'
         elif ext == '.webp': mime = 'image/webp'
         
+        # Build cache headers with ETag/Last-Modified for efficient revalidation
+        # After max-age expires (24h), browser validates with ETag → 304 if unchanged
+        headers = {'Cache-Control': 'public, max-age=86400, must-revalidate'}
+        
+        try:
+            # Last-Modified: file modification timestamp
+            mtime = os.path.getmtime(str(image_path))
+            from email.utils import formatdate
+            headers['Last-Modified'] = formatdate(mtime, usegmt=True)
+            
+            # ETag: hash of path + mtime (fast, avoids hashing large image files)
+            import hashlib
+            etag_source = f"{image_path}:{mtime}".encode('utf-8')
+            etag = hashlib.md5(etag_source).hexdigest()
+            headers['ETag'] = f'"{etag}"'
+        except Exception:
+            # If mtime fails, just use max-age without ETag (still works)
+            pass
+        
         return Response(
             image_data,
             mimetype=mime,
-            headers={'Cache-Control': 'public, max-age=86400'}  # Cache for 24 hours
+            headers=headers
         )
     except Exception as e:
         logger.error(f"Error serving album art image: {e}")
@@ -1265,8 +1862,9 @@ async def toggle_playback():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first (fast, no rate limits), Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first (fast, no rate limits), Spotify API fallback
+    # Spicetify is Spotify Desktop, which registers with Windows SMTC
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_toggle_playback
         success = await windows_toggle_playback()
         if success:
@@ -1331,8 +1929,8 @@ async def next_track():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first, Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first, Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_next
         success = await windows_next()
         if success:
@@ -1369,8 +1967,8 @@ async def previous_track():
         else:
             return jsonify({"error": "Windows playback control failed"}), 500
     
-    # HYBRID MODE: Windows first, Spotify fallback
-    if source == 'spotify_hybrid':
+    # HYBRID MODE + SPICETIFY: Windows SMTC first, Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
         from system_utils.windows import windows_previous
         success = await windows_previous()
         if success:
@@ -1391,13 +1989,69 @@ async def previous_track():
     await client.previous_track()
     return jsonify({"status": "success", "message": "Previous"})
 
+@app.route("/api/playback/seek", methods=['POST'])
+async def seek_playback():
+    """Seek to position - routes to Windows or Spotify based on current source."""
+    data = await request.get_json()
+    position_ms = data.get('position_ms')
+    
+    if position_ms is None:
+        return jsonify({"error": "position_ms required"}), 400
+    
+    # Ensure position_ms is an integer
+    try:
+        position_ms = int(position_ms)
+    except (ValueError, TypeError):
+        return jsonify({"error": "position_ms must be a number"}), 400
+    
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    # Debug logging for routing decisions
+    logger.debug(f"Seek to {position_ms}ms - source: {source}")
+    
+    # Windows source uses Windows playback controls
+    if source == 'windows_media':
+        from system_utils.windows import windows_seek
+        success = await windows_seek(position_ms)
+        if success:
+            return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Windows)"})
+        else:
+            return jsonify({"error": "Windows seek failed"}), 500
+    
+    # HYBRID MODE + SPICETIFY: Windows SMTC first (fast, no rate limits), Spotify API fallback
+    if source in ['spotify_hybrid', 'spicetify']:
+        from system_utils.windows import windows_seek
+        success = await windows_seek(position_ms)
+        if success:
+            return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Windows)"})
+        
+        # Windows failed - fall back to Spotify API
+        logger.debug("Windows seek failed for hybrid, falling back to Spotify API")
+        # Fall through to Spotify logic below
+    
+    # Spotify source (and hybrid fallback) uses Spotify API
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    success = await client.seek_to_position(position_ms)
+    if success:
+        return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms (Spotify)"})
+    return jsonify({"error": "Seek failed"}), 500
+
 @app.route("/api/artist/images", methods=['GET'])
 async def get_artist_images():
     """
     Get artist images, preferring local DB, falling back to Spotify and caching.
+    
+    Query params:
+        artist_id: Spotify artist ID (optional, used for fallback)
+        include_metadata: If 'true', return full image metadata and preferences
     """
-    # Get artist_id from query params (might be stale if frontend hasn't updated)
+    # Get query params
     artist_id = request.args.get('artist_id')
+    include_metadata = request.args.get('include_metadata', 'false').lower() == 'true'
     
     # We also need the artist NAME to find the folder
     # Try to get from current metadata if not passed
@@ -1426,17 +2080,113 @@ async def get_artist_images():
     # This will return local URLs like /api/album-art/image/Artist/img.jpg
     images = await ensure_artist_image_db(artist_name, artist_id)
     
-    return jsonify({
+    # Build response
+    response = {
         "artist_id": artist_id,
         "artist_name": artist_name,
         "images": images,
         "count": len(images)
-    })
+    }
+    
+    # Extended behavior: include full metadata and preferences
+    if include_metadata:
+        from system_utils.artist_image import get_slideshow_preferences
+        from system_utils.album_art import get_album_db_folder
+        
+        folder = get_album_db_folder(artist_name, None)
+        metadata_path = folder / "metadata.json"
+        image_metadata = []
+        
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    full_metadata = json.load(f)
+                # Only include downloaded images with relevant fields
+                for img in full_metadata.get("images", []):
+                    if img.get("downloaded") and img.get("filename"):
+                        image_metadata.append({
+                            "source": img.get("source", "unknown"),
+                            "filename": img.get("filename"),
+                            "width": img.get("width"),
+                            "height": img.get("height"),
+                            "added_at": img.get("added_at")
+                        })
+            except Exception as e:
+                logger.debug(f"Failed to load image metadata for '{artist_name}': {e}")
+        
+        response["metadata"] = image_metadata
+        response["preferences"] = get_slideshow_preferences(artist_name)
+    
+    return jsonify(response)
+
+
+@app.route("/api/artist/images/preferences", methods=['POST'])
+async def save_artist_slideshow_preferences_endpoint():
+    """
+    Save slideshow preferences for an artist.
+    
+    Body: {
+        "artist": "Artist Name",
+        "excluded": ["filename1.jpg", ...],
+        "auto_enable": true | false | null,
+        "favorites": ["filename2.jpg", ...]
+    }
+    """
+    from system_utils.artist_image import save_slideshow_preferences
+    
+    data = await request.get_json()
+    artist = data.get('artist')
+    
+    if not artist:
+        return jsonify({"error": "Artist name required"}), 400
+    
+    preferences = {
+        "excluded": data.get('excluded', []),
+        "auto_enable": data.get('auto_enable'),
+        "favorites": data.get('favorites', [])
+    }
+    
+    success = save_slideshow_preferences(artist, preferences)
+    
+    if success:
+        logger.info(f"Saved slideshow preferences for '{artist}'")
+        return jsonify({"status": "success", "message": "Preferences saved"})
+    else:
+        return jsonify({"error": "Failed to save preferences"}), 500
+
 
 @app.route("/api/playback/queue", methods=['GET'])
 async def get_playback_queue():
+    """
+    Get playback queue.
+    
+    Uses Spicetify when active (more accurate - includes autoplay tracks),
+    falls back to Spotify Web API otherwise.
+    """
+    # Check if we should use Spicetify (more accurate queue with autoplay tracks)
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'spicetify':
+        # Try Spicetify first (includes autoplay tracks that Web API misses)
+        from system_utils.spicetify import get_queue as get_spicetify_queue, is_connected
+        
+        if is_connected():
+            spicetify_queue = await get_spicetify_queue()
+            if spicetify_queue and spicetify_queue.get('success'):
+                # Return in same format as Spotify API response
+                return jsonify({
+                    "current": spicetify_queue.get('current'),
+                    "queue": spicetify_queue.get('queue', [])[:20],  # Limit to 20 for consistency
+                    "source": "spicetify"  # Let frontend know this is more accurate data
+                })
+            else:
+                logger.debug("Spicetify queue request failed, falling back to Spotify API")
+    
+    # Fallback to Spotify Web API
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     queue_data = await client.get_queue()
     if not queue_data:
@@ -1448,7 +2198,8 @@ async def get_playback_queue():
     
     return jsonify({
         "current": currently_playing,
-        "queue": queue[:20]  # Limit to next 20 songs
+        "queue": queue[:20],  # Limit to next 20 songs
+        "source": "spotify_api"  # Indicate this may not include autoplay
     })
 
 @app.route("/api/playback/liked", methods=['GET'])
@@ -1686,9 +2437,10 @@ async def audio_recognition_get_config():
         
         # Check if HTTPS is actually available (certs exist)
         from pathlib import Path
-        from config import HTTPS
-        https_enabled = HTTPS.get("enabled", False)
-        cert_file = Path(HTTPS.get("cert_file", "certs/server.crt"))
+        from config import SERVER
+        https_config = SERVER.get("https", {})
+        https_enabled = https_config.get("enabled", False)
+        cert_file = Path(https_config.get("cert_file", "certs/server.crt"))
         https_available = https_enabled and cert_file.exists()
         
         return jsonify({
@@ -1750,9 +2502,51 @@ async def audio_recognition_configure():
             "capture_duration", "latency_offset", "silence_threshold"
         ]
         
-        for key in valid_keys:
+        # Apply session overrides with STRICT type conversion
+        # This prevents "can only concatenate str to str" errors in the engine
+        
+        # 1. Integers
+        if "device_id" in data:
+            val = data["device_id"]
+            if val is None or val == "":
+                set_session_override("device_id", None)
+            else:
+                try:
+                    set_session_override("device_id", int(val))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid device_id: {val}")
+
+        # 2. Floats
+        float_keys = ["recognition_interval", "capture_duration", "latency_offset"]
+        for key in float_keys:
             if key in data:
-                set_session_override(key, data[key])
+                try:
+                    set_session_override(key, float(data[key]))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid float for {key}: {data[key]}")
+
+        # 2b. Integers (silence_threshold is int, not float)
+        if "silence_threshold" in data:
+            try:
+                set_session_override("silence_threshold", int(data["silence_threshold"]))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid silence_threshold: {data['silence_threshold']}")
+
+        # 3. Booleans
+        bool_keys = ["enabled", "reaper_auto_detect"]
+        for key in bool_keys:
+            if key in data:
+                # Handle string "true"/"false" if sent that way
+                val = data[key]
+                if isinstance(val, str):
+                    val = val.lower() in ('true', '1', 'yes', 'on')
+                set_session_override(key, bool(val))
+
+        # 4. Strings
+        str_keys = ["device_name", "mode"]
+        for key in str_keys:
+            if key in data:
+                set_session_override(key, str(data[key]) if data[key] is not None else None)
         
         # EVENT-DRIVEN: Set runtime flag for immediate effect in main loop
         # This replaces polling session_config on every metadata fetch
@@ -1935,6 +2729,21 @@ async def audio_stream_websocket():
         logger.info("Frontend audio WebSocket disconnected")
 
 
+@app.websocket('/ws/spicetify')
+async def spicetify_websocket():
+    """
+    WebSocket endpoint for Spicetify bridge (Spotify Desktop extension).
+    
+    Receives real-time playback data from the Spicetify browser extension:
+    - Position updates every 100ms
+    - Track metadata on song change
+    - Audio analysis data
+    - Color extraction (may be null)
+    """
+    from system_utils.spicetify import handle_spicetify_connection
+    await handle_spicetify_connection()
+
+
 # --- System Routes ---
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -2058,7 +2867,16 @@ async def get_client_config():
         "visualModeDelaySeconds": settings.get("visual_mode.delay_seconds"),
         "visualModeAutoSharp": settings.get("visual_mode.auto_sharp"),
         "slideshowEnabled": settings.get("visual_mode.slideshow.enabled"),
-        "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds")
+        "slideshowIntervalSeconds": settings.get("visual_mode.slideshow.interval_seconds"),
+        # Slideshow (Art Cycling) settings
+        "slideshowDefaultEnabled": settings.get("slideshow.default_enabled"),
+        "slideshowConfigIntervalSeconds": settings.get("slideshow.interval_seconds"),
+        "slideshowKenBurnsEnabled": settings.get("slideshow.ken_burns_enabled"),
+        "slideshowKenBurnsIntensity": settings.get("slideshow.ken_burns_intensity"),
+        "slideshowShuffle": settings.get("slideshow.shuffle"),
+        "slideshowTransitionDuration": settings.get("slideshow.transition_duration"),
+        # Word-sync settings
+        "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True)
     }
 
 @app.route("/callback")

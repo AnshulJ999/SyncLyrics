@@ -14,7 +14,10 @@ import {
     currentArtistImages,
     manualStyleOverride,
     setLastTrackInfo,
-    setManualStyleOverride
+    setManualStyleOverride,
+    wordSyncEnabled,
+    wordSyncProvider,
+    hasWordSync
 } from './state.js';
 import { showToast, setLyricsInDom } from './dom.js';
 import { normalizeTrackId } from './utils.js';
@@ -23,9 +26,12 @@ import {
     fetchAlbumArtOptions,
     setProviderPreference,
     clearProviderPreference as apiClearProviderPreference,
+    setWordSyncProviderPreference,
     setAlbumArtPreference,
     clearAlbumArtPreference as apiClearAlbumArtPreference,
     deleteCachedLyrics as apiDeleteCachedLyrics,
+    refetchLyrics as apiRefetchLyrics,
+    refetchArt as apiRefetchArt,
     toggleInstrumentalMark as apiToggleInstrumental,
     saveBackgroundStyle,
     getCurrentTrack
@@ -36,13 +42,18 @@ import {
     updateBackground,
     checkForVisualMode
 } from './background.js';
+import { updateLatencyDisplay } from './latency.js';
+import { songWordSyncOffset } from './state.js';
 
 // ========== PROVIDER DISPLAY ==========
 
 /**
  * Update the provider display badge
  * 
- * @param {string} providerName - Provider name
+ * Shows the word-sync provider when word-sync is enabled and available,
+ * otherwise shows the line-sync provider.
+ * 
+ * @param {string} providerName - Line-sync provider name (fallback)
  */
 export function updateProviderDisplay(providerName) {
     if (!displayConfig.showProvider) return;
@@ -51,8 +62,15 @@ export function updateProviderDisplay(providerName) {
     const providerNameEl = document.getElementById('provider-name');
 
     if (providerInfo && providerNameEl) {
-        const displayName = providerDisplayNames[providerName] ||
-            providerName.charAt(0).toUpperCase() + providerName.slice(1);
+        // Show word-sync provider when word-sync is enabled and available
+        // Otherwise fall back to line-sync provider
+        let effectiveProvider = providerName;
+        if (wordSyncEnabled && hasWordSync && wordSyncProvider) {
+            effectiveProvider = wordSyncProvider;
+        }
+        
+        const displayName = providerDisplayNames[effectiveProvider] ||
+            effectiveProvider.charAt(0).toUpperCase() + effectiveProvider.slice(1);
         providerNameEl.textContent = displayName;
         providerInfo.classList.remove('hidden');
     }
@@ -81,27 +99,58 @@ export async function showProviderModal() {
         data.providers.forEach(provider => {
             const providerItem = document.createElement('div');
             providerItem.className = 'provider-item';
-            if (provider.is_current) {
+            
+            // Determine if this provider is the "effective" current provider
+            // When word-sync is enabled, the word-sync provider is the effective one
+            const isEffectiveCurrent = wordSyncEnabled && hasWordSync 
+                ? provider.is_word_sync_current 
+                : provider.is_current;
+            
+            if (isEffectiveCurrent) {
                 providerItem.classList.add('current-provider');
             }
 
             const displayName = providerDisplayNames[provider.name] ||
                 provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
 
+            // Build badge HTML
+            let badgeHtml = '';
+            if (provider.is_word_sync_current && wordSyncEnabled && hasWordSync) {
+                badgeHtml = '<span class="current-badge">Word Source</span>';
+            } else if (provider.is_current && !provider.is_word_sync_current) {
+                badgeHtml = '<span class="current-badge" style="background: rgba(100, 100, 255, 0.3);">Lyrics Source</span>';
+            } else if (provider.is_current) {
+                badgeHtml = '<span class="current-badge">Current</span>';
+            }
+
+            // Build word-sync button if provider has word-sync
+            let wordSyncBtnHtml = '';
+            if (provider.has_word_sync) {
+                const isWsSelected = provider.is_word_sync_current || provider.is_word_sync_preferred;
+                wordSyncBtnHtml = `
+                    <button class="provider-ws-btn ${isWsSelected ? 'active' : ''}" data-provider="${provider.name}">
+                        ${isWsSelected ? '✓ Word-Sync' : 'Use Word-Sync'}
+                    </button>
+                `;
+            }
+
             providerItem.innerHTML = `
                 <div class="provider-item-content">
                     <div class="provider-item-header">
-                        <span class="provider-item-name">${displayName}</span>
-                        ${provider.is_current ? '<span class="current-badge">Current</span>' : ''}
+                        <span class="provider-item-name">${displayName}${provider.has_word_sync ? ' 🎤' : ''}</span>
+                        ${badgeHtml}
                         ${provider.cached ? '<span class="cached-badge">Cached</span>' : ''}
                     </div>
                     <div class="provider-item-meta">
-                        Priority: ${provider.priority}
+                        Priority: ${provider.priority}${provider.has_word_sync ? ' • Word Sync' : ''}
                     </div>
                 </div>
-                <button class="provider-select-btn" data-provider="${provider.name}">
-                    ${provider.is_current ? 'Selected' : 'Use This'}
-                </button>
+                <div class="provider-item-buttons">
+                    <button class="provider-select-btn" data-provider="${provider.name}">
+                        ${isEffectiveCurrent ? 'Selected' : 'Use Lyrics'}
+                    </button>
+                    ${wordSyncBtnHtml}
+                </div>
             `;
 
             providerList.appendChild(providerItem);
@@ -112,6 +161,9 @@ export async function showProviderModal() {
 
         // Update instrumental button state
         updateInstrumentalButtonState();
+        
+        // Update latency display with current per-song offset
+        updateLatencyDisplay(songWordSyncOffset);
 
         modal.classList.remove('hidden');
 
@@ -411,6 +463,46 @@ export async function deleteCachedLyrics() {
     }
 }
 
+/**
+ * Refetch lyrics from all providers
+ */
+export async function refetchLyricsHandler() {
+    try {
+        showToast('Refetching lyrics...');
+        const result = await apiRefetchLyrics();
+
+        if (result.status === 'success') {
+            showToast(result.message || 'Refetching lyrics...');
+        } else {
+            showToast(result.message || 'Failed to refetch lyrics', 'error');
+        }
+    } catch (error) {
+        console.error('Error refetching lyrics:', error);
+        showToast('Failed to refetch lyrics', 'error');
+    }
+}
+
+/**
+ * Refetch album art and artist images
+ */
+export async function refetchArtHandler() {
+    try {
+        showToast('Refetching art...');
+        const result = await apiRefetchArt();
+
+        if (result.status === 'success') {
+            showToast(result.message || 'Refetching art...');
+            // Refresh the album art tab to show new images
+            setTimeout(() => loadAlbumArtTab(), 2000);
+        } else {
+            showToast(result.message || 'Failed to refetch art', 'error');
+        }
+    } catch (error) {
+        console.error('Error refetching art:', error);
+        showToast('Failed to refetch art', 'error');
+    }
+}
+
 // ========== INSTRUMENTAL MARKING ==========
 
 /**
@@ -639,19 +731,112 @@ export function setupProviderUI() {
         deleteBtn.addEventListener('click', deleteCachedLyrics);
     }
 
+    // Refetch lyrics button
+    const refetchLyricsBtn = document.getElementById('lyrics-refetch');
+    if (refetchLyricsBtn) {
+        refetchLyricsBtn.addEventListener('click', refetchLyricsHandler);
+    }
+
+    // Refetch art button
+    const refetchArtBtn = document.getElementById('art-refetch');
+    if (refetchArtBtn) {
+        refetchArtBtn.addEventListener('click', refetchArtHandler);
+    }
+
     // Mark as Instrumental button
     const instrumentalBtn = document.getElementById('mark-instrumental-btn');
     if (instrumentalBtn) {
         instrumentalBtn.addEventListener('click', toggleInstrumentalMark);
     }
+    
+    // Reload Settings button
+    const reloadBtn = document.getElementById('reload-settings-btn');
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/settings/reload', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('Settings reloaded');
+                } else {
+                    showToast('Failed to reload settings', 'error');
+                }
+            } catch (error) {
+                console.error('Error reloading settings:', error);
+                showToast('Error reloading settings', 'error');
+            }
+        });
+    }
+
+    // Fill mode buttons (Cover/Contain/Stretch/Original)
+    const fillModeButtons = document.getElementById('fill-mode-buttons');
+    if (fillModeButtons) {
+        // Load saved fill mode from localStorage on init
+        const savedFillMode = localStorage.getItem('backgroundFillMode') || 'cover';
+        const backgroundLayer = document.getElementById('background-layer');
+        if (backgroundLayer) {
+            backgroundLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
+            backgroundLayer.classList.add(`fill-${savedFillMode}`);
+        }
+        // Update button states to match saved value
+        const allFillBtns = fillModeButtons.querySelectorAll('.fill-btn');
+        allFillBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.fill === savedFillMode);
+        });
+
+        fillModeButtons.addEventListener('click', (e) => {
+            const fillBtn = e.target.closest('.fill-btn');
+            if (!fillBtn) return;
+
+            const fillMode = fillBtn.dataset.fill;
+            const bgLayer = document.getElementById('background-layer');
+            
+            if (bgLayer) {
+                // Remove all fill mode classes
+                bgLayer.classList.remove('fill-cover', 'fill-contain', 'fill-stretch', 'fill-original');
+                // Add the selected one
+                bgLayer.classList.add(`fill-${fillMode}`);
+            }
+
+            // Save to localStorage (persists across reloads, applies to all songs)
+            localStorage.setItem('backgroundFillMode', fillMode);
+
+            // Update button states
+            const btns = fillModeButtons.querySelectorAll('.fill-btn');
+            btns.forEach(btn => btn.classList.remove('active'));
+            fillBtn.classList.add('active');
+
+            showToast(`Background fill: ${fillMode}`);
+        });
+    }
 
     // Provider selection (event delegation)
     const providerList = document.getElementById('provider-list');
     if (providerList) {
-        providerList.addEventListener('click', (e) => {
+        providerList.addEventListener('click', async (e) => {
+            // Handle lyrics provider selection
             if (e.target.classList.contains('provider-select-btn')) {
                 const providerName = e.target.getAttribute('data-provider');
                 selectProvider(providerName);
+            }
+            
+            // Handle word-sync provider selection
+            if (e.target.classList.contains('provider-ws-btn')) {
+                const providerName = e.target.getAttribute('data-provider');
+                try {
+                    const result = await setWordSyncProviderPreference(providerName);
+                    if (result.status === 'success') {
+                        const displayName = providerDisplayNames[providerName] || providerName;
+                        showToast(`Word-sync now from ${displayName}`);
+                        // Refresh the modal to update UI
+                        showProviderModal();
+                    } else {
+                        showToast(result.message || 'Failed to set word-sync provider', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error setting word-sync provider:', error);
+                    showToast('Failed to set word-sync provider', 'error');
+                }
             }
         });
     }

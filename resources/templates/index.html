@@ -5,8 +5,16 @@
 {% block content %}
 
 <!-- Background Layers -->
+<!-- Art mode zoom images (for zoom-out capability) -->
+<img id="art-zoom-img-a" class="art-zoom-img" alt="">
+<img id="art-zoom-img-b" class="art-zoom-img" alt="">
 <div id="background-layer" class="background-layer"></div>
 <div id="background-overlay" class="background-overlay"></div>
+
+<!-- Spectrum Visualizer (full-width behind content, centered around seekbar area) -->
+<div id="spectrum-container" class="spectrum-container" style="display: none;">
+    <canvas id="spectrum-canvas"></canvas>
+</div>
 
 <!-- Spotify Login Overlay (shown when authentication is needed) -->
 {% if spotify_needs_auth and spotify_auth_url %}
@@ -178,7 +186,7 @@
                                 title="Reset to default">↺</button>
                         </div>
                         <div class="slider-control">
-                            <input type="range" class="slider-input" id="capture-duration" value="5" min="2" max="10"
+                            <input type="range" class="slider-input" id="capture-duration" value="5" min="2" max="20"
                                 step="0.5">
                             <span class="slider-value" id="capture-duration-value">5s</span>
                         </div>
@@ -221,23 +229,46 @@
 <div id="settings-panel" class="settings-panel" style="display: none;">
     <div class="settings-header">
         <h3>Display Options</h3>
-        <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
-            <i class="bi bi-fullscreen"></i>
-        </button>
+        <div class="settings-header-buttons">
+            <div class="power-menu-container">
+                <button id="power-menu-btn" class="settings-header-btn" title="Power Options">
+                    <i class="bi bi-power"></i>
+                </button>
+                <div id="power-menu" class="power-menu hidden">
+                    <button id="btn-restart" class="power-menu-item">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span>Restart Server</span>
+                    </button>
+                    <button id="btn-exit" class="power-menu-item power-menu-danger">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>Exit Application</span>
+                    </button>
+                </div>
+            </div>
+            <a href="/settings" id="main-settings-link" class="settings-header-btn" title="Open Main Settings">
+                <i class="bi bi-sliders"></i>
+            </a>
+            <button id="fullscreen-btn" class="settings-header-btn" title="Toggle Fullscreen">
+                <i class="bi bi-fullscreen"></i>
+            </button>
+        </div>
     </div>
     <div class="settings-options">
         <label><input type="checkbox" id="opt-album-art" checked> Show Album Art</label>
         <label><input type="checkbox" id="opt-track-info" checked> Show Track Info</label>
         <label><input type="checkbox" id="opt-controls" checked> Show Playback Controls</label>
         <label><input type="checkbox" id="opt-progress" checked> Show Progress Bar</label>
-        <label><input type="checkbox" id="opt-bottom-nav" checked> Show Bottom Navigation</label>
+        <label><input type="checkbox" id="opt-waveform"> Waveform Seekbar</label>
+        <label><input type="checkbox" id="opt-spectrum"> Spectrum Visualizer</label>
+        <label><input type="checkbox" id="opt-bottom-nav"> Show Bottom Navigation</label>
         <label><input type="checkbox" id="opt-show-provider" checked> Show Lyric Provider Info</label>
         <label><input type="checkbox" id="opt-audio-source" checked> Show Audio Source</label>
-        <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Mode Toggle</label>
+        <label><input type="checkbox" id="opt-visual-mode-toggle" checked> Show Visual Icons</label>
         <label><input type="checkbox" id="opt-colors"> Use Album Colors</label>
         <label><input type="checkbox" id="opt-art-bg"> Blurry Album Art Background</label>
-        <label><input type="checkbox" id="opt-soft-art-bg"> Soft Album Art Background</label>
+        <label><input type="checkbox" id="opt-soft-art-bg" checked> Soft Album Art Background</label>
         <label><input type="checkbox" id="opt-sharp-art-bg"> Sharp Album Art Background</label>
+        <label><input type="checkbox" id="opt-word-sync"> Word-Sync Lyrics (Karaoke)</label>
     </div>
     <button id="copy-url-btn" class="settings-action-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -260,6 +291,18 @@
     </div>
 </div>
 
+<!-- Next-Up Preview Card (shows in last 30s of song) -->
+<div id="next-up-card" class="next-up-card hidden">
+    <div class="next-up-label">Up Next</div>
+    <div class="next-up-content">
+        <img id="next-up-art" class="next-up-art" src="" alt="">
+        <div class="next-up-info">
+            <div id="next-up-title" class="next-up-title"></div>
+            <div id="next-up-artist" class="next-up-artist"></div>
+        </div>
+    </div>
+</div>
+
 <!-- Provider Info Badge (NEW) -->
 <div id="provider-info" class="provider-info hidden">
     <span class="provider-label">Source:</span>
@@ -274,12 +317,127 @@
     <i class="bi bi-music-note"></i>
 </button>
 
+<!-- NEW: Word-Sync Toggle Button (next to visual mode) -->
+<button id="btn-word-sync-toggle" class="word-sync-toggle-btn" title="Toggle Word-Sync (Karaoke)">
+    <i class="bi bi-stars"></i>
+</button>
+
+<!-- NEW: Slideshow Toggle Button (next to word-sync) -->
+<button id="btn-slideshow-toggle" class="slideshow-toggle-btn" title="Toggle Slideshow">
+    <i class="ph-fill ph-film-slate"></i>
+</button>
+
+<!-- Slideshow Control Center Modal -->
+<div id="slideshow-modal" class="slideshow-modal hidden">
+    <div class="slideshow-modal-content">
+        <div class="slideshow-modal-header">
+            <h3>Slideshow Settings</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="slideshow-reset-btn" class="modal-btn-small" title="Reset to defaults">↺</button>
+                <button id="slideshow-modal-close" class="modal-close">×</button>
+            </div>
+        </div>
+        
+        <!-- Controls Toolbar -->
+        <div class="slideshow-toolbar">
+            <!-- Timing Section -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Timing</span>
+                <div class="slideshow-timing-buttons">
+                    <button class="slideshow-timing-btn" data-timing="3">3s</button>
+                    <button class="slideshow-timing-btn active" data-timing="6">6s</button>
+                    <button class="slideshow-timing-btn" data-timing="9">9s</button>
+                    <button class="slideshow-timing-btn" data-timing="15">15s</button>
+                    <button class="slideshow-timing-btn" data-timing="30">30s</button>
+                    <button id="slideshow-custom-btn" class="slideshow-timing-btn" title="Custom timing">Custom</button>
+                    <input type="number" id="slideshow-custom-timing" class="slideshow-custom-input hidden" 
+                           min="1" max="600" placeholder="sec" title="Custom timing (1-600 seconds)">
+                </div>
+            </div>
+            
+            <!-- Options Section -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Effects</span>
+                <div class="slideshow-option-buttons">
+                    <button id="slideshow-shuffle-btn" class="slideshow-option-btn" title="Random order">
+                        <i class="bi bi-shuffle"></i> Shuffle
+                    </button>
+                    <button id="slideshow-ken-burns-btn" class="slideshow-option-btn active" title="Subtle zoom/pan animation">
+                        ✨ Ken Burns
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Auto-Enable Section (per-artist) -->
+            <div class="slideshow-control-group">
+                <span class="slideshow-control-label">Auto-Enable</span>
+                <div class="slideshow-option-buttons">
+                    <button class="slideshow-auto-btn slideshow-option-btn active" data-auto="null" title="Use global setting">Default</button>
+                    <button class="slideshow-auto-btn slideshow-option-btn" data-auto="true" title="Always on for this artist">Always</button>
+                    <button class="slideshow-auto-btn slideshow-option-btn" data-auto="false" title="Never for this artist">Never</button>
+                </div>
+            </div>
+            
+            <!-- Ken Burns Intensity (shown when Ken Burns is active) -->
+
+            <div id="slideshow-ken-burns-options" class="slideshow-control-group">
+                <span class="slideshow-control-label">Effect Intensity</span>
+                <div class="slideshow-intensity-buttons">
+                    <button class="slideshow-intensity-btn active" data-intensity="subtle">Subtle</button>
+                    <button class="slideshow-intensity-btn" data-intensity="medium">Medium</button>
+                    <button class="slideshow-intensity-btn" data-intensity="cinematic">Cinematic</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Selection Bar - Image count, filters, select/deselect, sort -->
+        <div class="slideshow-selection-bar">
+            <span class="slideshow-image-count" id="slideshow-image-count">0 images</span>
+            
+            <!-- Filter chips (inline) -->
+            <div class="slideshow-filter-chips" id="slideshow-filter-chips">
+                <button class="slideshow-filter-chip active" data-filter="all">All</button>
+                <button class="slideshow-filter-chip" data-filter="included">Included</button>
+                <button class="slideshow-filter-chip" data-filter="excluded">Excluded</button>
+                <!-- Provider chips added dynamically -->
+                <button class="slideshow-filter-chip" data-filter="favorites">★ Favorites</button>
+                <button class="slideshow-reset-filters-btn" id="slideshow-reset-filters">Reset</button>
+            </div>
+            
+            <!-- Select/Deselect buttons -->
+            <div class="slideshow-selection-buttons">
+                <button id="slideshow-select-all" class="slideshow-action-btn">Select All</button>
+                <button id="slideshow-deselect-all" class="slideshow-action-btn">Deselect All</button>
+            </div>
+            
+            <!-- Sort dropdown (right-most) -->
+            <select id="slideshow-sort-select" class="slideshow-sort-select">
+                <option value="original">Original</option>
+                <option value="name">Name</option>
+                <option value="resolution">Resolution</option>
+                <option value="provider">Provider</option>
+                <option value="date">Date Added</option>
+            </select>
+        </div>
+        
+        <!-- Image Grid -->
+        <div id="slideshow-image-grid" class="slideshow-image-grid">
+            <!-- Populated dynamically -->
+        </div>
+    </div>
+</div>
+
+
 <!-- Provider Selection Modal (NEW) -->
 <div id="provider-modal" class="provider-modal hidden">
     <div class="provider-modal-content">
         <div class="provider-modal-header">
-            <h3>Select Provider</h3>
-            <button id="provider-modal-close" class="modal-close">×</button>
+            <h3>Lyrics & Art</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="reload-settings-btn" class="modal-close" style="font-size: 1rem;"
+                    title="Reload backend settings">⚙️</button>
+                <button id="provider-modal-close" class="modal-close">×</button>
+            </div>
         </div>
         <div class="provider-tabs">
             <button class="provider-tab active" data-tab="lyrics">Lyrics</button>
@@ -289,8 +447,17 @@
 
         <!-- WRAPPER FOR DESKTOP GRID -->
         <div class="provider-content-wrapper">
-            <!-- Added data-title for CSS pseudo-element header -->
-            <div id="provider-tab-content-lyrics" class="provider-tab-content active" data-title="Lyrics Source">
+            <!-- Added data-title for CSS pseudo-element header (for Album Art only now) -->
+            <div id="provider-tab-content-lyrics" class="provider-tab-content active" data-title="">
+                <!-- Real header row with latency controls -->
+                <div class="lyrics-header-row">
+                    <span class="lyrics-header-title">Lyrics Source</span>
+                    <div class="latency-controls" id="latency-controls" title="Word-sync timing adjustment">
+                        <button id="latency-minus" class="latency-btn">−</button>
+                        <span id="latency-value" class="latency-value">0ms</span>
+                        <button id="latency-plus" class="latency-btn">+</button>
+                    </div>
+                </div>
                 <div id="provider-list" class="provider-list">
                     <!-- Populated dynamically -->
                 </div>
@@ -298,12 +465,17 @@
                     <button id="mark-instrumental-btn" class="btn-instrumental"
                         title="Click to mark/unmark as instrumental">🎵 Instrumental</button>
                     <button id="provider-clear-preference" class="btn-secondary">Reset to Auto</button>
+                    <button id="lyrics-refetch" class="btn-reload"
+                        title="Refetch lyrics from all providers">🔄 Refetch Lyrics</button>
                     <button id="lyrics-delete-cache" class="btn-danger"
                         title="Delete all cached lyrics and re-fetch">🗑️ Delete Cache</button>
+                    <button id="album-art-clear-preference" class="btn-secondary">Reset Art Pref</button>
+                    <button id="art-refetch" class="btn-reload"
+                        title="Refetch album art and artist images">🔄 Refetch Art</button>
                 </div>
             </div>
 
-            <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="Album Art">
+            <div id="provider-tab-content-album-art" class="provider-tab-content" data-title="">
                 <!-- Background Style Controls (Static - JS duplication removed) -->
                 <div class="style-controls-section">
                     <h4>Background Style</h4>
@@ -315,17 +487,27 @@
                     </div>
                 </div>
 
+                <!-- Background Fill Controls -->
+                <div class="style-controls-section">
+                    <h4>Background Fill</h4>
+                    <div class="style-buttons" id="fill-mode-buttons">
+                        <button class="fill-btn active" data-fill="cover" title="Fill screen, may crop edges">Cover</button>
+                        <button class="fill-btn" data-fill="contain" title="Full image visible, may have bars">Contain</button>
+                        <button class="fill-btn" data-fill="stretch" title="Stretch to fill (distorts)">Stretch</button>
+                        <button class="fill-btn" data-fill="original" title="Original size, centered">Original</button>
+                    </div>
+                </div>
+
                 <div id="album-art-grid" class="art-grid">
                     <!-- Populated dynamically -->
                 </div>
+                <!-- Art footer moved to lyrics footer for space efficiency
                 <div class="provider-modal-footer">
-                    <div
-                        style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; text-align: center; margin-top: 16px;">
-                        Select an image to use
-                    </div>
-                    <button id="album-art-clear-preference" class="btn-secondary"
-                        style="margin-top: 10px; width: 100%;">Reset to Default Art</button>
+                    <button id="art-refetch" class="btn-reload"
+                        title="Refetch album art and artist images">🔄 Refetch Art</button>
+                    <button id="album-art-clear-preference" class="btn-secondary">Reset to Default</button>
                 </div>
+                -->
             </div>
 
             <!-- REMOVED: Separate Artist Images Content Div -->
@@ -348,11 +530,19 @@
 
     <!-- Progress Bar -->
     <div id="progress-container" class="progress-container">
-        <div class="progress-bar">
+        <div id="progress-bar" class="progress-bar">
             <div id="progress-fill" class="progress-fill"></div>
         </div>
         <div class="progress-time">
             <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+        </div>
+    </div>
+
+    <!-- Waveform Seekbar (replaces progress bar when enabled) -->
+    <div id="waveform-container" class="waveform-container" style="display: none;">
+        <canvas id="waveform-canvas"></canvas>
+        <div class="progress-time">
+            <span id="waveform-current-time">0:00</span> / <span id="waveform-total-time">0:00</span>
         </div>
     </div>
 

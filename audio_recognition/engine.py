@@ -9,11 +9,13 @@ Features:
 """
 
 import asyncio
+import math
 import time
 from enum import Enum
 from typing import Optional, Callable, Dict, Any
 
 from logging_config import get_logger
+from system_utils.helpers import _normalize_track_id
 from .capture import AudioCaptureManager
 from .shazam import ShazamRecognizer, RecognitionResult
 from .buffer import FrontendAudioQueue
@@ -51,7 +53,7 @@ class RecognitionEngine:
     DEFAULT_INTERVAL = 5.0           # Seconds between recognitions
     DEFAULT_CAPTURE_DURATION = 5.0   # Seconds of audio to capture
     DEFAULT_STALE_THRESHOLD = 15.0   # Seconds before result is stale
-    MAX_CONSECUTIVE_FAILURES = 4     # Failures before pausing
+    MAX_CONSECUTIVE_FAILURES = 5     # Failures before pausing
     
     def __init__(
         self,
@@ -61,6 +63,7 @@ class RecognitionEngine:
         capture_duration: float = DEFAULT_CAPTURE_DURATION,
         latency_offset: float = 0.0,
         metadata_enricher: Optional[Callable[[str], Any]] = None,
+        title_search_enricher: Optional[Callable[[str, str], Any]] = None,
         on_song_change: Optional[Callable[[RecognitionResult], None]] = None,
         on_state_change: Optional[Callable[[EngineState], None]] = None
     ):
@@ -76,6 +79,9 @@ class RecognitionEngine:
             metadata_enricher: Optional async callback to enrich metadata using ISRC.
                                Signature: async (isrc: str) -> Optional[Dict]
                                Returns dict with canonical metadata (artist, title, etc.)
+            title_search_enricher: Optional async callback to search by artist+title.
+                                   Signature: async (artist: str, title: str) -> Optional[Dict]
+                                   Used as fallback when ISRC lookup fails.
             on_song_change: Callback when song changes (sync, wrapped in try/except)
             on_state_change: Callback when state changes (sync)
         """
@@ -89,6 +95,7 @@ class RecognitionEngine:
         self.on_song_change = on_song_change
         self.on_state_change = on_state_change
         self.metadata_enricher = metadata_enricher
+        self.title_search_enricher = title_search_enricher
         
         # State
         self._state = EngineState.IDLE
@@ -120,6 +127,12 @@ class RecognitionEngine:
         self._consecutive_no_match: int = 0  # Separate from failure counter
         self._last_attempt_result: str = "idle"  # "matched" | "no_match" | "silent" | "error" | "idle"
         self._last_attempt_time: float = 0.0
+        
+        # Pending song verification (anti-false-positive)
+        # Shazam results need N consecutive matches before being accepted
+        self._pending_song: Optional[RecognitionResult] = None
+        self._pending_match_count: int = 0
+        self._pending_fail_count: int = 0  # For timeout (clear pending after N fails)
         
     @property
     def state(self) -> EngineState:
@@ -214,28 +227,53 @@ class RecognitionEngine:
         
         # Use Spotify enriched data if available
         if self._enriched_metadata:
+            # Use Spotify duration (reliable) - Shazam doesn't provide accurate duration
+            spotify_duration = self._enriched_metadata.get("duration_ms", 0)
             return {
-                # Canonical metadata from Spotify
+                # Canonical metadata from Spotify/Spicetify DB
                 "artist": self._enriched_metadata["artist"],
                 "title": self._enriched_metadata["title"],
                 "album": self._enriched_metadata.get("album"),
-                "track_id": self._enriched_metadata.get("track_id"),
-                "duration_ms": self._enriched_metadata.get("duration_ms", 0),
+                # FIX: Use normalized artist_title for frontend change detection (matches other sources)
+                "track_id": _normalize_track_id(self._enriched_metadata["artist"], self._enriched_metadata["title"]),
+                "duration_ms": spotify_duration if spotify_duration > 0 else 0,
+                # Spotify ID for Like button (extracted from track_id or track_uri)
+                "id": self._enriched_metadata.get("track_id"),
+                # NEW: Artist fields for Visual Mode
+                "artist_id": self._enriched_metadata.get("artist_id"),
+                "artist_name": self._enriched_metadata.get("artist_name") or self._enriched_metadata.get("artist"),
+                # NEW: Spotify URL for clicking album art
+                "url": self._enriched_metadata.get("url"),
+                # NEW: Colors from Spicetify DB (for background)
+                "colors": self._enriched_metadata.get("colors"),
+                # NEW: Audio analysis from Spicetify DB (for waveform/spectrum)
+                "audio_analysis": self._enriched_metadata.get("audio_analysis"),
                 # Shazam-only fields (preserved)
                 "isrc": self._last_result.isrc,
                 "shazam_url": self._last_result.shazam_url,
-                "spotify_url": self._last_result.spotify_url,
+                "spotify_url": self._last_result.spotify_url or self._enriched_metadata.get("url"),
                 "background_image_url": self._last_result.background_image_url,
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
                 "album_art_url": self._enriched_metadata.get("album_art_url") or self._last_result.album_art_url,
+                # Recognition provider (shazam or acrcloud)
+                "recognition_provider": self._last_result.recognition_provider,
                 # Debug fields
                 "_shazam_artist": self._last_result.artist,
                 "_shazam_title": self._last_result.title,
                 "_spotify_enriched": True,
+                "_enrichment_source": self._enriched_metadata.get("_enrichment_source", "spotify_api"),
             }
         
-        # Fallback to Shazam data
+        # Fallback to raw recognition data
+        # Use duration from RecognitionResult if available (ACRCloud provides this)
+        # Handle NaN from Shazam (Shazam doesn't provide duration)
+        raw_duration = self._last_result.duration
+        if raw_duration and not math.isnan(raw_duration) and raw_duration > 0:
+            duration_ms = int(raw_duration * 1000)
+        else:
+            duration_ms = 0
+        
         return {
             "artist": self._last_result.artist,
             "title": self._last_result.title,
@@ -247,8 +285,11 @@ class RecognitionEngine:
             "background_image_url": self._last_result.background_image_url,
             "genre": self._last_result.genre,
             "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
-            "track_id": None,
-            "duration_ms": 0,
+            # FIX: Use normalized track_id for frontend change detection (consistent with enriched path)
+            "track_id": _normalize_track_id(self._last_result.artist, self._last_result.title),
+            "duration_ms": duration_ms,
+            # Recognition provider (shazam or acrcloud)
+            "recognition_provider": self._last_result.recognition_provider,
             "_spotify_enriched": False,
         }
     
@@ -407,15 +448,15 @@ class RecognitionEngine:
                     # Success - enrich with Spotify (async)
                     await self._handle_successful_recognition(result)
                 else:
-                    # Failure
-                    self._handle_failed_recognition()
+                    # Failure/no-match - check for pending timeout
+                    self._handle_pending_timeout()
                 
             except asyncio.CancelledError:
                 logger.debug("Recognition loop cancelled")
                 break
             except Exception as e:
                 logger.error(f"Recognition loop error: {e}")
-                self._handle_failed_recognition()
+                self._handle_pending_timeout()
             
             # Adaptive interval based on detection state
             if not self._stop_requested:
@@ -545,6 +586,8 @@ class RecognitionEngine:
         """
         Handle a successful recognition result.
         
+        Includes multi-match verification for Shazam results to reduce false positives.
+        ACRCloud results bypass verification (high confidence).
         Enriches metadata with Spotify if enricher is available.
         """
         self._consecutive_failures = 0
@@ -553,6 +596,9 @@ class RecognitionEngine:
         self._last_attempt_time = time.time()
         self._is_playing = True
         self._frozen_position = None  # Unfreeze position
+        
+        # Reset pending fail count on any successful recognition
+        self._pending_fail_count = 0
         
         # Update adaptive interval state machine
         if not self._first_detection:
@@ -564,63 +610,352 @@ class RecognitionEngine:
         
         # Check for song change
         song_changed = not result.is_same_song(self._last_result)
-        if song_changed:
-            logger.info(f"Song changed to: {result}")
-            
-            # Reset to verification state for new song
-            self._verified_detection = False
-            
-            # Clear previous enrichment (will re-enrich below)
-            self._enriched_metadata = None
-            self._enrichment_attempted = False  # Allow enrichment for new song
-            
-            # Call song change callback
-            if self.on_song_change:
-                try:
-                    self.on_song_change(result)
-                except Exception as e:
-                    logger.error(f"Song change callback error: {e}")
         
-        # Enrich with Spotify using ISRC (only on song change or if not yet enriched)
-        # _enrichment_attempted prevents retry spam for songs not on Spotify
-        should_enrich = (self.metadata_enricher and result.isrc and 
-                         (song_changed or (self._enriched_metadata is None and not self._enrichment_attempted)))
+        if not song_changed:
+            # Same song - just update position and state
+            self._last_result = result
+            self._set_state(EngineState.ACTIVE)
+            
+            # Clear pending if current song confirmed - prevents interleaved false positives
+            # (e.g., A -> B -> A -> B pattern should NOT switch to B)
+            if self._pending_song:
+                logger.debug(f"Cleared pending {self._pending_song} - current song confirmed")
+                self._clear_pending()
+            
+            return
+        
+        # NEW SONG DETECTED - run validation
+        if await self._validate_for_acceptance(result):
+            await self._accept_song_change(result)
+        # else: stored as pending, waiting for more matches
+    
+    async def _validate_for_acceptance(self, result: RecognitionResult) -> bool:
+        """
+        Validate a new song before accepting.
+        
+        Returns True if song should be accepted, False if pending verification.
+        """
+        from system_utils.session_config import get_effective_value
+        
+        # ACRCloud bypasses all verification (high confidence)
+        if result.recognition_provider == "acrcloud":
+            logger.info(f"ACRCloud result - accepting immediately: {result}")
+            self._clear_pending()
+            return True
+        
+        # Reaper validation (optional)
+        if get_effective_value("reaper_validation_enabled", False):
+            reaper_match = await self._check_reaper_validation(result)
+            if reaper_match:
+                logger.info(f"Reaper validation passed - accepting: {result}")
+                self._clear_pending()
+                return True
+            else:
+                logger.debug(f"Reaper validation failed for: {result}")
+                # Fall through to multi-match verification
+        
+        # Multi-match verification for Shazam results
+        cycles_needed = get_effective_value("verification_cycles", 2)
+        
+        if cycles_needed <= 1:
+            # No verification needed
+            self._clear_pending()
+            return True
+        
+        # Check if matches pending song
+        if self._pending_song and result.is_same_song(self._pending_song):
+            self._pending_match_count += 1
+            self._pending_song = result  # Keep latest result for fresh position data
+            
+            if self._pending_match_count >= cycles_needed:
+                logger.info(f"Verified after {self._pending_match_count} matches: {result}")
+                self._clear_pending()
+                return True
+            else:
+                logger.debug(f"Pending: {self._pending_match_count}/{cycles_needed} for {result}")
+                return False
+        else:
+            # Different song or no pending - start new pending
+            self._pending_song = result
+            self._pending_match_count = 1
+            self._pending_fail_count = 0
+            logger.debug(f"New pending song ({1}/{cycles_needed}): {result}")
+            return False
+    
+    async def _check_reaper_validation(self, result: RecognitionResult) -> bool:
+        """
+        Check if result matches Reaper window title using fuzzy matching.
+        
+        Uses ctypes to find Reaper window and get its title for validation.
+        Returns True if match found, False otherwise.
+        """
+        from system_utils.session_config import get_effective_value
+        import platform
+        
+        # Only works on Windows
+        if platform.system() != "Windows":
+            return False
+        
+        try:
+            import ctypes
+            
+            user32 = ctypes.windll.user32
+            
+            # Find Reaper window by class name
+            hwnd = user32.FindWindowW("REAPERwnd", None)
+            if not hwnd:
+                logger.debug("Reaper validation: Reaper not running")
+                return False
+            
+            # Get window title
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                logger.debug("Reaper validation: No window title")
+                return False
+            
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            window_title = buffer.value
+            
+            if not window_title:
+                return False
+            
+            threshold = get_effective_value("reaper_validation_threshold", 80) / 100.0
+            
+            # Simple word-overlap fuzzy match with score tracking
+            def fuzzy_match_score(needle: str, haystack: str) -> tuple:
+                """Returns (match: bool, overlap: int, total: int, pct: float)"""
+                if not needle or not haystack:
+                    return (False, 0, 0, 0.0)
+                needle_words = set(needle.lower().split())
+                haystack_words = set(haystack.lower().split())
+                if not needle_words:
+                    return (False, 0, 0, 0.0)
+                overlap = len(needle_words & haystack_words)
+                total = len(needle_words)
+                pct = overlap / total
+                return (pct >= threshold, overlap, total, pct * 100)
+            
+            # Try matching artist or title against window title
+            artist_match, artist_overlap, artist_total, artist_pct = fuzzy_match_score(result.artist, window_title)
+            title_match, title_overlap, title_total, title_pct = fuzzy_match_score(result.title, window_title)
+            
+            # Truncate window title for cleaner logs (keep first 60 chars)
+            window_short = window_title[:60] + "..." if len(window_title) > 60 else window_title
+            
+            if artist_match or title_match:
+                logger.debug(
+                    f"Reaper validation PASS: "
+                    f"artist={artist_overlap}/{artist_total} ({artist_pct:.0f}%), "
+                    f"title={title_overlap}/{title_total} ({title_pct:.0f}%) | "
+                    f"threshold={threshold*100:.0f}% | window='{window_short}'"
+                )
+                return True
+            
+            logger.debug(
+                f"Reaper validation FAIL: "
+                f"artist={artist_overlap}/{artist_total} ({artist_pct:.0f}%), "
+                f"title={title_overlap}/{title_total} ({title_pct:.0f}%) | "
+                f"threshold={threshold*100:.0f}% | '{result.artist} - {result.title}'"
+            )
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Reaper validation error: {e}")
+            return False
+    
+    def _clear_pending(self):
+        """Clear pending song verification state."""
+        self._pending_song = None
+        self._pending_match_count = 0
+        self._pending_fail_count = 0
+    
+    def _handle_pending_timeout(self):
+        """
+        Handle pending song timeout when recognition fails.
+        
+        Also calls _handle_failed_recognition to maintain failure tracking
+        (consecutive failures, pause detection, position freezing).
+        """
+        # Handle pending song timeout
+        if self._pending_song is not None:
+            from system_utils.session_config import get_effective_value
+            
+            self._pending_fail_count += 1
+            timeout_cycles = get_effective_value("verification_timeout_cycles", 4)
+            
+            if self._pending_fail_count >= timeout_cycles:
+                logger.debug(f"Pending song timeout after {self._pending_fail_count} fails: {self._pending_song}")
+                self._clear_pending()
+            else:
+                logger.debug(f"Pending fail count: {self._pending_fail_count}/{timeout_cycles}")
+        
+        # Also run original failure handling (pause detection, etc.)
+        self._handle_failed_recognition()
+    
+    async def _accept_song_change(self, result: RecognitionResult):
+        """
+        Accept a song change after validation.
+        
+        Handles callbacks, enrichment, and state updates.
+        """
+        logger.info(f"Song changed to: {result}")
+        
+        # Reset to verification state for new song
+        self._verified_detection = False
+        
+        # Clear previous enrichment (will re-enrich below)
+        self._enriched_metadata = None
+        self._enrichment_attempted = False  # Allow enrichment for new song
+        
+        # Call song change callback
+        if self.on_song_change:
+            try:
+                self.on_song_change(result)
+            except Exception as e:
+                logger.error(f"Song change callback error: {e}")
+        
+        # Enrich with Spotify using ISRC
+        should_enrich = self.metadata_enricher and result.isrc
         
         if should_enrich:
-            self._enrichment_attempted = True  # Prevent retry on failure
-            # Fire-and-forget: Don't block recognition loop waiting for Spotify API
+            self._enrichment_attempted = True
             asyncio.create_task(self._enrich_metadata_async(result))
         
+        # Update state
         self._last_result = result
         self._set_state(EngineState.ACTIVE)
     
     async def _enrich_metadata_async(self, result: 'RecognitionResult'):
         """
-        Background task to enrich metadata with Spotify.
+        Background task to enrich metadata with priority chain.
+        
+        Priority order (fastest first):
+        1. Spicetify DB (local file lookup, ~1-5ms)
+        2. ISRC lookup via Spotify API (~200ms)
+        3. Artist+Title search via Spotify API (~300ms, fallback)
         
         Runs in background via create_task to avoid blocking recognition loop.
         Checks if result is still current before applying to avoid race conditions.
         """
+        enriched = None
+        enrichment_source = None
+        
         try:
-            logger.debug(f"Enriching metadata with Spotify ISRC: {result.isrc}")
-            enriched = await self.metadata_enricher(result.isrc)
+            # Priority 1: Spicetify DB (fastest - local file read)
+            try:
+                from system_utils.spicetify_db import load_from_db
+                cached = load_from_db(result.artist, result.title)
+                if cached and cached.get('track_metadata'):
+                    enriched = self._format_spicetify_to_enriched(cached)
+                    if enriched:
+                        enrichment_source = "Spicetify DB"
+                        logger.debug(f"Spicetify DB hit for: {result.artist} - {result.title}")
+            except Exception as e:
+                logger.debug(f"Spicetify DB lookup failed: {e}")
+            
+            # Priority 2: ISRC lookup via Spotify API (existing behavior)
+            if not enriched and result.isrc and self.metadata_enricher:
+                try:
+                    logger.debug(f"Trying ISRC lookup: {result.isrc}")
+                    enriched = await self.metadata_enricher(result.isrc)
+                    if enriched:
+                        enrichment_source = "ISRC"
+                except Exception as e:
+                    logger.debug(f"ISRC lookup failed: {e}")
+            
+            # Priority 3: Artist+Title search via Spotify API (fallback)
+            if not enriched and self.title_search_enricher:
+                try:
+                    logger.debug(f"Trying title search: {result.artist} - {result.title}")
+                    # Pass album for validation (if available from Shazam/ACRCloud)
+                    enriched = await self.title_search_enricher(
+                        result.artist, 
+                        result.title, 
+                        result.album  # For validation against Spotify result
+                    )
+                    if enriched:
+                        enrichment_source = "Artist+Title search"
+                except Exception as e:
+                    logger.debug(f"Title search failed: {e}")
             
             # Race guard: Check if this result is still the current song
-            # If song changed while enriching, discard this stale result
-            if self._last_result and self._last_result.isrc == result.isrc:
-                if enriched:
-                    self._enriched_metadata = enriched
-                    logger.info(f"Spotify enrichment: {result.artist} → {enriched['artist']}")
+            # Use artist+title comparison since ISRC may not always be available
+            if self._last_result:
+                current_match = (
+                    self._last_result.artist.lower() == result.artist.lower() and 
+                    self._last_result.title.lower() == result.title.lower()
+                )
+                if current_match:
+                    if enriched:
+                        self._enriched_metadata = enriched
+                        logger.info(f"Enrichment via {enrichment_source}: {result.artist} - {result.title}")
+                    else:
+                        self._enriched_metadata = None
+                        logger.debug("All enrichment methods failed, using raw recognition data")
                 else:
-                    self._enriched_metadata = None
-                    logger.debug("Spotify enrichment failed, using Shazam metadata")
+                    logger.debug(f"Enrichment completed but song changed, discarding")
             else:
-                logger.debug(f"Enrichment completed but song changed (was {result.isrc}, now {self._last_result.isrc if self._last_result else 'None'}), discarding")
+                logger.debug("No current result, discarding enrichment")
+                
         except Exception as e:
             logger.debug(f"Metadata enrichment error: {e}")
             # Only clear if still current song
-            if self._last_result and self._last_result.isrc == result.isrc:
+            if self._last_result and self._last_result.artist.lower() == result.artist.lower():
                 self._enriched_metadata = None
+    
+    def _format_spicetify_to_enriched(self, cached: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert Spicetify DB format to enriched metadata format.
+        
+        Spicetify DB has rich metadata from Spotify Desktop client.
+        """
+        try:
+            track_meta = cached.get('track_metadata', {})
+            if not track_meta:
+                return None
+            
+            # Extract Spotify track ID from track_uri (spotify:track:xxx -> xxx)
+            track_uri = cached.get('track_uri', '')
+            track_id = None
+            if track_uri and ':' in track_uri:
+                parts = track_uri.split(':')
+                if len(parts) >= 3 and parts[1] == 'track':
+                    track_id = parts[2]
+            
+            # Convert spotify:image: URI to HTTPS URL if needed
+            album_art_url = track_meta.get('album_art_url', '')
+            if album_art_url and album_art_url.startswith('spotify:image:'):
+                image_id = album_art_url.replace('spotify:image:', '')
+                album_art_url = f'https://i.scdn.co/image/{image_id}'
+            
+            # Duration: prefer track_metadata, fallback to audio_analysis
+            duration_ms = track_meta.get('duration_ms', 0)
+            if not duration_ms:
+                # Fallback: audio_analysis.duration is in seconds
+                audio_analysis = cached.get('audio_analysis', {})
+                duration_sec = audio_analysis.get('duration', 0)
+                if duration_sec:
+                    duration_ms = int(duration_sec * 1000)
+            
+            return {
+                'artist': track_meta.get('artist', ''),
+                'title': track_meta.get('name', ''),
+                'album': track_meta.get('album'),
+                'track_id': track_id,
+                'duration_ms': duration_ms,
+                'album_art_url': album_art_url,
+                'url': track_meta.get('url'),
+                'artist_id': track_meta.get('artist_id'),
+                'artist_name': track_meta.get('artist'),
+                # Extra fields from Spicetify
+                'colors': cached.get('colors'),
+                'audio_analysis': cached.get('audio_analysis'),
+                '_enrichment_source': 'spicetify_db',
+            }
+        except Exception as e:
+            logger.debug(f"Failed to format Spicetify data: {e}")
+            return None
     
     def _handle_failed_recognition(self):
         """Handle a failed recognition attempt."""

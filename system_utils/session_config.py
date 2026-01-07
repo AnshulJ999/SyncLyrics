@@ -31,6 +31,11 @@ _audio_session_override: Dict[str, Optional[Any]] = {
     "latency_offset": None,       # float or None
     "reaper_auto_detect": None,   # True/False/None
     "silence_threshold": None,    # int or None (amplitude threshold for silence detection)
+    # Verification settings
+    "verification_cycles": None,           # int or None (Shazam matches needed)
+    "verification_timeout_cycles": None,   # int or None (clear pending after N fails)
+    "reaper_validation_enabled": None,     # True/False/None
+    "reaper_validation_threshold": None,   # int or None (fuzzy match 0-100)
 }
 
 
@@ -115,6 +120,11 @@ def get_audio_config_with_overrides() -> Dict[str, Any]:
         "latency_offset": AUDIO_RECOGNITION.get("latency_offset", 0.0),
         "reaper_auto_detect": AUDIO_RECOGNITION.get("reaper_auto_detect", False),
         "silence_threshold": AUDIO_RECOGNITION.get("silence_threshold", 500),
+        # Verification settings
+        "verification_cycles": AUDIO_RECOGNITION.get("verification_cycles", 2),
+        "verification_timeout_cycles": AUDIO_RECOGNITION.get("verification_timeout_cycles", 4),
+        "reaper_validation_enabled": AUDIO_RECOGNITION.get("reaper_validation_enabled", False),
+        "reaper_validation_threshold": AUDIO_RECOGNITION.get("reaper_validation_threshold", 80),
     }
     
     # Apply session overrides (only non-None values)

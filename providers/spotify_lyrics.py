@@ -46,9 +46,16 @@ class SpotifyLyrics(LyricsProvider):
         # an instance here. This ensures all API calls use the singleton instance and
         # statistics are consolidated across the entire app.
             
-    async def get_lyrics(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+    async def get_lyrics(self, artist: str, title: str, 
+                          album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
         """
         Get lyrics for a track by searching Spotify
+        
+        Args:
+            artist (str): Artist name
+            title (str): Song title
+            album (str, optional): Album name (not used - Spotify uses track ID)
+            duration (int, optional): Duration in seconds (not used - Spotify uses track ID)
 
         Returns:
             Optional[Dict[str, Any]]: Dictionary containing synced lyrics and metadata

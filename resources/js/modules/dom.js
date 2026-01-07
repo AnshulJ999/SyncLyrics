@@ -11,10 +11,13 @@ import {
     lastLyrics,
     updateInProgress,
     visualModeActive,
+    hasWordSync,
+    wordSyncEnabled,
     setLastLyrics,
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
+// Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
 
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
@@ -65,7 +68,17 @@ export function setLyricsInDom(lyrics) {
         lyrics = ['', '', lyrics.msg || '', '', '', ''];
     }
 
-    // Only update if lyrics have changed
+    // When word-sync is active and enabled, the animation loop (wordSync.js) is
+    // the SINGLE AUTHORITY for all 6 lyric lines. It updates surrounding lines
+    // exactly when line changes, preventing timing mismatches.
+    // We still need to handle the initial state before animation starts.
+    if (hasWordSync && wordSyncEnabled) {
+        // Only update lastLyrics for tracking, but don't touch DOM
+        setLastLyrics([...lyrics]);
+        return;
+    }
+
+    // Line-sync mode: handle normally with change detection
     if (!areLyricsDifferent(lastLyrics, lyrics)) {
         return;
     }
@@ -73,7 +86,7 @@ export function setLyricsInDom(lyrics) {
     setUpdateInProgress(true);
     setLastLyrics([...lyrics]);
 
-    // Update all elements simultaneously
+    // Update all elements simultaneously (line-sync only)
     updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
     updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
     updateLyricElement(document.getElementById('current'), lyrics[2]);
@@ -92,7 +105,7 @@ export function setLyricsInDom(lyrics) {
 
     setTimeout(() => {
         setUpdateInProgress(false);
-    }, 800);
+    }, 100);
 }
 
 // ========== THEME COLOR ==========
@@ -117,8 +130,9 @@ export function updateThemeColor(color) {
  * 
  * @param {string} message - Message to display
  * @param {string} type - 'success' or 'error'
+ * @param {number} durationMs - Duration in milliseconds (default 3000)
  */
-export function showToast(message, type = 'success') {
+export function showToast(message, type = 'success', durationMs = 3000) {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
@@ -131,7 +145,7 @@ export function showToast(message, type = 'success') {
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, durationMs);
 }
 
 // ========== UTILITY DOM FUNCTIONS ==========

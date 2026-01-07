@@ -14,24 +14,58 @@ import {
     queuePollInterval,
     isLiked,
     pendingArtUrl,
+    lastAlbumArtUrl,
+    lastAlbumArtPath,
     visualModeActive,
     manualVisualModeOverride,
     setLastTrackInfo,
     setPendingArtUrl,
+    setLastAlbumArtUrl,
+    setLastAlbumArtPath,
     setQueueDrawerOpen,
     setQueuePollInterval,
     setIsLiked,
     setManualVisualModeOverride
 } from './state.js';
 import { showToast } from './dom.js';
+import { enableArtZoom, disableArtZoom, resetArtZoom } from './artZoom.js';
 import { formatTime } from './utils.js';
 import {
     playbackCommand,
     getCurrentTrack,
     fetchQueue,
     checkLikedStatus as apiCheckLikedStatus,
-    toggleLikeStatus
+    toggleLikeStatus,
+    seekToPosition
 } from './api.js';
+
+// ========== SEEK STATE ==========
+let seekTimeout = null;
+let isDragging = false;
+let previewPositionMs = null;
+let seekTooltip = null;
+const SEEK_DEBOUNCE_MS = 150;  // Match waveform (faster since drag prevents spam)
+
+/**
+ * Debounced seek - only sends API call after user stops interacting
+ * 
+ * @param {number} positionMs - Position to seek to in milliseconds
+ */
+function debouncedSeek(positionMs) {
+    if (seekTimeout) clearTimeout(seekTimeout);
+    
+    seekTimeout = setTimeout(async () => {
+        console.log(`[ProgressBar] Seeking to ${formatTime(positionMs / 1000)} (${positionMs}ms)`);
+        try {
+            const result = await seekToPosition(positionMs);
+            if (result.error) {
+                showToast('Seek failed', 'error');
+            }
+        } catch (error) {
+            console.error('[ProgressBar] Seek error:', error);
+        }
+    }, SEEK_DEBOUNCE_MS);
+}
 
 // ========== PLAYBACK CONTROLS ==========
 
@@ -91,7 +125,59 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
     // Visual Mode Toggle Button
     const visualModeBtn = document.getElementById('btn-lyrics-toggle');
     if (visualModeBtn && enterVisualModeFn && exitVisualModeFn) {
-        visualModeBtn.addEventListener('click', () => {
+        // Long-press state
+        let longPressTimer = null;
+        let isLongPress = false;
+        const LONG_PRESS_DURATION = 500; // ms
+
+        // Art-only mode handler
+        const toggleArtOnlyMode = () => {
+            const isArtOnly = document.body.classList.contains('art-only-mode');
+            if (isArtOnly) {
+                // Exit art-only mode (no toast - silent exit)
+                document.body.classList.remove('art-only-mode');
+                // Clear manual override when exiting
+                setManualVisualModeOverride(false);
+                // Disable zoom/pan and reset transform
+                disableArtZoom();
+            } else {
+                // Set manual override FIRST (prevents auto-exit)
+                setManualVisualModeOverride(true);
+                // Enter visual mode (triggers auto-sharp background)
+                if (!visualModeActive) {
+                    enterVisualModeFn();
+                }
+                // Then enter art-only mode (hides all UI including visual mode UI)
+                document.body.classList.add('art-only-mode');
+                // Enable zoom/pan
+                enableArtZoom();
+                // Brief toast (1.5s instead of default 3s)
+                showToast('Art mode (pinch to zoom, long-press to exit)', 'success', 1500);
+            }
+        };
+
+        // Handle long-press to enter art-only mode
+        const handlePressStart = (e) => {
+            isLongPress = false;
+            longPressTimer = setTimeout(() => {
+                isLongPress = true;
+                toggleArtOnlyMode();
+            }, LONG_PRESS_DURATION);
+        };
+
+        const handlePressEnd = (e) => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+
+        // Regular click handler (only fires if NOT long-press)
+        visualModeBtn.addEventListener('click', (e) => {
+            if (isLongPress) {
+                isLongPress = false;
+                return; // Ignore click after long-press
+            }
             if (visualModeActive) {
                 setManualVisualModeOverride(false);
                 exitVisualModeFn();
@@ -100,6 +186,70 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
                 enterVisualModeFn();
             }
         });
+
+        // Long-press events (mouse + touch)
+        visualModeBtn.addEventListener('mousedown', handlePressStart);
+        visualModeBtn.addEventListener('mouseup', handlePressEnd);
+        visualModeBtn.addEventListener('mouseleave', handlePressEnd);
+        visualModeBtn.addEventListener('touchstart', handlePressStart, { passive: true });
+        visualModeBtn.addEventListener('touchend', handlePressEnd);
+        visualModeBtn.addEventListener('touchcancel', handlePressEnd);
+
+        // Corner-based exit for art-only mode
+        // Long-press (750ms) in any corner to exit - no conflict with pan/zoom
+        const CORNER_SIZE = 100;           // pixels from corner
+        const CORNER_HOLD_DURATION = 450; // ms
+        const EDGE_TAP_SIZE = 50;         // pixels from left/right edge for image switching
+        
+        let cornerExitTimer = null;
+
+        const isInCorner = (x, y) => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const inLeft = x < CORNER_SIZE;
+            const inRight = x > w - CORNER_SIZE;
+            const inTop = y < CORNER_SIZE;
+            const inBottom = y > h - CORNER_SIZE;
+            return (inLeft || inRight) && (inTop || inBottom);
+        };
+
+        const isOnLeftEdge = (x) => x < EDGE_TAP_SIZE;
+        const isOnRightEdge = (x) => x > window.innerWidth - EDGE_TAP_SIZE;
+
+        const clearCornerTimer = () => {
+            if (cornerExitTimer) {
+                clearTimeout(cornerExitTimer);
+                cornerExitTimer = null;
+            }
+        };
+
+        const handleCornerPress = (x, y) => {
+            if (!document.body.classList.contains('art-only-mode')) return;
+            
+            if (isInCorner(x, y)) {
+                cornerExitTimer = setTimeout(() => {
+                    if (document.body.classList.contains('art-only-mode')) {
+                        toggleArtOnlyMode();
+                    }
+                }, CORNER_HOLD_DURATION);
+            }
+        };
+
+        // Mouse events for corner exit
+        document.addEventListener('mousedown', (e) => {
+            handleCornerPress(e.clientX, e.clientY);
+        });
+        document.addEventListener('mouseup', clearCornerTimer);
+        document.addEventListener('mouseleave', clearCornerTimer);
+
+        // Touch events for corner exit
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                handleCornerPress(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: true });
+        document.addEventListener('touchend', clearCornerTimer);
+        document.addEventListener('touchcancel', clearCornerTimer);
     }
 }
 
@@ -115,11 +265,12 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify, Spotify Hybrid, or Windows Media
+    // Enable controls for Spotify, Spotify Hybrid, Spicetify, or Windows Media
     // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
         trackInfo.source === 'spotify_hybrid' ||
+        trackInfo.source === 'spicetify' ||
         trackInfo.source === 'windows_media';
 
     if (prevBtn) prevBtn.disabled = !canControl;
@@ -156,19 +307,215 @@ export function updateProgress(trackInfo) {
     const totalTime = document.getElementById('total-time');
     const progressContainer = document.getElementById('progress-container');
 
-    // Handle null duration gracefully
-    if (!trackInfo.duration_ms || trackInfo.position === undefined) {
+    // Only hide if position is undefined (no data at all)
+    // Still show progress bar when duration is 0 - at least position is visible
+    if (trackInfo.position === undefined) {
         if (progressContainer) progressContainer.style.display = 'none';
         return;
     }
 
     if (progressContainer) progressContainer.style.display = 'block';
 
-    const percent = Math.min(100, (trackInfo.position * 1000 / trackInfo.duration_ms) * 100);
+    // Calculate percent (handle duration_ms = 0 gracefully)
+    const durationMs = trackInfo.duration_ms || 0;
+    const percent = durationMs > 0 
+        ? Math.min(100, (trackInfo.position * 1000 / durationMs) * 100)
+        : 0;  // No progress if duration unknown
     if (fill) fill.style.width = `${percent}%`;
 
     if (currentTime) currentTime.textContent = formatTime(trackInfo.position);
-    if (totalTime) totalTime.textContent = formatTime(trackInfo.duration_ms / 1000);
+    if (totalTime) totalTime.textContent = formatTime(durationMs / 1000);
+}
+
+/**
+ * Attach seek handler to progress bar
+ * Full-featured implementation matching waveform.js:
+ * - Click-to-seek
+ * - Drag-to-scrub with visual preview
+ * - Touch support for mobile/tablet
+ * - Time tooltip during hover/drag
+ */
+export function attachProgressBarSeek() {
+    const progressBar = document.getElementById('progress-bar');
+    const progressFill = document.getElementById('progress-fill');
+    if (!progressBar) return;
+    
+    // Create tooltip element if it doesn't exist
+    if (!seekTooltip) {
+        seekTooltip = document.createElement('div');
+        seekTooltip.className = 'seek-tooltip';
+        seekTooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            pointer-events: none;
+            z-index: 10000;
+            display: none;
+            transform: translateX(-50%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        `;
+        document.body.appendChild(seekTooltip);
+    }
+    
+    // Make it clickable
+    progressBar.style.cursor = 'pointer';
+    progressBar.style.touchAction = 'none';  // Prevent touch scrolling on the bar
+    
+    // Get client position from mouse or touch event
+    const getClientPos = (e) => {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    };
+    
+    // Calculate seek position from client coordinates
+    const calculateSeekPosition = (clientX) => {
+        const rect = progressBar.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const duration = lastTrackInfo?.duration_ms || 0;
+        return percent * duration;  // Return in ms
+    };
+    
+    // Show tooltip at position
+    const showTooltip = (clientX, clientY, positionMs) => {
+        const timeStr = formatTime(positionMs / 1000);
+        seekTooltip.textContent = timeStr;
+        seekTooltip.style.display = 'block';
+        seekTooltip.style.left = `${clientX}px`;
+        // Position tooltip above the touch/cursor
+        const offset = isDragging ? 50 : 35;
+        seekTooltip.style.top = `${clientY - offset}px`;
+    };
+    
+    // Hide tooltip
+    const hideTooltip = () => {
+        seekTooltip.style.display = 'none';
+    };
+    
+    // Update visual preview during drag
+    const updateVisualPreview = (positionMs) => {
+        if (!progressFill) return;
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        const percent = Math.min(100, (positionMs / duration) * 100);
+        progressFill.style.width = `${percent}%`;
+    };
+    
+    // Track if we already sought (to prevent click from also firing after drag)
+    let didSeek = false;
+    
+    // ========== POINTER START (mousedown / touchstart) ==========
+    const handlePointerStart = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        e.preventDefault();
+        
+        const pos = getClientPos(e);
+        isDragging = true;
+        didSeek = false;
+        previewPositionMs = calculateSeekPosition(pos.x);
+        showTooltip(pos.x, pos.y, previewPositionMs);
+        updateVisualPreview(previewPositionMs);
+    };
+    
+    // ========== POINTER MOVE (mousemove / touchmove) ==========
+    const handlePointerMove = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        const pos = getClientPos(e);
+        const hoverPositionMs = calculateSeekPosition(pos.x);
+        
+        // Always show tooltip on move (hover or drag)
+        showTooltip(pos.x, pos.y, hoverPositionMs);
+        
+        // Update visual preview if dragging
+        if (isDragging) {
+            e.preventDefault();
+            previewPositionMs = hoverPositionMs;
+            updateVisualPreview(previewPositionMs);
+        }
+    };
+    
+    // ========== POINTER END (mouseup / touchend) ==========
+    const handlePointerEnd = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        if (isDragging && previewPositionMs !== null) {
+            debouncedSeek(previewPositionMs);
+            didSeek = true;
+        }
+        
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== POINTER CANCEL (touchcancel) ==========
+    const handlePointerCancel = () => {
+        isDragging = false;
+        previewPositionMs = null;
+        hideTooltip();
+    };
+    
+    // ========== MOUSE LEAVE ==========
+    const handleMouseLeave = () => {
+        if (!isDragging) {
+            hideTooltip();
+        }
+    };
+    
+    // ========== CLICK (for simple tap/click without drag) ==========
+    const handleClick = (e) => {
+        const duration = lastTrackInfo?.duration_ms || 0;
+        if (!duration) return;
+        
+        // Skip if we already seeked via drag
+        if (didSeek) {
+            didSeek = false;
+            return;
+        }
+        
+        const pos = getClientPos(e);
+        const positionMs = calculateSeekPosition(pos.x);
+        debouncedSeek(positionMs);
+    };
+    
+    // ========== ATTACH PROGRESS BAR EVENTS ==========
+    // Mouse events
+    progressBar.addEventListener('mousedown', handlePointerStart);
+    progressBar.addEventListener('mousemove', handlePointerMove);
+    progressBar.addEventListener('mouseleave', handleMouseLeave);
+    progressBar.addEventListener('click', handleClick);
+    
+    // Touch events
+    progressBar.addEventListener('touchstart', handlePointerStart, { passive: false });
+    progressBar.addEventListener('touchmove', handlePointerMove, { passive: false });
+    progressBar.addEventListener('touchend', handlePointerEnd);
+    progressBar.addEventListener('touchcancel', handlePointerCancel);
+    
+    // ========== GLOBAL END EVENTS (for drag completion outside bar) ==========
+    document.addEventListener('mouseup', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
+    });
+    
+    document.addEventListener('touchend', (e) => {
+        if (isDragging) {
+            handlePointerEnd(e);
+        }
+    }, { passive: true });
 }
 
 // ========== TRACK INFO ==========
@@ -213,21 +560,32 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
     if (!albumArt || !trackHeader) return;
 
     if (trackInfo.album_art_url) {
-        // Add cache buster to force reload when song changes
-        // Uses track_id (unique per song) or stable artist+title fallback
-        let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
-        // Stable fallback: use artist_title instead of Date.now() to prevent reload spam
-        const stableFallback = `${trackInfo.artist || ''}_${trackInfo.title || ''}`.replace(/\s+/g, '_');
-        const cacheBuster = trackInfo.track_id || trackInfo.id || stableFallback;
-        targetUrl = targetUrl.includes('?')
-            ? `${targetUrl}&cb=${encodeURIComponent(cacheBuster)}`
-            : `${targetUrl}?cb=${encodeURIComponent(cacheBuster)}`;
+        // SOLUTION 3: Compare by path first (most stable), fall back to URL
+        // Path is stable across enrichment (remote->local transition), URL changes format
+        // This prevents flicker when enrichment replaces remote URL with local /cover-art URL
+        const currentArtKey = trackInfo.album_art_path || trackInfo.album_art_url;
+        const lastArtKey = lastAlbumArtPath || lastAlbumArtUrl;
         
-        // CRITICAL: Normalize URL to ensure consistent comparison with albumArt.src
-        // The browser URL-encodes albumArt.src, so we must do the same for comparison
-        targetUrl = new URL(targetUrl, window.location.href).href;
+        // Check if the art is the same - if so, skip reload but still run visibility logic
+        const artUnchanged = (currentArtKey && currentArtKey === lastArtKey);
+        
+        if (artUnchanged) {
+            // FIX 1: Cancel any pending loads from intermediate skips (e.g. A -> B -> A)
+            // If we are back to the "stable" image, we don't want a pending "B" image to overwrite it later.
+            setPendingArtUrl(null);
+            
+            // FIX 2: Ensure opacity is 1 (could be 0 if transition was interrupted)
+            albumArt.style.opacity = '1';
+            albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
+            // NOTE: Don't return here - we still need to run visibility logic below
+        } else {
+            // Art changed - normalize URL for consistent comparison
+            // NOTE: No cache buster needed! Backend provides t=mtime param for cache invalidation.
+            // Adding Date.now() cache buster caused a race condition where each 100ms poll
+            // created a different URL, causing in-flight loads to be orphaned.
+            let targetUrl = new URL(trackInfo.album_art_url, window.location.href).href;
 
-        if (albumArt.src !== targetUrl) {
+            // Prevent duplicate loads if already loading this URL
             if (pendingArtUrl !== targetUrl) {
                 setPendingArtUrl(targetUrl);
 
@@ -254,6 +612,11 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
                             albumArt.style.opacity = '1';
                         }
 
+                        // Store path and URL after successful load for future comparison
+                        // Path is primary (stable), URL is fallback
+                        setLastAlbumArtPath(trackInfo.album_art_path || null);
+                        setLastAlbumArtUrl(trackInfo.album_art_url);
+
                         if (updateBackgroundFn && (displayConfig.artBackground || displayConfig.softAlbumArt || displayConfig.sharpAlbumArt)) {
                             updateBackgroundFn();
                         }
@@ -269,17 +632,19 @@ export function updateAlbumArt(trackInfo, updateBackgroundFn = null) {
 
                 img.src = targetUrl;
             }
-        } else {
-            albumArt.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
         }
     } else {
+        // No album art URL provided
         if (!pendingArtUrl) {
             albumArt.style.display = 'none';
         }
+        // FIX 3: Clear both path and URL when no art, for cleanliness
+        setLastAlbumArtPath(null);
+        setLastAlbumArtUrl(null);
     }
 
+    // FIX 4: Visibility logic ALWAYS runs (no early return above)
     // Set individual element visibility independently
-    // const albumArtLink = document.getElementById('album-art-link');
     if (albumArtLink) {
         albumArtLink.style.display = displayConfig.showAlbumArt ? 'block' : 'none';
     }
@@ -363,7 +728,12 @@ export async function fetchAndRenderQueue() {
         list.innerHTML = '';
 
         if (data.queue && data.queue.length > 0) {
-            data.queue.forEach(track => {
+            // Limit queue items on mobile for cleaner display
+            const isMobile = window.matchMedia('(max-width: 600px)').matches;
+            const maxItems = isMobile ? 13 : data.queue.length;
+            const displayQueue = data.queue.slice(0, maxItems);
+            
+            displayQueue.forEach(track => {
                 const item = document.createElement('div');
                 item.className = 'queue-item';
 

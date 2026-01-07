@@ -1,0 +1,517 @@
+
+/* ========== SLIDESHOW CONTROL CENTER MODAL ========== */
+.slideshow-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.slideshow-modal:not(.hidden) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.slideshow-modal.hidden {
+    display: flex;
+}
+
+.slideshow-modal-content {
+    background: rgba(30, 32, 48, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 16px;
+    max-width: 700px;
+    width: 95%;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    transform: scale(0.95) translateY(20px);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overscroll-behavior: contain;
+}
+
+.slideshow-modal:not(.hidden) .slideshow-modal-content {
+    transform: scale(1) translateY(0);
+}
+
+/* Modal Header - compact */
+.slideshow-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 0;
+    /* border removed for space saving */
+}
+
+.slideshow-modal-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.modal-btn-small {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-btn-small:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+/* Toolbar - compact */
+.slideshow-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 6px;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+}
+
+.slideshow-control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.slideshow-control-label {
+    font-size: 0.67rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: none;
+    letter-spacing: 0.4px;
+}
+
+.slideshow-timing-buttons,
+.slideshow-option-buttons,
+.slideshow-intensity-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.slideshow-timing-btn,
+.slideshow-option-btn,
+.slideshow-intensity-btn,
+.slideshow-action-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.slideshow-timing-btn:hover,
+.slideshow-option-btn:hover,
+.slideshow-intensity-btn:hover,
+.slideshow-action-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.slideshow-timing-btn.active,
+.slideshow-option-btn.active,
+.slideshow-intensity-btn.active {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.6);
+    color: #fff;
+}
+
+.slideshow-custom-input {
+    width: 70px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.slideshow-custom-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.slideshow-custom-input:focus {
+    outline: none;
+    border-color: rgba(59, 130, 246, 0.6);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+/* Selection Bar - consolidated row with count, filters, actions, sort */
+.slideshow-selection-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    flex-wrap: wrap;  /* Allow wrapping on narrow screens */
+}
+
+.slideshow-image-count {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Filter chips container - grows to fill available space */
+.slideshow-selection-bar .slideshow-filter-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;  /* Take available space */
+    min-width: 0;
+}
+
+.slideshow-selection-buttons {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Sort dropdown in selection bar */
+.slideshow-selection-bar .slideshow-sort-select {
+    flex-shrink: 0;
+}
+
+/* Image Grid */
+.slideshow-image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0;
+    overflow-x: hidden;  /* Prevent horizontal scroll from hover scale */
+    overflow-y: auto;
+    padding: 0;
+    width: 100%;
+    grid-auto-rows: min-content;  /* Fit content exactly to prevent overlap */
+    align-items: start;  /* Align items to top of their cells */
+    /* Prevent pull-to-refresh */
+    overscroll-behavior: contain;
+    touch-action: manipulation;
+    /* Auto-hide scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    /* Performance: Isolate layout calculations */
+    contain: layout paint;
+}
+
+/* Webkit scrollbar - auto-hide effect */
+.slideshow-image-grid::-webkit-scrollbar {
+    width: 6px;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.slideshow-image-grid::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.slideshow-image-card {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 0px;
+    overflow: hidden;
+    cursor: pointer;
+    /* No border for seamless mosaic - only excluded gets border */
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* Performance: GPU acceleration and skip off-screen rendering */
+    will-change: transform;
+    content-visibility: auto;
+    contain-intrinsic-size: 140px 140px;
+}
+
+.slideshow-image-card:hover {
+    /* Subtle scale on hover instead of border */
+    transform: scale(1.02);
+    z-index: 1;  /* Bring to front when scaled */
+}
+
+/* Selected state - currently disabled (excluded styling is sufficient)
+.slideshow-image-card.selected {
+    border-color: rgba(59, 130, 246, 0.8);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+*/
+
+.slideshow-image-card.excluded {
+    opacity: 0.4;
+    /* Use inset shadow instead of border to not break mosaic */
+    box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.3);
+}
+
+.slideshow-image-card.excluded::after {
+    content: '✕';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: rgba(239, 68, 68, 0.8);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.slideshow-image-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.slideshow-image-card-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.slideshow-image-source {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    /* Title case defined in JS, no transform needed */
+    letter-spacing: 0.3px;
+}
+
+.slideshow-image-resolution {
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Responsive - Mobile */
+@media (max-width: 768px) {
+    .slideshow-toolbar {
+        flex-direction: column;
+    }
+    
+    /* Selection bar should stack on mobile */
+    .slideshow-selection-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    /* Filter chips take full width and wrap naturally */
+    .slideshow-selection-bar .slideshow-filter-chips {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    /* Selection buttons on their own row */
+    .slideshow-selection-buttons {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    /* Or limit the whole timing buttons row */
+    .slideshow-timing-buttons {
+        flex-wrap: wrap;
+        min-width: 10px;
+        max-width: 100%;
+    }
+    
+    .slideshow-custom-input {
+        width: auto;
+        min-width: 10px;
+        max-width: 60%;
+        font-size: 0.7rem;
+        flex-shrink: 1;
+    }      
+
+    /* Hide custom input by default, show only when Custom is selected */
+    .slideshow-custom-input {
+        display: none;
+    }
+
+    /* Show when Custom button is active (JS adds class to parent or uses :has) */
+    #slideshow-custom-btn.active + .slideshow-custom-input,
+    .slideshow-custom-input:focus {
+        display: block !important;
+    }
+    
+    .slideshow-image-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
+}
+
+/* Desktop - Larger Modal */
+@media (min-width: 768px) {
+    .slideshow-modal-content {
+        max-width: 93vw;
+        width: 95%;
+        max-height: 90vh;
+        min-height: 400px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .slideshow-image-grid {
+        /* Old: auto-fill with minmax for responsive columns */
+        /* grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); */
+        
+        /* Fixed 4 columns for consistent layout */
+        grid-template-columns: repeat(4, 1fr);
+        flex: 1;
+        min-height: 0;
+    }
+}
+
+/* ========== SORT DROPDOWN ========== */
+.slideshow-sort-select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+    min-width: 100px;
+    transition: all 0.2s ease;
+}
+
+.slideshow-sort-select:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.slideshow-sort-select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ========== FILTER CHIPS ========== */
+.slideshow-filter-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.slideshow-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.slideshow-filter-chip {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 14px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.slideshow-filter-chip:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.slideshow-filter-chip.active {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+    font-weight: 500;
+}
+
+.slideshow-reset-filters-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    margin-left: auto;
+    transition: all 0.2s ease;
+}
+
+.slideshow-reset-filters-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* ========== FAVORITE STAR BUTTON ========== */
+.slideshow-favorite-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(0, 0, 0, 0.5);
+    border: none;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 0.2s ease;
+    z-index: 5;
+}
+
+.slideshow-image-card:hover .slideshow-favorite-btn {
+    opacity: 1;
+}
+
+.slideshow-favorite-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+}
+
+.slideshow-favorite-btn.active {
+    opacity: 1;
+    color: gold;
+}
+
+.slideshow-favorite-btn.active:hover {
+    color: #ffc107;
+}
+

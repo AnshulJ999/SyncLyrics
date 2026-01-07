@@ -1,0 +1,67 @@
+# SyncLyrics Docker Compose Example
+# https://github.com/AnshulJ999/SyncLyrics
+#
+# Usage:
+#   1. Copy this file to your preferred location
+#   2. Fill in your Spotify credentials below
+#   3. Run: docker-compose up -d
+#   4. Open: http://localhost:9012
+
+services:
+  synclyrics:
+    image: anshulj999/synclyrics:latest
+    container_name: synclyrics
+    restart: unless-stopped
+    ports:
+      - "9012:9012"
+    environment:
+      # ========================================
+      # REQUIRED: Spotify API Credentials
+      # Get yours at: https://developer.spotify.com/dashboard
+      # ========================================
+      - SPOTIFY_CLIENT_ID=your_spotify_client_id_here
+      - SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
+      
+      # Spotify OAuth callback URL (change if using different host/port)
+      - SPOTIFY_REDIRECT_URI=http://localhost:9012/callback
+      
+      # ========================================
+      # OPTIONAL: Lyrics API
+      # For best performance, host your own instance of:
+      # https://github.com/akashrchandran/spotify-lyrics-api
+      # ========================================
+      # - SPOTIFY_BASE_URL=https://your-lyrics-api.vercel.app
+      
+      # ========================================
+      # OPTIONAL: Additional API Keys
+      # ========================================
+      # Last.fm API key for enhanced metadata
+      # - LASTFM_API_KEY=your_lastfm_api_key
+      
+      # FanArt.tv for high-quality artist images ($2 donation at https://fanart.tv/)
+      # - FANART_TV_API_KEY=your_fanart_api_key
+      
+      # TheAudioDB for backup artist images (free key: 523532)
+      # - AUDIODB_API_KEY=523532
+      
+      # ========================================
+      # OPTIONAL: Server Configuration
+      # ========================================
+      # - SERVER_PORT=9012
+      # - DEBUG_ENABLED=false
+      # - DEBUG_LOG_LEVEL=INFO
+      
+      # Spotify polling intervals (seconds)
+      # - SPOTIFY_POLLING_FAST_INTERVAL=2.0
+      # - SPOTIFY_POLLING_SLOW_INTERVAL=6.0
+      
+    volumes:
+      # Persistent storage for lyrics database, album art, and settings
+      - synclyrics_data:/data
+    
+    # Optional: Use host network for easier access
+    # network_mode: host
+
+volumes:
+  synclyrics_data:
+    name: synclyrics_data

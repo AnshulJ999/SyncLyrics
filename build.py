@@ -114,6 +114,29 @@ def build(debug_mode=False):
             else:
                 print(f"WARNING: {launcher} not found!")
 
+        # Copy docs folder to build output
+        print("Copying documentation to output directory...")
+        src_docs = Path("docs")
+        dst_docs = Path("build_final/SyncLyrics/docs")
+        
+        if src_docs.exists():
+            if dst_docs.exists():
+                shutil.rmtree(dst_docs)
+            shutil.copytree(src_docs, dst_docs)
+            print(f"Copied docs to {dst_docs}")
+        else:
+            print("WARNING: docs directory not found!")
+
+        # Copy README.md to build output
+        src_readme = Path("README.md")
+        dst_readme = Path("build_final/SyncLyrics/README.md")
+        
+        if src_readme.exists():
+            shutil.copy2(src_readme, dst_readme)
+            print(f"Copied README.md to {dst_readme}")
+        else:
+            print("WARNING: README.md not found!")
+
         print("\n" + "="*60)
         print(f"Build completed successfully! ({mode_str})")
         print("="*60)
