@@ -8,6 +8,22 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+# Fix MIME types for PyInstaller builds on Windows
+# Python's mimetypes module reads from Windows Registry which may have incorrect mappings
+# (e.g., .js mapped to text/plain instead of application/javascript)
+# This MUST be done before importing Quart/Flask as they cache mimetypes at import time
+import mimetypes
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('application/javascript', '.mjs')
+mimetypes.add_type('text/css', '.css')
+mimetypes.add_type('text/html', '.html')
+mimetypes.add_type('application/json', '.json')
+mimetypes.add_type('font/woff2', '.woff2')
+mimetypes.add_type('font/woff', '.woff')
+mimetypes.add_type('image/svg+xml', '.svg')
+mimetypes.add_type('image/png', '.png')
+mimetypes.add_type('image/x-icon', '.ico')
+
 import asyncio
 import webbrowser
 import threading as th
