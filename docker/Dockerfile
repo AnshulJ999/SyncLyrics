@@ -91,7 +91,7 @@ ENV PYTHONUNBUFFERED=1 \
     SYNCLYRICS_CERTS_DIR=/data/certs \
     SPOTIPY_CACHE_PATH=/data/.spotify_cache
 
-EXPOSE 9012
+EXPOSE 9012 9013
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9012/health')" || exit 1

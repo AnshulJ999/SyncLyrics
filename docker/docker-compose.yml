@@ -13,7 +13,8 @@ services:
     container_name: synclyrics
     restart: unless-stopped
     ports:
-      - "9012:9012"
+      - "9012:9012"   # HTTP
+      - "9013:9013"   # HTTPS (required for browser mic, remote Spotify OAuth)
     environment:
       # ========================================
       # REQUIRED: Spotify API Credentials
