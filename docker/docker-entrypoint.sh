@@ -22,6 +22,7 @@ fi
 # Create persistent storage directories
 mkdir -p "$SYNCLYRICS_LYRICS_DB"
 mkdir -p "$SYNCLYRICS_ALBUM_ART_DB"
+mkdir -p "$SYNCLYRICS_SPICETIFY_DB"
 mkdir -p "$SYNCLYRICS_CACHE_DIR"
 mkdir -p "$SYNCLYRICS_LOGS_DIR"
 mkdir -p "$SYNCLYRICS_CERTS_DIR"

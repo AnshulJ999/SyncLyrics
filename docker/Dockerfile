@@ -86,6 +86,7 @@ ENV PYTHONUNBUFFERED=1 \
     SYNCLYRICS_STATE_FILE=/data/state.json \
     SYNCLYRICS_LYRICS_DB=/data/lyrics_database \
     SYNCLYRICS_ALBUM_ART_DB=/data/album_art_database \
+    SYNCLYRICS_SPICETIFY_DB=/data/spicetify_database \
     SYNCLYRICS_CACHE_DIR=/data/cache \
     SYNCLYRICS_LOGS_DIR=/data/logs \
     SYNCLYRICS_CERTS_DIR=/data/certs \
