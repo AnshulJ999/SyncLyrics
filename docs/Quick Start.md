@@ -8,7 +8,7 @@ Get SyncLyrics running in 5 minutes.
 
 **Docker**: 
 ```bash
-docker run -d -p 9012:9012 -v synclyrics_data:/data anshulj999/synclyrics:latest
+docker run -d -p 9012:9012 -v synclyrics_data:/data anshulj99/synclyrics:latest
 ```
 
 **Home Assistant**: Add `https://github.com/AnshulJ999/homeassistant-addons` as a repository

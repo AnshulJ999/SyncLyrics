@@ -14,7 +14,7 @@ docker run -d \
   -e SPOTIFY_CLIENT_SECRET=your_client_secret \
   -e SPOTIFY_REDIRECT_URI=http://localhost:9012/callback \
   -v synclyrics_data:/data \
-  anshulj999/synclyrics:latest
+  anshulj99/synclyrics:latest
 ```
 
 ### Using Docker Compose
@@ -118,7 +118,6 @@ views:
 The Docker image supports:
 - `linux/amd64` - Standard PCs and servers
 - `linux/arm64` - Raspberry Pi 4/5, Apple Silicon
-- `linux/arm/v7` - Raspberry Pi 3, older ARM devices
 
 ## Updating
 
@@ -128,7 +127,7 @@ docker-compose pull
 docker-compose up -d
 
 # Docker Run
-docker pull anshulj999/synclyrics:latest
+docker pull anshulj99/synclyrics:latest
 docker stop synclyrics
 docker rm synclyrics
 # Re-run your docker run command
@@ -160,7 +159,7 @@ Ensure your Redirect URI in Spotify Developer Dashboard matches `SPOTIFY_REDIREC
 
 SyncLyrics is available from:
 
-- **Docker Hub**: `anshulj999/synclyrics`
+- **Docker Hub**: `anshulj99/synclyrics`
 - **GitHub Container Registry**: `ghcr.io/anshulj999/synclyrics`
 
 Both registries host identical images.

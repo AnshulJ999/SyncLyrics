@@ -9,7 +9,7 @@
 
 services:
   synclyrics:
-    image: anshulj999/synclyrics:latest
+    image: anshulj99/synclyrics:latest
     container_name: synclyrics
     restart: unless-stopped
     ports:
