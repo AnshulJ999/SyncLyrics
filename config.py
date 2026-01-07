@@ -29,7 +29,7 @@ else:
 # ==========================================
 # Version
 # ==========================================
-VERSION = "1.6.0"
+VERSION = "1.8.0"
 
 # FIX: Only load .env if it exists (optimization)
 env_file = ROOT_DIR / '.env'
