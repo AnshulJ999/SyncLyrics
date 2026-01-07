@@ -188,6 +188,7 @@ Detailed guides for all features:
 - [Spicetify Integration](docs/Spicetify%20Integration.md)
 - [Docker Reference](docs/Docker%20Reference.md)
 - [Configuration Reference](docs/Configuration%20Reference.md)
+- [Latency Tuning Guide](docs/Latency%20Tuning%20Guide.md) - Calibrate lyrics timing
 - [Troubleshooting](docs/Troubleshooting.md)
 - [Development Reference](docs/Development%20Reference.md)
 
