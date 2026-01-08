@@ -4,9 +4,14 @@ Run SyncLyrics as a standalone Docker container for use with Home Assistant dash
 
 ## Quick Start
 
+**Image Registries:**
+- Docker Hub: `anshulj99/synclyrics`
+- GitHub Container Registry: `ghcr.io/anshulj999/synclyrics`
+
 ### Using Docker Run
 
 ```bash
+# Using Docker Hub
 docker run -d \
   --name synclyrics \
   -p 9012:9012 \
@@ -15,6 +20,16 @@ docker run -d \
   -e SPOTIFY_REDIRECT_URI=http://localhost:9012/callback \
   -v synclyrics_data:/data \
   anshulj99/synclyrics:latest
+
+# Or using GHCR
+docker run -d \
+  --name synclyrics \
+  -p 9012:9012 \
+  -e SPOTIFY_CLIENT_ID=your_client_id \
+  -e SPOTIFY_CLIENT_SECRET=your_client_secret \
+  -e SPOTIFY_REDIRECT_URI=http://localhost:9012/callback \
+  -v synclyrics_data:/data \
+  ghcr.io/anshulj999/synclyrics:latest
 ```
 
 ### Using Docker Compose
@@ -126,8 +141,14 @@ The Docker image supports:
 docker-compose pull
 docker-compose up -d
 
-# Docker Run
+# Docker Run (Docker Hub)
 docker pull anshulj99/synclyrics:latest
+docker stop synclyrics
+docker rm synclyrics
+# Re-run your docker run command
+
+# Docker Run (GHCR)
+docker pull ghcr.io/anshulj999/synclyrics:latest
 docker stop synclyrics
 docker rm synclyrics
 # Re-run your docker run command

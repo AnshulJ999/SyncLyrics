@@ -108,7 +108,9 @@ python sync_lyrics.py
 
 ### Option 4: Docker
 
-You can also install the Docker image `anshulj99/synclyrics` from Docker Hub.
+Docker images are available from:
+- **Docker Hub**: `anshulj99/synclyrics`
+- **GitHub Container Registry**: `ghcr.io/anshulj999/synclyrics`
 
 1. Download [docker-compose.yml](docker/docker-compose.yml)
 2. Edit with your Spotify credentials

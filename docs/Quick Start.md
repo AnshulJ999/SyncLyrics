@@ -6,9 +6,13 @@ Get SyncLyrics running in 5 minutes.
 
 **Windows**: Download from [Releases](../../releases), extract, run `SyncLyrics.exe`
 
-**Docker**: 
+**Docker** (choose one):
 ```bash
+# Docker Hub
 docker run -d -p 9012:9012 -v synclyrics_data:/data anshulj99/synclyrics:latest
+
+# GitHub Container Registry
+docker run -d -p 9012:9012 -v synclyrics_data:/data ghcr.io/anshulj999/synclyrics:latest
 ```
 
 **Home Assistant**: Add `https://github.com/AnshulJ999/homeassistant-addons` as a repository
