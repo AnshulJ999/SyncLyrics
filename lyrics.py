@@ -614,6 +614,20 @@ def _save_all_results_background(
                         if lyrics:
                             await _save_to_db(artist, title, lyrics, provider.name, metadata=metadata, word_synced=word_synced)
                             logger.info(f"Background save complete for {provider.name}")
+                            
+                            # FIX: Reload word-sync if saved and same song still playing
+                            # Without this, word-sync from slow providers (e.g., Musixmatch) would be
+                            # saved to DB but never loaded into current_song_word_synced_lyrics,
+                            # causing the word-sync toggle to appear unavailable for that session.
+                            # This mirrors the existing reload logic in _backfill_missing_providers.
+                            if word_synced and current_song_data:
+                                if (current_song_data.get("artist") == artist and 
+                                    current_song_data.get("title") == title):
+                                    reloaded = _load_from_db(artist, title)
+                                    if reloaded:
+                                        global current_song_lyrics
+                                        current_song_lyrics = reloaded
+                                    logger.info(f"Reloaded word-sync after background save from {provider.name}")
                     except Exception as exc:
                         logger.debug(f"Background provider error ({provider.name}): {exc}")
 
