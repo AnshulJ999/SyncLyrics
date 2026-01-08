@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from typing import Optional, Dict, Any, List, Tuple
 
+import time
 import requests as req
 import logging
 from .base import LyricsProvider
@@ -31,6 +32,39 @@ class NetEaseProvider(LyricsProvider):
         self.headers = {
             "cookie": config.get("cookie", "NMTID=00OAVK3xqDG726ITU6jopU6jF2yMk0AAAGCO8l1BA; JSESSIONID-WYYY=8KQo11YK2GZP45RMlz8Kn80vHZ9%2FGvwzRKQXXy0iQoFKycWdBlQjbfT0MJrFa6hwRfmpfBYKeHliUPH287JC3hNW99WQjrh9b9RmKT%2Fg1Exc2VwHZcsqi7ITxQgfEiee50po28x5xTTZXKoP%2FRMctN2jpDeg57kdZrXz%2FD%2FWghb%5C4DuZ%3A1659124633932; _iuqxldmzr_=32; _ntes_nnid=0db6667097883aa9596ecfe7f188c3ec,1659122833973; _ntes_nuid=0db6667097883aa9596ecfe7f188c3ec; WNMCID=xygast.1659122837568.01.0; WEVNSM=1.0.0; WM_NI=CwbjWAFbcIzPX3dsLP%2F52VB%2Bxr572gmqAYwvN9KU5X5f1nRzBYl0SNf%2BV9FTmmYZy%2FoJLADaZS0Q8TrKfNSBNOt0HLB8rRJh9DsvMOT7%2BCGCQLbvlWAcJBJeXb1P8yZ3RHA%3D; WM_NIKE=9ca17ae2e6ffcda170e2e6ee90c65b85ae87b9aa5483ef8ab3d14a939e9a83c459959caeadce47e991fbaee82af0fea7c3b92a81a9ae8bd64b86beadaaf95c9cedac94cf5cedebfeb7c121bcaefbd8b16dafaf8fbaf67e8ee785b6b854f7baff8fd1728287a4d1d246a6f59adac560afb397bbfc25ad9684a2c76b9a8d00b2bb60b295aaafd24a8e91bcd1cb4882e8beb3c964fb9cbd97d04598e9e5a4c6499394ae97ef5d83bd86a3c96f9cbeffb1bb739aed9ea9c437e2a3; WM_TID=AAkRFnl03RdABEBEQFOBWHCPOeMra4IL; playerid=94262567")  # Get cookie from config
         }
+    
+    def _make_request(self, url: str, params: dict) -> Optional[dict]:
+        """
+        Make HTTP request with retry logic, returns parsed JSON or None.
+        
+        Retries on SSL errors, connection errors, and timeouts with exponential backoff.
+        Uses self.retries (default: 3) and self.timeout (default: 10) from base class.
+        
+        Returns:
+            Parsed JSON dict on success, None on failure after all retries.
+        """
+        for attempt in range(self.retries):
+            try:
+                resp = req.get(url, params=params, headers=self.headers, timeout=self.timeout)
+                resp.raise_for_status()
+                return resp.json()
+            except (req.exceptions.SSLError,
+                    req.exceptions.ConnectionError,
+                    req.exceptions.Timeout) as e:
+                if attempt < self.retries - 1:
+                    backoff = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"NetEase - Request failed ({type(e).__name__}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                    time.sleep(backoff)
+                else:
+                    logger.error(f"NetEase - Request failed after {self.retries} attempts: {e}")
+                    return None
+            except req.exceptions.HTTPError as e:
+                logger.error(f"NetEase - HTTP error: {e}")
+                return None
+            except ValueError as e:  # JSON decode error
+                logger.error(f"NetEase - Invalid JSON response: {e}")
+                return None
+        return None
     
     def _score_result(self, song: Dict[str, Any], target_artist: str, target_title: str, 
                       target_album: str = None, target_duration: int = None) -> int:
@@ -105,13 +139,13 @@ class NetEaseProvider(LyricsProvider):
         search_term = f"{artist} {title}"
         try:
             # Search for song
-            search_response = req.get(
+            search_response = self._make_request(
                 "https://music.163.com/api/search/pc",
-                params={"s": search_term, "limit": 10, "type": 1},
-                headers=self.headers,
-                timeout=10
-            ).json()
-            
+                {"s": search_term, "limit": 10, "type": 1}
+            )
+            if not search_response:
+                logger.info(f"NetEase - Search request failed for: {search_term}")
+                return None
             songs = search_response.get("result", {}).get("songs")
             if not songs:
                 logger.info(f"NetEase - No search results found for: {search_term}")
@@ -139,17 +173,18 @@ class NetEaseProvider(LyricsProvider):
             track_id = selected_song["id"]
 
             # Fetch lyrics with YRC (word-synced) parameters
-            lyrics_response = req.get(
+            lyrics_response = self._make_request(
                 "https://music.163.com/api/song/lyric",
-                params={
+                {
                     "id": track_id,
                     "lv": 1,   # Line-synced LRC lyrics
                     "yv": 1,   # YRC word-synced lyrics
                     "kv": 1    # Karaoke lyrics (alternative word-sync)
-                },
-                headers=self.headers,
-                timeout=10
-            ).json()
+                }
+            )
+            if not lyrics_response:
+                logger.info(f"NetEase - Failed to fetch lyrics for: {search_term}")
+                return None
             
             # Get line-synced LRC lyrics
             lyrics_text = lyrics_response.get("lrc", {}).get("lyric")

@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent)) 
 
 import logging
+import time
 from typing import Optional, Dict, Any
 
 import requests as req
@@ -33,6 +34,32 @@ class LRCLIBProvider(LyricsProvider):
         
         self.BASE_URL = config.get("base_url", self.BASE_URL)
         self.HEADERS.update(config.get("headers", {}))  # Add any additional headers from config
+    
+    def _make_request(self, url: str, params: dict) -> Optional[req.Response]:
+        """
+        Make HTTP request with retry logic for transient failures.
+        
+        Retries on SSL errors, connection errors, and timeouts with exponential backoff.
+        Uses self.retries (default: 3) and self.timeout (default: 10) from base class.
+        
+        Returns:
+            Response object on success, None on failure after all retries.
+        """
+        for attempt in range(self.retries):
+            try:
+                resp = req.get(url, params=params, headers=self.HEADERS, timeout=self.timeout)
+                return resp
+            except (req.exceptions.SSLError,
+                    req.exceptions.ConnectionError,
+                    req.exceptions.Timeout) as e:
+                if attempt < self.retries - 1:
+                    backoff = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"LRCLib - Request failed ({type(e).__name__}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                    time.sleep(backoff)
+                else:
+                    logger.error(f"LRCLib - Request failed after {self.retries} attempts: {e}")
+                    return None
+        return None
     
     def get_lyrics(self, artist: str, title: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
         """
@@ -64,21 +91,15 @@ class LRCLIBProvider(LyricsProvider):
 
                 logger.info(f"LRCLib - Trying exact match with params: {params}")
                 
-                try:
-                    resp = req.get(
-                        f"{self.BASE_URL}/get", 
-                        params=params,
-                        headers=self.HEADERS,
-                        timeout=10
-                    )
-                    if resp.status_code == 200:
-                        response = resp.json()
-                    elif resp.status_code == 404:
-                        logger.info("LRCLib - Exact match 404 Not Found")
-                    else:
-                        logger.warning(f"LRCLib - Exact match returned status {resp.status_code}")
-                except Exception as e:
-                    logger.error(f"LRCLib - Exact match request failed: {e}")
+                resp = self._make_request(f"{self.BASE_URL}/get", params)
+                if resp is None:
+                    pass  # Request failed after retries, will fall through to search
+                elif resp.status_code == 200:
+                    response = resp.json()
+                elif resp.status_code == 404:
+                    logger.info("LRCLib - Exact match 404 Not Found")
+                else:
+                    logger.warning(f"LRCLib - Exact match returned status {resp.status_code}")
 
             # 2. Fallback to /api/search if:
             #    a) No duration provided (skipped /get)
@@ -105,27 +126,17 @@ class LRCLIBProvider(LyricsProvider):
                     search_params["album_name"] = album
                     
                 try:
-                    search_resp = req.get(
-                        f"{self.BASE_URL}/search",
-                        params=search_params,
-                        headers=self.HEADERS,
-                        timeout=10
-                    )
+                    search_resp = self._make_request(f"{self.BASE_URL}/search", search_params)
                     
                     search_result = []
-                    if search_resp.status_code == 200:
+                    if search_resp and search_resp.status_code == 200:
                         search_result = search_resp.json()
                     
                     # If specific search fails, try general search as last resort
                     if not search_result:
                         logger.info(f"LRCLib - No results with specific fields, trying general search")
-                        gen_resp = req.get(
-                            f"{self.BASE_URL}/search",
-                            params={"q": f"{artist} {title}"},
-                            headers=self.HEADERS,
-                            timeout=10
-                        )
-                        if gen_resp.status_code == 200:
+                        gen_resp = self._make_request(f"{self.BASE_URL}/search", {"q": f"{artist} {title}"})
+                        if gen_resp and gen_resp.status_code == 200:
                             search_result = gen_resp.json()
                     
                     if not search_result: 
