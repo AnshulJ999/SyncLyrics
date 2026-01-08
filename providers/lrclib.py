@@ -39,16 +39,47 @@ class LRCLIBProvider(LyricsProvider):
         """
         Make HTTP request with retry logic for transient failures.
         
-        Retries on SSL errors, connection errors, and timeouts with exponential backoff.
+        Retries on:
+        - SSL errors, connection errors, timeouts (exceptions)
+        - 429 Too Many Requests (rate limiting)
+        - 5xx Server Errors
+        
         Uses self.retries (default: 3) and self.timeout (default: 10) from base class.
         
         Returns:
-            Response object on success, None on failure after all retries.
+            Response object on success (2xx/4xx), None on failure after all retries.
         """
+        MAX_RETRY_WAIT = 10  # Never wait more than 10 seconds
+        
         for attempt in range(self.retries):
             try:
                 resp = req.get(url, params=params, headers=self.HEADERS, timeout=self.timeout)
+                
+                # Handle rate limiting (429)
+                if resp.status_code == 429:
+                    if attempt < self.retries - 1:
+                        retry_after = min(int(resp.headers.get('Retry-After', 2)), MAX_RETRY_WAIT)
+                        logger.warning(f"LRCLib - Rate limited (429), retry {attempt + 1}/{self.retries} in {retry_after}s")
+                        time.sleep(retry_after)
+                        continue
+                    else:
+                        logger.error(f"LRCLib - Rate limited after {self.retries} attempts")
+                        return None
+                
+                # Handle server errors (5xx)
+                if resp.status_code >= 500:
+                    if attempt < self.retries - 1:
+                        backoff = min(2 ** attempt, MAX_RETRY_WAIT)
+                        logger.warning(f"LRCLib - Server error ({resp.status_code}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.error(f"LRCLib - Server error ({resp.status_code}) after {self.retries} attempts")
+                        return None
+                
+                # Success or client error (2xx/4xx) - return response
                 return resp
+                
             except (req.exceptions.SSLError,
                     req.exceptions.ConnectionError,
                     req.exceptions.Timeout) as e:

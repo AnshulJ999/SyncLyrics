@@ -37,17 +37,48 @@ class NetEaseProvider(LyricsProvider):
         """
         Make HTTP request with retry logic, returns parsed JSON or None.
         
-        Retries on SSL errors, connection errors, and timeouts with exponential backoff.
+        Retries on:
+        - SSL errors, connection errors, timeouts (exceptions)
+        - 429 Too Many Requests (rate limiting)
+        - 5xx Server Errors
+        
         Uses self.retries (default: 3) and self.timeout (default: 10) from base class.
         
         Returns:
             Parsed JSON dict on success, None on failure after all retries.
         """
+        MAX_RETRY_WAIT = 10  # Never wait more than 10 seconds
+        
         for attempt in range(self.retries):
             try:
                 resp = req.get(url, params=params, headers=self.headers, timeout=self.timeout)
+                
+                # Handle rate limiting (429)
+                if resp.status_code == 429:
+                    if attempt < self.retries - 1:
+                        retry_after = min(int(resp.headers.get('Retry-After', 2)), MAX_RETRY_WAIT)
+                        logger.warning(f"NetEase - Rate limited (429), retry {attempt + 1}/{self.retries} in {retry_after}s")
+                        time.sleep(retry_after)
+                        continue
+                    else:
+                        logger.error(f"NetEase - Rate limited after {self.retries} attempts")
+                        return None
+                
+                # Handle server errors (5xx)
+                if resp.status_code >= 500:
+                    if attempt < self.retries - 1:
+                        backoff = min(2 ** attempt, MAX_RETRY_WAIT)
+                        logger.warning(f"NetEase - Server error ({resp.status_code}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.error(f"NetEase - Server error ({resp.status_code}) after {self.retries} attempts")
+                        return None
+                
+                # For other responses (2xx/4xx), check status and parse JSON
                 resp.raise_for_status()
                 return resp.json()
+                
             except (req.exceptions.SSLError,
                     req.exceptions.ConnectionError,
                     req.exceptions.Timeout) as e:
