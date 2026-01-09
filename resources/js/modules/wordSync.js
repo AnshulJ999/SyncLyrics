@@ -878,6 +878,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             el.classList.remove('word-active', 'word-upcoming');
             el.classList.add('word-sung');
             el.style.removeProperty('--word-progress');
+            el.style.removeProperty('opacity');  // Clear decay opacity (fade style)
             // Don't remove transform immediately - let CSS transition handle it
             // el.style.removeProperty('transform');  // Removed to allow smooth de-activation
             el.style.removeProperty('transitionDuration');  // Reset to CSS default for smooth return
@@ -1118,7 +1119,8 @@ function animateWordSync(timestamp) {
                 }
                 
                 // Force redraw of last line with all words sung
-                updateWordSyncDOM(currentEl, lastLineData, position, wordSyncStyle);
+                // Use position for both selection and progress (we're past end, all sung)
+                updateWordSyncDOM(currentEl, lastLineData, position, position, wordSyncStyle);
             }
         }
         

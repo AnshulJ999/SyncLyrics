@@ -1868,8 +1868,7 @@ body.soft-mode .background-overlay {
     position: relative;
     padding: 0 0.05em;
     
-    /* GPU acceleration - force composite layer */
-    will-change: transform, opacity;
+    /* GPU acceleration hints - only basic layer promotion */
     transform: translateZ(0);
     backface-visibility: hidden;
     contain: layout style;
@@ -1901,6 +1900,8 @@ body.soft-mode .background-overlay {
     font-weight: 600;
     /* Subtle glow for active word */
     text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    /* GPU layer promotion - only for the active word, not all words */
+    will-change: transform, opacity;
 }
 
 /* Fade style: gradient reveal from left to right */
