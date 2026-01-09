@@ -691,7 +691,7 @@ function updateFlywheelClock(timestamp) {
     
     // Bidirectional snap: correct drift 30-500ms in either direction during safe zones
     // Expanded from 150ms to 500ms - allows larger corrections during line transitions
-    if (Math.abs(rawDrift) > 0.01 && Math.abs(rawDrift) < 0.5 && canSafeSnap) {
+    if (Math.abs(rawDrift) > 0.03 && Math.abs(rawDrift) < 0.5 && canSafeSnap) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Safe-zone snap (${rawDrift > 0 ? 'forward' : 'back'}): ${(rawDrift * 1000).toFixed(0)}ms`);
         }
@@ -1155,7 +1155,7 @@ function animateWordSync(timestamp) {
         renderPosition = serverEstimate;
         filteredDrift = 0;
         visualSpeed = 1.0;
-        lineChangeTime = performance.now();
+        lineChangeTime = 0;  // DON'T open safe-snap window - we've already hard synced
     }
     
     // Add word-sync classes
