@@ -12,7 +12,7 @@ SyncLyrics supports two levels of lyrics synchronization: line-sync and word-syn
 ## Enabling Word-Sync
 
 1. Click the **stars icon** (✨) in the bottom-left corner
-2. Or toggle "Word-Sync Lyrics (Karaoke)" in the settings panel
+2. Or toggle "Word-Sync Lyrics (Karaoke)" in the display settings panel (⚙️) (URL param: `wordSync=true`)
 
 Word-sync only works when:
 - The current song has word-synced data from a provider
@@ -22,11 +22,12 @@ Word-sync only works when:
 
 | Provider | Format | Quality |
 |----------|--------|---------|
-| Musixmatch | RichSync | ⭐⭐⭐ Best |
-| Spotify | Syllable-level | ⭐⭐ Good |
+| Musixmatch | RichSync | ⭐⭐ Good |
 | NetEase | YRC format | ⭐⭐ Good |
 
-The app automatically uses the best available option. Musixmatch RichSync provides the most accurate word timing.
+The app automatically uses the highest priority provider. By default Musixmatch is higher priority than NetEase, but you can adjust this if you want. 
+
+Data quality differs a lot between genres and songs; sometimes NetEase provides better quality than Musixmatch. **So if you find word-sync timing is not correct; please try switching to NetEase (if it has word-sync)**.
 
 ## Timing Adjustment
 
@@ -38,8 +39,10 @@ If word-sync feels off, you can adjust timing per-song:
 
 This offset is saved per-song and persists across sessions.
 
+If you need to adjust the global latency, please do so in the main app settings.
+
 ### Keyboard Shortcuts
-- **[** / **]**: Adjust timing by 50ms (when available)
+- **[** and **]**: Adjust timing by 50ms (when available)
 
 ## How It Works
 
@@ -63,6 +66,8 @@ The current song doesn't have word-sync data. Try a different song, or check if 
 
 ### Words highlighting too early/late
 Use the timing adjustment (see above) to offset by ±50ms increments.
+
+If the word-sync timing is _really_ off; it's mostly like bad data from the provider (this is quite common as word-sync data is hard to synchronize). Try switching providers or using line-sync instead. You can also try deleting the cache and re-fetching fresh lyrics.
 
 ### Animation is choppy
 - With Spicetify: Should be smooth (~100ms updates)
