@@ -1150,17 +1150,24 @@ function animateWordSync(timestamp) {
     // HARD SYNC ON LINE CHANGE: Snap to server position when line changes
     // The visual transition between lines hides any correction, making this safe
     if (lineIdx !== previousLineIndex && lineIdx >= 0) {
-        // Calculate current server estimate
-        const elapsed = (performance.now() - wordSyncAnchorTimestamp) / 1000;
-        const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
-        const serverEstimate = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+        // Calculate anchor age - skip hard sync if too stale (bad polls may have accumulated)
+        const anchorAgeMs = performance.now() - wordSyncAnchorTimestamp;
+        const STALE_ANCHOR_THRESHOLD_MS = 2000;  // 2 seconds
         
-        // Hard sync - eliminates accumulated drift at each line boundary
-        visualPosition = serverEstimate;
-        renderPosition = serverEstimate;
-        filteredDrift = 0;
-        visualSpeed = 1.0;
-        lineChangeTime = 0;  // DON'T open safe-snap window - we've already hard synced
+        if (anchorAgeMs < STALE_ANCHOR_THRESHOLD_MS) {
+            // Calculate current server estimate
+            const elapsed = anchorAgeMs / 1000;
+            const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
+            const serverEstimate = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+            
+            // Hard sync - eliminates accumulated drift at each line boundary
+            visualPosition = serverEstimate;
+            renderPosition = serverEstimate;
+            filteredDrift = 0;
+            visualSpeed = 1.0;
+            lineChangeTime = 0;  // DON'T open safe-snap window - we've already hard synced
+        }
+        // If anchor is stale, skip hard sync - let flywheel coast until we get fresh data
     }
     
     // Add word-sync classes

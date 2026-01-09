@@ -46,9 +46,9 @@ import { isLatencyBeingAdjusted } from './latency.js';
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
 
-// Bad sample detection thresholds
-const BAD_POLL_INTERVAL_THRESHOLD = 180;  // ms - polls taking longer are suspicious
-const BAD_RTT_MULTIPLIER = 2.5;           // RTT > avg * 2.5 is suspicious
+// Bad sample detection thresholds (relaxed to reduce false positives)
+const BAD_POLL_INTERVAL_THRESHOLD = 330;  // ms - polls taking longer are suspicious (was 180ms)
+const BAD_RTT_MULTIPLIER = 3.5;           // RTT > avg * 3.5 is suspicious (was 2.5x)
 
 // ========== CORE FETCH WRAPPER ==========
 
