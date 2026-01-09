@@ -1820,8 +1820,8 @@ body.soft-mode .background-overlay {
     /* Override default animation for word-sync mode */
     animation: none;
     
-    /* Smooth line transitions - faster for snappy feel */
-    transition: opacity 0.075s ease-out, transform 0.075s ease-out;
+    /* Smooth line transitions - balanced for visual comfort */
+    transition: opacity 0.1s ease-out, transform 0.1s ease-out;
 }
 
 /* Fade out old line before replacement */
@@ -1832,7 +1832,7 @@ body.soft-mode .background-overlay {
 
 /* Fade in new line after replacement */
 .current.word-sync-active.line-entering {
-    animation: lineEnter 0.075s ease-out forwards;
+    animation: lineEnter 0.1s ease-out forwards;
 }
 
 @keyframes lineEnter {
@@ -1874,8 +1874,8 @@ body.soft-mode .background-overlay {
     backface-visibility: hidden;
     contain: layout style;
     
-    /* Specific properties only - NOT 'all' (expensive) */
-    transition: opacity 0.12s ease-out, color 0.12s ease-out;
+    /* Smooth transitions including transform for de-activation (pop → sung) */
+    transition: opacity 0.12s ease-out, color 0.12s ease-out, transform 0.15s ease-out;
     
     /* Prevent subpixel rendering jitter */
     -webkit-font-smoothing: antialiased;
