@@ -89,7 +89,7 @@ let debugFps = 0;
 
 // Line change tracking for line-boundary back-snaps
 // Back-snaps only allowed within this window after line change (hidden by transition)
-const BACK_SNAP_WINDOW_MS = 240;  // ~2 poll cycles
+const BACK_SNAP_WINDOW_MS = 500;  // ~4-5 poll cycles
 let lineChangeTime = 0;  // When line changed (performance.now())
 
 // Current word tracking for debug overlay
@@ -1166,8 +1166,11 @@ function animateWordSync(timestamp) {
             filteredDrift = 0;
             visualSpeed = 1.0;
             lineChangeTime = 0;  // DON'T open safe-snap window - we've already hard synced
+        } else {
+            // Anchor is stale - can't hard sync reliably, but open safe-snap window
+            // so the next good poll can correct during the line transition
+            lineChangeTime = performance.now();
         }
-        // If anchor is stale, skip hard sync - let flywheel coast until we get fresh data
     }
     
     // Add word-sync classes
