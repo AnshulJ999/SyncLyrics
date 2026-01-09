@@ -412,23 +412,21 @@ class MusixmatchProvider(LyricsProvider):
         try:
             # Note: We don't apply rate limiting here since we just made a request
             # and this is a follow-up for the same song
-            resp = requests.get(
+            # Use _make_request for retry logic on network errors
+            data = self._make_request(
                 f"{self.BASE_URL}track.richsync.get",
-                params={
+                {
                     "app_id": self.APP_ID,
                     "usertoken": token,
                     "track_id": track_id,
                     "commontrack_id": commontrack_id,
-                },
-                headers=self._headers,
-                timeout=15
+                }
             )
             
-            if resp.status_code != 200:
-                logger.debug(f"Musixmatch - RichSync HTTP {resp.status_code}")
+            if not data:
+                logger.debug("Musixmatch - RichSync request failed")
                 return None
             
-            data = resp.json()
             header = data.get("message", {}).get("header", {})
             
             if header.get("status_code") != 200:
