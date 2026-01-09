@@ -832,7 +832,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
     // while keeping accurate word boundaries
     let smoothProgress = currentWord ? currentWord.progress : 0;
     if (currentWord && currentWord.wordIndex >= 0) {
-        // Calculate progress based on smoother progressPosition
+        // Calculate progress based on position
         const word = lineData.words[currentWord.wordIndex];
         const wordStart = lineData.start + (word.time || 0);
         let wordEnd;
@@ -845,7 +845,10 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         }
         const duration = wordEnd - wordStart;
         if (duration > 0) {
-            smoothProgress = Math.max(0, Math.min(1, (progressPosition - wordStart) / duration));
+            // For short words (<200ms), use selectionPosition to avoid lag issues
+            // For longer words, use progressPosition for smooth visuals
+            const positionForProgress = duration < 0.2 ? selectionPosition : progressPosition;
+            smoothProgress = Math.max(0, Math.min(1, (positionForProgress - wordStart) / duration));
         }
     }
     
