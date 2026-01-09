@@ -138,6 +138,70 @@ class MusixmatchProvider(LyricsProvider):
             time.sleep(sleep_time)
         _last_request_time = time.time()
     
+    def _make_request(self, url: str, params: dict) -> Optional[dict]:
+        """
+        Make HTTP request with retry logic, returns parsed JSON or None.
+        
+        Retries on:
+        - SSL errors, connection errors, timeouts (exceptions)
+        - 429 Too Many Requests (rate limiting)
+        - 5xx Server Errors
+        
+        Uses self.retries (default: 3) and self.timeout (default: 10) from base class.
+        
+        Returns:
+            Parsed JSON dict on success, None on failure after all retries.
+        """
+        MAX_RETRY_WAIT = 10  # Never wait more than 10 seconds
+        
+        for attempt in range(self.retries):
+            try:
+                resp = requests.get(url, params=params, headers=self._headers, timeout=self.timeout)
+                
+                # Handle HTTP-level rate limiting (429)
+                if resp.status_code == 429:
+                    if attempt < self.retries - 1:
+                        retry_after = min(int(resp.headers.get('Retry-After', 2)), MAX_RETRY_WAIT)
+                        logger.warning(f"Musixmatch - Rate limited (429), retry {attempt + 1}/{self.retries} in {retry_after}s")
+                        time.sleep(retry_after)
+                        continue
+                    else:
+                        logger.error(f"Musixmatch - Rate limited after {self.retries} attempts")
+                        return None
+                
+                # Handle HTTP-level server errors (5xx)
+                if resp.status_code >= 500:
+                    if attempt < self.retries - 1:
+                        backoff = min(2 ** attempt, MAX_RETRY_WAIT)
+                        logger.warning(f"Musixmatch - Server error ({resp.status_code}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.error(f"Musixmatch - Server error ({resp.status_code}) after {self.retries} attempts")
+                        return None
+                
+                # For other responses, return parsed JSON (or None for non-200)
+                if resp.status_code != 200:
+                    logger.warning(f"Musixmatch - HTTP {resp.status_code}")
+                    return None
+                    
+                return resp.json()
+                
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt < self.retries - 1:
+                    backoff = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"Musixmatch - Request failed ({type(e).__name__}), retry {attempt + 1}/{self.retries} in {backoff}s")
+                    time.sleep(backoff)
+                else:
+                    logger.error(f"Musixmatch - Request failed after {self.retries} attempts: {e}")
+                    return None
+            except ValueError as e:  # JSON decode error
+                logger.error(f"Musixmatch - Invalid JSON response: {e}")
+                return None
+        return None
+    
     def get_lyrics(self, artist: str, title: str, album: str = None, 
                    duration: int = None, _retry: bool = True) -> Optional[Dict[str, Any]]:
         """
@@ -191,22 +255,15 @@ class MusixmatchProvider(LyricsProvider):
             
             logger.info(f"Musixmatch - Searching: {artist} - {title}")
             
-            # Make request to macro.subtitles.get
-            resp = requests.get(
-                f"{self.BASE_URL}macro.subtitles.get",
-                params=params,
-                headers=self._headers,
-                timeout=15
-            )
+            # Make request to macro.subtitles.get (with network-level retry)
+            data = self._make_request(f"{self.BASE_URL}macro.subtitles.get", params)
             
             # Update rate limit timestamp
             self._last_request_time = time.time()
             
-            if resp.status_code != 200:
-                logger.warning(f"Musixmatch - HTTP {resp.status_code}")
+            if not data:
+                # _make_request already logged the error
                 return None
-            
-            data = resp.json()
             
             # Check response status
             header = data.get("message", {}).get("header", {})
@@ -245,6 +302,11 @@ class MusixmatchProvider(LyricsProvider):
                 logger.warning("Musixmatch - Token invalid, refreshing...")
                 self._token = None
                 self._token_expires = 0
+                return self.get_lyrics(artist, title, album, duration, _retry=False)
+            elif track_status >= 500 and _retry:
+                # API-level server error - retry once
+                logger.warning(f"Musixmatch - API server error ({track_status}), retrying...")
+                time.sleep(2)
                 return self.get_lyrics(artist, title, album, duration, _retry=False)
             elif track_status != 200:
                 logger.info(f"Musixmatch - Track match failed: status {track_status}")
