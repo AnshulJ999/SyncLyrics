@@ -78,51 +78,78 @@ class MusixmatchProvider(LyricsProvider):
         if self._token and time.time() < (self._token_expires - 60):
             return self._token
         
-        # Limit refresh attempts to avoid infinite loops
+        # Limit refresh attempts to avoid infinite loops (for recursive get_lyrics calls)
         if self._token_refresh_attempts >= 3:
             logger.warning("Musixmatch - Too many token refresh attempts, using default")
             self._token_refresh_attempts = 0
             return self.DEFAULT_TOKEN
         
-        try:
-            self._token_refresh_attempts += 1
-            
-            resp = requests.get(
-                f"{self.BASE_URL}token.get",
-                params={"app_id": self.APP_ID},
-                headers=self._headers,
-                timeout=10
-            )
-            
-            if resp.status_code == 200:
-                # Preserve cookies from response for future requests
-                if 'set-cookie' in resp.headers:
-                    cookie = resp.headers.get('set-cookie', '')
-                    # Extract relevant cookie parts
-                    for part in cookie.split(';'):
-                        part = part.strip()
-                        if part.startswith('x-mxm-'):
-                            self._headers['cookie'] = part
-                            break
+        self._token_refresh_attempts += 1
+        MAX_TOKEN_RETRIES = 2  # 2 attempts for network-level retry
+        
+        for attempt in range(MAX_TOKEN_RETRIES):
+            try:
+                resp = requests.get(
+                    f"{self.BASE_URL}token.get",
+                    params={"app_id": self.APP_ID},
+                    headers=self._headers,
+                    timeout=self.timeout
+                )
                 
-                data = resp.json()
-                status = data.get("message", {}).get("header", {}).get("status_code")
+                # Handle transient HTTP errors with retry
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    if attempt < MAX_TOKEN_RETRIES - 1:
+                        logger.warning(f"Musixmatch - Token request got {resp.status_code}, retrying...")
+                        time.sleep(2)
+                        continue
+                    else:
+                        logger.warning(f"Musixmatch - Token request failed ({resp.status_code}), using default")
+                        return self.DEFAULT_TOKEN
                 
-                if status == 200:
-                    token = data.get("message", {}).get("body", {}).get("user_token")
-                    if token:
-                        self._token = token
-                        self._token_expires = time.time() + 600  # 10 minutes
-                        self._token_refresh_attempts = 0
-                        logger.debug(f"Musixmatch - Got new token: {token[:20]}...")
-                        return self._token
-            
-            logger.warning("Musixmatch - Token request failed, using default")
-            return self.DEFAULT_TOKEN
-            
-        except Exception as e:
-            logger.error(f"Musixmatch - Token fetch error: {e}")
-            return self.DEFAULT_TOKEN
+                # Process successful response
+                if resp.status_code == 200:
+                    # Preserve cookies from response for future requests
+                    if 'set-cookie' in resp.headers:
+                        cookie = resp.headers.get('set-cookie', '')
+                        # Extract relevant cookie parts
+                        for part in cookie.split(';'):
+                            part = part.strip()
+                            if part.startswith('x-mxm-'):
+                                self._headers['cookie'] = part
+                                break
+                    
+                    data = resp.json()
+                    status = data.get("message", {}).get("header", {}).get("status_code")
+                    
+                    if status == 200:
+                        token = data.get("message", {}).get("body", {}).get("user_token")
+                        if token:
+                            self._token = token
+                            self._token_expires = time.time() + 600  # 10 minutes
+                            self._token_refresh_attempts = 0
+                            logger.debug(f"Musixmatch - Got new token: {token[:20]}...")
+                            return self._token
+                
+                # Non-retryable failure (e.g., 4xx other than 429, or API-level error)
+                logger.warning("Musixmatch - Token request failed, using default")
+                return self.DEFAULT_TOKEN
+                
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt < MAX_TOKEN_RETRIES - 1:
+                    logger.warning(f"Musixmatch - Token request failed ({type(e).__name__}), retrying...")
+                    time.sleep(2)
+                    continue
+                else:
+                    logger.error(f"Musixmatch - Token fetch failed after retry: {e}")
+                    return self.DEFAULT_TOKEN
+            except Exception as e:
+                logger.error(f"Musixmatch - Token fetch error: {e}")
+                return self.DEFAULT_TOKEN
+        
+        # Shouldn't reach here, but fallback just in case
+        return self.DEFAULT_TOKEN
     
     def _apply_rate_limit(self) -> None:
         """
