@@ -44,6 +44,7 @@ _reconnect_delay = 1  # Start at 1 second, exponential backoff
 _current_player_id: Optional[str] = None
 _current_queue_id: Optional[str] = None
 _last_active_time: float = 0
+_last_active_player_id: Optional[str] = None  # Track player that was last playing/paused
 _metadata_cache: Optional[Dict[str, Any]] = None
 _cache_time: float = 0
 
@@ -179,9 +180,11 @@ def _get_target_player_id() -> Optional[str]:
     Priority:
     1. User-configured player_id setting
     2. First player with state PLAYING
-    3. First available player
+    3. First player with state PAUSED (recently active)
+    4. Last active player (if still exists)
+    5. First available player
     """
-    global _current_player_id
+    global _current_player_id, _last_active_player_id
     
     if not _client:
         return None
@@ -196,8 +199,19 @@ def _get_target_player_id() -> Optional[str]:
     
     # Find first playing player
     for player in _client.players.players:
-        # Use playback_state (not state) - it's a PlaybackState enum
         if player.playback_state and player.playback_state.value == "playing":
+            _last_active_player_id = player.player_id  # Remember active player
+            return player.player_id
+    
+    # Find first paused player (recently active)
+    for player in _client.players.players:
+        if player.playback_state and player.playback_state.value == "paused":
+            return player.player_id
+    
+    # Use last active player if still exists
+    if _last_active_player_id:
+        player = _client.players.get(_last_active_player_id)
+        if player:
             return player.player_id
     
     # Fall back to first available player
@@ -324,8 +338,15 @@ class MusicAssistantSource(BaseMetadataSource):
             if not queue:
                 return None
             
-            # Check if playing (use playback_state, not state)
-            is_playing = player.playback_state and player.playback_state.value == "playing"
+            # Check queue state (use queue.state for consistency with corrected_elapsed_time)
+            # queue.state is what corrected_elapsed_time uses to decide whether to interpolate
+            queue_state = queue.state.value if queue.state else "idle"
+            
+            # Return None if IDLE - don't show stale metadata from last session
+            if queue_state == "idle":
+                return None
+            
+            is_playing = queue_state == "playing"
             
             # Get current item from queue
             current_item = queue.current_item
@@ -362,9 +383,15 @@ class MusicAssistantSource(BaseMetadataSource):
             except Exception:
                 pass
             
-            # Calculate position using the queue's corrected_elapsed_time property
-            # This handles interpolation automatically for playing tracks
-            position = queue.corrected_elapsed_time if queue.corrected_elapsed_time is not None else 0
+            # Calculate position
+            # IMPORTANT: Only use corrected_elapsed_time when PLAYING
+            # When paused/stopped, use raw elapsed_time to avoid infinite interpolation
+            # (corrected_elapsed_time interpolates based on queue.state, which can get stuck)
+            if is_playing:
+                position = queue.corrected_elapsed_time if queue.corrected_elapsed_time is not None else 0
+            else:
+                # Paused - use raw elapsed_time (no interpolation)
+                position = queue.elapsed_time if queue.elapsed_time is not None else 0
             
             # Get duration
             duration_ms = None
