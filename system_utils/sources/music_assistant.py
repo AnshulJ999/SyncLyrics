@@ -48,9 +48,14 @@ _last_active_player_id: Optional[str] = None  # Track player that was last playi
 _metadata_cache: Optional[Dict[str, Any]] = None
 _cache_time: float = 0
 
-# Log rate limiting
+# Log rate limiting - prevent spam in logs
 _last_no_player_log: float = 0
-NO_PLAYER_LOG_INTERVAL = 60.0  # Only log "no player" once every 30 seconds
+_last_player_not_found_log: float = 0
+_last_queue_error_log: float = 0
+_last_metadata_error_log: float = 0
+_last_disconnect_log: float = 0
+_connection_attempt_count: int = 0  # Track consecutive connection attempts
+LOG_THROTTLE_INTERVAL = 60.0  # Only log repeated messages once per minute
 
 # Constants
 MAX_RECONNECT_DELAY = 60  # Max 60 seconds between reconnection attempts
@@ -82,6 +87,7 @@ async def _connect() -> bool:
     Returns True if connected, False otherwise.
     """
     global _client, _connected, _listening, _last_connect_attempt, _reconnect_delay
+    global _connection_attempt_count
     
     if _connected and _client and _listening:
         return True
@@ -96,6 +102,7 @@ async def _connect() -> bool:
         return False
     
     _last_connect_attempt = now
+    _connection_attempt_count += 1
     
     server_url = _get_config_value("system.music_assistant.server_url", "")
     token = _get_config_value("system.music_assistant.token", "")
@@ -103,7 +110,11 @@ async def _connect() -> bool:
     try:
         from music_assistant_client import MusicAssistantClient
         
-        logger.info(f"Connecting to Music Assistant: {server_url}")
+        # Log INFO on first attempt, DEBUG on retries to reduce spam
+        if _connection_attempt_count == 1:
+            logger.info(f"Connecting to Music Assistant: {server_url}")
+        else:
+            logger.debug(f"Reconnecting to Music Assistant (attempt {_connection_attempt_count})")
         
         # Create client (token may be optional for older schema versions)
         _client = MusicAssistantClient(
@@ -117,6 +128,7 @@ async def _connect() -> bool:
         
         _connected = True
         _reconnect_delay = 1  # Reset backoff on success
+        _connection_attempt_count = 0  # Reset on success
         
         logger.info("Connected to Music Assistant")
         
@@ -131,16 +143,38 @@ async def _connect() -> bool:
         _reconnect_delay = MAX_RECONNECT_DELAY  # Don't retry frequently
         return False
     except asyncio.TimeoutError:
-        logger.warning("Music Assistant connection timed out")
+        # Rate limit timeout warnings
+        if _connection_attempt_count <= 3:
+            logger.warning("Music Assistant connection timed out")
+        else:
+            logger.debug(f"Music Assistant connection timed out (attempt {_connection_attempt_count})")
         _reconnect_delay = min(_reconnect_delay * 2, MAX_RECONNECT_DELAY)
+        await _cleanup_failed_client()
         return False
     except Exception as e:
-        logger.debug(f"Music Assistant connection failed: {e}")
+        # Rate limit connection failure logs
+        if _connection_attempt_count <= 3:
+            logger.debug(f"Music Assistant connection failed: {e}")
+        # else: silent after 3 attempts to prevent log spam
         _reconnect_delay = min(_reconnect_delay * 2, MAX_RECONNECT_DELAY)
-        _client = None
-        _connected = False
-        _listening = False
+        await _cleanup_failed_client()
         return False
+
+
+async def _cleanup_failed_client():
+    """Clean up client resources after failed connection."""
+    global _client, _connected, _listening
+    
+    if _client:
+        try:
+            # Properly close the client to avoid unclosed session warnings
+            await _client.disconnect()
+        except Exception:
+            pass
+    
+    _client = None
+    _connected = False
+    _listening = False
 
 
 async def _start_listening():
@@ -149,7 +183,7 @@ async def _start_listening():
     
     This runs in the background and keeps the player list updated.
     """
-    global _listening, _connected, _client
+    global _listening, _connected, _client, _last_disconnect_log
     
     if not _client:
         return
@@ -163,7 +197,11 @@ async def _start_listening():
     finally:
         _listening = False
         _connected = False
-        logger.info("Music Assistant disconnected")
+        # Rate limit disconnected log to prevent spam on reconnect cycles
+        now = time.time()
+        if now - _last_disconnect_log >= LOG_THROTTLE_INTERVAL:
+            logger.info("Music Assistant disconnected")
+            _last_disconnect_log = now
 
 
 async def _ensure_connected() -> bool:
@@ -195,7 +233,12 @@ def _get_target_player_id() -> Optional[str]:
         player = _client.players.get(preferred_id.strip())
         if player:
             return player.player_id
-        logger.debug(f"Configured player_id '{preferred_id}' not found")
+        # Rate limit this log to prevent spam when player is misconfigured
+        global _last_player_not_found_log
+        now = time.time()
+        if now - _last_player_not_found_log >= LOG_THROTTLE_INTERVAL:
+            logger.debug(f"Configured player_id '{preferred_id}' not found")
+            _last_player_not_found_log = now
     
     # Find first playing player
     for player in _client.players.players:
@@ -235,7 +278,12 @@ async def _get_active_queue_id(player_id: str) -> Optional[str]:
             _current_queue_id = queue.queue_id
             return queue.queue_id
     except Exception as e:
-        logger.debug(f"Failed to get active queue: {e}")
+        # Rate limit queue error log
+        global _last_queue_error_log
+        now = time.time()
+        if now - _last_queue_error_log >= LOG_THROTTLE_INTERVAL:
+            logger.debug(f"Failed to get active queue: {e}")
+            _last_queue_error_log = now
     
     # Fallback: queue_id often equals player_id
     return player_id
@@ -317,7 +365,7 @@ class MusicAssistantSource(BaseMetadataSource):
                 # Rate limit this log to avoid spam
                 global _last_no_player_log
                 now = time.time()
-                if now - _last_no_player_log >= NO_PLAYER_LOG_INTERVAL:
+                if now - _last_no_player_log >= LOG_THROTTLE_INTERVAL:
                     logger.debug("No Music Assistant player available")
                     _last_no_player_log = now
                 return None
@@ -420,7 +468,12 @@ class MusicAssistantSource(BaseMetadataSource):
             return result
             
         except Exception as e:
-            logger.debug(f"Music Assistant metadata fetch failed: {e}")
+            # Rate limit metadata error log
+            global _last_metadata_error_log
+            now = time.time()
+            if now - _last_metadata_error_log >= LOG_THROTTLE_INTERVAL:
+                logger.debug(f"Music Assistant metadata fetch failed: {e}")
+                _last_metadata_error_log = now
             # Don't set _connected = False here - that causes reconnect spam
             # Connection errors are handled by start_listening task
             return None
