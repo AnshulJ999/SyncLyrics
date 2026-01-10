@@ -1271,6 +1271,14 @@ body.sharp-mode .next {
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Sharp Mode word-sync: Inherit parent's text-shadow instead of using generic glow */
+/* This ensures word highlights match Sharp Mode's strong contrast styling */
+body.sharp-mode .word-active,
+body.sharp-mode .word-sung,
+body.sharp-mode .word-upcoming {
+    text-shadow: inherit;
+}
+
 
 /* ========== SOFT MODE (Medium Blur, No Scaling) ========== */
 /* Soft mode: Medium blur album art background - balanced between sharp and blurred */
