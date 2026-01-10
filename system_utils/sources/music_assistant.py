@@ -386,12 +386,27 @@ class MusicAssistantSource(BaseMetadataSource):
             # Check queue state (use queue.state for consistency with corrected_elapsed_time)
             # queue.state is what corrected_elapsed_time uses to decide whether to interpolate
             queue_state = queue.state.value if queue.state else "idle"
+            player_state = player.playback_state.value if player.playback_state else "idle"
             
-            # Return None if IDLE - don't show stale metadata from last session
-            if queue_state == "idle":
+            # DEBUG: Uncomment to diagnose state detection issues
+            # logger.debug(f"MA state check - queue.state={queue_state}, player.playback_state={player_state}, "
+            #             f"current_item={'present' if queue.current_item else 'None'}, "
+            #             f"elapsed_time_last_updated={queue.elapsed_time_last_updated}")
+            
+            # Determine staleness: how long since MA last updated the position
+            # This distinguishes "just paused" from "stale session data from hours ago"
+            time_since_update = time.time() - queue.elapsed_time_last_updated
+            paused_timeout = self.get_config().paused_timeout  # Default 600s (10 min)
+            is_stale = time_since_update > paused_timeout
+            
+            # Only return None if IDLE and STALE (prevents 688min bug from old sessions)
+            # When just paused, queue.state=idle but elapsed_time_last_updated is fresh
+            if queue_state == "idle" and is_stale:
                 return None
             
-            is_playing = queue_state == "playing"
+            # Use player.playback_state for is_playing (it updates faster than queue.state)
+            # Logs showed player goes playing→idle→playing faster than queue
+            is_playing = player_state == "playing"
             
             # Get current item from queue
             current_item = queue.current_item
