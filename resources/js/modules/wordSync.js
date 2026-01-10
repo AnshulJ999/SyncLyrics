@@ -889,7 +889,8 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             }
             
             // Update progress for active word
-            if (style === 'fade') {
+            // Note: Using separate if blocks (not if/else) so 'popfade' can trigger BOTH
+            if (style === 'fade' || style === 'popfade') {
                 const progress = Math.round(smoothProgress * 100);
                 el.style.setProperty('--word-progress', `${progress}%`);
                 
@@ -903,7 +904,9 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                 } else {
                     el.style.removeProperty('opacity');
                 }
-            } else if (style === 'pop') {
+            }
+            
+            if (style === 'pop' || style === 'popfade') {
                 // Get word duration for dynamic animation
                 const wordDuration = currentWord.duration || 0.15;  // Fallback 150ms
                 const wordDurationMs = wordDuration * 1000;
@@ -1175,12 +1178,18 @@ function animateWordSync(timestamp) {
     
     // Add word-sync classes
     currentEl.classList.add('word-sync-active');
-    currentEl.classList.add(`word-sync-${wordSyncStyle}`);
-    // Remove other style class if present
-    if (wordSyncStyle === 'fade') {
-        currentEl.classList.remove('word-sync-pop');
+    
+    // Handle style classes - popfade needs BOTH fade and pop classes
+    if (wordSyncStyle === 'popfade') {
+        currentEl.classList.add('word-sync-fade', 'word-sync-pop');
     } else {
-        currentEl.classList.remove('word-sync-fade');
+        currentEl.classList.add(`word-sync-${wordSyncStyle}`);
+        // Remove other style class if present
+        if (wordSyncStyle === 'fade') {
+            currentEl.classList.remove('word-sync-pop');
+        } else {
+            currentEl.classList.remove('word-sync-fade');
+        }
     }
     
     // Update DOM using recycling approach (fast path)

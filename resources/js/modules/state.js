@@ -18,7 +18,7 @@ export let lastCheckTime = 0;    // Track last check time
 export let wordSyncedLyrics = null;  // Current word-synced lyrics data from API
 export let hasWordSync = false;       // Whether current song has word-sync available
 export let wordSyncProvider = null;   // Which provider is serving word-sync data
-export let wordSyncStyle = 'pop';    // 'fade' or 'pop' - animation style for word highlighting
+export let wordSyncStyle = 'popfade';    // 'fade', 'pop', or 'popfade' - animation style for word highlighting
 export let wordSyncEnabled = false;    // Default OFF - users enable via URL param or button    // Global toggle for word-sync (can be disabled via URL or button)
 
 // Word-sync interpolation state (for smooth 60-144fps animation between 100ms polls)
