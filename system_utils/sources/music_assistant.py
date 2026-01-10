@@ -594,9 +594,10 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def get_queue(self) -> Optional[Dict]:
         """
-        Get playback queue.
+        Get playback queue (upcoming songs only).
         
         Returns queue in Spotify-compatible format for frontend compatibility.
+        Only returns songs AFTER the current playing song, not history.
         """
         if not await _ensure_connected():
             return None
@@ -606,18 +607,27 @@ class MusicAssistantSource(BaseMetadataSource):
             if not queue_id:
                 return None
             
-            # Get queue items
-            items = await _client.player_queues.get_queue_items(queue_id, limit=20, offset=0)
+            # Get queue object to find current position
+            queue_obj = _client.player_queues.get(queue_id)
+            if not queue_obj:
+                return None
+            
+            # Get current index - this is where we are in the queue
+            # MA queue includes history (played songs) at the beginning
+            # We want to start AFTER the current song to get only upcoming
+            current_index = getattr(queue_obj, 'current_index', 0) or 0
+            
+            # Get items starting AFTER the current item
+            # offset = current_index + 1 skips history AND current song
+            items = await _client.player_queues.get_queue_items(
+                queue_id, 
+                limit=20, 
+                offset=current_index + 1
+            )
             
             # Convert to Spotify-compatible format
             queue_items = []
             for item in items:
-                # Skip current item (compare queue_item_id strings)
-                queue_obj = _client.player_queues.get(queue_id)
-                if queue_obj and queue_obj.current_item:
-                    if item.queue_item_id == queue_obj.current_item.queue_item_id:
-                        continue
-                
                 media = item.media_item
                 if not media:
                     continue
@@ -652,3 +662,4 @@ class MusicAssistantSource(BaseMetadataSource):
         except Exception as e:
             logger.debug(f"Music Assistant get_queue failed: {e}")
             return None
+
