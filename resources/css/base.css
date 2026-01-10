@@ -1924,8 +1924,8 @@ body.soft-mode .background-overlay {
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    /* Smooth gradient transition using registered property */
-    transition: --word-progress 0.05s linear;
+    /* Smooth gradient transition using registered property - 16ms (~1 frame) for minimal lag */
+    transition: --word-progress 0.01s linear;
 }
 
 /* Pop style: scale animation on active word */
