@@ -1,8 +1,8 @@
 """
 Linux MPRIS metadata source via playerctl.
 
-This is an example plugin source demonstrating the new architecture.
-It provides metadata from any MPRIS-compatible media player on Linux.
+This source provides metadata from any MPRIS-compatible media player on Linux,
+including Spotify, VLC, Firefox, Rhythmbox, and many others.
 
 Requirements:
 - Linux operating system
@@ -240,11 +240,11 @@ class LinuxSource(BaseMetadataSource):
         Args:
             position_ms: Target position in milliseconds
             
-        Note: playerctl position command expects microseconds
+        Note: playerctl position command expects seconds for absolute seek.
         """
-        # playerctl position expects microseconds for absolute seek
-        position_us = position_ms * 1000
-        return await self._run_playerctl("position", str(position_us))
+        # Convert milliseconds to seconds (playerctl uses seconds)
+        position_seconds = position_ms / 1000
+        return await self._run_playerctl("position", str(position_seconds))
     
     async def _run_playerctl(self, *args) -> bool:
         """
@@ -275,6 +275,11 @@ class LinuxSource(BaseMetadataSource):
         except subprocess.TimeoutExpired:
             logger.debug(f"playerctl {args[0]} timed out")
             return False
+        except subprocess.SubprocessError as e:
+            # Expected subprocess errors (CalledProcessError, etc.)
+            logger.debug(f"playerctl {args[0]} subprocess error: {e}")
+            return False
         except Exception as e:
-            logger.debug(f"playerctl {args[0]} error: {e}")
+            # Unexpected error - log at warning level for visibility
+            logger.warning(f"playerctl {args[0]} unexpected error: {e}", exc_info=True)
             return False
