@@ -234,6 +234,7 @@ class SettingsManager:
             "system.music_assistant.token": Setting("MA Token", str, "", True, "Music Assistant", "API token (from MA web UI)", "text"),
             "system.music_assistant.player_id": Setting("MA Player ID", str, "", False, "Music Assistant", "Specific player (blank = auto-detect)", "text"),
             "system.music_assistant.paused_timeout": Setting("MA Paused Timeout", int, 600, False, "Music Assistant", "Accept paused MA for N seconds (0=forever)", "number"),
+            "lyrics.display.music_assistant_latency_compensation": Setting("Music Assistant Latency", float, 0.0, False, "Lyrics", "Music Assistant sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
 
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),

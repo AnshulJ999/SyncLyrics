@@ -43,6 +43,7 @@ Settings are loaded in this priority order (highest wins):
 | `lyrics.display.spotify_latency_compensation` | -0.5 | Spotify-specific offset |
 | `lyrics.display.spicetify_latency_compensation` | 0.0 | Spicetify offset |
 | `lyrics.display.word_sync_latency_compensation` | -0.1 | Word-sync offset |
+| `lyrics.display.music_assistant_latency_compensation` | 0.0 | Music Assistant offset |
 | `lyrics.display.idle_interval` | 3.0 | Polling when idle (seconds) |
 | `lyrics.display.smart_race_timeout` | 4.0 | Max wait for providers (seconds) |
 

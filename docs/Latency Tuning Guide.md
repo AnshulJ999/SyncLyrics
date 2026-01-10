@@ -36,9 +36,9 @@ effective_position = current_position + latency_compensation
 
 ---
 
-## The Five Latency Settings
+## The Six Latency Settings
 
-SyncLyrics has five separate latency settings because different audio sources have different delays:
+SyncLyrics has six separate latency settings because different audio sources have different delays:
 
 ### 1. General Latency (`latency_compensation`)
 - **Default**: -0.1s
@@ -60,7 +60,13 @@ SyncLyrics has five separate latency settings because different audio sources ha
 - **Used for**: Shazam/ACRCloud recognition
 - **Why**: Recognition starts after audio plays; lyrics need to appear slightly earlier
 
-### 5. Word-Sync Latency (`word_sync_latency_compensation`)
+### 5. Music Assistant Latency (`music_assistant_latency_compensation`)
+- **Default**: 0.0s
+- **Used for**: Music Assistant server (network streaming)
+- **Why**: MA players have variable latency; adjust based on your player/network setup
+- **Common adjustment**: Try `-0.3` to `-0.5` if lyrics appear too early
+
+### 6. Word-Sync Latency (`word_sync_latency_compensation`)
 - **Default**: -0.1s
 - **Used for**: Word-by-word karaoke highlighting
 - **Why**: Fine-tuning word transitions; additive to source latency
@@ -153,6 +159,7 @@ effective_position = position + adaptive_delta
 # - spotify: spotify_latency_compensation (-0.5)
 # - spicetify: spicetify_latency_compensation (0.0)
 # - audio_recognition: audio_recognition_latency_compensation (+0.1)
+# - music_assistant: music_assistant_latency_compensation (0.0)
 # - default: latency_compensation (-0.1)
 ```
 

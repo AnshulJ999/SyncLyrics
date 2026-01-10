@@ -386,6 +386,9 @@ async def current_track() -> dict:
             elif source == "audio_recognition":
                 # Audio recognition mode
                 latency_comp = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+            elif source == "music_assistant":
+                # Music Assistant mode (network streaming via MA server)
+                latency_comp = LYRICS.get("display", {}).get("music_assistant_latency_compensation", 0.0)
             else:
                 # Normal mode (Windows Media, hybrid)
                 latency_comp = LYRICS.get("display", {}).get("latency_compensation", 0.0)

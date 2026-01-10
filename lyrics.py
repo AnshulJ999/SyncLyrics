@@ -1738,6 +1738,10 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
         # Audio recognition: Use configurable audio_recognition_latency_compensation
         # Positive = lyrics earlier, Negative = lyrics later
         adaptive_delta = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+    elif source == "music_assistant":
+        # Music Assistant: Use configurable music_assistant_latency_compensation
+        # Positive = lyrics earlier, Negative = lyrics later
+        adaptive_delta = LYRICS.get("display", {}).get("music_assistant_latency_compensation", 0.0)
     else:
         # Normal mode (Windows Media, hybrid): Use base delta
         adaptive_delta = base_delta
