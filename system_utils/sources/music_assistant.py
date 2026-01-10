@@ -29,6 +29,7 @@ logger = get_logger(__name__)
 _client = None
 _connection_task = None
 _connected = False
+_listening = False
 _last_connect_attempt = 0
 _reconnect_delay = 1  # Start at 1 second, exponential backoff
 
@@ -38,6 +39,10 @@ _current_queue_id: Optional[str] = None
 _last_active_time: float = 0
 _metadata_cache: Optional[Dict[str, Any]] = None
 _cache_time: float = 0
+
+# Log rate limiting
+_last_no_player_log: float = 0
+NO_PLAYER_LOG_INTERVAL = 60.0  # Only log "no player" once every 30 seconds
 
 # Constants
 MAX_RECONNECT_DELAY = 60  # Max 60 seconds between reconnection attempts
@@ -68,9 +73,9 @@ async def _connect() -> bool:
     Uses exponential backoff for reconnection attempts.
     Returns True if connected, False otherwise.
     """
-    global _client, _connected, _last_connect_attempt, _reconnect_delay
+    global _client, _connected, _listening, _last_connect_attempt, _reconnect_delay
     
-    if _connected and _client:
+    if _connected and _client and _listening:
         return True
     
     # Check if configured
@@ -106,6 +111,11 @@ async def _connect() -> bool:
         _reconnect_delay = 1  # Reset backoff on success
         
         logger.info("Connected to Music Assistant")
+        
+        # Start listening in background to receive player/queue updates
+        # This populates _client.players.players and _client.player_queues.player_queues
+        asyncio.create_task(_start_listening())
+        
         return True
         
     except ImportError:
@@ -121,12 +131,36 @@ async def _connect() -> bool:
         _reconnect_delay = min(_reconnect_delay * 2, MAX_RECONNECT_DELAY)
         _client = None
         _connected = False
+        _listening = False
         return False
+
+
+async def _start_listening():
+    """
+    Start the WebSocket listener to receive player/queue events.
+    
+    This runs in the background and keeps the player list updated.
+    """
+    global _listening, _connected, _client
+    
+    if not _client:
+        return
+    
+    try:
+        _listening = True
+        logger.debug("Starting Music Assistant event listener")
+        await _client.start_listening()
+    except Exception as e:
+        logger.debug(f"Music Assistant listener stopped: {e}")
+    finally:
+        _listening = False
+        _connected = False
+        logger.info("Music Assistant disconnected")
 
 
 async def _ensure_connected() -> bool:
     """Ensure we're connected, attempt reconnection if needed."""
-    if _connected and _client:
+    if _connected and _client and _listening:
         return True
     return await _connect()
 
@@ -258,7 +292,12 @@ class MusicAssistantSource(BaseMetadataSource):
             # Get target player
             player_id = _get_target_player_id()
             if not player_id:
-                logger.debug("No Music Assistant player available")
+                # Rate limit this log to avoid spam
+                global _last_no_player_log
+                now = time.time()
+                if now - _last_no_player_log >= NO_PLAYER_LOG_INTERVAL:
+                    logger.debug("No Music Assistant player available")
+                    _last_no_player_log = now
                 return None
             
             _current_player_id = player_id
