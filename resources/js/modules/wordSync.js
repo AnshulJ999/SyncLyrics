@@ -845,9 +845,10 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         }
         const duration = wordEnd - wordStart;
         if (duration > 0) {
-            // For short words (<200ms), use selectionPosition to avoid lag issues
-            // For longer words, use progressPosition for smooth visuals
-            const positionForProgress = duration < 0.2 ? selectionPosition : progressPosition;
+            // For fade/popfade: always use selectionPosition for accurate gradient timing
+            // For pop: use progressPosition for longer words (smooth visuals), selectionPosition for short words
+            const useFadeStyle = style === 'fade' || style === 'popfade';
+            const positionForProgress = (useFadeStyle || duration < 0.2) ? selectionPosition : progressPosition;
             smoothProgress = Math.max(0, Math.min(1, (positionForProgress - wordStart) / duration));
         }
     }
