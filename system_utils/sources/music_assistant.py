@@ -143,19 +143,16 @@ async def _connect() -> bool:
         _reconnect_delay = MAX_RECONNECT_DELAY  # Don't retry frequently
         return False
     except asyncio.TimeoutError:
-        # Rate limit timeout warnings
-        if _connection_attempt_count <= 3:
-            logger.warning("Music Assistant connection timed out")
-        else:
+        # Rate limit timeout warnings - log first 3, then every 5th attempt
+        if _connection_attempt_count <= 3 or _connection_attempt_count % 5 == 0:
             logger.debug(f"Music Assistant connection timed out (attempt {_connection_attempt_count})")
         _reconnect_delay = min(_reconnect_delay * 2, MAX_RECONNECT_DELAY)
         await _cleanup_failed_client()
         return False
     except Exception as e:
-        # Rate limit connection failure logs
-        if _connection_attempt_count <= 3:
-            logger.debug(f"Music Assistant connection failed: {e}")
-        # else: silent after 3 attempts to prevent log spam
+        # Rate limit connection failure logs - log first 3, then every 5th attempt
+        if _connection_attempt_count <= 3 or _connection_attempt_count % 5 == 0:
+            logger.debug(f"Music Assistant connection failed (attempt {_connection_attempt_count}): {e}")
         _reconnect_delay = min(_reconnect_delay * 2, MAX_RECONNECT_DELAY)
         await _cleanup_failed_client()
         return False
