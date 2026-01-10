@@ -814,12 +814,14 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             // Cache element references for fast updates
             wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
             
-            // Remove entering class after animation completes
-            setTimeout(() => {
-                if (transitionToken !== myToken) return;
-                currentEl.classList.remove('line-entering');
-            }, 100);  // Match CSS animation duration
-        }, 100); // Wait 100ms for fade-out (match CSS transition)
+            // Remove entering class after animation completes (use requestAnimationFrame for efficiency)
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (transitionToken !== myToken) return;
+                    currentEl.classList.remove('line-entering');
+                });
+            });
+        }, 70); // Reduced from 100ms for snappier transitions
         
         return; // Skip word updates during transition
     }
