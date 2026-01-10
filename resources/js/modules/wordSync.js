@@ -882,8 +882,8 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             el.classList.add('word-sung');
             el.style.removeProperty('--word-progress');
             el.style.removeProperty('opacity');  // Clear decay opacity (fade style)
-            // Don't remove transform immediately - let CSS transition handle it
-            // el.style.removeProperty('transform');  // Removed to allow smooth de-activation
+            // Reset transform to CSS default (fixes spacing issues from leftover inline scale)
+            el.style.transform = 'translateZ(0)';
             el.style.removeProperty('transitionDuration');  // Reset to CSS default for smooth return
         } else if (isActive) {
             if (!wasActive) {
