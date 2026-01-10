@@ -18,12 +18,19 @@ Features:
 """
 import asyncio
 import time
+import logging
 from typing import Optional, Dict, Any, List
 from .base import BaseMetadataSource, SourceConfig, SourceCapability
 from ..helpers import _normalize_track_id
 from logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# SECURITY: Suppress MA client loggers that log sensitive data (tokens, full messages)
+# The connection logger logs full WebSocket messages including auth tokens at DEBUG level
+logging.getLogger("music_assistant_client.connection").setLevel(logging.WARNING)
+logging.getLogger("music_assistant_client").setLevel(logging.WARNING)
+
 
 # Connection state
 _client = None
