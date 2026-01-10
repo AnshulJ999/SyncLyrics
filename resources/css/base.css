@@ -1908,7 +1908,7 @@ body.soft-mode .background-overlay {
 .word-active {
     opacity: 1;
     color: white;
-    font-weight: 600;
+    /* font-weight: 600; */  /* Commented out to prevent wrap flicker */
     /* Subtle glow for active word */
     text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
     /* GPU layer promotion - only for the active word, not all words */
@@ -1943,7 +1943,7 @@ body.soft-mode .background-overlay {
 .word-sync-pop .word-sung {
     opacity: 1;
     color: white;
-    font-weight: 500;
+    /* font-weight: 500; */  /* Commented out to prevent wrap flicker */
 }
 
 /* Reduced motion preference - disable word animations */
