@@ -466,6 +466,7 @@ class MusicAssistantSource(BaseMetadataSource):
             result = {
                 "track_id": _normalize_track_id(artist, title),
                 "artist": artist,
+                "artist_name": artist,  # For display consistency with other sources
                 "title": title,
                 "album": album,
                 "album_art_url": album_art_url,
