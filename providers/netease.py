@@ -194,7 +194,13 @@ class NetEaseProvider(LyricsProvider):
             else:
                 # Reject low confidence matches to avoid returning wrong lyrics
                 # This prevents issues like returning 5SOS "Bad Omens" for Bad Omens band songs
-                logger.info(f"NetEase - Rejecting low confidence match (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD}) for: {search_term}")
+                if best_song:
+                    result_name = best_song.get('name', 'Unknown')
+                    result_artists = ', '.join([a.get('name', '') for a in best_song.get('artists', [])])
+                    logger.info(f"NetEase - Rejecting low confidence match (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD}) for: {search_term}")
+                    logger.info(f"NetEase - Best result was: '{result_name}' by '{result_artists}'")
+                else:
+                    logger.info(f"NetEase - No viable match found for: {search_term} (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD})")
                 return None
             
             # Get lyrics for selected song - ensure song has 'id' field
