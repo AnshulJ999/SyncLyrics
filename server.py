@@ -2250,7 +2250,7 @@ async def get_playback_queue():
     
     # === PLUGIN SOURCE QUEUE ROUTING ===
     # Check if source is a plugin with queue capability
-    if source and source not in LEGACY_SOURCES:
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
         try:
             from system_utils.sources import get_source, SourceCapability
             plugin = get_source(source)

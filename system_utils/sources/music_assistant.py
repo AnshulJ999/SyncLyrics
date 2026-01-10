@@ -362,17 +362,9 @@ class MusicAssistantSource(BaseMetadataSource):
             except Exception:
                 pass
             
-            # Calculate position
-            # queue.elapsed_time is seconds since last update
-            # queue.elapsed_time_last_updated is timestamp
-            position = 0
-            if queue.elapsed_time is not None:
-                if is_playing and queue.elapsed_time_last_updated:
-                    # Interpolate position for playing tracks
-                    elapsed_since_update = time.time() - queue.elapsed_time_last_updated
-                    position = queue.elapsed_time + elapsed_since_update
-                else:
-                    position = queue.elapsed_time
+            # Calculate position using the queue's corrected_elapsed_time property
+            # This handles interpolation automatically for playing tracks
+            position = queue.corrected_elapsed_time if queue.corrected_elapsed_time is not None else 0
             
             # Get duration
             duration_ms = None
@@ -418,17 +410,8 @@ class MusicAssistantSource(BaseMetadataSource):
             if not queue_id:
                 return False
             
-            # Get current state to determine action
-            queue = _client.player_queues.get(queue_id)
-            player = _client.players.get(_current_player_id) if _current_player_id else None
-            
-            is_playing = player and player.state and player.state.value == "playing"
-            
-            if is_playing:
-                await _client.player_queues.pause(queue_id)
-            else:
-                await _client.player_queues.play(queue_id)
-            
+            # Use the built-in play_pause() method which handles toggle
+            await _client.player_queues.play_pause(queue_id)
             return True
         except Exception as e:
             logger.debug(f"Music Assistant toggle_playback failed: {e}")
@@ -536,9 +519,11 @@ class MusicAssistantSource(BaseMetadataSource):
             # Convert to Spotify-compatible format
             queue_items = []
             for item in items:
-                # Skip current item (it's typically first in queue)
-                if item.queue_item_id == _client.player_queues.get(queue_id).current_index:
-                    continue
+                # Skip current item (compare queue_item_id strings)
+                queue_obj = _client.player_queues.get(queue_id)
+                if queue_obj and queue_obj.current_item:
+                    if item.queue_item_id == queue_obj.current_item.queue_item_id:
+                        continue
                 
                 media = item.media_item
                 if not media:
