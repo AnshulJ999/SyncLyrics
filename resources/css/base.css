@@ -1828,6 +1828,9 @@ body.soft-mode .background-overlay {
     /* Override default animation for word-sync mode */
     animation: none;
     
+    /* Preserve spaces between word spans - prevents whitespace collapsing on line wrap */
+    white-space: pre-wrap;
+    
     /* Smooth line transitions - balanced for visual comfort */
     transition: opacity 0.1s ease-out, transform 0.1s ease-out;
 }
