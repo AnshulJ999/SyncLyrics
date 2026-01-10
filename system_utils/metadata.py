@@ -176,7 +176,7 @@ async def get_current_song_meta_data() -> Optional[dict]:
     # Import platform-specific fetchers here to avoid circular imports
     from .windows import _get_current_song_meta_data_windows
     from .spotify import _get_current_song_meta_data_spotify
-    from .gnome import _get_current_song_meta_data_gnome
+    # Note: Linux now uses plugin system (system_utils/sources/linux.py), no legacy import needed
     
     # ========================================================================
     # FIX C1: Run auto_manage BEFORE acquiring lock (fire-and-forget)
@@ -394,8 +394,8 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             if windows_media_result and "spotify" in windows_media_result.get("app_id", "").lower():
                                 continue
                             source_result = await _get_current_song_meta_data_spotify()
-                        elif source_name == "gnome" and DESKTOP == "Linux":
-                            source_result = _get_current_song_meta_data_gnome()
+                        # Note: Linux/GNOME now uses plugin system (sources/linux.py)
+                        # Legacy "gnome" source removed - handled by LinuxSource plugin
                     else:
                         # === PLUGIN DISPATCH ===
                         plugin = source_info["instance"]
