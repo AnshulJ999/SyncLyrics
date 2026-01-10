@@ -222,6 +222,11 @@ class SettingsManager:
             "media_source.spicetify.enabled": Setting("Spicetify Source", bool, True, True, "Media", "Enable Spicetify bridge (Spotify Desktop)", "switch"),
             "media_source.spicetify.priority": Setting("Priority", int, 0, False, "Media", "Source priority (0 = highest)", "number"),
             
+            # Plugin Sources (new plugin-based architecture)
+            "media_source.linux.enabled": Setting("Linux Source", bool, True, True, "Media", "Enable Linux MPRIS source (via playerctl)", "switch"),
+            "media_source.linux.priority": Setting("Linux Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
+            "system.linux.paused_timeout": Setting("Linux Paused Timeout", int, 600, False, "System", "Accept paused Linux source for N seconds (0=forever)", "number"),
+            
             # Spotify API
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),

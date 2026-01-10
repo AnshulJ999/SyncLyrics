@@ -1884,7 +1884,23 @@ async def toggle_playback():
             return jsonify({"status": "success", "message": "Toggled (Windows - Expired Session Fallback)"})
         logger.debug("Windows toggle fallback failed (no session), trying Spotify API")
     
-    # Spotify source (and hybrid fallback) uses Spotify API
+    # === PLUGIN SOURCE ROUTING ===
+    # Check if source is a plugin with playback capability
+    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.toggle_playback()
+                if success:
+                    return jsonify({"status": "success", "message": f"Toggled ({source})"})
+                logger.debug(f"Plugin {source} toggle failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
+    
+    # Spotify source (and hybrid/plugin fallback) uses Spotify API
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1945,6 +1961,21 @@ async def next_track():
             return jsonify({"status": "success", "message": "Skipped (Windows - Expired Session Fallback)"})
         logger.debug("Windows next fallback failed (no session), trying Spotify API")
     
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.next_track()
+                if success:
+                    return jsonify({"status": "success", "message": f"Skipped ({source})"})
+                logger.debug(f"Plugin {source} next failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1982,6 +2013,21 @@ async def previous_track():
         if success:
             return jsonify({"status": "success", "message": "Previous (Windows - Expired Session Fallback)"})
         logger.debug("Windows previous fallback failed (no session), trying Spotify API")
+    
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.previous_track()
+                if success:
+                    return jsonify({"status": "success", "message": f"Previous ({source})"})
+                logger.debug(f"Plugin {source} previous failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
     
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
@@ -2030,7 +2076,22 @@ async def seek_playback():
         logger.debug("Windows seek failed for hybrid, falling back to Spotify API")
         # Fall through to Spotify logic below
     
-    # Spotify source (and hybrid fallback) uses Spotify API
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.SEEK:
+                success = await plugin.seek(position_ms)
+                if success:
+                    return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms ({source})"})
+                logger.debug(f"Plugin {source} seek failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin seek routing failed: {e}")
+    
+    # Spotify source (and hybrid/plugin fallback) uses Spotify API
     client = get_spotify_client()
     if not client:
         return jsonify({"error": "Spotify not connected"}), 503

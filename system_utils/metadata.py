@@ -351,9 +351,13 @@ async def get_current_song_meta_data() -> Optional[dict]:
         # Update check time only when we are committed to fetching (inside the lock)
         get_current_song_meta_data._last_check_time = current_time
         
-        sources = config.MEDIA_SOURCE.get("sources", [])
-        sorted_sources = [s for s in sorted(sources, key=lambda x: int(x.get("priority", 999))) 
-                        if s.get("enabled", False)]
+        # === UNIFIED SOURCE DISPATCH ===
+        # Get all sources (legacy + plugin) sorted by priority for full priority mixing
+        # Plugin sources are integrated here without modifying legacy source files
+        from .sources import get_all_sources_sorted
+        from .sources.enrichment import enrich_plugin_metadata
+        
+        sorted_sources = get_all_sources_sorted()
 
         # Initialize BEFORE conditional to avoid NameError when audio recognition is used
         windows_media_checked = False
@@ -362,33 +366,44 @@ async def get_current_song_meta_data() -> Optional[dict]:
         
         # Use result from audio recognition if available, otherwise fetch from other sources
         if not result:
-            # 1. Fetch Primary Data from sorted sources
+            # 1. Fetch Primary Data from sorted sources (legacy + plugin mixed by priority)
             # NEW LOGIC: Prefer ACTIVE sources over PAUSED sources
             # - If source is playing (is_playing=true) → use it immediately
             # - If source is paused (is_playing=false) → save as fallback, continue checking
             # - After all sources, use paused fallback if nothing is actively playing
-            for source in sorted_sources:
+            for source_info in sorted_sources:
                 try:
                     source_result = None
+                    source_name = source_info["name"]
                     
-                    if source["name"] == "spicetify":
-                        # Spicetify bridge - direct data from Spotify Desktop via WebSocket
-                        from .spicetify import get_current_song_meta_data_spicetify
-                        source_result = await get_current_song_meta_data_spicetify()
-                    elif source["name"] == "windows_media" and DESKTOP == "Windows":
-                        windows_media_checked = True
-                        windows_media_result = await _get_current_song_meta_data_windows()
-                        source_result = windows_media_result
-                    elif source["name"] == "spotify":
-                        # RACE CONDITION FIX: If Windows already returned data for Spotify Desktop,
-                        # skip checking Spotify source directly. Windows SMTC is authoritative for local playback,
-                        # and hybrid enrichment (later) will handle adding Spotify-specific features.
-                        # This prevents stale Spotify API cache ("playing") from overriding fresh Windows paused state.
-                        if windows_media_result and "spotify" in windows_media_result.get("app_id", "").lower():
-                            continue
-                        source_result = await _get_current_song_meta_data_spotify()
-                    elif source["name"] == "gnome" and DESKTOP == "Linux":
-                        source_result = _get_current_song_meta_data_gnome()
+                    if source_info["type"] == "legacy":
+                        # === LEGACY DISPATCH (existing logic, unchanged) ===
+                        if source_name == "spicetify":
+                            # Spicetify bridge - direct data from Spotify Desktop via WebSocket
+                            from .spicetify import get_current_song_meta_data_spicetify
+                            source_result = await get_current_song_meta_data_spicetify()
+                        elif source_name == "windows_media" and DESKTOP == "Windows":
+                            windows_media_checked = True
+                            windows_media_result = await _get_current_song_meta_data_windows()
+                            source_result = windows_media_result
+                        elif source_name == "spotify":
+                            # RACE CONDITION FIX: If Windows already returned data for Spotify Desktop,
+                            # skip checking Spotify source directly. Windows SMTC is authoritative for local playback,
+                            # and hybrid enrichment (later) will handle adding Spotify-specific features.
+                            # This prevents stale Spotify API cache ("playing") from overriding fresh Windows paused state.
+                            if windows_media_result and "spotify" in windows_media_result.get("app_id", "").lower():
+                                continue
+                            source_result = await _get_current_song_meta_data_spotify()
+                        elif source_name == "gnome" and DESKTOP == "Linux":
+                            source_result = _get_current_song_meta_data_gnome()
+                    else:
+                        # === PLUGIN DISPATCH ===
+                        plugin = source_info["instance"]
+                        source_result = await plugin.get_metadata()
+                        
+                        # Apply plugin enrichment (separate from legacy enrichment)
+                        if source_result:
+                            source_result = await enrich_plugin_metadata(source_result)
                     
                     if source_result:
                         is_playing = source_result.get("is_playing", False)
@@ -398,43 +413,57 @@ async def get_current_song_meta_data() -> Optional[dict]:
                             result = source_result
                             break
                         else:
-                            # PAUSED source - check timeout for Windows and Spotify, save as fallback
-                            if source_result.get("source") == "windows_media":
-                                # Check if paused Windows source is within timeout
-                                paused_timeout = config.SYSTEM["windows"].get("paused_timeout", 600)
-                                last_active = source_result.get("last_active_time", 0)
-                                
-                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
-                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
-                                    # Within timeout (or timeout disabled or first run) - save as fallback
-                                    if paused_fallback is None:
-                                        paused_fallback = source_result
-                                # else: expired, don't use as fallback
-                            elif source_result.get("source") == "spotify":
-                                # Check if paused Spotify source is within timeout
-                                paused_timeout = config.SYSTEM.get("spotify", {}).get("paused_timeout", 600)
-                                last_active = source_result.get("last_active_time", 0)
-                                
-                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
-                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
-                                    if paused_fallback is None:
-                                        paused_fallback = source_result
-                            elif source_result.get("source") == "spicetify":
-                                # Check if paused Spicetify source is within timeout (same as other sources)
-                                paused_timeout = config.SYSTEM.get("spicetify", {}).get("paused_timeout", 600)
-                                last_active = source_result.get("last_active_time", 0)
-                                
-                                # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
-                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                            # PAUSED source - check timeout, save as fallback
+                            source_type = source_result.get("source", source_name)
+                            
+                            if source_info["type"] == "legacy":
+                                # Legacy timeout handling (existing logic)
+                                if source_type == "windows_media":
+                                    # Check if paused Windows source is within timeout
+                                    paused_timeout = config.SYSTEM["windows"].get("paused_timeout", 600)
+                                    last_active = source_result.get("last_active_time", 0)
+                                    
+                                    # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                    if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                        # Within timeout (or timeout disabled or first run) - save as fallback
+                                        if paused_fallback is None:
+                                            paused_fallback = source_result
+                                    # else: expired, don't use as fallback
+                                elif source_type == "spotify":
+                                    # Check if paused Spotify source is within timeout
+                                    paused_timeout = config.SYSTEM.get("spotify", {}).get("paused_timeout", 600)
+                                    last_active = source_result.get("last_active_time", 0)
+                                    
+                                    # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                    if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                        if paused_fallback is None:
+                                            paused_fallback = source_result
+                                elif source_type == "spicetify":
+                                    # Check if paused Spicetify source is within timeout (same as other sources)
+                                    paused_timeout = config.SYSTEM.get("spicetify", {}).get("paused_timeout", 600)
+                                    last_active = source_result.get("last_active_time", 0)
+                                    
+                                    # Accept if: timeout disabled (0), first run (last_active=0), or within timeout
+                                    if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                        if paused_fallback is None:
+                                            paused_fallback = source_result
+                                else:
+                                    # Other legacy paused source - save as fallback
                                     if paused_fallback is None:
                                         paused_fallback = source_result
                             else:
-                                # Other paused source - save as fallback
-                                if paused_fallback is None:
-                                    paused_fallback = source_result
+                                # Plugin paused timeout handling
+                                paused_timeout = plugin.paused_timeout
+                                last_active = source_result.get("last_active_time", 0)
+                                
+                                if paused_timeout == 0 or last_active == 0 or (time.time() - last_active) < paused_timeout:
+                                    if paused_fallback is None:
+                                        paused_fallback = source_result
+                            
                             # Continue checking other sources for active playback
                             continue
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Source {source_info['name']} failed: {e}")
                     continue
             
             # If no active source found, use paused fallback
