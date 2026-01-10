@@ -227,7 +227,15 @@ class SettingsManager:
             "media_source.linux.priority": Setting("Linux Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
             "system.linux.paused_timeout": Setting("Linux Paused Timeout", int, 600, False, "System", "Accept paused Linux source for N seconds (0=forever)", "number"),
             
-            # Spotify API
+            # Music Assistant Plugin
+            "media_source.music_assistant.enabled": Setting("Music Assistant", bool, True, True, "Media", "Enable Music Assistant source", "switch"),
+            "media_source.music_assistant.priority": Setting("MA Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
+            "system.music_assistant.server_url": Setting("MA Server URL", str, "", True, "Music Assistant", "Server URL (e.g., http://192.168.1.100:8095)", "text"),
+            "system.music_assistant.token": Setting("MA Token", str, "", True, "Music Assistant", "API token (from MA web UI)", "text"),
+            "system.music_assistant.player_id": Setting("MA Player ID", str, "", False, "Music Assistant", "Specific player (blank = auto-detect)", "text"),
+            "system.music_assistant.paused_timeout": Setting("MA Paused Timeout", int, 600, False, "Music Assistant", "Accept paused MA for N seconds (0=forever)", "number"),
+
+
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),

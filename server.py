@@ -2248,7 +2248,25 @@ async def get_playback_queue():
             else:
                 logger.debug("Spicetify queue request failed, falling back to Spotify API")
     
-    # Fallback to Spotify Web API
+    # === PLUGIN SOURCE QUEUE ROUTING ===
+    # Check if source is a plugin with queue capability
+    if source and source not in LEGACY_SOURCES:
+        try:
+            from system_utils.sources import get_source, SourceCapability
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.QUEUE:
+                queue_data = await plugin.get_queue()
+                if queue_data:
+                    return jsonify({
+                        "current": queue_data.get('current'),
+                        "queue": queue_data.get('queue', [])[:20],
+                        "source": source
+                    })
+                logger.debug(f"Plugin {source} queue failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin queue routing failed: {e}")
+    
+
     client = get_spotify_client()
     if not client: 
         return jsonify({"error": "Spotify not connected"}), 503

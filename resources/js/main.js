@@ -426,7 +426,9 @@ async function updateLoop() {
                         'spicetify': 'Spicetify',
                         'windows': 'Windows',
                         'windows_media': 'Windows',
-                        'reaper': 'Reaper'
+                        'reaper': 'Reaper',
+                        'music_assistant': 'Music Assistant',
+                        'linux': 'Linux'
                     };
                     sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
                 }
