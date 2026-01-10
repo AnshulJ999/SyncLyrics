@@ -401,8 +401,10 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         plugin = source_info["instance"]
                         source_result = await plugin.get_metadata()
                         
-                        # Apply plugin enrichment (separate from legacy enrichment)
+                        # Enforce source name consistency (prevents cache/routing issues
+                        # if plugin developer forgets to set source or uses wrong name)
                         if source_result:
+                            source_result["source"] = plugin.name
                             source_result = await enrich_plugin_metadata(source_result)
                     
                     if source_result:

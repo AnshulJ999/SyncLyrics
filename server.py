@@ -46,6 +46,10 @@ _instrumental_markers_cache = {
     'markers': []      # List of timestamps
 }
 
+# Legacy playback sources - these use existing Windows/Spotify routing.
+# Plugin sources not in this set get routed to their own playback handlers.
+LEGACY_PLAYBACK_SOURCES = {'windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition', 'gnome'}
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -1886,7 +1890,7 @@ async def toggle_playback():
     
     # === PLUGIN SOURCE ROUTING ===
     # Check if source is a plugin with playback capability
-    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
         try:
             from system_utils.sources import get_source
             from system_utils.sources.base import SourceCapability
@@ -1962,7 +1966,7 @@ async def next_track():
         logger.debug("Windows next fallback failed (no session), trying Spotify API")
     
     # === PLUGIN SOURCE ROUTING ===
-    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
         try:
             from system_utils.sources import get_source
             from system_utils.sources.base import SourceCapability
@@ -2015,7 +2019,7 @@ async def previous_track():
         logger.debug("Windows previous fallback failed (no session), trying Spotify API")
     
     # === PLUGIN SOURCE ROUTING ===
-    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
         try:
             from system_utils.sources import get_source
             from system_utils.sources.base import SourceCapability
@@ -2077,7 +2081,7 @@ async def seek_playback():
         # Fall through to Spotify logic below
     
     # === PLUGIN SOURCE ROUTING ===
-    if source and source not in ['windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition']:
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
         try:
             from system_utils.sources import get_source
             from system_utils.sources.base import SourceCapability

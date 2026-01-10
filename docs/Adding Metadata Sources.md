@@ -96,7 +96,7 @@ Returns current track info. Returns `None` if nothing playing.
     "artist": "Artist Name",
     "title": "Song Title",
     "is_playing": True,           # True if actively playing
-    "source": "your_source_name", # Must match config.name
+    # Note: "source" is auto-set to match your config.name
 }
 ```
 
@@ -163,6 +163,12 @@ def is_available(self) -> bool:
 ```
 
 ## Adding Settings
+
+> **Note:** Adding settings to `settings.py` is **optional**. Your plugin will work using its default values from `SourceConfig`. Users can also configure via `settings.json` directly.
+>
+> Settings entries are only needed if you want:
+> - Your source to appear in the Settings UI
+> - Your source to be a "bundled" first-class plugin
 
 Add entries to `settings.py` in the `_definitions` dict:
 

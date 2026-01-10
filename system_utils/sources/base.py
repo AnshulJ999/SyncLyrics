@@ -121,15 +121,11 @@ class BaseMetadataSource(ABC):
         Check if source is enabled.
         
         Reads from settings.json, falls back to default_enabled from config.
+        Uses _safe_bool for proper parsing of "true", "1", "yes", "on", etc.
         """
-        from config import conf
+        from config import conf, _safe_bool
         result = conf(f"media_source.{self.name}.enabled")
-        if result is None:
-            return self._config.default_enabled
-        # Handle string "true"/"false" from settings
-        if isinstance(result, str):
-            return result.lower() == "true"
-        return bool(result)
+        return _safe_bool(result, self._config.default_enabled)
     
     @property
     def priority(self) -> int:
@@ -139,14 +135,9 @@ class BaseMetadataSource(ABC):
         Lower number = higher priority (checked first).
         Reads from settings.json, falls back to default_priority from config.
         """
-        from config import conf
+        from config import conf, _safe_int
         result = conf(f"media_source.{self.name}.priority")
-        if result is None:
-            return self._config.default_priority
-        try:
-            return int(result)
-        except (ValueError, TypeError):
-            return self._config.default_priority
+        return _safe_int(result, self._config.default_priority)
     
     @property
     def paused_timeout(self) -> int:
@@ -157,14 +148,9 @@ class BaseMetadataSource(ABC):
         expired and other sources will be checked.
         0 = never expire.
         """
-        from config import conf
+        from config import conf, _safe_int
         result = conf(f"system.{self.name}.paused_timeout")
-        if result is None:
-            return self._config.paused_timeout
-        try:
-            return int(result)
-        except (ValueError, TypeError):
-            return self._config.paused_timeout
+        return _safe_int(result, self._config.paused_timeout)
     
     def is_available(self) -> bool:
         """
