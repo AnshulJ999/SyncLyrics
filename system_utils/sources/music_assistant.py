@@ -196,7 +196,8 @@ def _get_target_player_id() -> Optional[str]:
     
     # Find first playing player
     for player in _client.players.players:
-        if player.state and player.state.value == "playing":
+        # Use playback_state (not state) - it's a PlaybackState enum
+        if player.playback_state and player.playback_state.value == "playing":
             return player.player_id
     
     # Fall back to first available player
@@ -323,8 +324,8 @@ class MusicAssistantSource(BaseMetadataSource):
             if not queue:
                 return None
             
-            # Check if playing
-            is_playing = player.state and player.state.value == "playing"
+            # Check if playing (use playback_state, not state)
+            is_playing = player.playback_state and player.playback_state.value == "playing"
             
             # Get current item from queue
             current_item = queue.current_item
@@ -401,9 +402,8 @@ class MusicAssistantSource(BaseMetadataSource):
             
         except Exception as e:
             logger.debug(f"Music Assistant metadata fetch failed: {e}")
-            # Mark as disconnected to trigger reconnection
-            global _connected
-            _connected = False
+            # Don't set _connected = False here - that causes reconnect spam
+            # Connection errors are handled by start_listening task
             return None
     
     # === Playback Controls ===
