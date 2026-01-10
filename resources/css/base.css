@@ -1242,7 +1242,7 @@ body.sharp-mode .current {
         0 0 20px rgba(255, 255, 255, 0.5) !important; 
     
     /* Smooth transition for the pill effect */
-    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+   /* transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;*/
 }
 
 /* Also slightly darken the adjacent lines in Sharp Mode */
