@@ -54,8 +54,6 @@
     "lyrics.display.spotify_latency_compensation": -0.5,
     "lyrics.display.update_interval": 0.1,
     "lyrics.display.word_sync_latency_compensation": -0.2,
-    "media_source.gnome.enabled": false,
-    "media_source.gnome.priority": 2,
     "media_source.linux.enabled": true,
     "media_source.linux.priority": 0,
     "media_source.music_assistant.enabled": true,

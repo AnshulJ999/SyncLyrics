@@ -329,11 +329,6 @@ MEDIA_SOURCE = {
             "name": "windows_media",
             "enabled": _safe_bool(conf("media_source.windows_media.enabled"), True),
             "priority": _safe_int(conf("media_source.windows_media.priority"), 1),
-        },
-        {
-            "name": "gnome",
-            "enabled": _safe_bool(conf("media_source.gnome.enabled"), False),
-            "priority": _safe_int(conf("media_source.gnome.priority"), 2),
         }
     ]
 }

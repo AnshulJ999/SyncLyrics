@@ -1,8 +1,8 @@
 """
 Main metadata orchestrator for system_utils package.
-Coordinates fetching song metadata from multiple sources (Windows, Spotify, GNOME).
+Coordinates fetching song metadata from multiple sources (Windows, Spotify, Linux plugin sources).
 
-Dependencies: state, helpers, image, album_art, windows, spotify, gnome
+Dependencies: state, helpers, image, album_art, windows, spotify
 """
 from __future__ import annotations
 import os

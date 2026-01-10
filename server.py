@@ -48,7 +48,7 @@ _instrumental_markers_cache = {
 
 # Legacy playback sources - these use existing Windows/Spotify routing.
 # Plugin sources not in this set get routed to their own playback handlers.
-LEGACY_PLAYBACK_SOURCES = {'windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition', 'gnome'}
+LEGACY_PLAYBACK_SOURCES = {'windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition'}
 
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)

@@ -12,12 +12,12 @@ The internal structure is:
     state.py      - Shared locks, caches, trackers
     helpers.py    - Pure utility functions
     image.py      - Image I/O and color extraction
-    gnome.py      - GNOME/Linux metadata
     album_art.py  - Album art database
     artist_image.py - Artist image database
     windows.py    - Windows Media Session
     spotify.py    - Spotify metadata
     metadata.py   - Main orchestrator
+    sources/      - Plugin sources (Linux, Music Assistant, etc.)
 """
 
 # ============================================================================
@@ -115,9 +115,10 @@ from .session_config import (
     get_active_overrides,
 )
 
-# Note: Platform-specific functions (windows.py, spotify.py, gnome.py) are
+# Note: Platform-specific functions (windows.py, spotify.py) are
 # intentionally NOT re-exported at the package level. They are internal
 # implementation details called by get_current_song_meta_data.
+# Linux support uses the plugin system (sources/linux.py).
 
 # ============================================================================
 # __all__ for explicit public API

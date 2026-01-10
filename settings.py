@@ -217,8 +217,6 @@ class SettingsManager:
             "media_source.spotify.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             "media_source.windows_media.enabled": Setting("Win Source", bool, True, True, "Media", "Enable Windows source", "switch"),
             "media_source.windows_media.priority": Setting("Priority", int, 1, False, "Media", "Source priority", "number"),
-            "media_source.gnome.enabled": Setting("Gnome Source", bool, False, True, "Media", "Enable Gnome source", "switch"),
-            "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             "media_source.spicetify.enabled": Setting("Spicetify Source", bool, True, True, "Media", "Enable Spicetify bridge (Spotify Desktop)", "switch"),
             "media_source.spicetify.priority": Setting("Priority", int, 0, False, "Media", "Source priority (0 = highest)", "number"),
             
