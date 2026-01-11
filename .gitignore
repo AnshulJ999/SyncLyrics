@@ -17,7 +17,7 @@ backups
 certs/
 spicetify_database
 homeassistant-addons/
-
+.claude
 backups/
 # share_project.py
 .cursor
