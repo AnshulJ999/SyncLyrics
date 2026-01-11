@@ -329,7 +329,8 @@ class MusicAssistantSource(BaseMetadataSource):
             SourceCapability.SEEK |
             SourceCapability.DURATION |
             SourceCapability.ALBUM_ART |
-            SourceCapability.QUEUE
+            SourceCapability.QUEUE |
+            SourceCapability.FAVORITES
         )
     
     def is_available(self) -> bool:
@@ -462,6 +463,15 @@ class MusicAssistantSource(BaseMetadataSource):
             if is_playing:
                 self._last_active_time = time.time()
             
+            # Get MA item ID for favorites support
+            # Use media_item.item_id if available, fallback to uri
+            ma_item_id = None
+            if media_item:
+                if hasattr(media_item, 'item_id') and media_item.item_id:
+                    ma_item_id = str(media_item.item_id)
+                elif hasattr(media_item, 'uri') and media_item.uri:
+                    ma_item_id = str(media_item.uri)
+            
             # Build result
             result = {
                 "track_id": _normalize_track_id(artist, title),
@@ -476,6 +486,7 @@ class MusicAssistantSource(BaseMetadataSource):
                 "source": "music_assistant",
                 "colors": ("#24273a", "#363b54"),  # Default, will be enriched
                 "last_active_time": self._last_active_time,
+                "ma_item_id": ma_item_id,  # For favorites/like functionality
             }
             
             return result
@@ -663,3 +674,82 @@ class MusicAssistantSource(BaseMetadataSource):
             logger.debug(f"Music Assistant get_queue failed: {e}")
             return None
 
+    # === Favorites (Like) Support ===
+    
+    async def is_favorite(self, item_id: str) -> bool:
+        """
+        Check if a track is in favorites.
+        
+        Args:
+            item_id: MA media item ID or URI
+            
+        Returns:
+            True if track is in favorites, False otherwise
+        """
+        if not await _ensure_connected():
+            return False
+        
+        try:
+            # Get the media item to check its favorite status
+            # The item_id could be a numeric ID or a URI
+            from music_assistant_models.enums import MediaType
+            
+            # Try to get the track from library
+            track = await _client.music.get_item(MediaType.TRACK, item_id)
+            if track and hasattr(track, 'favorite'):
+                return track.favorite
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Music Assistant is_favorite check failed: {e}")
+            return False
+    
+    async def add_to_favorites(self, item_id: str) -> bool:
+        """
+        Add a track to favorites.
+        
+        Args:
+            item_id: MA media item ID or URI
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected():
+            return False
+        
+        try:
+            from music_assistant_models.enums import MediaType
+            
+            # Set favorite status to True
+            await _client.music.set_favorite(MediaType.TRACK, item_id, True)
+            logger.debug(f"Added track {item_id} to MA favorites")
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Music Assistant add_to_favorites failed: {e}")
+            return False
+    
+    async def remove_from_favorites(self, item_id: str) -> bool:
+        """
+        Remove a track from favorites.
+        
+        Args:
+            item_id: MA media item ID or URI
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected():
+            return False
+        
+        try:
+            from music_assistant_models.enums import MediaType
+            
+            # Set favorite status to False
+            await _client.music.set_favorite(MediaType.TRACK, item_id, False)
+            logger.debug(f"Removed track {item_id} from MA favorites")
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Music Assistant remove_from_favorites failed: {e}")
+            return False

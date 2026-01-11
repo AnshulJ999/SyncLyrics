@@ -763,15 +763,18 @@ export async function fetchAndRenderQueue() {
 /**
  * Check if current track is liked and update button
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  */
-export async function checkLikedStatus(trackId) {
+export async function checkLikedStatus(trackId, source = '') {
     if (!trackId) return;
     try {
-        const data = await apiCheckLikedStatus(trackId);
+        const data = await apiCheckLikedStatus(trackId, source);
 
         // Ensure we are still playing the same track
-        if (lastTrackInfo && lastTrackInfo.id === trackId) {
+        // Check both id (Spotify) and ma_item_id (Music Assistant)
+        const currentId = lastTrackInfo?.id || lastTrackInfo?.ma_item_id;
+        if (lastTrackInfo && currentId === trackId) {
             setIsLiked(data.liked);
             updateLikeButton();
         }
@@ -801,16 +804,21 @@ export function updateLikeButton() {
 
 /**
  * Toggle like status for current track
+ * Works with both Spotify (id) and Music Assistant (ma_item_id)
  */
 export async function toggleLike() {
-    if (!lastTrackInfo || !lastTrackInfo.id) return;
+    // Get track ID - use Spotify id or MA ma_item_id
+    const trackId = lastTrackInfo?.id || lastTrackInfo?.ma_item_id;
+    const source = lastTrackInfo?.source || '';
+    
+    if (!lastTrackInfo || !trackId) return;
 
     // Optimistic update
     setIsLiked(!isLiked);
     updateLikeButton();
 
     try {
-        await toggleLikeStatus(lastTrackInfo.id, isLiked ? 'like' : 'unlike');
+        await toggleLikeStatus(trackId, isLiked ? 'like' : 'unlike', source);
     } catch (e) {
         // Revert on failure
         setIsLiked(!isLiked);

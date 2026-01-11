@@ -32,6 +32,7 @@ class SourceCapability(Flag):
     ARTIST_ID = auto()          # Provides Spotify-compatible artist ID
     DURATION = auto()           # Provides track duration
     QUEUE = auto()              # Can provide playback queue
+    FAVORITES = auto()          # Can like/unlike tracks (add to favorites)
 
 
 @dataclass

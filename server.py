@@ -2291,10 +2291,22 @@ async def get_playback_queue():
 @app.route("/api/playback/liked", methods=['GET'])
 async def check_liked_status():
     track_id = request.args.get('track_id')
-    if not track_id: return jsonify({"error": "No track_id provided"}), 400
+    source = request.args.get('source', '')
     
+    if not track_id: 
+        return jsonify({"error": "No track_id provided"}), 400
+    
+    # Route to Music Assistant if source indicates MA
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        is_favorite = await ma_source.is_favorite(track_id)
+        return jsonify({"liked": is_favorite})
+    
+    # Default: Use Spotify
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     is_liked = await client.is_track_liked(track_id)
     return jsonify({"liked": is_liked})
@@ -2303,12 +2315,29 @@ async def check_liked_status():
 async def toggle_liked_status():
     data = await request.get_json()
     track_id = data.get('track_id')
-    action = data.get('action') # 'like' or 'unlike'
+    action = data.get('action')  # 'like' or 'unlike'
+    source = data.get('source', '')
     
-    if not track_id or not action: return jsonify({"error": "Missing parameters"}), 400
+    if not track_id or not action: 
+        return jsonify({"error": "Missing parameters"}), 400
     
+    # Route to Music Assistant if source indicates MA
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        
+        success = False
+        if action == 'like':
+            success = await ma_source.add_to_favorites(track_id)
+        elif action == 'unlike':
+            success = await ma_source.remove_from_favorites(track_id)
+            
+        return jsonify({"success": success})
+    
+    # Default: Use Spotify
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     success = False
     if action == 'like':

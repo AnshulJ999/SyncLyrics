@@ -572,8 +572,10 @@ async function updateLoop() {
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track
-            if (trackInfo.id) {
-                checkLikedStatus(trackInfo.id);
+            // Support both Spotify (id) and Music Assistant (ma_item_id)
+            const likeTrackId = trackInfo.id || trackInfo.ma_item_id;
+            if (likeTrackId) {
+                checkLikedStatus(likeTrackId, trackInfo.source || '');
             }
 
             // Reset style buttons in modal (show 'auto' when no saved preference)

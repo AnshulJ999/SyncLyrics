@@ -581,22 +581,28 @@ export async function fetchQueue() {
 /**
  * Check if track is liked
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  * @returns {Promise<Object>} Liked status
  */
-export async function checkLikedStatus(trackId) {
-    return apiFetch(`/api/playback/liked?track_id=${trackId}`);
+export async function checkLikedStatus(trackId, source = '') {
+    let url = `/api/playback/liked?track_id=${encodeURIComponent(trackId)}`;
+    if (source) {
+        url += `&source=${encodeURIComponent(source)}`;
+    }
+    return apiFetch(url);
 }
 
 /**
  * Toggle like status for track
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
  * @param {string} action - 'like' or 'unlike'
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  * @returns {Promise<Object>} Result
  */
-export async function toggleLikeStatus(trackId, action) {
-    return postJson('/api/playback/liked', { track_id: trackId, action });
+export async function toggleLikeStatus(trackId, action, source = '') {
+    return postJson('/api/playback/liked', { track_id: trackId, action, source });
 }
 
 // ========== SLIDESHOW ==========
