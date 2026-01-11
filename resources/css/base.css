@@ -429,12 +429,13 @@ body[data-minimal="true"] .top-right-controls {
 /* Settings gear icon sizing */
 .settings-toggle i {
     font-size: 1.1rem;
-    display: inline-block; /* Required for transforms to work */
+/*    display: inline-block; /* Required for transforms to work */
 }
 
-.settings-toggle:hover i {
+/* .settings-toggle:hover i {
     transform: translateY(-1.5px); /* Shift up, adjust as needed */
-}
+/*   transform: translateY(-0.085em); /* Shift up, adjust as needed */
+
 /* ========== SETTINGS PANEL ========== */
 .settings-panel {
     position: fixed;
