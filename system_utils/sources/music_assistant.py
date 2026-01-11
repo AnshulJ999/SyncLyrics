@@ -57,6 +57,11 @@ _last_disconnect_log: float = 0
 _connection_attempt_count: int = 0  # Track consecutive connection attempts
 LOG_THROTTLE_INTERVAL = 60.0  # Only log repeated messages once per minute
 
+# Favorites cache - avoids repeated API calls for same track
+_favorite_cache: Dict[str, bool] = {}  # item_id -> is_favorite
+_favorite_cache_time: Dict[str, float] = {}  # item_id -> timestamp
+FAVORITE_CACHE_TTL = 30.0  # Cache favorite status for 30 seconds
+
 # Constants
 MAX_RECONNECT_DELAY = 60  # Max 60 seconds between reconnection attempts
 CACHE_TTL = 1.0  # Cache TTL in seconds (MA updates come via events)
@@ -680,15 +685,27 @@ class MusicAssistantSource(BaseMetadataSource):
         """
         Check if the current track is in favorites.
         
-        For now, we check the current queue item's favorite property
-        since fetching arbitrary items requires complex provider info.
+        Uses a cache to avoid spamming the API. Cache is invalidated
+        when add_to_favorites or remove_from_favorites is called.
         
         Args:
-            item_id: MA media item ID (not used directly, we check current item)
+            item_id: MA media item ID
             
         Returns:
-            True if current track is in favorites, False otherwise
+            True if track is in favorites, False otherwise
         """
+        global _favorite_cache, _favorite_cache_time
+        
+        if not item_id:
+            return False
+        
+        # Check cache first
+        now = time.time()
+        if item_id in _favorite_cache:
+            cache_age = now - _favorite_cache_time.get(item_id, 0)
+            if cache_age < FAVORITE_CACHE_TTL:
+                return _favorite_cache[item_id]
+        
         if not await _ensure_connected():
             return False
         
@@ -704,10 +721,15 @@ class MusicAssistantSource(BaseMetadataSource):
             
             # Check if the current item's media_item has favorite property
             media_item = queue.current_item.media_item
+            is_fav = False
             if media_item and hasattr(media_item, 'favorite'):
-                return media_item.favorite
+                is_fav = media_item.favorite
             
-            return False
+            # Cache the result
+            _favorite_cache[item_id] = is_fav
+            _favorite_cache_time[item_id] = now
+            
+            return is_fav
             
         except Exception as e:
             logger.debug(f"Music Assistant is_favorite check failed: {e}")
@@ -743,6 +765,9 @@ class MusicAssistantSource(BaseMetadataSource):
                         "music/favorites/add_item",
                         item=media_item
                     )
+                    # Invalidate cache - set to True so next check returns correct state
+                    _favorite_cache[item_id] = True
+                    _favorite_cache_time[item_id] = time.time()
                     logger.debug(f"Added track {item_id} to MA favorites")
                     return True
             
@@ -777,6 +802,9 @@ class MusicAssistantSource(BaseMetadataSource):
                 library_item_id=item_id,
                 media_type="track"
             )
+            # Invalidate cache - set to False so next check returns correct state
+            _favorite_cache[item_id] = False
+            _favorite_cache_time[item_id] = time.time()
             logger.debug(f"Removed track {item_id} from MA favorites")
             return True
             
