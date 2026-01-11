@@ -678,26 +678,35 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def is_favorite(self, item_id: str) -> bool:
         """
-        Check if a track is in favorites.
+        Check if the current track is in favorites.
+        
+        For now, we check the current queue item's favorite property
+        since fetching arbitrary items requires complex provider info.
         
         Args:
-            item_id: MA media item ID or URI
+            item_id: MA media item ID (not used directly, we check current item)
             
         Returns:
-            True if track is in favorites, False otherwise
+            True if current track is in favorites, False otherwise
         """
         if not await _ensure_connected():
             return False
         
         try:
-            # Get the media item to check its favorite status
-            # The item_id could be a numeric ID or a URI
-            from music_assistant_models.enums import MediaType
+            # Get the current queue to check the playing item's favorite status
+            queue_id = _current_queue_id or _current_player_id
+            if not queue_id:
+                return False
             
-            # Try to get the track from library
-            track = await _client.music.get_item(MediaType.TRACK, item_id)
-            if track and hasattr(track, 'favorite'):
-                return track.favorite
+            queue = _client.player_queues.get(queue_id)
+            if not queue or not queue.current_item:
+                return False
+            
+            # Check if the current item's media_item has favorite property
+            media_item = queue.current_item.media_item
+            if media_item and hasattr(media_item, 'favorite'):
+                return media_item.favorite
+            
             return False
             
         except Exception as e:
@@ -709,21 +718,36 @@ class MusicAssistantSource(BaseMetadataSource):
         Add a track to favorites.
         
         Args:
-            item_id: MA media item ID or URI
+            item_id: MA media item ID
             
         Returns:
             True if successful, False otherwise
         """
+        if not item_id:
+            logger.debug(f"Music Assistant add_to_favorites: item_id is empty/None")
+            return False
+        
         if not await _ensure_connected():
             return False
         
         try:
-            from music_assistant_models.enums import MediaType
+            # Get the current queue to access the media_item object
+            # The add_item command needs the actual media item, not just the ID
+            queue_id = _current_queue_id or _current_player_id
+            if queue_id:
+                queue = _client.player_queues.get(queue_id)
+                if queue and queue.current_item and queue.current_item.media_item:
+                    media_item = queue.current_item.media_item
+                    # Use the media item directly
+                    await _client.send_command(
+                        "music/favorites/add_item",
+                        item=media_item
+                    )
+                    logger.debug(f"Added track {item_id} to MA favorites")
+                    return True
             
-            # Set favorite status to True
-            await _client.music.set_favorite(MediaType.TRACK, item_id, True)
-            logger.debug(f"Added track {item_id} to MA favorites")
-            return True
+            logger.debug(f"Music Assistant add_to_favorites: no current media item available")
+            return False
             
         except Exception as e:
             logger.debug(f"Music Assistant add_to_favorites failed: {e}")
@@ -734,22 +758,29 @@ class MusicAssistantSource(BaseMetadataSource):
         Remove a track from favorites.
         
         Args:
-            item_id: MA media item ID or URI
+            item_id: MA media item ID
             
         Returns:
             True if successful, False otherwise
         """
+        if not item_id:
+            logger.debug(f"Music Assistant remove_from_favorites: item_id is empty/None")
+            return False
+        
         if not await _ensure_connected():
             return False
         
         try:
-            from music_assistant_models.enums import MediaType
-            
-            # Set favorite status to False
-            await _client.music.set_favorite(MediaType.TRACK, item_id, False)
+            # remove_item uses library_item_id parameter
+            await _client.send_command(
+                "music/favorites/remove_item",
+                library_item_id=item_id,
+                media_type="track"
+            )
             logger.debug(f"Removed track {item_id} from MA favorites")
             return True
             
         except Exception as e:
             logger.debug(f"Music Assistant remove_from_favorites failed: {e}")
             return False
+
