@@ -2466,7 +2466,9 @@ async def audio_recognition_devices():
     Returns device list with auto-detected loopback recommendation.
     """
     try:
-        from audio_recognition import AudioCaptureManager
+        # Direct import from capture.py to avoid triggering shazamio/pydub import
+        # via __init__.py when just listing devices (user hasn't clicked Start yet)
+        from audio_recognition.capture import AudioCaptureManager
         
         # Use async methods to avoid blocking event loop with sd.query_devices()
         devices = await AudioCaptureManager.list_devices_async()
