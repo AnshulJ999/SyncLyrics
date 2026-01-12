@@ -81,7 +81,7 @@ Music Assistant streams audio over your network to various players (Chromecast, 
 - Player type and buffer settings
 - MA server load
 
-Without compensation, lyrics may appear **too early** because SyncLyrics receives position updates before the audio actually plays on your speaker.
+Without compensation, lyrics may appear **too early** because SyncLyrics receives position updates before the audio actually plays on your speaker. Sometimes they may appear **too late** too.
 
 ### The Solution
 
@@ -92,8 +92,8 @@ Add a latency offset to delay lyrics display:
 ```
 
 This value is in **seconds**. Start with `-0.5` and adjust:
-- **Lyrics too early** → Increase the value (e.g., -0.2, -0.1)
-- **Lyrics too late** → Decrease the value (e.g., -0.6, -0.7)
+- **Lyrics too early** → Make more negative (e.g., -0.6, -0.8)
+- **Lyrics too late** → Make more positive (e.g., +0.1, +0.5)
 
 ### Tuning Tips
 
@@ -101,6 +101,8 @@ This value is in **seconds**. Start with `-0.5` and adjust:
 2. Watch if lyrics appear before or after the vocals
 3. Adjust in 0.1 increments until synced
 4. Different players may need different values
+
+> 📖 See [Latency Tuning Guide](Latency%20Tuning%20Guide.md) for detailed explanation of how latency compensation works.
 
 ## Troubleshooting
 
