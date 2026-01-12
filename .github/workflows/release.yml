@@ -280,51 +280,25 @@ jobs:
           pip install -r requirements_macos.txt
           pip install --upgrade pyinstaller
 
-      - name: Convert icon to icns
-        run: |
-          # Create iconset directory
-          mkdir -p SyncLyrics.iconset
-          
-          # Use sips to create various sizes from PNG
-          sips -z 16 16 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16.png
-          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16@2x.png
-          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32.png
-          sips -z 64 64 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32@2x.png
-          sips -z 128 128 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128.png
-          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128@2x.png
-          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256.png
-          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256@2x.png
-          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512.png
-          sips -z 1024 1024 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512@2x.png
-          
-          # Convert to icns
-          iconutil -c icns SyncLyrics.iconset -o resources/images/icon.icns
+      # No icon conversion needed - shipping as folder, not .app bundle
 
       - name: Build with PyInstaller
         env:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
 
-      - name: Debug bundle contents
+      - name: Verify build contents
         run: |
-          echo "=== Checking Frameworks contents ==="
-          ls -la build_final/SyncLyrics.app/Contents/Frameworks/ | head -30 || true
-          echo "=== Checking for base_library.zip ==="
-          if [ -f build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip ]; then
-            echo "base_library.zip found! Checking for encodings..."
-            unzip -l build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip 2>/dev/null | grep -i encoding | head -20 || echo "No encodings in zip"
-          else
-            echo "No base_library.zip (noarchive=True working)"
-            echo "=== Checking for loose encodings files ==="
-            find build_final/SyncLyrics.app/Contents/Frameworks -name "encodings*" -type d 2>/dev/null | head -5 || true
-            ls -la build_final/SyncLyrics.app/Contents/Frameworks/encodings/ 2>/dev/null | head -10 || echo "No encodings dir"
-          fi
+          echo "=== Build output structure ==="
+          ls -la build_final/SyncLyrics/ | head -20
+          echo "=== Checking for encodings ==="
+          ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
 
       - name: Smoke test
         id: smoke
         run: |
           echo "Starting smoke test..."
-          cd build_final/SyncLyrics.app/Contents/MacOS
+          cd build_final/SyncLyrics
           ./SyncLyrics &
           APP_PID=$!
           sleep 15
@@ -340,7 +314,7 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd build_final
-          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" SyncLyrics.app
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" SyncLyrics
 
       - name: Generate checksum
         run: |
@@ -383,46 +357,25 @@ jobs:
           pip install -r requirements_macos.txt
           pip install --upgrade pyinstaller
 
-      - name: Convert icon to icns
-        run: |
-          mkdir -p SyncLyrics.iconset
-          sips -z 16 16 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16.png
-          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16@2x.png
-          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32.png
-          sips -z 64 64 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32@2x.png
-          sips -z 128 128 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128.png
-          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128@2x.png
-          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256.png
-          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256@2x.png
-          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512.png
-          sips -z 1024 1024 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512@2x.png
-          iconutil -c icns SyncLyrics.iconset -o resources/images/icon.icns
+      # No icon conversion needed - shipping as folder, not .app bundle
 
       - name: Build with PyInstaller
         env:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
 
-      - name: Debug bundle contents
+      - name: Verify build contents
         run: |
-          echo "=== Checking Frameworks contents ==="
-          ls -la build_final/SyncLyrics.app/Contents/Frameworks/ | head -30 || true
-          echo "=== Checking for base_library.zip ==="
-          if [ -f build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip ]; then
-            echo "base_library.zip found! Checking for encodings..."
-            unzip -l build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip 2>/dev/null | grep -i encoding | head -20 || echo "No encodings in zip"
-          else
-            echo "No base_library.zip (noarchive=True working)"
-            echo "=== Checking for loose encodings files ==="
-            find build_final/SyncLyrics.app/Contents/Frameworks -name "encodings*" -type d 2>/dev/null | head -5 || true
-            ls -la build_final/SyncLyrics.app/Contents/Frameworks/encodings/ 2>/dev/null | head -10 || echo "No encodings dir"
-          fi
+          echo "=== Build output structure ==="
+          ls -la build_final/SyncLyrics/ | head -20
+          echo "=== Checking for encodings ==="
+          ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
 
       - name: Smoke test
         id: smoke
         run: |
           echo "Starting smoke test..."
-          cd build_final/SyncLyrics.app/Contents/MacOS
+          cd build_final/SyncLyrics
           ./SyncLyrics &
           APP_PID=$!
           sleep 15
@@ -438,7 +391,7 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd build_final
-          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" SyncLyrics.app
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" SyncLyrics
 
       - name: Generate checksum
         run: |
