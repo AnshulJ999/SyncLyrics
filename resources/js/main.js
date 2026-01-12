@@ -47,7 +47,7 @@ import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages, fetchQueue } 
 import { setLyricsInDom, updateThemeColor } from './modules/dom.js';
 
 // Settings (Level 2)
-import { initializeDisplay } from './modules/settings.js';
+import { initializeDisplay, toggleMinimalMode } from './modules/settings.js';
 
 // Controls (Level 2)
 import {
@@ -62,7 +62,8 @@ import {
     checkLikedStatus,
     toggleLike,
     setupTouchControls,
-    attachProgressBarSeek
+    attachProgressBarSeek,
+    toggleArtOnlyMode
 } from './modules/controls.js';
 
 // Background (Level 2)
@@ -95,7 +96,7 @@ import {
 } from './modules/slideshow.js';
 
 // Provider (Level 3)
-import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
+import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState, initWordSyncStyle } from './modules/provider.js';
 
 // Audio Source (Level 3)
 import audioSource from './modules/audioSource.js';
@@ -104,7 +105,7 @@ import audioSource from './modules/audioSource.js';
 import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, updateDebugOverlay } from './modules/wordSync.js';
 
 // Latency (Level 3)
-import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay } from './modules/latency.js';
+import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay, updateMainLatencyVisibility, initLatencyPositioning, setupLatencyUIToggle } from './modules/latency.js';
 
 // Waveform & Spectrum Visualizers (Level 2)
 import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './modules/waveform.js';
@@ -115,6 +116,9 @@ import { resetArtZoom, resetImageIndex, resetManualImageFlag, setPauseSlideshowF
 
 // Touch Gestures (Level 2)
 import { initTouchGestures } from './modules/touchGestures.js';
+
+// Keyboard Shortcuts (Level 3)
+import { initKeyboardShortcuts } from './modules/keyboard.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -426,7 +430,9 @@ async function updateLoop() {
                         'spicetify': 'Spicetify',
                         'windows': 'Windows',
                         'windows_media': 'Windows',
-                        'reaper': 'Reaper'
+                        'reaper': 'Reaper',
+                        'music_assistant': 'Music Assistant',
+                        'linux': 'Linux'
                     };
                     sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
                 }
@@ -570,8 +576,10 @@ async function updateLoop() {
             // If same artist, keep existing artist images and selected index
 
             // Update liked status for new track
-            if (trackInfo.id) {
-                checkLikedStatus(trackInfo.id);
+            // Support both Spotify (id) and Music Assistant (ma_item_id)
+            const likeTrackId = trackInfo.id || trackInfo.ma_item_id;
+            if (likeTrackId) {
+                checkLikedStatus(likeTrackId, trackInfo.source || '');
             }
 
             // Reset style buttons in modal (show 'auto' when no saved preference)
@@ -674,6 +682,9 @@ async function updateLoop() {
         // Update word-sync toggle button UI state (icon, unavailable class)
         // This ensures button reflects current hasWordSync state after each poll
         updateWordSyncToggleUI();
+        
+        // Update main UI latency controls visibility
+        updateMainLatencyVisibility();
 
         await sleep(currentPollInterval);
     }
@@ -700,11 +711,21 @@ async function main() {
     attachControlHandlers(enterVisualMode, exitVisualMode);
     attachProgressBarSeek();  // Enable click-to-seek on progress bar
     setupProviderUI();
+    initWordSyncStyle();  // Initialize word-sync style from localStorage
     setupQueueInteractions();
     setupTouchControls();
 
     // Initialize multi-finger touch gestures (3-finger tap for play/pause)
     initTouchGestures();
+
+    // Initialize global keyboard shortcuts
+    initKeyboardShortcuts({
+        enterVisualMode,
+        exitVisualMode,
+        toggleArtOnlyMode,
+        toggleMinimalMode,
+        updateWordSyncToggleUI
+    });
 
     // Initialize audio source module
     audioSource.init();
@@ -755,6 +776,9 @@ async function main() {
             // Update toggle button AND settings checkbox
             updateWordSyncToggleUI();
             
+            // Update main UI latency controls visibility
+            updateMainLatencyVisibility();
+            
             // Save to localStorage for persistence
             localStorage.setItem('wordSyncEnabled', newState);
             
@@ -784,12 +808,15 @@ async function main() {
             const enabled = savedState === 'true';
             setWordSyncEnabled(enabled);
             updateWordSyncToggleUI();
+            updateMainLatencyVisibility();
         }
     }
 
     // Initialize latency controls
     setupLatencyControls();
     setupLatencyKeyboardShortcuts();
+    initLatencyPositioning();  // Dynamic positioning relative to provider badge
+    setupLatencyUIToggle();    // Toggle button for main UI visibility
     
     // Listen for word-sync outro event to trigger visual mode
     // When lyrics finish, auto-enter visual mode for songs with long instrumental outros

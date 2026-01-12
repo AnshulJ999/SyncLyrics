@@ -217,12 +217,24 @@ class SettingsManager:
             "media_source.spotify.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             "media_source.windows_media.enabled": Setting("Win Source", bool, True, True, "Media", "Enable Windows source", "switch"),
             "media_source.windows_media.priority": Setting("Priority", int, 1, False, "Media", "Source priority", "number"),
-            "media_source.gnome.enabled": Setting("Gnome Source", bool, False, True, "Media", "Enable Gnome source", "switch"),
-            "media_source.gnome.priority": Setting("Priority", int, 2, False, "Media", "Source priority", "number"),
             "media_source.spicetify.enabled": Setting("Spicetify Source", bool, True, True, "Media", "Enable Spicetify bridge (Spotify Desktop)", "switch"),
             "media_source.spicetify.priority": Setting("Priority", int, 0, False, "Media", "Source priority (0 = highest)", "number"),
             
-            # Spotify API
+            # Plugin Sources (new plugin-based architecture)
+            "media_source.linux.enabled": Setting("Linux Source", bool, True, True, "Media", "Enable Linux MPRIS source (via playerctl)", "switch"),
+            "media_source.linux.priority": Setting("Linux Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
+            "system.linux.paused_timeout": Setting("Linux Paused Timeout", int, 600, False, "System", "Accept paused Linux source for N seconds (0=forever)", "number"),
+            
+            # Music Assistant Plugin
+            "media_source.music_assistant.enabled": Setting("Music Assistant", bool, True, True, "Media", "Enable Music Assistant source", "switch"),
+            "media_source.music_assistant.priority": Setting("MA Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
+            "system.music_assistant.server_url": Setting("MA Server URL", str, "", True, "Music Assistant", "Server URL (e.g., http://192.168.1.100:8095)", "text"),
+            "system.music_assistant.token": Setting("MA Token", str, "", True, "Music Assistant", "API token (from MA web UI)", "text"),
+            "system.music_assistant.player_id": Setting("MA Player ID", str, "", False, "Music Assistant", "Specific player (blank = auto-detect)", "text"),
+            "system.music_assistant.paused_timeout": Setting("MA Paused Timeout", int, 600, False, "Music Assistant", "Accept paused MA for N seconds (0=forever)", "number"),
+            "lyrics.display.music_assistant_latency_compensation": Setting("Music Assistant Latency", float, 0.0, False, "Lyrics", "Music Assistant sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+
+
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
             "spotify.cache.enabled": Setting("Cache Enabled", bool, True, False, "Spotify API", "Enable API cache", "switch"),

@@ -89,7 +89,7 @@ let debugFps = 0;
 
 // Line change tracking for line-boundary back-snaps
 // Back-snaps only allowed within this window after line change (hidden by transition)
-const BACK_SNAP_WINDOW_MS = 240;  // ~2 poll cycles
+const BACK_SNAP_WINDOW_MS = 500;  // ~4-5 poll cycles
 let lineChangeTime = 0;  // When line changed (performance.now())
 
 // Current word tracking for debug overlay
@@ -689,8 +689,9 @@ function updateFlywheelClock(timestamp) {
     const inLineChangeWindow = lineChangeTime > 0 && (performance.now() - lineChangeTime) < BACK_SNAP_WINDOW_MS;
     const canSafeSnap = inLineChangeWindow || inSafeSnapZone;
     
-    // Bidirectional snap: correct drift 30-150ms in either direction during safe zones
-    if (Math.abs(rawDrift) > 0.03 && Math.abs(rawDrift) < 0.15 && canSafeSnap) {
+    // Bidirectional snap: correct drift 30-500ms in either direction during safe zones
+    // Expanded from 150ms to 500ms - allows larger corrections during line transitions
+    if (Math.abs(rawDrift) > 0.03 && Math.abs(rawDrift) < 0.5 && canSafeSnap) {
         if (DEBUG_CLOCK) {
             console.log(`[WordSync] Safe-zone snap (${rawDrift > 0 ? 'forward' : 'back'}): ${(rawDrift * 1000).toFixed(0)}ms`);
         }
@@ -743,11 +744,12 @@ function updateFlywheelClock(timestamp) {
  * 
  * @param {HTMLElement} currentEl - The current lyric element
  * @param {Object} lineData - Word-synced line data
- * @param {number} position - Current playback position
+ * @param {number} selectionPosition - Position for word selection (visualPosition - accurate)
+ * @param {number} progressPosition - Position for progress animations (renderPosition - smooth)
  * @param {string} style - Animation style ('fade' or 'pop')
  * @param {boolean} lineChanged - Whether the line just changed (triggers surrounding lines update)
  */
-function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
+function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosition, style, lineChanged) {
     // FIX 3: Generate unique ID for this line (prevents cache collisions)
     // Include start, end, and first few words to ensure uniqueness
     const lineId = `${lineData.start}_${lineData.end || 0}_${lineData.words.length}_${(lineData.words[0]?.word || '').substring(0, 10)}`;
@@ -812,18 +814,46 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             // Cache element references for fast updates
             wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
             
-            // Remove entering class after animation completes
-            setTimeout(() => {
-                if (transitionToken !== myToken) return;
-                currentEl.classList.remove('line-entering');
-            }, 75);  // Match CSS animation duration
-        }, 75); // Wait 75ms for fade-out (match CSS transition)
+            // Remove entering class after animation completes (use requestAnimationFrame for efficiency)
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (transitionToken !== myToken) return;
+                    currentEl.classList.remove('line-entering');
+                });
+            });
+        }, 70); // Reduced from 100ms for snappier transitions
         
         return; // Skip word updates during transition
     }
     
     // PHASE B: Update only classes/styles (no DOM rebuild)
-    const currentWord = findCurrentWord(position, lineData);
+    // Use selectionPosition (accurate) for choosing which word is active
+    const currentWord = findCurrentWord(selectionPosition, lineData);
+    
+    // For progress animations, use a blend to maintain smooth visuals
+    // while keeping accurate word boundaries
+    let smoothProgress = currentWord ? currentWord.progress : 0;
+    if (currentWord && currentWord.wordIndex >= 0) {
+        // Calculate progress based on position
+        const word = lineData.words[currentWord.wordIndex];
+        const wordStart = lineData.start + (word.time || 0);
+        let wordEnd;
+        if (word.duration && word.duration > 0) {
+            wordEnd = wordStart + word.duration;
+        } else if (currentWord.wordIndex + 1 < lineData.words.length) {
+            wordEnd = lineData.start + (lineData.words[currentWord.wordIndex + 1].time || 0);
+        } else {
+            wordEnd = lineData.end || (wordStart + 0.5);
+        }
+        const duration = wordEnd - wordStart;
+        if (duration > 0) {
+            // For fade/popfade: always use selectionPosition for accurate gradient timing
+            // For pop: use progressPosition for longer words (smooth visuals), selectionPosition for short words
+            const useFadeStyle = style === 'fade' || style === 'popfade';
+            const positionForProgress = (useFadeStyle || duration < 0.2) ? selectionPosition : progressPosition;
+            smoothProgress = Math.max(0, Math.min(1, (positionForProgress - wordStart) / duration));
+        }
+    }
     
     // Update word tracking for debug overlay
     totalWordsInLine = lineData.words.length;
@@ -851,8 +881,10 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             el.classList.remove('word-active', 'word-upcoming');
             el.classList.add('word-sung');
             el.style.removeProperty('--word-progress');
-            el.style.removeProperty('transform');
-            el.style.removeProperty('transitionDuration');  // Reset to CSS default
+            el.style.removeProperty('opacity');  // Clear decay opacity (fade style)
+            // Reset transform to CSS default (fixes spacing issues from leftover inline scale)
+            el.style.transform = 'translateZ(0)';
+            el.style.removeProperty('transitionDuration');  // Reset to CSS default for smooth return
         } else if (isActive) {
             if (!wasActive) {
                 el.classList.remove('word-sung', 'word-upcoming');
@@ -860,10 +892,24 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             }
             
             // Update progress for active word
-            if (style === 'fade') {
-                const progress = Math.round(currentWord.progress * 100);
+            // Note: Using separate if blocks (not if/else) so 'popfade' can trigger BOTH
+            if (style === 'fade' || style === 'popfade') {
+                const progress = Math.round(smoothProgress * 100);
                 el.style.setProperty('--word-progress', `${progress}%`);
-            } else if (style === 'pop') {
+                
+                // DECAY: For long words (>1.5s), fade the glow after initial buildup
+                const wordDuration = currentWord.duration || 0.5;
+                if (wordDuration > 1.5 && smoothProgress > 0.5) {
+                    // After 50% progress, start reducing opacity/intensity
+                    const decayProgress = (smoothProgress - 0.5) / 0.5;  // 0-1 over second half
+                    const decayedOpacity = 1 - (decayProgress * 0.3);  // Fade to 70% opacity
+                    el.style.opacity = decayedOpacity.toFixed(2);
+                } else {
+                    el.style.removeProperty('opacity');
+                }
+            }
+            
+            if (style === 'pop' || style === 'popfade') {
                 // Get word duration for dynamic animation
                 const wordDuration = currentWord.duration || 0.15;  // Fallback 150ms
                 const wordDurationMs = wordDuration * 1000;
@@ -877,8 +923,24 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
                     const transitionMs = Math.max(80, Math.min(wordDurationMs, 400));
                     el.style.transitionDuration = `${transitionMs.toFixed(0)}ms`;
                     
-                    // Scale peaks at 50% through word, creates nice "pop" feel
-                    const scale = 1 + (0.15 * Math.sin(currentWord.progress * Math.PI));
+                    // DECAY FOR LONG WORDS: After 1.5s, scale peaks and then returns towards 1.0
+                    let scale;
+                    if (wordDuration > 1.5) {
+                        const decayStartProgress = 1.5 / wordDuration;  // When to start decay
+                        if (smoothProgress < decayStartProgress) {
+                            // Normal pop: scale peaks at 50% of initial portion
+                            const normalizedProgress = smoothProgress / decayStartProgress;
+                            scale = 1 + (0.15 * Math.sin(normalizedProgress * Math.PI));
+                        } else {
+                            // Decay: gradually return to 1.0
+                            const decayProgress = (smoothProgress - decayStartProgress) / (1 - decayStartProgress);
+                            const peakScale = 1.15;  // Max scale from pop
+                            scale = peakScale - (decayProgress * 0.15);  // Fade back to 1.0
+                        }
+                    } else {
+                        // Normal: Scale peaks at 50% through word, creates nice "pop" feel
+                        scale = 1 + (0.15 * Math.sin(smoothProgress * Math.PI));
+                    }
                     el.style.transform = `scale(${scale.toFixed(3)})`;
                 }
             }
@@ -890,6 +952,7 @@ function updateWordSyncDOM(currentEl, lineData, position, style, lineChanged) {
             el.style.removeProperty('--word-progress');
             el.style.removeProperty('transform');
             el.style.removeProperty('transitionDuration');  // Reset to CSS default
+            el.style.removeProperty('opacity');
         }
     });
 }
@@ -1062,7 +1125,8 @@ function animateWordSync(timestamp) {
                 }
                 
                 // Force redraw of last line with all words sung
-                updateWordSyncDOM(currentEl, lastLineData, position, wordSyncStyle);
+                // Use position for both selection and progress (we're past end, all sung)
+                updateWordSyncDOM(currentEl, lastLineData, position, position, wordSyncStyle);
             }
         }
         
@@ -1089,31 +1153,58 @@ function animateWordSync(timestamp) {
     const previousLineIndex = activeLineIndex;
     activeLineIndex = lineIdx;
     
-    // Set timer for line-change back-snap window (240ms opportunity)
-    if (lineIdx !== previousLineIndex) {
-        lineChangeTime = performance.now();
+    // HARD SYNC ON LINE CHANGE: Snap to server position when line changes
+    // The visual transition between lines hides any correction, making this safe
+    if (lineIdx !== previousLineIndex && lineIdx >= 0) {
+        // Calculate anchor age - skip hard sync if too stale (bad polls may have accumulated)
+        const anchorAgeMs = performance.now() - wordSyncAnchorTimestamp;
+        const STALE_ANCHOR_THRESHOLD_MS = 2000;  // 2 seconds
+        
+        if (anchorAgeMs < STALE_ANCHOR_THRESHOLD_MS) {
+            // Calculate current server estimate
+            const elapsed = anchorAgeMs / 1000;
+            const totalLatencyCompensation = wordSyncLatencyCompensation + wordSyncSpecificLatencyCompensation + providerWordSyncOffset + songWordSyncOffset;
+            const serverEstimate = wordSyncAnchorPosition + elapsed + totalLatencyCompensation;
+            
+            // Hard sync - eliminates accumulated drift at each line boundary
+            visualPosition = serverEstimate;
+            renderPosition = serverEstimate;
+            filteredDrift = 0;
+            visualSpeed = 1.0;
+            lineChangeTime = 0;  // DON'T open safe-snap window - we've already hard synced
+        } else {
+            // Anchor is stale - can't hard sync reliably, but open safe-snap window
+            // so the next good poll can correct during the line transition
+            lineChangeTime = performance.now();
+        }
     }
     
     // Add word-sync classes
     currentEl.classList.add('word-sync-active');
-    currentEl.classList.add(`word-sync-${wordSyncStyle}`);
-    // Remove other style class if present
-    if (wordSyncStyle === 'fade') {
-        currentEl.classList.remove('word-sync-pop');
+    
+    // Handle style classes - popfade needs BOTH fade and pop classes
+    if (wordSyncStyle === 'popfade') {
+        currentEl.classList.add('word-sync-fade', 'word-sync-pop');
     } else {
-        currentEl.classList.remove('word-sync-fade');
+        currentEl.classList.add(`word-sync-${wordSyncStyle}`);
+        // Remove other style class if present
+        if (wordSyncStyle === 'fade') {
+            currentEl.classList.remove('word-sync-pop');
+        } else {
+            currentEl.classList.remove('word-sync-fade');
+        }
     }
     
     // Update DOM using recycling approach (fast path)
-    // Use renderPosition (smoothed) for word finding to reduce jitter
-    updateWordSyncDOM(currentEl, wordSyncLine, renderPosition, wordSyncStyle);
+    // Pass BOTH positions: visualPosition for word selection (accuracy), renderPosition for progress (smoothness)
+    updateWordSyncDOM(currentEl, wordSyncLine, visualPosition, renderPosition, wordSyncStyle);
     
     // Update debug overlay if enabled (throttled to reduce overhead)
     updateDebugOverlay();
     
     // Determine if we're in a safe zone for next frame's back-snap opportunity
     // End-of-line (allSung): all words have been sung, line is visually complete
-    const wordInfo = findCurrentWord(renderPosition, wordSyncLine);
+    const wordInfo = findCurrentWord(visualPosition, wordSyncLine);
     inSafeSnapZone = wordInfo?.allSung === true;
     
     // Request next frame (automatically runs at display refresh rate)

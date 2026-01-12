@@ -46,6 +46,10 @@ _instrumental_markers_cache = {
     'markers': []      # List of timestamps
 }
 
+# Legacy playback sources - these use existing Windows/Spotify routing.
+# Plugin sources not in this set get routed to their own playback handlers.
+LEGACY_PLAYBACK_SOURCES = {'windows_media', 'spotify', 'spotify_hybrid', 'spicetify', 'audio_recognition'}
+
 TEMPLATE_DIRECTORY = str(RESOURCES_DIR / "templates")
 STATIC_DIRECTORY = str(RESOURCES_DIR)
 app = Quart(__name__, template_folder=TEMPLATE_DIRECTORY, static_folder=STATIC_DIRECTORY)
@@ -382,6 +386,9 @@ async def current_track() -> dict:
             elif source == "audio_recognition":
                 # Audio recognition mode
                 latency_comp = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+            elif source == "music_assistant":
+                # Music Assistant mode (network streaming via MA server)
+                latency_comp = LYRICS.get("display", {}).get("music_assistant_latency_compensation", 0.0)
             else:
                 # Normal mode (Windows Media, hybrid)
                 latency_comp = LYRICS.get("display", {}).get("latency_compensation", 0.0)
@@ -1884,7 +1891,23 @@ async def toggle_playback():
             return jsonify({"status": "success", "message": "Toggled (Windows - Expired Session Fallback)"})
         logger.debug("Windows toggle fallback failed (no session), trying Spotify API")
     
-    # Spotify source (and hybrid fallback) uses Spotify API
+    # === PLUGIN SOURCE ROUTING ===
+    # Check if source is a plugin with playback capability
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.toggle_playback()
+                if success:
+                    return jsonify({"status": "success", "message": f"Toggled ({source})"})
+                logger.debug(f"Plugin {source} toggle failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
+    
+    # Spotify source (and hybrid/plugin fallback) uses Spotify API
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1945,6 +1968,21 @@ async def next_track():
             return jsonify({"status": "success", "message": "Skipped (Windows - Expired Session Fallback)"})
         logger.debug("Windows next fallback failed (no session), trying Spotify API")
     
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.next_track()
+                if success:
+                    return jsonify({"status": "success", "message": f"Skipped ({source})"})
+                logger.debug(f"Plugin {source} next failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
+    
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
     
@@ -1982,6 +2020,21 @@ async def previous_track():
         if success:
             return jsonify({"status": "success", "message": "Previous (Windows - Expired Session Fallback)"})
         logger.debug("Windows previous fallback failed (no session), trying Spotify API")
+    
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.PLAYBACK_CONTROL:
+                success = await plugin.previous_track()
+                if success:
+                    return jsonify({"status": "success", "message": f"Previous ({source})"})
+                logger.debug(f"Plugin {source} previous failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin playback routing failed: {e}")
     
     client = get_spotify_client()
     if not client: return jsonify({"error": "Spotify not connected"}), 503
@@ -2030,7 +2083,22 @@ async def seek_playback():
         logger.debug("Windows seek failed for hybrid, falling back to Spotify API")
         # Fall through to Spotify logic below
     
-    # Spotify source (and hybrid fallback) uses Spotify API
+    # === PLUGIN SOURCE ROUTING ===
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
+        try:
+            from system_utils.sources import get_source
+            from system_utils.sources.base import SourceCapability
+            
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.SEEK:
+                success = await plugin.seek(position_ms)
+                if success:
+                    return jsonify({"status": "success", "message": f"Seeked to {position_ms}ms ({source})"})
+                logger.debug(f"Plugin {source} seek failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin seek routing failed: {e}")
+    
+    # Spotify source (and hybrid/plugin fallback) uses Spotify API
     client = get_spotify_client()
     if not client:
         return jsonify({"error": "Spotify not connected"}), 503
@@ -2183,7 +2251,25 @@ async def get_playback_queue():
             else:
                 logger.debug("Spicetify queue request failed, falling back to Spotify API")
     
-    # Fallback to Spotify Web API
+    # === PLUGIN SOURCE QUEUE ROUTING ===
+    # Check if source is a plugin with queue capability
+    if source and source not in LEGACY_PLAYBACK_SOURCES:
+        try:
+            from system_utils.sources import get_source, SourceCapability
+            plugin = get_source(source)
+            if plugin and plugin.capabilities() & SourceCapability.QUEUE:
+                queue_data = await plugin.get_queue()
+                if queue_data:
+                    return jsonify({
+                        "current": queue_data.get('current'),
+                        "queue": queue_data.get('queue', [])[:20],
+                        "source": source
+                    })
+                logger.debug(f"Plugin {source} queue failed, falling back to Spotify API")
+        except Exception as e:
+            logger.debug(f"Plugin queue routing failed: {e}")
+    
+
     client = get_spotify_client()
     if not client: 
         return jsonify({"error": "Spotify not connected"}), 503
@@ -2205,10 +2291,22 @@ async def get_playback_queue():
 @app.route("/api/playback/liked", methods=['GET'])
 async def check_liked_status():
     track_id = request.args.get('track_id')
-    if not track_id: return jsonify({"error": "No track_id provided"}), 400
+    source = request.args.get('source', '')
     
+    if not track_id: 
+        return jsonify({"error": "No track_id provided"}), 400
+    
+    # Route to Music Assistant if source indicates MA
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        is_favorite = await ma_source.is_favorite(track_id)
+        return jsonify({"liked": is_favorite})
+    
+    # Default: Use Spotify
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     is_liked = await client.is_track_liked(track_id)
     return jsonify({"liked": is_liked})
@@ -2217,12 +2315,29 @@ async def check_liked_status():
 async def toggle_liked_status():
     data = await request.get_json()
     track_id = data.get('track_id')
-    action = data.get('action') # 'like' or 'unlike'
+    action = data.get('action')  # 'like' or 'unlike'
+    source = data.get('source', '')
     
-    if not track_id or not action: return jsonify({"error": "Missing parameters"}), 400
+    if not track_id or not action: 
+        return jsonify({"error": "Missing parameters"}), 400
     
+    # Route to Music Assistant if source indicates MA
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        
+        success = False
+        if action == 'like':
+            success = await ma_source.add_to_favorites(track_id)
+        elif action == 'unlike':
+            success = await ma_source.remove_from_favorites(track_id)
+            
+        return jsonify({"success": success})
+    
+    # Default: Use Spotify
     client = get_spotify_client()
-    if not client: return jsonify({"error": "Spotify not connected"}), 503
+    if not client: 
+        return jsonify({"error": "Spotify not connected"}), 503
     
     success = False
     if action == 'like':
@@ -2351,7 +2466,9 @@ async def audio_recognition_devices():
     Returns device list with auto-detected loopback recommendation.
     """
     try:
-        from audio_recognition import AudioCaptureManager
+        # Direct import from capture.py to avoid triggering shazamio/pydub import
+        # via __init__.py when just listing devices (user hasn't clicked Start yet)
+        from audio_recognition.capture import AudioCaptureManager
         
         # Use async methods to avoid blocking event loop with sd.query_devices()
         devices = await AudioCaptureManager.list_devices_async()

@@ -10,7 +10,9 @@
 import {
     songWordSyncOffset,
     setSongWordSyncOffset,
-    lastTrackInfo
+    lastTrackInfo,
+    hasWordSync,
+    wordSyncEnabled
 } from './state.js';
 import { showToast } from './dom.js';
 
@@ -65,7 +67,7 @@ export function adjustLatency(delta) {
     toastTimeoutId = setTimeout(() => {
         const ms = Math.round(newOffset * 1000);
         const sign = ms >= 0 ? '+' : '';
-        showToast(`Timing: ${sign}${ms}ms`, 'success');
+        showToast(`Timing: ${sign}${ms}ms`, 'success', 800);
         toastTimeoutId = null;
     }, TOAST_DEBOUNCE_MS);
 }
@@ -77,26 +79,31 @@ export function resetLatency() {
     setSongWordSyncOffset(0);
     updateLatencyDisplay(0);
     debouncedSave(0);
-    showToast('Timing reset to default');
+    showToast('Timing reset to default', 'success', 800);
 }
 
 /**
- * Update the latency display in UI
+ * Update the latency display in UI (both modal and main UI)
  * @param {number} offset - Current offset in seconds
  */
 export function updateLatencyDisplay(offset) {
-    const valueEl = document.getElementById('latency-value');
-    if (!valueEl) return;
-    
     const ms = Math.round(offset * 1000);
-    const sign = ms >= 0 ? '+' : '';
-    valueEl.textContent = `${sign}${ms}ms`;
+    const sign = ms > 0 ? '+' : '';  // Only show + for positive, not zero
+    const displayText = `${sign}${ms}ms`;
+    const isAdjusted = Math.abs(ms) > 0;
     
-    // Add visual indicator when adjusted
-    if (Math.abs(ms) > 0) {
-        valueEl.classList.add('adjusted');
-    } else {
-        valueEl.classList.remove('adjusted');
+    // Update modal latency value
+    const modalValueEl = document.getElementById('latency-value');
+    if (modalValueEl) {
+        modalValueEl.textContent = displayText;
+        modalValueEl.classList.toggle('adjusted', isAdjusted);
+    }
+    
+    // Update main UI latency value
+    const mainValueEl = document.getElementById('main-latency-value');
+    if (mainValueEl) {
+        mainValueEl.textContent = displayText;
+        mainValueEl.classList.toggle('adjusted', isAdjusted);
     }
 }
 
@@ -154,10 +161,16 @@ async function saveOffsetToBackend(offset) {
 /**
  * Initialize latency controls event handlers
  * Supports both click and press-and-hold for rapid adjustments
+ * Handles both modal controls and main UI controls
  */
 export function setupLatencyControls() {
+    // Modal controls
     const minusBtn = document.getElementById('latency-minus');
     const plusBtn = document.getElementById('latency-plus');
+    
+    // Main UI controls
+    const mainMinusBtn = document.getElementById('main-latency-minus');
+    const mainPlusBtn = document.getElementById('main-latency-plus');
     
     // Press-and-hold auto-repeat configuration
     const INITIAL_DELAY = 300;  // ms before repeat starts
@@ -214,8 +227,13 @@ export function setupLatencyControls() {
         btn.addEventListener('touchcancel', stopRepeat);
     }
     
+    // Setup modal controls
     setupHoldToRepeat(minusBtn, -STEP_SIZE);
     setupHoldToRepeat(plusBtn, STEP_SIZE);
+    
+    // Setup main UI controls
+    setupHoldToRepeat(mainMinusBtn, -STEP_SIZE);
+    setupHoldToRepeat(mainPlusBtn, STEP_SIZE);
     
     // Initialize display with current offset
     updateLatencyDisplay(songWordSyncOffset);
@@ -257,4 +275,123 @@ export function setupLatencyKeyboardShortcuts() {
             e.preventDefault();
         }
     });
+}
+
+/**
+ * Update visibility of main UI latency controls based on word-sync state
+ * Should be called whenever hasWordSync or wordSyncEnabled changes
+ */
+export function updateMainLatencyVisibility() {
+    const mainControls = document.getElementById('main-latency-controls');
+    if (!mainControls) return;
+    
+    // Check user preference from localStorage
+    const userHiddenPref = localStorage.getItem('latencyUIVisible') === 'false';
+    
+    // Show only when: word-sync active AND user hasn't hidden it
+    const shouldShow = hasWordSync && wordSyncEnabled && !userHiddenPref;
+    
+    if (shouldShow) {
+        mainControls.classList.remove('hidden');
+        // Also update the display value to ensure it's current
+        updateLatencyDisplay(songWordSyncOffset);
+        // Position relative to provider badge
+        positionLatencyControls();
+    } else {
+        mainControls.classList.add('hidden');
+    }
+}
+
+// Desired gap between latency controls and provider badge
+const LATENCY_BADGE_GAP = 8;  // pixels
+
+/**
+ * Position latency controls relative to provider badge left edge
+ * Called when controls become visible and on window resize
+ */
+export function positionLatencyControls() {
+    const badge = document.getElementById('provider-info');
+    const latency = document.getElementById('main-latency-controls');
+    
+    if (!badge || !latency) return;
+    if (latency.classList.contains('hidden')) return;
+    
+    const badgeRect = badge.getBoundingClientRect();
+    const latencyRect = latency.getBoundingClientRect();
+    
+    // Position: latency's right edge should be (gap) pixels left of badge's left edge
+    const newRight = window.innerWidth - badgeRect.left + LATENCY_BADGE_GAP;
+    latency.style.right = `${newRight}px`;
+    
+    // Match vertical center with badge
+    const badgeCenter = badgeRect.top + (badgeRect.height / 2);
+    const latencyHeight = latencyRect.height;
+    const newTop = badgeCenter - (latencyHeight / 2);
+    latency.style.top = `${newTop}px`;
+    latency.style.bottom = 'auto';  // Override CSS bottom
+}
+
+/**
+ * Initialize resize listener for dynamic positioning
+ * Called once during setup
+ */
+export function initLatencyPositioning() {
+    window.addEventListener('resize', () => {
+        const latency = document.getElementById('main-latency-controls');
+        if (latency && !latency.classList.contains('hidden') && !isLatencyUIHidden()) {
+            positionLatencyControls();
+        }
+    });
+}
+
+// ========== LATENCY UI VISIBILITY TOGGLE ==========
+
+// localStorage key for UI visibility preference
+const LATENCY_UI_VISIBLE_KEY = 'latencyUIVisible';
+
+/**
+ * Check if user has hidden the main UI latency controls
+ * @returns {boolean} True if hidden by user preference
+ */
+export function isLatencyUIHidden() {
+    return localStorage.getItem(LATENCY_UI_VISIBLE_KEY) === 'false';
+}
+
+/**
+ * Set up the toggle button in the modal
+ * Called once during setup
+ */
+export function setupLatencyUIToggle() {
+    const toggleBtn = document.getElementById('latency-ui-toggle');
+    if (!toggleBtn) return;
+    
+    // Initialize from localStorage (default: visible)
+    const isVisible = localStorage.getItem(LATENCY_UI_VISIBLE_KEY) !== 'false';
+    updateToggleButtonState(toggleBtn, isVisible);
+    
+    // Click handler
+    toggleBtn.addEventListener('click', () => {
+        const currentlyVisible = localStorage.getItem(LATENCY_UI_VISIBLE_KEY) !== 'false';
+        const newState = !currentlyVisible;
+        
+        // Save preference
+        localStorage.setItem(LATENCY_UI_VISIBLE_KEY, newState.toString());
+        
+        // Update button appearance
+        updateToggleButtonState(toggleBtn, newState);
+        
+        // Update visibility immediately
+        updateMainLatencyVisibility();
+    });
+}
+
+/**
+ * Update toggle button text and active state
+ * @param {HTMLElement} btn - The toggle button element
+ * @param {boolean} isVisible - Whether main UI is visible
+ */
+function updateToggleButtonState(btn, isVisible) {
+    if (!btn) return;
+    btn.textContent = isVisible ? 'Hide' : 'Show';
+    btn.classList.toggle('active', isVisible);
 }

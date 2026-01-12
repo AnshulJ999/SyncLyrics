@@ -17,6 +17,7 @@ import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
 import { applySoftMode, applySharpMode, updateBackground } from './background.js';
 import { showSpectrum, hideSpectrum } from './spectrum.js';
+import { updateMainLatencyVisibility } from './latency.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -222,6 +223,45 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
 }
 
 /**
+ * Toggle minimal mode on/off
+ * Exported for keyboard shortcut module
+ */
+export function toggleMinimalMode() {
+    const wasMinimal = displayConfig.minimal;
+    displayConfig.minimal = !wasMinimal;
+    
+    if (displayConfig.minimal) {
+        // Entering minimal mode - hide all UI
+        displayConfig.showAlbumArt = false;
+        displayConfig.showTrackInfo = false;
+        displayConfig.showControls = false;
+        displayConfig.showProgress = false;
+        displayConfig.showBottomNav = false;
+        displayConfig.showProvider = false;
+        displayConfig.showAudioSource = false;
+        displayConfig.showVisualModeToggle = false;
+    } else {
+        // Exiting minimal mode - restore defaults
+        displayConfig.showAlbumArt = true;
+        displayConfig.showTrackInfo = true;
+        displayConfig.showControls = true;
+        displayConfig.showProgress = true;
+        displayConfig.showBottomNav = false;  // Default is false
+        displayConfig.showProvider = true;
+        displayConfig.showAudioSource = true;
+        displayConfig.showVisualModeToggle = true;
+    }
+    
+    applyDisplayConfig();
+    applySoftMode();
+    applySharpMode();
+    updateBackground();
+    
+    // Brief toast (800ms)
+    showToast(displayConfig.minimal ? 'Minimal mode' : 'UI restored', 'success', 800);
+}
+
+/**
  * Update the CSS variable --buttons-base for dynamic bottom-left button positioning
  * Called when display config changes to keep buttons above visible player elements
  */
@@ -341,6 +381,9 @@ export function setupSettingsPanel() {
                 toggleBtn.classList.toggle('active', e.target.checked);
             }
             
+            // Update main UI latency controls visibility
+            updateMainLatencyVisibility();
+            
             // Save to localStorage
             localStorage.setItem('wordSyncEnabled', e.target.checked);
             
@@ -374,20 +417,6 @@ export function setupSettingsPanel() {
             } else {
                 fullscreenBtn.title = 'Enter Fullscreen';
                 if (icon) icon.className = 'bi bi-fullscreen';
-            }
-        });
-
-        // 'F' keyboard shortcut for fullscreen toggle
-        document.addEventListener('keydown', (e) => {
-            // Ignore if typing in input/textarea
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            
-            if (e.key.toLowerCase() === 'f') {
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch(() => {});
-                } else if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                }
             }
         });
     }

@@ -46,3 +46,7 @@ sounddevice>=0.5.0         # Cross-platform audio capture
 psutil>=5.9.0              # Process detection for Reaper (optional, has fallbacks)
 cryptography>=41.0.0  # Required for HTTPS support
 # scipy removed - using numpy fallback for audio resampling (saves ~100MB)
+
+# Music Assistant Integration
+music-assistant-client>=1.0.0  # WebSocket client for Music Assistant server
+

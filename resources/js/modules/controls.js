@@ -46,6 +46,40 @@ let previewPositionMs = null;
 let seekTooltip = null;
 const SEEK_DEBOUNCE_MS = 150;  // Match waveform (faster since drag prevents spam)
 
+// ========== VISUAL MODE CALLBACKS ==========
+// Stored during attachControlHandlers for use by toggleArtOnlyMode
+let _enterVisualModeFn = null;
+let _exitVisualModeFn = null;
+
+/**
+ * Toggle art-only mode on/off
+ * Exported for keyboard shortcut module
+ */
+export function toggleArtOnlyMode() {
+    const isArtOnly = document.body.classList.contains('art-only-mode');
+    if (isArtOnly) {
+        // Exit art-only mode (no toast - silent exit)
+        document.body.classList.remove('art-only-mode');
+        // Clear manual override when exiting
+        setManualVisualModeOverride(false);
+        // Disable zoom/pan and reset transform
+        disableArtZoom();
+    } else {
+        // Set manual override FIRST (prevents auto-exit)
+        setManualVisualModeOverride(true);
+        // Enter visual mode (triggers auto-sharp background)
+        if (!visualModeActive && _enterVisualModeFn) {
+            _enterVisualModeFn();
+        }
+        // Then enter art-only mode (hides all UI including visual mode UI)
+        document.body.classList.add('art-only-mode');
+        // Enable zoom/pan
+        enableArtZoom();
+        // Brief toast (800ms)
+        showToast('Art mode (pinch to zoom, long-press corners to exit)', 'success', 800);
+    }
+}
+
 /**
  * Debounced seek - only sends API call after user stops interacting
  * 
@@ -125,43 +159,21 @@ export function attachControlHandlers(enterVisualModeFn = null, exitVisualModeFn
     // Visual Mode Toggle Button
     const visualModeBtn = document.getElementById('btn-lyrics-toggle');
     if (visualModeBtn && enterVisualModeFn && exitVisualModeFn) {
+        // Store callbacks at module level for toggleArtOnlyMode
+        _enterVisualModeFn = enterVisualModeFn;
+        _exitVisualModeFn = exitVisualModeFn;
+        
         // Long-press state
         let longPressTimer = null;
         let isLongPress = false;
         const LONG_PRESS_DURATION = 500; // ms
-
-        // Art-only mode handler
-        const toggleArtOnlyMode = () => {
-            const isArtOnly = document.body.classList.contains('art-only-mode');
-            if (isArtOnly) {
-                // Exit art-only mode (no toast - silent exit)
-                document.body.classList.remove('art-only-mode');
-                // Clear manual override when exiting
-                setManualVisualModeOverride(false);
-                // Disable zoom/pan and reset transform
-                disableArtZoom();
-            } else {
-                // Set manual override FIRST (prevents auto-exit)
-                setManualVisualModeOverride(true);
-                // Enter visual mode (triggers auto-sharp background)
-                if (!visualModeActive) {
-                    enterVisualModeFn();
-                }
-                // Then enter art-only mode (hides all UI including visual mode UI)
-                document.body.classList.add('art-only-mode');
-                // Enable zoom/pan
-                enableArtZoom();
-                // Brief toast (1.5s instead of default 3s)
-                showToast('Art mode (pinch to zoom, long-press to exit)', 'success', 1500);
-            }
-        };
 
         // Handle long-press to enter art-only mode
         const handlePressStart = (e) => {
             isLongPress = false;
             longPressTimer = setTimeout(() => {
                 isLongPress = true;
-                toggleArtOnlyMode();
+                toggleArtOnlyMode();  // Use exported function
             }, LONG_PRESS_DURATION);
         };
 
@@ -265,13 +277,15 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify, Spotify Hybrid, Spicetify, or Windows Media
+    // Enable controls for Spotify, Spotify Hybrid, Spicetify, Windows Media, or plugin sources
     // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
         trackInfo.source === 'spotify_hybrid' ||
         trackInfo.source === 'spicetify' ||
-        trackInfo.source === 'windows_media';
+        trackInfo.source === 'windows_media' ||
+        trackInfo.source === 'music_assistant' ||
+        trackInfo.source === 'linux';
 
     if (prevBtn) prevBtn.disabled = !canControl;
     if (nextBtn) nextBtn.disabled = !canControl;
@@ -761,15 +775,18 @@ export async function fetchAndRenderQueue() {
 /**
  * Check if current track is liked and update button
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  */
-export async function checkLikedStatus(trackId) {
+export async function checkLikedStatus(trackId, source = '') {
     if (!trackId) return;
     try {
-        const data = await apiCheckLikedStatus(trackId);
+        const data = await apiCheckLikedStatus(trackId, source);
 
         // Ensure we are still playing the same track
-        if (lastTrackInfo && lastTrackInfo.id === trackId) {
+        // Check both id (Spotify) and ma_item_id (Music Assistant)
+        const currentId = lastTrackInfo?.id || lastTrackInfo?.ma_item_id;
+        if (lastTrackInfo && currentId === trackId) {
             setIsLiked(data.liked);
             updateLikeButton();
         }
@@ -799,16 +816,21 @@ export function updateLikeButton() {
 
 /**
  * Toggle like status for current track
+ * Works with both Spotify (id) and Music Assistant (ma_item_id)
  */
 export async function toggleLike() {
-    if (!lastTrackInfo || !lastTrackInfo.id) return;
+    // Get track ID - use Spotify id or MA ma_item_id
+    const trackId = lastTrackInfo?.id || lastTrackInfo?.ma_item_id;
+    const source = lastTrackInfo?.source || '';
+    
+    if (!lastTrackInfo || !trackId) return;
 
     // Optimistic update
     setIsLiked(!isLiked);
     updateLikeButton();
 
     try {
-        await toggleLikeStatus(lastTrackInfo.id, isLiked ? 'like' : 'unlike');
+        await toggleLikeStatus(trackId, isLiked ? 'like' : 'unlike', source);
     } catch (e) {
         // Revert on failure
         setIsLiked(!isLiked);

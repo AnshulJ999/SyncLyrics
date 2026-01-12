@@ -17,7 +17,8 @@ backups
 certs/
 spicetify_database
 homeassistant-addons/
-
+.claude
+.agent
 backups/
 # share_project.py
 .cursor
@@ -130,3 +131,4 @@ run - Reaper.bat
 certs/server.crt
 certs/server.key
 spicylyrics full_project_code.txt
+CLAUDE.md

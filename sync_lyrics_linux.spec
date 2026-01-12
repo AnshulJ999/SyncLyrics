@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+# Linux build spec - excludes Windows-only dependencies
 
 block_cipher = None
 
@@ -9,15 +10,8 @@ a = Analysis(
     datas=[
         ('resources', 'resources'),
         ('.env.example', '.'),
-        # Note: certs folder is generated at runtime when HTTPS is enabled
     ],
     hiddenimports=[
-        # === Windows SDK & System Tray ===
-        'winsdk',
-        'pystray',
-        'PIL',
-        'PIL.Image',
-        
         # === Web Framework (Quart/Hypercorn) ===
         'hypercorn.protocol.h2',
         'hypercorn.protocol.h11',
@@ -30,7 +24,7 @@ a = Analysis(
         'blinker',
         'itsdangerous',
         
-        # === Audio Recognition Engine (NEW) ===
+        # === Audio Recognition ===
         'shazamio',
         'shazamio.api',
         'shazamio.factory',
@@ -46,8 +40,6 @@ a = Analysis(
         'numpy.core._multiarray_umath',
         'numpy.linalg',
         'numpy.fft',
-        # scipy removed - using numpy fallback for audio resampling (saves ~100MB in build)
-        'psutil',
         
         # === Audio Recognition Custom Modules ===
         'audio_recognition',
@@ -57,7 +49,7 @@ a = Analysis(
         'audio_recognition.buffer',
         'audio_recognition.acrcloud',
         
-        # === System Utils Package (Refactored) ===
+        # === System Utils Package ===
         'system_utils',
         'system_utils.state',
         'system_utils.helpers',
@@ -65,12 +57,18 @@ a = Analysis(
         'system_utils.album_art',
         'system_utils.artist_image',
         'system_utils.metadata',
-        'system_utils.windows',
-        'system_utils.spotify',
         'system_utils.reaper',
         'system_utils.session_config',
         'system_utils.spicetify',
         'system_utils.spicetify_db',
+        'system_utils.spotify',
+        
+        # === Media Sources ===
+        'system_utils.sources',
+        'system_utils.sources.base',
+        'system_utils.sources.enrichment',
+        'system_utils.sources.linux',
+        'system_utils.sources.music_assistant',
         
         # === Providers Package ===
         'providers',
@@ -105,21 +103,18 @@ a = Analysis(
         'cryptography.hazmat.primitives.serialization',
         'cryptography.x509',
         
+        # === Image Processing ===
+        'PIL',
+        'PIL.Image',
+        
         # === Utilities ===
         'benedict',
-        'desktop_notifier',
-        'desktop_notifier.winrt',
         'colorama',
         'yaml',
         'urllib3',
         'dotenv',
         
-        # === Windows APIs ===
-        'win32api',
-        'win32con',
-        'ctypes',
-        
-        # === Standard Library (sometimes missed) ===
+        # === Standard Library ===
         'wave',
         'io',
         'dataclasses',
@@ -129,14 +124,23 @@ a = Analysis(
         'threading',
         'faulthandler',
         'argparse',
+        'ctypes',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'scipy',      # Optional pydub dependency - not needed (ENABLE_RESAMPLING=False)
-        'matplotlib', # Transitive scipy dependency - not used
-        'tkinter',    # GUI toolkit - not used (saves ~10MB)
+        # Windows-only
+        'winsdk',
+        'pywin32',
+        'win32api',
+        'win32con',
+        'pystray',
+        'desktop_notifier',
+        # Heavy optional deps
+        'scipy',
+        'matplotlib',
+        'tkinter',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -156,13 +160,13 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # Set to True to show console (for debugging)
+    console=True,  # Linux typically runs in terminal
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='resources/images/icon.ico'
+    icon='resources/images/icon.png'
 )
 
 coll = COLLECT(

@@ -429,7 +429,12 @@ body[data-minimal="true"] .top-right-controls {
 /* Settings gear icon sizing */
 .settings-toggle i {
     font-size: 1.1rem;
+/*    display: inline-block; /* Required for transforms to work */
 }
+
+/* .settings-toggle:hover i {
+    transform: translateY(-1.5px); /* Shift up, adjust as needed */
+/*   transform: translateY(-0.085em); /* Shift up, adjust as needed */
 
 /* ========== SETTINGS PANEL ========== */
 .settings-panel {
@@ -1242,7 +1247,7 @@ body.sharp-mode .current {
         0 0 20px rgba(255, 255, 255, 0.5) !important; 
     
     /* Smooth transition for the pill effect */
-    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+   /* transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;*/
 }
 
 /* Also slightly darken the adjacent lines in Sharp Mode */
@@ -1269,6 +1274,14 @@ body.sharp-mode .next {
         0 0 10px rgba(255, 255, 255, 0.2) !important; /* Slight bump for visibility */
         
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sharp Mode word-sync: Inherit parent's text-shadow instead of using generic glow */
+/* This ensures word highlights match Sharp Mode's strong contrast styling */
+body.sharp-mode .word-active,
+body.sharp-mode .word-sung,
+body.sharp-mode .word-upcoming {
+    text-shadow: inherit;
 }
 
 
@@ -1820,8 +1833,11 @@ body.soft-mode .background-overlay {
     /* Override default animation for word-sync mode */
     animation: none;
     
-    /* Smooth line transitions - faster for snappy feel */
-    transition: opacity 0.075s ease-out, transform 0.075s ease-out;
+    /* Preserve spaces between word spans - prevents whitespace collapsing on line wrap */
+    white-space: pre-wrap;
+    
+    /* Smooth line transitions - balanced for visual comfort */
+    transition: opacity 0.1s ease-out, transform 0.1s ease-out;
 }
 
 /* Fade out old line before replacement */
@@ -1832,7 +1848,7 @@ body.soft-mode .background-overlay {
 
 /* Fade in new line after replacement */
 .current.word-sync-active.line-entering {
-    animation: lineEnter 0.075s ease-out forwards;
+    animation: lineEnter 0.1s ease-out forwards;
 }
 
 @keyframes lineEnter {
@@ -1868,14 +1884,13 @@ body.soft-mode .background-overlay {
     position: relative;
     padding: 0 0.05em;
     
-    /* GPU acceleration - force composite layer */
-    will-change: transform, opacity;
+    /* GPU acceleration hints - only basic layer promotion */
     transform: translateZ(0);
     backface-visibility: hidden;
     contain: layout style;
     
-    /* Specific properties only - NOT 'all' (expensive) */
-    transition: opacity 0.12s ease-out, color 0.12s ease-out;
+    /* Smooth transitions including transform for de-activation (pop → sung) */
+    transition: opacity 0.12s ease-out, color 0.12s ease-out, transform 0.15s ease-out;
     
     /* Prevent subpixel rendering jitter */
     -webkit-font-smoothing: antialiased;
@@ -1898,9 +1913,11 @@ body.soft-mode .background-overlay {
 .word-active {
     opacity: 1;
     color: white;
-    font-weight: 600;
+    /* font-weight: 600; */  /* Commented out to prevent wrap flicker */
     /* Subtle glow for active word */
     text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    /* GPU layer promotion - only for the active word, not all words */
+    will-change: transform, opacity;
 }
 
 /* Fade style: gradient reveal from left to right */
@@ -1915,8 +1932,8 @@ body.soft-mode .background-overlay {
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    /* Smooth gradient transition using registered property */
-    transition: --word-progress 0.05s linear;
+    /* Smooth gradient transition using registered property - 16ms (~1 frame) for minimal lag */
+    transition: --word-progress 0.01s linear;
 }
 
 /* Pop style: scale animation on active word */
@@ -1931,7 +1948,7 @@ body.soft-mode .background-overlay {
 .word-sync-pop .word-sung {
     opacity: 1;
     color: white;
-    font-weight: 500;
+    /* font-weight: 500; */  /* Commented out to prevent wrap flicker */
 }
 
 /* Reduced motion preference - disable word animations */
@@ -2329,3 +2346,90 @@ a.settings-header-btn {
 .slideshow-image.active {
     opacity: 1;
 }
+
+/* ========== MAIN UI LATENCY CONTROLS ========== */
+/* Minimalistic controls positioned dynamically by JS relative to provider badge */
+.main-latency-controls {
+    position: fixed;
+    /* Position set dynamically by positionLatencyControls() in latency.js */
+    /* Initial fallback values (JS overrides these) */
+    bottom: 24px;
+    right: 125px;
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    transition: right 0.15s ease, top 0.15s ease;  /* Smooth repositioning */
+}
+
+/* Hidden state */
+.main-latency-controls.hidden {
+    display: none;
+}
+
+/* Hide on mobile/tablet (below 850px) */
+@media (max-width: 850px) {
+    .main-latency-controls {
+        display: none !important;
+    }
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .main-latency-controls {
+    display: none !important;
+}
+
+/* Hide in art-only mode (visual/slideshow mode) */
+body.art-only-mode .main-latency-controls {
+    display: none !important;
+}
+
+/* Latency buttons - minimal circular style */
+.main-latency-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.main-latency-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.main-latency-btn:active {
+    transform: scale(0.9);
+}
+
+/* Latency value display - subtle */
+.main-latency-value {
+    min-width: 32px;
+    text-align: center;
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.4);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Highlight when offset is non-zero */
+.main-latency-value.adjusted {
+    color: rgba(255, 255, 255, 0.5);
+}
+

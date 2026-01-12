@@ -303,6 +303,13 @@
     </div>
 </div>
 
+<!-- Main UI Latency Controls (visible when word-sync active) -->
+<div id="main-latency-controls" class="main-latency-controls hidden">
+    <button id="main-latency-minus" class="main-latency-btn">−</button>
+    <span id="main-latency-value" class="main-latency-value">0ms</span>
+    <button id="main-latency-plus" class="main-latency-btn">+</button>
+</div>
+
 <!-- Provider Info Badge (NEW) -->
 <div id="provider-info" class="provider-info hidden">
     <span class="provider-label">Source:</span>
@@ -452,10 +459,21 @@
                 <!-- Real header row with latency controls -->
                 <div class="lyrics-header-row">
                     <span class="lyrics-header-title">Lyrics Source</span>
-                    <div class="latency-controls" id="latency-controls" title="Word-sync timing adjustment">
-                        <button id="latency-minus" class="latency-btn">−</button>
-                        <span id="latency-value" class="latency-value">0ms</span>
-                        <button id="latency-plus" class="latency-btn">+</button>
+                    <div class="lyrics-header-controls">
+                        <!-- Word-sync style toggle (Pop/Fade/PopFade) -->
+                        <button id="word-sync-style-btn" class="word-sync-style-btn" title="Word-sync animation style (click to cycle)">
+                            Pop
+                        </button>
+                        <!-- Latency controls -->
+                        <div class="latency-controls" id="latency-controls" title="Word-sync timing adjustment">
+                            <button id="latency-minus" class="latency-btn">−</button>
+                            <span id="latency-value" class="latency-value">0ms</span>
+                            <button id="latency-plus" class="latency-btn">+</button>
+                        </div>
+                        <!-- Toggle main UI latency visibility -->
+                        <button id="latency-ui-toggle" class="latency-ui-toggle" title="Show/hide latency controls on main screen">
+                            Hide
+                        </button>
                     </div>
                 </div>
                 <div id="provider-list" class="provider-list">

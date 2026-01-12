@@ -217,6 +217,7 @@ LYRICS = {
         "spotify_latency_compensation": _safe_float(conf("lyrics.display.spotify_latency_compensation"), -0.5),
         "audio_recognition_latency_compensation": _safe_float(conf("lyrics.display.audio_recognition_latency_compensation"), 0.1),
         "spicetify_latency_compensation": _safe_float(conf("lyrics.display.spicetify_latency_compensation"), 0.0),
+        "music_assistant_latency_compensation": _safe_float(conf("lyrics.display.music_assistant_latency_compensation"), 0.0),
         "word_sync_latency_compensation": _safe_float(conf("lyrics.display.word_sync_latency_compensation"), -0.1),
         "musixmatch_word_sync_offset": _safe_float(conf("lyrics.display.musixmatch_word_sync_offset"), -0.1),
         "netease_word_sync_offset": _safe_float(conf("lyrics.display.netease_word_sync_offset"), -0.1),
@@ -328,11 +329,6 @@ MEDIA_SOURCE = {
             "name": "windows_media",
             "enabled": _safe_bool(conf("media_source.windows_media.enabled"), True),
             "priority": _safe_int(conf("media_source.windows_media.priority"), 1),
-        },
-        {
-            "name": "gnome",
-            "enabled": _safe_bool(conf("media_source.gnome.enabled"), False),
-            "priority": _safe_int(conf("media_source.gnome.priority"), 2),
         }
     ]
 }

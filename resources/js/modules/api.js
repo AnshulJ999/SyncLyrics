@@ -46,9 +46,9 @@ import { isLatencyBeingAdjusted } from './latency.js';
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
 
-// Bad sample detection thresholds
-const BAD_POLL_INTERVAL_THRESHOLD = 180;  // ms - polls taking longer are suspicious
-const BAD_RTT_MULTIPLIER = 2.5;           // RTT > avg * 2.5 is suspicious
+// Bad sample detection thresholds (relaxed to reduce false positives)
+const BAD_POLL_INTERVAL_THRESHOLD = 330;  // ms - polls taking longer are suspicious (was 180ms)
+const BAD_RTT_MULTIPLIER = 3.5;           // RTT > avg * 3.5 is suspicious (was 2.5x)
 
 // ========== CORE FETCH WRAPPER ==========
 
@@ -581,22 +581,28 @@ export async function fetchQueue() {
 /**
  * Check if track is liked
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  * @returns {Promise<Object>} Liked status
  */
-export async function checkLikedStatus(trackId) {
-    return apiFetch(`/api/playback/liked?track_id=${trackId}`);
+export async function checkLikedStatus(trackId, source = '') {
+    let url = `/api/playback/liked?track_id=${encodeURIComponent(trackId)}`;
+    if (source) {
+        url += `&source=${encodeURIComponent(source)}`;
+    }
+    return apiFetch(url);
 }
 
 /**
  * Toggle like status for track
  * 
- * @param {string} trackId - Spotify track ID
+ * @param {string} trackId - Track ID (Spotify ID or MA item_id)
  * @param {string} action - 'like' or 'unlike'
+ * @param {string} source - Optional source ('music_assistant' for MA routing)
  * @returns {Promise<Object>} Result
  */
-export async function toggleLikeStatus(trackId, action) {
-    return postJson('/api/playback/liked', { track_id: trackId, action });
+export async function toggleLikeStatus(trackId, action, source = '') {
+    return postJson('/api/playback/liked', { track_id: trackId, action, source });
 }
 
 // ========== SLIDESHOW ==========

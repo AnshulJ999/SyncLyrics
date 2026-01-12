@@ -144,6 +144,28 @@ class NetEaseProvider(LyricsProvider):
         
         return score
     
+    def _clean_search_title(self, title: str) -> str:
+        """
+        Remove featuring artist suffixes that can pollute search results.
+        
+        Patterns removed:
+        - (feat. X), (ft. X), (featuring X)
+        - [feat. X], [ft. X], [featuring X]
+        - - feat. X, - ft. X, - featuring X
+        
+        Args:
+            title: Original song title
+            
+        Returns:
+            Cleaned title without featuring artist suffix
+        """
+        import re
+        # Remove patterns like (feat. X), (ft. X), (featuring X), [feat. X], etc.
+        cleaned = re.sub(r'\s*[\(\[](?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]', '', title, flags=re.IGNORECASE)
+        # Also handle "- feat. X" without parentheses
+        cleaned = re.sub(r'\s*-\s*(?:feat\.?|ft\.?|featuring)\s+.+$', '', cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+    
     def _find_best_match(self, songs: list, artist: str, title: str, 
                          album: str = None, duration: int = None) -> tuple:
         """
@@ -185,6 +207,26 @@ class NetEaseProvider(LyricsProvider):
             # Find best matching song using multi-factor scoring
             best_song, best_score = self._find_best_match(songs, artist, title, album, duration)
             
+            # Fallback: If low confidence AND title has featuring pattern, retry with cleaned title
+            if best_score < self.MIN_CONFIDENCE_THRESHOLD:
+                clean_title = self._clean_search_title(title)
+                if clean_title != title:  # Only retry if we actually cleaned something
+                    logger.info(f"NetEase - Low confidence ({best_score}), retrying with clean search term: '{clean_title}'")
+                    retry_search_term = f"{artist} {clean_title}"
+                    retry_response = self._make_request(
+                        "https://music.163.com/api/search/pc",
+                        {"s": retry_search_term, "limit": 10, "type": 1}
+                    )
+                    if retry_response:
+                        retry_songs = retry_response.get("result", {}).get("songs", [])
+                        if retry_songs:
+                            # Still score against ORIGINAL title for accurate matching
+                            retry_best, retry_score = self._find_best_match(retry_songs, artist, title, album, duration)
+                            if retry_score > best_score:
+                                logger.info(f"NetEase - Retry succeeded with score {retry_score}")
+                                best_song, best_score = retry_best, retry_score
+                                search_term = retry_search_term  # Update for logging
+            
             # Use best match if confident, otherwise fall back to first result
             if best_score >= self.MIN_CONFIDENCE_THRESHOLD:
                 selected_song = best_song
@@ -194,7 +236,13 @@ class NetEaseProvider(LyricsProvider):
             else:
                 # Reject low confidence matches to avoid returning wrong lyrics
                 # This prevents issues like returning 5SOS "Bad Omens" for Bad Omens band songs
-                logger.info(f"NetEase - Rejecting low confidence match (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD}) for: {search_term}")
+                if best_song:
+                    result_name = best_song.get('name', 'Unknown')
+                    result_artists = ', '.join([a.get('name', '') for a in best_song.get('artists', [])])
+                    logger.info(f"NetEase - Rejecting low confidence match (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD}) for: {search_term}")
+                    logger.info(f"NetEase - Best result was: '{result_name}' by '{result_artists}'")
+                else:
+                    logger.info(f"NetEase - No viable match found for: {search_term} (score: {best_score}, threshold: {self.MIN_CONFIDENCE_THRESHOLD})")
                 return None
             
             # Get lyrics for selected song - ensure song has 'id' field

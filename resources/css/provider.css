@@ -673,6 +673,61 @@ body:not(.hide-nav) .provider-info {
     color: #60a5fa;
 }
 
+/* Container for style toggle + latency controls */
+.lyrics-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Word-sync style toggle button (Pop/Fade/PopFade) */
+.word-sync-style-btn {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 6px;
+    color: rgba(139, 92, 246, 0.9);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    text-transform: capitalize;
+}
+
+.word-sync-style-btn:hover {
+    background: rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #a78bfa;
+}
+
+/* Latency UI visibility toggle button (Show/Hide) */
+.latency-ui-toggle {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.latency-ui-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Active state when UI is visible */
+.latency-ui-toggle.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: rgba(59, 130, 246, 0.9);
+}
+
 /* ========== ALBUM ART GRID ========== */
 .art-grid {
     display: grid;

@@ -275,19 +275,6 @@ export function setupSlideshowButton(showModalFn = null) {
         }
     });
     
-    // Keyboard shortcut: S key
-    document.addEventListener('keydown', (e) => {
-        // Don't trigger if typing in an input
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        
-        if (e.key === 's' || e.key === 'S') {
-            if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                e.preventDefault();
-                toggleSlideshow();
-            }
-        }
-    });
-    
     console.log('[Slideshow] Button handlers attached');
 }
 

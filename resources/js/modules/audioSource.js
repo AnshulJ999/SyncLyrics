@@ -449,7 +449,9 @@ function updateStatusDisplay(status) {
                 'audiorecognition': 'Shazam',
                 'shazam': 'Shazam',
                 'acrcloud': 'ACRCloud',
-                'reaper': 'Reaper'
+                'reaper': 'Reaper',
+                'music_assistant': 'Music Assistant',
+                'linux': 'Linux'
             };
             const displaySource = sourceMap[currentTrackSource] || 'Spotify';
             elements.sourceName.textContent = displaySource;

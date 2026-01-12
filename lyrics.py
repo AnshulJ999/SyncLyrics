@@ -379,28 +379,116 @@ def _apply_instrumental_marker(lyrics: Optional[List[Tuple[float, str]]], metada
         return [(0.0, "Instrumental")]
     return lyrics
 
-def _is_manually_instrumental(artist: str, title: str) -> bool:
-    """Checks if a song is manually marked as instrumental in the database."""
+def _get_manual_instrumental_flag(artist: str, title: str) -> Optional[bool]:
+    """
+    Returns the manual instrumental flag for a song.
+    
+    Returns:
+        True: User explicitly marked as instrumental
+        False: User explicitly marked as NOT instrumental
+        None: No manual flag set (use auto-detection)
+    """
     if not FEATURES.get("save_lyrics_locally", False):
-        return False
+        return None
     
     db_path = _get_db_path(artist, title)
     if not db_path or not os.path.exists(db_path):
-        return False
+        return None
     
     try:
         with open(db_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        # Check for manual instrumental flag
-        return data.get("is_instrumental_manual", False) is True
+        # Check if manual flag exists (can be True or False)
+        if "is_instrumental_manual" in data:
+            return data["is_instrumental_manual"] is True
+        return None
     except Exception as e:
         logger.debug(f"Could not check manual instrumental flag ({artist} - {title}): {e}")
+        return None
+
+
+def _is_manually_instrumental(artist: str, title: str) -> bool:
+    """Checks if a song is manually marked as instrumental. Returns False if not set or set to False."""
+    return _get_manual_instrumental_flag(artist, title) is True
+
+
+def _has_real_lyrics_cached(artist: str, title: str) -> bool:
+    """
+    Returns True if any provider has real lyrics cached (≥5 lines of actual text).
+    
+    This is used for evidence-based instrumental detection:
+    If real lyrics exist, the song is definitively NOT instrumental,
+    regardless of what provider metadata flags say.
+    
+    "Real lyrics" excludes:
+    - Placeholder text like "Instrumental", "♪", empty strings
+    - Very short results (< 5 lines) which could be mismatches
+    """
+    if not FEATURES.get("save_lyrics_locally", False):
+        return False
+
+    db_path = _get_db_path(artist, title)
+    if not db_path or not os.path.exists(db_path):
+        return False
+
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        saved_lyrics = data.get("saved_lyrics", {})
+        if not isinstance(saved_lyrics, dict):
+            return False
+
+        # Placeholder patterns to ignore
+        placeholder_patterns = {"instrumental", "♪", ""}
+
+        for provider_name, lyrics in saved_lyrics.items():
+            if not isinstance(lyrics, list):
+                continue
+            
+            # Count lines with actual text content
+            real_line_count = 0
+            for line in lyrics:
+                # Handle both (timestamp, text) tuples and other formats
+                if isinstance(line, (list, tuple)) and len(line) >= 2:
+                    text = str(line[1]).strip().lower()
+                else:
+                    continue
+                
+                # Skip placeholders
+                if text in placeholder_patterns:
+                    continue
+                
+                real_line_count += 1
+                
+                # Early exit: 5+ real lines = definitely has lyrics
+                if real_line_count >= 5:
+                    return True
+
+        return False
+    except Exception as exc:
+        logger.debug(f"Could not check for real lyrics ({artist} - {title}): {exc}")
         return False
 
 
 def _is_cached_instrumental(artist: str, title: str) -> bool:
-    """Returns True if cached metadata indicates the song is instrumental."""
+    """
+    Smart instrumental detection using evidence-based logic.
+    
+    Logic priority:
+    1. Manual flag (True/False) - absolute authority, checked separately in _update_song
+    2. Real lyrics exist (≥5 lines) → NOT instrumental (evidence wins over metadata)
+    3. Any provider metadata says instrumental → instrumental
+    4. Default → NOT instrumental
+    
+    This prevents Musixmatch false positives from poisoning the cache:
+    even if MXM says instrumental, if Spotify has real lyrics, we trust the lyrics.
+    """
     if not FEATURES.get("save_lyrics_locally", False):
+        return False
+
+    # Evidence check: real lyrics trump any instrumental flags
+    if _has_real_lyrics_cached(artist, title):
         return False
 
     db_path = _get_db_path(artist, title)
@@ -415,6 +503,7 @@ def _is_cached_instrumental(artist: str, title: str) -> bool:
         if not isinstance(metadata, dict):
             return False
 
+        # Only trust instrumental flag if no real lyrics exist
         for provider_meta in metadata.values():
             if isinstance(provider_meta, dict) and provider_meta.get("is_instrumental"):
                 return True
@@ -461,12 +550,9 @@ async def set_manual_instrumental(artist: str, title: str, is_instrumental: bool
             except Exception as e:
                 logger.warning(f"Could not load existing DB for instrumental marking: {e}")
         
-        # Set or remove the manual flag
-        if is_instrumental:
-            data["is_instrumental_manual"] = True
-        else:
-            # Remove the flag if unmarking
-            data.pop("is_instrumental_manual", None)
+        # Set the manual flag (True or False, never remove)
+        # This allows explicit "NOT instrumental" to override cached provider flags
+        data["is_instrumental_manual"] = is_instrumental
         
         # Save using atomic write pattern
         dir_path = os.path.dirname(db_path)
@@ -1431,16 +1517,25 @@ async def _update_song():
             target_artist = new_song_data["artist"]
             target_title = new_song_data["title"]
             
-            # Check if song is manually marked as instrumental
-            # If so, skip all lyrics searching and mark as instrumental immediately
-            if _is_manually_instrumental(target_artist, target_title):
+            # Check manual instrumental flag first (user's explicit choice)
+            # This is a tri-state: True (instrumental), False (not instrumental), None (auto-detect)
+            manual_flag = _get_manual_instrumental_flag(target_artist, target_title)
+            
+            if manual_flag is True:
+                # User explicitly marked as instrumental - skip all lyrics searching
                 logger.info(f"Song {target_artist} - {target_title} is manually marked as instrumental, skipping lyrics search")
-                # Set instrumental marker as lyrics (single line with instrumental indicator)
                 current_song_lyrics = [(0, "Instrumental")]
                 current_song_provider = "Instrumental"
-                return  # Skip all provider searches
-
-            if _is_cached_instrumental(target_artist, target_title):
+                return
+            
+            if manual_flag is False:
+                # User explicitly marked as NOT instrumental - skip cached instrumental check
+                # This fixes the bug where Musixmatch false positives poisoned the cache
+                logger.debug(f"Song {target_artist} - {target_title} is manually marked as NOT instrumental, proceeding with lyrics")
+                # Fall through to lyrics loading (don't check _is_cached_instrumental)
+            elif _is_cached_instrumental(target_artist, target_title):
+                # Auto-detection: only check cached instrumental if no manual flag
+                # Note: _is_cached_instrumental now uses evidence-based logic (real lyrics trump flags)
                 logger.info(f"Song {target_artist} - {target_title} is cached as instrumental, skipping lyrics search")
                 current_song_lyrics = [(0, "Instrumental")]
                 current_song_provider = "Instrumental (cached)"
@@ -1738,6 +1833,10 @@ def _find_current_lyric_index(delta: Optional[float] = None) -> int:
         # Audio recognition: Use configurable audio_recognition_latency_compensation
         # Positive = lyrics earlier, Negative = lyrics later
         adaptive_delta = LYRICS.get("display", {}).get("audio_recognition_latency_compensation", 0.0)
+    elif source == "music_assistant":
+        # Music Assistant: Use configurable music_assistant_latency_compensation
+        # Positive = lyrics earlier, Negative = lyrics later
+        adaptive_delta = LYRICS.get("display", {}).get("music_assistant_latency_compensation", 0.0)
     else:
         # Normal mode (Windows Media, hybrid): Use base delta
         adaptive_delta = base_delta

@@ -152,7 +152,7 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
     """
     Get metadata from Spicetify bridge.
     
-    Follows existing source pattern (windows.py, spotify.py, gnome.py).
+    Follows existing source pattern (windows.py, spotify.py).
     Returns standardized dict or None if not connected/stale.
     """
     global _spicetify_last_active_time
