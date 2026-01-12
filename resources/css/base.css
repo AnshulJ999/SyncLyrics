@@ -2377,6 +2377,16 @@ a.settings-header-btn {
     }
 }
 
+/* Hide in minimal mode */
+body[data-minimal="true"] .main-latency-controls {
+    display: none !important;
+}
+
+/* Hide in art-only mode (visual/slideshow mode) */
+body.art-only-mode .main-latency-controls {
+    display: none !important;
+}
+
 /* Latency buttons - minimal circular style */
 .main-latency-btn {
     width: 20px;

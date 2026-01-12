@@ -285,8 +285,11 @@ export function updateMainLatencyVisibility() {
     const mainControls = document.getElementById('main-latency-controls');
     if (!mainControls) return;
     
-    // Show only when word-sync is active (both available AND enabled)
-    const shouldShow = hasWordSync && wordSyncEnabled;
+    // Check user preference from localStorage
+    const userHiddenPref = localStorage.getItem('latencyUIVisible') === 'false';
+    
+    // Show only when: word-sync active AND user hasn't hidden it
+    const shouldShow = hasWordSync && wordSyncEnabled && !userHiddenPref;
     
     if (shouldShow) {
         mainControls.classList.remove('hidden');
@@ -335,8 +338,60 @@ export function positionLatencyControls() {
 export function initLatencyPositioning() {
     window.addEventListener('resize', () => {
         const latency = document.getElementById('main-latency-controls');
-        if (latency && !latency.classList.contains('hidden')) {
+        if (latency && !latency.classList.contains('hidden') && !isLatencyUIHidden()) {
             positionLatencyControls();
         }
     });
+}
+
+// ========== LATENCY UI VISIBILITY TOGGLE ==========
+
+// localStorage key for UI visibility preference
+const LATENCY_UI_VISIBLE_KEY = 'latencyUIVisible';
+
+/**
+ * Check if user has hidden the main UI latency controls
+ * @returns {boolean} True if hidden by user preference
+ */
+export function isLatencyUIHidden() {
+    return localStorage.getItem(LATENCY_UI_VISIBLE_KEY) === 'false';
+}
+
+/**
+ * Set up the toggle button in the modal
+ * Called once during setup
+ */
+export function setupLatencyUIToggle() {
+    const toggleBtn = document.getElementById('latency-ui-toggle');
+    if (!toggleBtn) return;
+    
+    // Initialize from localStorage (default: visible)
+    const isVisible = localStorage.getItem(LATENCY_UI_VISIBLE_KEY) !== 'false';
+    updateToggleButtonState(toggleBtn, isVisible);
+    
+    // Click handler
+    toggleBtn.addEventListener('click', () => {
+        const currentlyVisible = localStorage.getItem(LATENCY_UI_VISIBLE_KEY) !== 'false';
+        const newState = !currentlyVisible;
+        
+        // Save preference
+        localStorage.setItem(LATENCY_UI_VISIBLE_KEY, newState.toString());
+        
+        // Update button appearance
+        updateToggleButtonState(toggleBtn, newState);
+        
+        // Update visibility immediately
+        updateMainLatencyVisibility();
+    });
+}
+
+/**
+ * Update toggle button text and active state
+ * @param {HTMLElement} btn - The toggle button element
+ * @param {boolean} isVisible - Whether main UI is visible
+ */
+function updateToggleButtonState(btn, isVisible) {
+    if (!btn) return;
+    btn.textContent = isVisible ? 'Hide' : 'Show';
+    btn.classList.toggle('active', isVisible);
 }
