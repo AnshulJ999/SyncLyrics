@@ -265,7 +265,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.11'  # Use 3.11 for macOS - 3.12 has PyInstaller BUNDLE issues
           cache: 'pip'
 
       - name: Install system dependencies
@@ -354,7 +354,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.11'  # Use 3.11 for macOS - 3.12 has PyInstaller BUNDLE issues
           cache: 'pip'
 
       - name: Install system dependencies
