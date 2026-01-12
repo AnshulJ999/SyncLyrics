@@ -229,7 +229,7 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## ⚠️ Disclaimer (AI Usage)
 
-This project was built with significant AI assistance (yes, vibe-coded 🤖 over 200+ hours). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
+This project was built with AI assistance (spent over 300+ hours on it myself). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
 
 ---
 
