@@ -17,7 +17,9 @@ import {
     setManualStyleOverride,
     wordSyncEnabled,
     wordSyncProvider,
-    hasWordSync
+    hasWordSync,
+    wordSyncStyle,
+    setWordSyncStyle
 } from './state.js';
 import { showToast, setLyricsInDom } from './dom.js';
 import { normalizeTrackId } from './utils.js';
@@ -840,6 +842,9 @@ export function setupProviderUI() {
             }
         });
     }
+    
+    // Word-sync style toggle button (Pop / Fade / PopFade)
+    setupWordSyncStyleToggle();
 }
 
 // ========== STYLE BUTTONS IN MODAL ==========
@@ -857,4 +862,68 @@ export function updateStyleButtonsInModal(currentStyle) {
             btn.classList.remove('active');
         }
     });
+}
+
+// ========== WORD-SYNC STYLE TOGGLE ==========
+
+// Available word-sync styles in cycle order
+const WORD_SYNC_STYLES = ['pop', 'fade', 'popfade'];
+const WORD_SYNC_STYLE_LABELS = {
+    'pop': 'Pop',
+    'fade': 'Fade',
+    'popfade': 'PopFade'
+};
+
+/**
+ * Setup word-sync style toggle button
+ * Cycles through Pop -> Fade -> PopFade -> Pop
+ */
+function setupWordSyncStyleToggle() {
+    const styleBtn = document.getElementById('word-sync-style-btn');
+    if (!styleBtn) return;
+    
+    // Initialize from localStorage (default: 'pop')
+    const savedStyle = localStorage.getItem('wordSyncStyle') || 'pop';
+    setWordSyncStyle(savedStyle);
+    updateWordSyncStyleButton(savedStyle);
+    
+    // Click handler - cycle to next style
+    styleBtn.addEventListener('click', () => {
+        const currentIndex = WORD_SYNC_STYLES.indexOf(wordSyncStyle);
+        const nextIndex = (currentIndex + 1) % WORD_SYNC_STYLES.length;
+        const nextStyle = WORD_SYNC_STYLES[nextIndex];
+        
+        // Update state
+        setWordSyncStyle(nextStyle);
+        
+        // Update button text
+        updateWordSyncStyleButton(nextStyle);
+        
+        // Save to localStorage
+        localStorage.setItem('wordSyncStyle', nextStyle);
+        
+        // Show feedback
+        showToast(`Word-sync style: ${WORD_SYNC_STYLE_LABELS[nextStyle]}`);
+    });
+}
+
+/**
+ * Update word-sync style button text to show current style
+ * @param {string} style - Current style ('pop', 'fade', 'popfade')
+ */
+function updateWordSyncStyleButton(style) {
+    const styleBtn = document.getElementById('word-sync-style-btn');
+    if (styleBtn) {
+        styleBtn.textContent = WORD_SYNC_STYLE_LABELS[style] || 'Pop';
+    }
+}
+
+/**
+ * Initialize word-sync style from localStorage
+ * Called on page load to restore saved preference
+ */
+export function initWordSyncStyle() {
+    const savedStyle = localStorage.getItem('wordSyncStyle') || 'pop';
+    setWordSyncStyle(savedStyle);
+    updateWordSyncStyleButton(savedStyle);
 }

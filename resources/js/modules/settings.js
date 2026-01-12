@@ -17,6 +17,7 @@ import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
 import { applySoftMode, applySharpMode, updateBackground } from './background.js';
 import { showSpectrum, hideSpectrum } from './spectrum.js';
+import { updateMainLatencyVisibility } from './latency.js';
 
 // ========== DISPLAY INITIALIZATION ==========
 
@@ -340,6 +341,9 @@ export function setupSettingsPanel() {
             if (toggleBtn) {
                 toggleBtn.classList.toggle('active', e.target.checked);
             }
+            
+            // Update main UI latency controls visibility
+            updateMainLatencyVisibility();
             
             // Save to localStorage
             localStorage.setItem('wordSyncEnabled', e.target.checked);

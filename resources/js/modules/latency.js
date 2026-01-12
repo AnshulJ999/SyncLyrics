@@ -10,7 +10,9 @@
 import {
     songWordSyncOffset,
     setSongWordSyncOffset,
-    lastTrackInfo
+    lastTrackInfo,
+    hasWordSync,
+    wordSyncEnabled
 } from './state.js';
 import { showToast } from './dom.js';
 
@@ -81,22 +83,27 @@ export function resetLatency() {
 }
 
 /**
- * Update the latency display in UI
+ * Update the latency display in UI (both modal and main UI)
  * @param {number} offset - Current offset in seconds
  */
 export function updateLatencyDisplay(offset) {
-    const valueEl = document.getElementById('latency-value');
-    if (!valueEl) return;
-    
     const ms = Math.round(offset * 1000);
     const sign = ms >= 0 ? '+' : '';
-    valueEl.textContent = `${sign}${ms}ms`;
+    const displayText = `${sign}${ms}ms`;
+    const isAdjusted = Math.abs(ms) > 0;
     
-    // Add visual indicator when adjusted
-    if (Math.abs(ms) > 0) {
-        valueEl.classList.add('adjusted');
-    } else {
-        valueEl.classList.remove('adjusted');
+    // Update modal latency value
+    const modalValueEl = document.getElementById('latency-value');
+    if (modalValueEl) {
+        modalValueEl.textContent = displayText;
+        modalValueEl.classList.toggle('adjusted', isAdjusted);
+    }
+    
+    // Update main UI latency value
+    const mainValueEl = document.getElementById('main-latency-value');
+    if (mainValueEl) {
+        mainValueEl.textContent = displayText;
+        mainValueEl.classList.toggle('adjusted', isAdjusted);
     }
 }
 
@@ -154,10 +161,16 @@ async function saveOffsetToBackend(offset) {
 /**
  * Initialize latency controls event handlers
  * Supports both click and press-and-hold for rapid adjustments
+ * Handles both modal controls and main UI controls
  */
 export function setupLatencyControls() {
+    // Modal controls
     const minusBtn = document.getElementById('latency-minus');
     const plusBtn = document.getElementById('latency-plus');
+    
+    // Main UI controls
+    const mainMinusBtn = document.getElementById('main-latency-minus');
+    const mainPlusBtn = document.getElementById('main-latency-plus');
     
     // Press-and-hold auto-repeat configuration
     const INITIAL_DELAY = 300;  // ms before repeat starts
@@ -214,8 +227,13 @@ export function setupLatencyControls() {
         btn.addEventListener('touchcancel', stopRepeat);
     }
     
+    // Setup modal controls
     setupHoldToRepeat(minusBtn, -STEP_SIZE);
     setupHoldToRepeat(plusBtn, STEP_SIZE);
+    
+    // Setup main UI controls
+    setupHoldToRepeat(mainMinusBtn, -STEP_SIZE);
+    setupHoldToRepeat(mainPlusBtn, STEP_SIZE);
     
     // Initialize display with current offset
     updateLatencyDisplay(songWordSyncOffset);
@@ -257,4 +275,22 @@ export function setupLatencyKeyboardShortcuts() {
             e.preventDefault();
         }
     });
+}
+
+/**
+ * Update visibility of main UI latency controls based on word-sync state
+ * Should be called whenever hasWordSync or wordSyncEnabled changes
+ */
+export function updateMainLatencyVisibility() {
+    const mainControls = document.getElementById('main-latency-controls');
+    if (!mainControls) return;
+    
+    // Show only when word-sync is active (both available AND enabled)
+    const shouldShow = hasWordSync && wordSyncEnabled;
+    
+    if (shouldShow) {
+        mainControls.classList.remove('hidden');
+    } else {
+        mainControls.classList.add('hidden');
+    }
 }

@@ -2346,3 +2346,86 @@ a.settings-header-btn {
 .slideshow-image.active {
     opacity: 1;
 }
+
+/* ========== MAIN UI LATENCY CONTROLS ========== */
+/* Positioned to the left of provider badge, only visible when word-sync is active */
+.main-latency-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 140px;  /* Position to the left of provider badge */
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: rgba(26, 27, 38, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+/* Push up when bottom nav is visible */
+body:not(.hide-nav) .main-latency-controls {
+    bottom: 56px;
+}
+
+/* Hidden state */
+.main-latency-controls.hidden {
+    display: none;
+}
+
+/* Hide on mobile (below 768px) */
+@media (max-width: 767px) {
+    .main-latency-controls {
+        display: none !important;
+    }
+}
+
+/* Latency buttons */
+.main-latency-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.main-latency-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.main-latency-btn:active {
+    transform: scale(0.95);
+}
+
+/* Latency value display */
+.main-latency-value {
+    min-width: 44px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Highlight when offset is non-zero */
+.main-latency-value.adjusted {
+    color: #60a5fa;
+}

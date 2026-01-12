@@ -95,7 +95,7 @@ import {
 } from './modules/slideshow.js';
 
 // Provider (Level 3)
-import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState } from './modules/provider.js';
+import { setupProviderUI, updateProviderDisplay, updateStyleButtonsInModal, updateInstrumentalButtonState, initWordSyncStyle } from './modules/provider.js';
 
 // Audio Source (Level 3)
 import audioSource from './modules/audioSource.js';
@@ -104,7 +104,7 @@ import audioSource from './modules/audioSource.js';
 import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, updateDebugOverlay } from './modules/wordSync.js';
 
 // Latency (Level 3)
-import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay } from './modules/latency.js';
+import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay, updateMainLatencyVisibility } from './modules/latency.js';
 
 // Waveform & Spectrum Visualizers (Level 2)
 import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './modules/waveform.js';
@@ -678,6 +678,9 @@ async function updateLoop() {
         // Update word-sync toggle button UI state (icon, unavailable class)
         // This ensures button reflects current hasWordSync state after each poll
         updateWordSyncToggleUI();
+        
+        // Update main UI latency controls visibility
+        updateMainLatencyVisibility();
 
         await sleep(currentPollInterval);
     }
@@ -704,6 +707,7 @@ async function main() {
     attachControlHandlers(enterVisualMode, exitVisualMode);
     attachProgressBarSeek();  // Enable click-to-seek on progress bar
     setupProviderUI();
+    initWordSyncStyle();  // Initialize word-sync style from localStorage
     setupQueueInteractions();
     setupTouchControls();
 
@@ -759,6 +763,9 @@ async function main() {
             // Update toggle button AND settings checkbox
             updateWordSyncToggleUI();
             
+            // Update main UI latency controls visibility
+            updateMainLatencyVisibility();
+            
             // Save to localStorage for persistence
             localStorage.setItem('wordSyncEnabled', newState);
             
@@ -788,6 +795,7 @@ async function main() {
             const enabled = savedState === 'true';
             setWordSyncEnabled(enabled);
             updateWordSyncToggleUI();
+            updateMainLatencyVisibility();
         }
     }
 
