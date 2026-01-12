@@ -70,6 +70,8 @@ jobs:
   build-windows:
     needs: prepare
     runs-on: windows-latest
+    outputs:
+      smoke_test: ${{ steps.smoke.outputs.smoke_test }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,6 +97,7 @@ jobs:
           }
 
       - name: Smoke test
+        id: smoke
         shell: pwsh
         run: |
           Write-Host "Starting smoke test..."
@@ -142,6 +145,8 @@ jobs:
   build-linux:
     needs: prepare
     runs-on: ubuntu-latest
+    outputs:
+      smoke_test: ${{ steps.smoke.outputs.smoke_test }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -175,6 +180,7 @@ jobs:
         run: python build.py
 
       - name: Smoke test
+        id: smoke
         run: |
           echo "Starting smoke test..."
           cd build_final/SyncLyrics
@@ -250,6 +256,8 @@ jobs:
   build-macos-intel:
     needs: prepare
     runs-on: macos-15-intel  # Intel runner
+    outputs:
+      smoke_test: ${{ steps.smoke.outputs.smoke_test }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -298,6 +306,7 @@ jobs:
         run: python build.py
 
       - name: Smoke test
+        id: smoke
         run: |
           echo "Starting smoke test..."
           cd build_final/SyncLyrics.app/Contents/MacOS
@@ -336,6 +345,8 @@ jobs:
   build-macos-arm:
     needs: prepare
     runs-on: macos-14  # Apple Silicon runner
+    outputs:
+      smoke_test: ${{ steps.smoke.outputs.smoke_test }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -378,6 +389,7 @@ jobs:
         run: python build.py
 
       - name: Smoke test
+        id: smoke
         run: |
           echo "Starting smoke test..."
           cd build_final/SyncLyrics.app/Contents/MacOS
@@ -493,33 +505,53 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Build | Smoke Test | Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|------------|----------|" >> $GITHUB_STEP_SUMMARY
           
           # Windows
+          WIN_SMOKE="${{ needs.build-windows.outputs.smoke_test }}"
           if [ "${{ needs.build-windows.result }}" == "success" ]; then
-            echo "| Windows x64 | ✅ | \`SyncLyrics-$VERSION-windows-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            if [ "$WIN_SMOKE" == "passed" ]; then
+              echo "| Windows x64 | ✅ | ✅ | \`SyncLyrics-$VERSION-windows-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Windows x64 | ✅ | ❌ | \`SyncLyrics-$VERSION-windows-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "| Windows x64 | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Windows x64 | ❌ | ⏭️ | Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
           # Linux
+          LINUX_SMOKE="${{ needs.build-linux.outputs.smoke_test }}"
           if [ "${{ needs.build-linux.result }}" == "success" ]; then
-            echo "| Linux x64 | ✅ | \`SyncLyrics-$VERSION-linux-x64.tar.gz\` |" >> $GITHUB_STEP_SUMMARY
+            if [ "$LINUX_SMOKE" == "passed" ]; then
+              echo "| Linux x64 | ✅ | ✅ | \`SyncLyrics-$VERSION-linux-x64.tar.gz\` |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Linux x64 | ✅ | ❌ | \`SyncLyrics-$VERSION-linux-x64.tar.gz\` |" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "| Linux x64 | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Linux x64 | ❌ | ⏭️ | Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
           # macOS Intel
+          MAC_INTEL_SMOKE="${{ needs.build-macos-intel.outputs.smoke_test }}"
           if [ "${{ needs.build-macos-intel.result }}" == "success" ]; then
-            echo "| macOS Intel | ✅ | \`SyncLyrics-$VERSION-macos-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            if [ "$MAC_INTEL_SMOKE" == "passed" ]; then
+              echo "| macOS Intel | ✅ | ✅ | \`SyncLyrics-$VERSION-macos-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| macOS Intel | ✅ | ❌ | \`SyncLyrics-$VERSION-macos-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "| macOS Intel | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| macOS Intel | ❌ | ⏭️ | Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
           # macOS ARM
+          MAC_ARM_SMOKE="${{ needs.build-macos-arm.outputs.smoke_test }}"
           if [ "${{ needs.build-macos-arm.result }}" == "success" ]; then
-            echo "| macOS Apple Silicon | ✅ | \`SyncLyrics-$VERSION-macos-arm64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            if [ "$MAC_ARM_SMOKE" == "passed" ]; then
+              echo "| macOS Apple Silicon | ✅ | ✅ | \`SyncLyrics-$VERSION-macos-arm64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| macOS Apple Silicon | ✅ | ❌ | \`SyncLyrics-$VERSION-macos-arm64.zip\` |" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "| macOS Apple Silicon | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| macOS Apple Silicon | ❌ | ⏭️ | Failed |" >> $GITHUB_STEP_SUMMARY
           fi
