@@ -90,6 +90,16 @@ docker-compose up -d
 | `SPOTIFY_POLLING_FAST_INTERVAL` | `2.0` | Seconds between polls (active) |
 | `SPOTIFY_POLLING_SLOW_INTERVAL` | `6.0` | Seconds between polls (idle) |
 
+### Music Assistant Integration
+
+| Variable | Description |
+|----------|-------------|
+| `SYSTEM_MUSIC_ASSISTANT_SERVER_URL` | MA server URL (e.g., `http://192.168.1.100:8095`) |
+| `SYSTEM_MUSIC_ASSISTANT_TOKEN` | API token from MA web UI → Settings → Security |
+| `SYSTEM_MUSIC_ASSISTANT_PLAYER_ID` | Optional: specific player ID (blank = auto-detect) |
+
+> **Note:** If running Docker on the same host as Music Assistant, you may need `--network=host` for the container to reach MA at a local IP address.
+
 ## Persistent Data
 
 Mount `/data` to persist:
