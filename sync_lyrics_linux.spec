@@ -61,10 +61,12 @@ a = Analysis(
         'system_utils.session_config',
         'system_utils.spicetify',
         'system_utils.spicetify_db',
+        'system_utils.spotify',
         
-        # === Linux-specific sources ===
+        # === Media Sources ===
         'system_utils.sources',
         'system_utils.sources.base',
+        'system_utils.sources.enrichment',
         'system_utils.sources.linux',
         'system_utils.sources.music_assistant',
         
@@ -101,6 +103,10 @@ a = Analysis(
         'cryptography.hazmat.primitives.serialization',
         'cryptography.x509',
         
+        # === Image Processing ===
+        'PIL',
+        'PIL.Image',
+        
         # === Utilities ===
         'benedict',
         'colorama',
@@ -118,6 +124,7 @@ a = Analysis(
         'threading',
         'faulthandler',
         'argparse',
+        'ctypes',
     ],
     hookspath=[],
     hooksconfig={},

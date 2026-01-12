@@ -67,7 +67,6 @@ a = Analysis(
         'system_utils.metadata',
         'system_utils.windows',
         'system_utils.spotify',
-        'system_utils.gnome',
         'system_utils.reaper',
         'system_utils.session_config',
         'system_utils.spicetify',
