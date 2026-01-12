@@ -108,13 +108,9 @@ def build(debug_mode=False):
             print(f"Cleaned up temporary spec file: {temp_spec_file}")
         
         # Determine output directory based on platform
-        if system == "Darwin":
-            # macOS creates SyncLyrics.app bundle
-            output_dir = Path("build_final/SyncLyrics.app/Contents/MacOS")
-            resources_dst = Path("build_final/SyncLyrics.app/Contents/Resources")
-        else:
-            output_dir = Path("build_final/SyncLyrics")
-            resources_dst = output_dir / "resources"
+        # NOTE: macOS now uses folder output (same as Linux) - no .app bundle
+        output_dir = Path("build_final/SyncLyrics")
+        resources_dst = output_dir / "resources"
         
         # Copy resources (all platforms)
         print("Copying resources to output directory...")
@@ -131,11 +127,7 @@ def build(debug_mode=False):
         # Copy .env.example to build output
         print("Copying .env.example to output directory...")
         src_env = Path(".env.example")
-        
-        if system == "Darwin":
-            dst_env = Path("build_final/SyncLyrics.app/Contents/MacOS/.env.example")
-        else:
-            dst_env = output_dir / ".env.example"
+        dst_env = output_dir / ".env.example"
         
         if src_env.exists():
             shutil.copy2(src_env, dst_env)
@@ -143,44 +135,38 @@ def build(debug_mode=False):
         else:
             print("WARNING: .env.example not found!")
 
-        # Copy docs folder to build output (skip for macOS app bundle)
-        if system != "Darwin":
-            print("Copying documentation to output directory...")
-            src_docs = Path("docs")
-            dst_docs = output_dir / "docs"
-            
-            if src_docs.exists():
-                if dst_docs.exists():
-                    shutil.rmtree(dst_docs)
-                shutil.copytree(src_docs, dst_docs)
-                print(f"Copied docs to {dst_docs}")
-            else:
-                print("WARNING: docs directory not found!")
+        # Copy docs folder to build output
+        print("Copying documentation to output directory...")
+        src_docs = Path("docs")
+        dst_docs = output_dir / "docs"
+        
+        if src_docs.exists():
+            if dst_docs.exists():
+                shutil.rmtree(dst_docs)
+            shutil.copytree(src_docs, dst_docs)
+            print(f"Copied docs to {dst_docs}")
+        else:
+            print("WARNING: docs directory not found!")
 
-            # Copy README.md to build output
-            src_readme = Path("README.md")
-            dst_readme = output_dir / "README.md"
-            
-            if src_readme.exists():
-                shutil.copy2(src_readme, dst_readme)
-                print(f"Copied README.md to {dst_readme}")
-            else:
-                print("WARNING: README.md not found!")
+        # Copy README.md to build output
+        src_readme = Path("README.md")
+        dst_readme = output_dir / "README.md"
+        
+        if src_readme.exists():
+            shutil.copy2(src_readme, dst_readme)
+            print(f"Copied README.md to {dst_readme}")
+        else:
+            print("WARNING: README.md not found!")
 
         # Print success message
         print("\n" + "="*60)
         print(f"Build completed successfully! ({mode_str})")
         print("="*60)
         
-        if system == "Darwin":
-            print(f"Output: build_final/SyncLyrics.app")
-            print(f"\nHow to run:")
-            print(f"  - Double-click: build_final/SyncLyrics.app")
-        else:
-            exe_name = get_executable_name()
-            print(f"Output directory: {output_dir}")
-            print(f"\nHow to run:")
-            print(f"  - Execute: {output_dir}/{exe_name}")
+        exe_name = get_executable_name()
+        print(f"Output: build_final/SyncLyrics/")
+        print(f"\nHow to run:")
+        print(f"  - Terminal: cd build_final/SyncLyrics && ./{exe_name}")
             
         if debug_mode:
             print(f"  - Console window will appear with logs")
