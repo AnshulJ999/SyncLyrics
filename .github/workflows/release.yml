@@ -96,6 +96,18 @@ jobs:
             python build.py
           }
 
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          cd build_final
+          Compress-Archive -Path SyncLyrics -DestinationPath "../SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip"
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash "SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" | Out-File -FilePath "checksum-windows.txt" -Encoding utf8 -NoNewline
+
       - name: Smoke test
         id: smoke
         shell: pwsh
@@ -118,18 +130,6 @@ jobs:
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
-
-      - name: Create ZIP archive
-        shell: pwsh
-        run: |
-          cd build_final
-          Compress-Archive -Path SyncLyrics -DestinationPath "../SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip"
-
-      - name: Generate checksum
-        shell: pwsh
-        run: |
-          $hash = Get-FileHash "SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" -Algorithm SHA256
-          "$($hash.Hash.ToLower())  SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" | Out-File -FilePath "checksum-windows.txt" -Encoding utf8 -NoNewline
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -179,23 +179,6 @@ jobs:
       - name: Build with PyInstaller
         run: python build.py
 
-      - name: Smoke test
-        id: smoke
-        run: |
-          echo "Starting smoke test..."
-          cd build_final/SyncLyrics
-          ./SyncLyrics &
-          APP_PID=$!
-          sleep 15
-          if curl -sf http://localhost:9012/health > /dev/null 2>&1; then
-            echo "✅ Health check passed! Server started successfully."
-            echo "smoke_test=passed" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Health check failed - server may not have started"
-            echo "smoke_test=failed" >> $GITHUB_OUTPUT
-          fi
-          kill $APP_PID 2>/dev/null || true
-
       - name: Create tarball
         run: |
           cd build_final
@@ -239,6 +222,23 @@ jobs:
           if [ -f "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" ]; then
             sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" >> checksum-linux.txt
           fi
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          echo "Starting smoke test..."
+          cd build_final/SyncLyrics
+          ./SyncLyrics &
+          APP_PID=$!
+          sleep 15
+          if curl -sf http://localhost:9012/health > /dev/null 2>&1; then
+            echo "✅ Health check passed! Server started successfully."
+            echo "smoke_test=passed" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Health check failed - server may not have started"
+            echo "smoke_test=failed" >> $GITHUB_OUTPUT
+          fi
+          kill $APP_PID 2>/dev/null || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -294,6 +294,15 @@ jobs:
           echo "=== Checking for encodings ==="
           ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
 
+      - name: Create ZIP archive
+        run: |
+          cd build_final
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" SyncLyrics
+
+      - name: Generate checksum
+        run: |
+          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" > checksum-macos-x64.txt
+
       - name: Smoke test
         id: smoke
         run: |
@@ -310,15 +319,6 @@ jobs:
             echo "smoke_test=failed" >> $GITHUB_OUTPUT
           fi
           kill $APP_PID 2>/dev/null || true
-
-      - name: Create ZIP archive
-        run: |
-          cd build_final
-          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" SyncLyrics
-
-      - name: Generate checksum
-        run: |
-          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" > checksum-macos-x64.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -371,6 +371,15 @@ jobs:
           echo "=== Checking for encodings ==="
           ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
 
+      - name: Create ZIP archive
+        run: |
+          cd build_final
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" SyncLyrics
+
+      - name: Generate checksum
+        run: |
+          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" > checksum-macos-arm64.txt
+
       - name: Smoke test
         id: smoke
         run: |
@@ -387,15 +396,6 @@ jobs:
             echo "smoke_test=failed" >> $GITHUB_OUTPUT
           fi
           kill $APP_PID 2>/dev/null || true
-
-      - name: Create ZIP archive
-        run: |
-          cd build_final
-          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" SyncLyrics
-
-      - name: Generate checksum
-        run: |
-          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" > checksum-macos-arm64.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
