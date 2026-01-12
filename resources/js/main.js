@@ -47,7 +47,7 @@ import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages, fetchQueue } 
 import { setLyricsInDom, updateThemeColor } from './modules/dom.js';
 
 // Settings (Level 2)
-import { initializeDisplay } from './modules/settings.js';
+import { initializeDisplay, toggleMinimalMode } from './modules/settings.js';
 
 // Controls (Level 2)
 import {
@@ -62,7 +62,8 @@ import {
     checkLikedStatus,
     toggleLike,
     setupTouchControls,
-    attachProgressBarSeek
+    attachProgressBarSeek,
+    toggleArtOnlyMode
 } from './modules/controls.js';
 
 // Background (Level 2)
@@ -115,6 +116,9 @@ import { resetArtZoom, resetImageIndex, resetManualImageFlag, setPauseSlideshowF
 
 // Touch Gestures (Level 2)
 import { initTouchGestures } from './modules/touchGestures.js';
+
+// Keyboard Shortcuts (Level 3)
+import { initKeyboardShortcuts } from './modules/keyboard.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -713,6 +717,15 @@ async function main() {
 
     // Initialize multi-finger touch gestures (3-finger tap for play/pause)
     initTouchGestures();
+
+    // Initialize global keyboard shortcuts
+    initKeyboardShortcuts({
+        enterVisualMode,
+        exitVisualMode,
+        toggleArtOnlyMode,
+        toggleMinimalMode,
+        updateWordSyncToggleUI
+    });
 
     // Initialize audio source module
     audioSource.init();
