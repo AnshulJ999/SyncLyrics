@@ -48,6 +48,7 @@ _Video demo showcasing the app's main features_
 - Seek bar with progress display
 - Waveform seekbar with audio analysis visualization (Spicetify Required)
 - Spectrum visualizer (Spicetify Required)
+- **Keyboard shortcuts:** Space, arrows, and letter keys for quick control
 
 ### ⚡ Spicetify Integration
 - **Real-time Updates:** ~100ms position updates via WebSocket

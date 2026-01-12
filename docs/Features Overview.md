@@ -55,6 +55,28 @@ Frequency spectrum display:
 
 ---
 
+## ⌨️ Keyboard Shortcuts
+
+Quick controls for desktop users:
+
+| Key | Action |
+|---|---|
+| `Space` | Play/Pause |
+| `←` / `→` | Previous/Next image (slideshow) |
+| `Ctrl+←` / `Ctrl+→` | Previous/Next track |
+| `S` | Toggle slideshow |
+| `F` | Toggle fullscreen |
+| `V` | Toggle visual mode |
+| `W` | Toggle word-sync |
+| `M` | Toggle minimal mode |
+| `A` | Toggle art-only mode |
+| `Escape` | Exit art-only mode |
+| `[` / `]` | Adjust timing ±50ms |
+
+> **Note:** Shortcuts are disabled when typing in input fields.
+
+---
+
 ## Advanced Features
 
 ### 🎤 Audio Recognition
