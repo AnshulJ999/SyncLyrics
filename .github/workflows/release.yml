@@ -211,7 +211,7 @@ jobs:
   # ============================================
   build-macos-intel:
     needs: prepare
-    runs-on: macos-13  # Intel runner
+    runs-on: macos-15-intel  # Intel runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
