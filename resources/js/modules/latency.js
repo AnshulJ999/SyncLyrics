@@ -67,7 +67,7 @@ export function adjustLatency(delta) {
     toastTimeoutId = setTimeout(() => {
         const ms = Math.round(newOffset * 1000);
         const sign = ms >= 0 ? '+' : '';
-        showToast(`Timing: ${sign}${ms}ms`, 'success');
+        showToast(`Timing: ${sign}${ms}ms`, 'success', 800);
         toastTimeoutId = null;
     }, TOAST_DEBOUNCE_MS);
 }
@@ -79,7 +79,7 @@ export function resetLatency() {
     setSongWordSyncOffset(0);
     updateLatencyDisplay(0);
     debouncedSave(0);
-    showToast('Timing reset to default');
+    showToast('Timing reset to default', 'success', 800);
 }
 
 /**
