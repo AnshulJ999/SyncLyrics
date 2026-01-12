@@ -290,6 +290,8 @@ export function updateMainLatencyVisibility() {
     
     if (shouldShow) {
         mainControls.classList.remove('hidden');
+        // Also update the display value to ensure it's current
+        updateLatencyDisplay(songWordSyncOffset);
     } else {
         mainControls.classList.add('hidden');
     }

@@ -2348,21 +2348,18 @@ a.settings-header-btn {
 }
 
 /* ========== MAIN UI LATENCY CONTROLS ========== */
-/* Positioned to the left of provider badge, only visible when word-sync is active */
+/* Minimalistic controls positioned next to provider badge, only visible when word-sync is active */
 .main-latency-controls {
     position: fixed;
-    bottom: 20px;
-    right: 140px;  /* Position to the left of provider badge */
+    bottom: 22px;
+    right: 120px;  /* Close to provider badge */
     z-index: 150;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    background: rgba(26, 27, 38, 0.7);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    gap: 2px;
+    padding: 0;
+    background: transparent;
+    border: none;
     transition: all 0.3s ease;
 }
 
@@ -2377,22 +2374,22 @@ body:not(.hide-nav) .main-latency-controls {
 }
 
 /* Hide on mobile (below 768px) */
-@media (max-width: 767px) {
+@media (max-width: 850px) {
     .main-latency-controls {
         display: none !important;
     }
 }
 
-/* Latency buttons */
+/* Latency buttons - minimal circular style */
 .main-latency-btn {
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 0.9rem;
-    font-weight: 600;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
     display: flex;
@@ -2406,26 +2403,26 @@ body:not(.hide-nav) .main-latency-controls {
 }
 
 .main-latency-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
-    color: #fff;
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .main-latency-btn:active {
-    transform: scale(0.95);
+    transform: scale(0.9);
 }
 
-/* Latency value display */
+/* Latency value display - subtle */
 .main-latency-value {
-    min-width: 44px;
+    min-width: 32px;
     text-align: center;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.4);
     font-variant-numeric: tabular-nums;
 }
 
 /* Highlight when offset is non-zero */
 .main-latency-value.adjusted {
-    color: #60a5fa;
+    color: rgba(255, 255, 255, 0.5);
 }
+
