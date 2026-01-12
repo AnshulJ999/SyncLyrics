@@ -2348,11 +2348,13 @@ a.settings-header-btn {
 }
 
 /* ========== MAIN UI LATENCY CONTROLS ========== */
-/* Minimalistic controls positioned next to provider badge, only visible when word-sync is active */
+/* Minimalistic controls positioned dynamically by JS relative to provider badge */
 .main-latency-controls {
     position: fixed;
-    bottom: 22px;
-    right: 120px;  /* Close to provider badge */
+    /* Position set dynamically by positionLatencyControls() in latency.js */
+    /* Initial fallback values (JS overrides these) */
+    bottom: 24px;
+    right: 125px;
     z-index: 150;
     display: flex;
     align-items: center;
@@ -2360,12 +2362,7 @@ a.settings-header-btn {
     padding: 0;
     background: transparent;
     border: none;
-    transition: all 0.3s ease;
-}
-
-/* Push up when bottom nav is visible */
-body:not(.hide-nav) .main-latency-controls {
-    bottom: 56px;
+    transition: right 0.15s ease, top 0.15s ease;  /* Smooth repositioning */
 }
 
 /* Hidden state */
@@ -2373,7 +2370,7 @@ body:not(.hide-nav) .main-latency-controls {
     display: none;
 }
 
-/* Hide on mobile (below 768px) */
+/* Hide on mobile/tablet (below 850px) */
 @media (max-width: 850px) {
     .main-latency-controls {
         display: none !important;

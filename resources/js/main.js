@@ -104,7 +104,7 @@ import audioSource from './modules/audioSource.js';
 import { startWordSyncAnimation, stopWordSyncAnimation, resetWordSyncState, updateDebugOverlay } from './modules/wordSync.js';
 
 // Latency (Level 3)
-import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay, updateMainLatencyVisibility } from './modules/latency.js';
+import { setupLatencyControls, setupLatencyKeyboardShortcuts, updateLatencyDisplay, updateMainLatencyVisibility, initLatencyPositioning } from './modules/latency.js';
 
 // Waveform & Spectrum Visualizers (Level 2)
 import { initWaveform, updateWaveform, hideWaveform, resetWaveform } from './modules/waveform.js';
@@ -802,6 +802,7 @@ async function main() {
     // Initialize latency controls
     setupLatencyControls();
     setupLatencyKeyboardShortcuts();
+    initLatencyPositioning();  // Dynamic positioning relative to provider badge
     
     // Listen for word-sync outro event to trigger visual mode
     // When lyrics finish, auto-enter visual mode for songs with long instrumental outros

@@ -292,7 +292,51 @@ export function updateMainLatencyVisibility() {
         mainControls.classList.remove('hidden');
         // Also update the display value to ensure it's current
         updateLatencyDisplay(songWordSyncOffset);
+        // Position relative to provider badge
+        positionLatencyControls();
     } else {
         mainControls.classList.add('hidden');
     }
+}
+
+// Desired gap between latency controls and provider badge
+const LATENCY_BADGE_GAP = 8;  // pixels
+
+/**
+ * Position latency controls relative to provider badge left edge
+ * Called when controls become visible and on window resize
+ */
+export function positionLatencyControls() {
+    const badge = document.getElementById('provider-info');
+    const latency = document.getElementById('main-latency-controls');
+    
+    if (!badge || !latency) return;
+    if (latency.classList.contains('hidden')) return;
+    
+    const badgeRect = badge.getBoundingClientRect();
+    const latencyRect = latency.getBoundingClientRect();
+    
+    // Position: latency's right edge should be (gap) pixels left of badge's left edge
+    const newRight = window.innerWidth - badgeRect.left + LATENCY_BADGE_GAP;
+    latency.style.right = `${newRight}px`;
+    
+    // Match vertical center with badge
+    const badgeCenter = badgeRect.top + (badgeRect.height / 2);
+    const latencyHeight = latencyRect.height;
+    const newTop = badgeCenter - (latencyHeight / 2);
+    latency.style.top = `${newTop}px`;
+    latency.style.bottom = 'auto';  // Override CSS bottom
+}
+
+/**
+ * Initialize resize listener for dynamic positioning
+ * Called once during setup
+ */
+export function initLatencyPositioning() {
+    window.addEventListener('resize', () => {
+        const latency = document.getElementById('main-latency-controls');
+        if (latency && !latency.classList.contains('hidden')) {
+            positionLatencyControls();
+        }
+    });
 }
