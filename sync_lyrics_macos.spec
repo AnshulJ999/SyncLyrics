@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# macOS build spec - creates .app bundle
+# macOS build spec - creates folder distribution (no .app bundle due to PyInstaller issues)
 
 import os
 from PyInstaller.utils.hooks import collect_submodules
@@ -171,6 +171,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='resources/images/icon.icns',  # Use .icns for macOS
 )
 
 coll = COLLECT(

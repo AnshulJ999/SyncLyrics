@@ -72,6 +72,12 @@ a = Analysis(
         'system_utils.spicetify',
         'system_utils.spicetify_db',
         
+        # === Media Sources (plugin system) ===
+        'system_utils.sources',
+        'system_utils.sources.base',
+        'system_utils.sources.enrichment',
+        'system_utils.sources.music_assistant',
+        
         # === Providers Package ===
         'providers',
         'providers.base',
