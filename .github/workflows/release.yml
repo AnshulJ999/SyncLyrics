@@ -305,6 +305,21 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
 
+      - name: Debug bundle contents
+        run: |
+          echo "=== Checking Frameworks contents ==="
+          ls -la build_final/SyncLyrics.app/Contents/Frameworks/ | head -30 || true
+          echo "=== Checking for base_library.zip ==="
+          if [ -f build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip ]; then
+            echo "base_library.zip found! Checking for encodings..."
+            unzip -l build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip 2>/dev/null | grep -i encoding | head -20 || echo "No encodings in zip"
+          else
+            echo "No base_library.zip (noarchive=True working)"
+            echo "=== Checking for loose encodings files ==="
+            find build_final/SyncLyrics.app/Contents/Frameworks -name "encodings*" -type d 2>/dev/null | head -5 || true
+            ls -la build_final/SyncLyrics.app/Contents/Frameworks/encodings/ 2>/dev/null | head -10 || echo "No encodings dir"
+          fi
+
       - name: Smoke test
         id: smoke
         run: |
@@ -387,6 +402,21 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
+
+      - name: Debug bundle contents
+        run: |
+          echo "=== Checking Frameworks contents ==="
+          ls -la build_final/SyncLyrics.app/Contents/Frameworks/ | head -30 || true
+          echo "=== Checking for base_library.zip ==="
+          if [ -f build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip ]; then
+            echo "base_library.zip found! Checking for encodings..."
+            unzip -l build_final/SyncLyrics.app/Contents/Frameworks/base_library.zip 2>/dev/null | grep -i encoding | head -20 || echo "No encodings in zip"
+          else
+            echo "No base_library.zip (noarchive=True working)"
+            echo "=== Checking for loose encodings files ==="
+            find build_final/SyncLyrics.app/Contents/Frameworks -name "encodings*" -type d 2>/dev/null | head -5 || true
+            ls -la build_final/SyncLyrics.app/Contents/Frameworks/encodings/ 2>/dev/null | head -10 || echo "No encodings dir"
+          fi
 
       - name: Smoke test
         id: smoke

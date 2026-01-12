@@ -2,8 +2,12 @@
 # macOS build spec - creates .app bundle
 
 import os
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
+
+# Collect all encodings submodules dynamically
+encodings_imports = collect_submodules('encodings')
 
 a = Analysis(
     ['sync_lyrics.py'],
@@ -126,19 +130,7 @@ a = Analysis(
         'faulthandler',
         'argparse',
         'ctypes',
-        
-        # === Encodings (required for macOS bundle) ===
-        'encodings',
-        'encodings.utf_8',
-        'encodings.ascii',
-        'encodings.latin_1',
-        'encodings.utf_16',
-        'encodings.utf_16_le',
-        'encodings.utf_16_be',
-        'encodings.cp1252',
-        'encodings.idna',
-        'codecs',
-    ],
+    ] + encodings_imports,  # Add all encodings modules dynamically
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -158,7 +150,7 @@ a = Analysis(
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
+    noarchive=True,  # Keep files loose, don't bundle into zip (fixes macOS issues)
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
