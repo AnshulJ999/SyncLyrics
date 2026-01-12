@@ -6,8 +6,91 @@ from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-# Collect all encodings submodules dynamically
+# === Auto-collect internal packages (new files automatically included) ===
+internal_packages = (
+    collect_submodules('system_utils') +
+    collect_submodules('providers') +
+    collect_submodules('audio_recognition')
+)
+
+# === Collect all encodings (required for macOS) ===
 encodings_imports = collect_submodules('encodings')
+
+# === External packages that need explicit hints ===
+external_hints = [
+    # Web Framework (Quart/Hypercorn)
+    'hypercorn.protocol.h2',
+    'hypercorn.protocol.h11',
+    'wsproto',
+    'engineio.async_drivers.aiohttp',
+    'quart',
+    'werkzeug',
+    'jinja2',
+    'click',
+    'blinker',
+    'itsdangerous',
+    
+    # Audio libraries
+    'shazamio',
+    'shazamio.api',
+    'shazamio.factory',
+    'shazamio.signature',
+    'shazamio.algorithm',
+    'shazamio.misc',
+    'shazamio.models',
+    'shazamio.enums',
+    'shazamio.exceptions',
+    'sounddevice',
+    'numpy',
+    'numpy.core',
+    'numpy.core._multiarray_umath',
+    'numpy.linalg',
+    'numpy.fft',
+    
+    # Network & APIs
+    'zeroconf',
+    'zeroconf._utils',
+    'zeroconf._handlers',
+    'zeroconf._services',
+    'zeroconf.asyncio',
+    'spotipy',
+    'spotipy.oauth2',
+    'spotipy.cache_handler',
+    'aiohttp',
+    
+    # HTTPS/SSL Support
+    'cryptography',
+    'cryptography.hazmat',
+    'cryptography.hazmat.backends',
+    'cryptography.hazmat.primitives',
+    'cryptography.hazmat.primitives.asymmetric',
+    'cryptography.hazmat.primitives.hashes',
+    'cryptography.hazmat.primitives.serialization',
+    'cryptography.x509',
+    
+    # Image Processing
+    'PIL',
+    'PIL.Image',
+    
+    # Utilities
+    'benedict',
+    'colorama',
+    'yaml',
+    'urllib3',
+    'dotenv',
+    
+    # Standard Library (sometimes missed)
+    'wave',
+    'io',
+    'dataclasses',
+    'enum',
+    'asyncio',
+    'concurrent.futures',
+    'threading',
+    'faulthandler',
+    'argparse',
+    'ctypes',
+]
 
 a = Analysis(
     ['sync_lyrics.py'],
@@ -17,120 +100,7 @@ a = Analysis(
         ('resources', 'resources'),
         ('.env.example', '.'),
     ],
-    hiddenimports=[
-        # === Web Framework (Quart/Hypercorn) ===
-        'hypercorn.protocol.h2',
-        'hypercorn.protocol.h11',
-        'wsproto',
-        'engineio.async_drivers.aiohttp',
-        'quart',
-        'werkzeug',
-        'jinja2',
-        'click',
-        'blinker',
-        'itsdangerous',
-        
-        # === Audio Recognition ===
-        'shazamio',
-        'shazamio.api',
-        'shazamio.factory',
-        'shazamio.signature',
-        'shazamio.algorithm',
-        'shazamio.misc',
-        'shazamio.models',
-        'shazamio.enums',
-        'shazamio.exceptions',
-        'sounddevice',
-        'numpy',
-        'numpy.core',
-        'numpy.core._multiarray_umath',
-        'numpy.linalg',
-        'numpy.fft',
-        
-        # === Audio Recognition Custom Modules ===
-        'audio_recognition',
-        'audio_recognition.capture',
-        'audio_recognition.shazam',
-        'audio_recognition.engine',
-        'audio_recognition.buffer',
-        'audio_recognition.acrcloud',
-        
-        # === System Utils Package ===
-        'system_utils',
-        'system_utils.state',
-        'system_utils.helpers',
-        'system_utils.image',
-        'system_utils.album_art',
-        'system_utils.artist_image',
-        'system_utils.metadata',
-        'system_utils.reaper',
-        'system_utils.session_config',
-        'system_utils.spicetify',
-        'system_utils.spicetify_db',
-        'system_utils.spotify',
-        
-        # === Media Sources (cross-platform only) ===
-        'system_utils.sources',
-        'system_utils.sources.base',
-        'system_utils.sources.enrichment',
-        'system_utils.sources.music_assistant',
-        
-        # === Providers Package ===
-        'providers',
-        'providers.base',
-        'providers.lrclib',
-        'providers.netease',
-        'providers.qq',
-        'providers.musixmatch',
-        'providers.spotify_api',
-        'providers.spotify_lyrics',
-        'providers.album_art',
-        'providers.artist_image',
-        
-        # === Network & APIs ===
-        'zeroconf',
-        'zeroconf._utils',
-        'zeroconf._handlers',
-        'zeroconf._services',
-        'zeroconf.asyncio',
-        'spotipy',
-        'spotipy.oauth2',
-        'spotipy.cache_handler',
-        'aiohttp',
-        
-        # === HTTPS/SSL Support ===
-        'cryptography',
-        'cryptography.hazmat',
-        'cryptography.hazmat.backends',
-        'cryptography.hazmat.primitives',
-        'cryptography.hazmat.primitives.asymmetric',
-        'cryptography.hazmat.primitives.hashes',
-        'cryptography.hazmat.primitives.serialization',
-        'cryptography.x509',
-        
-        # === Image Processing ===
-        'PIL',
-        'PIL.Image',
-        
-        # === Utilities ===
-        'benedict',
-        'colorama',
-        'yaml',
-        'urllib3',
-        'dotenv',
-        
-        # === Standard Library ===
-        'wave',
-        'io',
-        'dataclasses',
-        'enum',
-        'asyncio',
-        'concurrent.futures',
-        'threading',
-        'faulthandler',
-        'argparse',
-        'ctypes',
-    ] + encodings_imports,  # Add all encodings modules dynamically
+    hiddenimports=internal_packages + external_hints + encodings_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
