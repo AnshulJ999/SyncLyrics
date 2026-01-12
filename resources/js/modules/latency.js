@@ -88,7 +88,7 @@ export function resetLatency() {
  */
 export function updateLatencyDisplay(offset) {
     const ms = Math.round(offset * 1000);
-    const sign = ms >= 0 ? '+' : '';
+    const sign = ms > 0 ? '+' : '';  // Only show + for positive, not zero
     const displayText = `${sign}${ms}ms`;
     const isAdjusted = Math.abs(ms) > 0;
     
