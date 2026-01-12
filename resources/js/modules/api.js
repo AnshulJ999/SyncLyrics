@@ -114,6 +114,20 @@ export async function getConfig() {
             document.documentElement.style.setProperty('--blur-strength', config.blurStrength + 'px');
         }
 
+        // Lyrics font size multipliers
+        if (config.lyricsFontSizeCurrent !== undefined) {
+            document.documentElement.style.setProperty('--lyrics-font-scale-current', config.lyricsFontSizeCurrent);
+        }
+        if (config.lyricsFontSizeAdjacent !== undefined) {
+            document.documentElement.style.setProperty('--lyrics-font-scale-adjacent', config.lyricsFontSizeAdjacent);
+        }
+        if (config.lyricsFontSizeFar !== undefined) {
+            document.documentElement.style.setProperty('--lyrics-font-scale-far', config.lyricsFontSizeFar);
+        }
+        if (config.lyricsFontSizeMobile !== undefined) {
+            document.documentElement.style.setProperty('--lyrics-font-scale-mobile', config.lyricsFontSizeMobile);
+        }
+
         // Set soft album art mode from server config only if URL didn't explicitly set it
         // IMPORTANT: Frontend default is now TRUE, so only apply server config if it's enabling
         // (server returning false should NOT override frontend default of true)

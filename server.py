@@ -2993,7 +2993,12 @@ async def get_client_config():
         "slideshowShuffle": settings.get("slideshow.shuffle"),
         "slideshowTransitionDuration": settings.get("slideshow.transition_duration"),
         # Word-sync settings
-        "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True)
+        "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True),
+        # Lyrics font size multipliers
+        "lyricsFontSizeCurrent": settings.get("lyrics.display.font_size_current"),
+        "lyricsFontSizeAdjacent": settings.get("lyrics.display.font_size_adjacent"),
+        "lyricsFontSizeFar": settings.get("lyrics.display.font_size_far"),
+        "lyricsFontSizeMobile": settings.get("lyrics.display.font_size_mobile"),
     }
 
 @app.route("/callback")

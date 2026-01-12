@@ -135,6 +135,10 @@ class SettingsManager:
             "lyrics.display.netease_word_sync_offset": Setting("NetEase Offset", float, -0.1, False, "Lyrics", "NetEase word-sync timing adjustment (s)", "slider", min_val=-1.0, max_val=1.0),
             "lyrics.display.idle_wait_time": Setting("Idle Wait", float, 10.0, False, "Lyrics", "Time before idle (s)", "slider", min_val=1.0, max_val=30.0),
             "lyrics.display.smart_race_timeout": Setting("Race Timeout", float, 4.0, False, "Lyrics", "Provider race timeout (s)", "slider", min_val=1.0, max_val=10.0),
+            "lyrics.display.font_size_current": Setting("Current Line Size", float, 1.0, False, "Lyrics", "Font scale for the active lyric line", "slider", min_val=0.7, max_val=1.5),
+            "lyrics.display.font_size_adjacent": Setting("Adjacent Lines Size", float, 1.0, False, "Lyrics", "Font scale for prev/next lines", "slider", min_val=0.7, max_val=1.5),
+            "lyrics.display.font_size_far": Setting("Distant Lines Size", float, 1.0, False, "Lyrics", "Font scale for far-prev/far-next lines", "slider", min_val=0.7, max_val=1.5),
+            "lyrics.display.font_size_mobile": Setting("Mobile Font Scale", float, 1.0, False, "Lyrics", "Additional font scale for mobile screens", "slider", min_val=0.7, max_val=1.5),
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),
