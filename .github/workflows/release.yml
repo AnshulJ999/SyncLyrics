@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build (e.g., v1.9.0)'
+        required: true
+        type: string
+      debug_build:
+        description: 'Build with console window (debug mode)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   build-and-release:
@@ -12,11 +26,42 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual run: use input tag
+            VERSION="${{ github.event.inputs.tag }}"
+            echo "Using manual tag: $VERSION"
+          else
+            # Tag push: use git ref
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "Using git tag: $VERSION"
+          fi
+          
+          # Validate version format
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected v*.*.* format)"
+            exit 1
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if prerelease (beta, alpha, rc)
+          if [[ "$VERSION" =~ (beta|alpha|rc) ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "Detected prerelease tag"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
       
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
       
       - name: Install dependencies
         run: |
@@ -25,17 +70,67 @@ jobs:
           pip install pyinstaller
       
       - name: Build executable
-        run: python build.py
+        run: |
+          if ("${{ github.event.inputs.debug_build }}" -eq "true") {
+            python build.py --debug
+          } else {
+            python build.py
+          }
       
       - name: Create ZIP archive
+        shell: pwsh
         run: |
+          $version = "${{ steps.version.outputs.version }}"
           cd build_final
-          Compress-Archive -Path SyncLyrics -DestinationPath ../SyncLyrics-${{ github.ref_name }}.zip
+          Compress-Archive -Path SyncLyrics -DestinationPath "../SyncLyrics-$version-windows-x64.zip"
       
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $hash = Get-FileHash "SyncLyrics-$version-windows-x64.zip" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  SyncLyrics-$version-windows-x64.zip" | Out-File -FilePath "checksums-windows.txt" -Encoding utf8 -NoNewline
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: SyncLyrics-${{ github.ref_name }}.zip
+          tag_name: ${{ steps.version.outputs.version }}
+          name: SyncLyrics ${{ steps.version.outputs.version }}
+          files: |
+            SyncLyrics-${{ steps.version.outputs.version }}-windows-x64.zip
+            checksums-windows.txt
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Summary
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PRERELEASE="${{ steps.version.outputs.prerelease }}"
+          CHECKSUM=$(cat checksums-windows.txt | cut -d' ' -f1)
+          
+          echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          if [ "$PRERELEASE" == "true" ]; then
+            echo "- **Type:** ⚠️ Pre-release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Type:** ✅ Stable" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | File | SHA256 |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows x64 | \`SyncLyrics-$VERSION-windows-x64.zip\` | \`${CHECKSUM:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner:** \`windows-latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python:** \`3.12\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.debug_build }}" == "true" ]; then
+            echo "- **Mode:** 🐛 Debug (with console)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Mode:** 📦 Release (no console)" >> $GITHUB_STEP_SUMMARY
+          fi
