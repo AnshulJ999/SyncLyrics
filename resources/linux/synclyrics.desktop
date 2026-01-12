@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=SyncLyrics
+Comment=Real-time synchronized lyrics display
+Exec=SyncLyrics
+Icon=synclyrics
+Type=Application
+Categories=AudioVideo;Audio;Music;
+Keywords=lyrics;music;sync;spotify;
+Terminal=false
+StartupNotify=true
