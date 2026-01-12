@@ -94,6 +94,28 @@ jobs:
             python build.py
           }
 
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          Write-Host "Starting smoke test..."
+          $proc = Start-Process -FilePath "build_final\SyncLyrics\SyncLyrics.exe" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 15
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:9012/health" -TimeoutSec 5 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+              Write-Host "✅ Health check passed! Server started successfully."
+              echo "smoke_test=passed" >> $env:GITHUB_OUTPUT
+            } else {
+              Write-Host "⚠️ Health check returned status: $($response.StatusCode)"
+              echo "smoke_test=warning" >> $env:GITHUB_OUTPUT
+            }
+          } catch {
+            Write-Host "❌ Health check failed: $_"
+            echo "smoke_test=failed" >> $env:GITHUB_OUTPUT
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Create ZIP archive
         shell: pwsh
         run: |
@@ -151,6 +173,22 @@ jobs:
 
       - name: Build with PyInstaller
         run: python build.py
+
+      - name: Smoke test
+        run: |
+          echo "Starting smoke test..."
+          cd build_final/SyncLyrics
+          ./SyncLyrics &
+          APP_PID=$!
+          sleep 15
+          if curl -sf http://localhost:9012/health > /dev/null 2>&1; then
+            echo "✅ Health check passed! Server started successfully."
+            echo "smoke_test=passed" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Health check failed - server may not have started"
+            echo "smoke_test=failed" >> $GITHUB_OUTPUT
+          fi
+          kill $APP_PID 2>/dev/null || true
 
       - name: Create tarball
         run: |
@@ -259,6 +297,22 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
 
+      - name: Smoke test
+        run: |
+          echo "Starting smoke test..."
+          cd build_final/SyncLyrics.app/Contents/MacOS
+          ./SyncLyrics &
+          APP_PID=$!
+          sleep 15
+          if curl -sf http://localhost:9012/health > /dev/null 2>&1; then
+            echo "✅ Health check passed! Server started successfully."
+            echo "smoke_test=passed" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Health check failed - server may not have started"
+            echo "smoke_test=failed" >> $GITHUB_OUTPUT
+          fi
+          kill $APP_PID 2>/dev/null || true
+
       - name: Create ZIP archive
         run: |
           cd build_final
@@ -322,6 +376,22 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version_clean }}
         run: python build.py
+
+      - name: Smoke test
+        run: |
+          echo "Starting smoke test..."
+          cd build_final/SyncLyrics.app/Contents/MacOS
+          ./SyncLyrics &
+          APP_PID=$!
+          sleep 15
+          if curl -sf http://localhost:9012/health > /dev/null 2>&1; then
+            echo "✅ Health check passed! Server started successfully."
+            echo "smoke_test=passed" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Health check failed - server may not have started"
+            echo "smoke_test=failed" >> $GITHUB_OUTPUT
+          fi
+          kill $APP_PID 2>/dev/null || true
 
       - name: Create ZIP archive
         run: |
