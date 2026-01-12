@@ -236,17 +236,21 @@ def _log_app_state() -> None:
         )
         
         # Add ACRCloud stats if available
-        try:
-            from audio_recognition.acrcloud import get_acrcloud_stats
-            stats = get_acrcloud_stats()
-            if stats:
-                requests_today, daily_limit = stats
-                state_summary += (
-                    f"|- ACRCloud:\n"
-                    f"|  `- Requests Today: {requests_today}/{daily_limit}\n"
-                )
-        except ImportError:
-            pass  # ACRCloud not available
+        # GUARD: Only import if audio_recognition was already loaded to avoid
+        # triggering shazamio/pydub import chain when audio rec is disabled
+        import sys
+        if 'audio_recognition.acrcloud' in sys.modules:
+            try:
+                from audio_recognition.acrcloud import get_acrcloud_stats
+                stats = get_acrcloud_stats()
+                if stats:
+                    requests_today, daily_limit = stats
+                    state_summary += (
+                        f"|- ACRCloud:\n"
+                        f"|  `- Requests Today: {requests_today}/{daily_limit}\n"
+                    )
+            except (ImportError, Exception):
+                pass  # ACRCloud not available or error
         
         logger.info(state_summary)
 
