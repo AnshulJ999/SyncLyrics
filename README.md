@@ -68,7 +68,7 @@ _Video demo showcasing the app's main features_
 
 ### Option 1: Windows Executable
 1. Go to **[Releases](../../releases)**
-2. Download and extract `SyncLyrics.zip` anywhere on your computer. Ensure all files are within a dedicated folder.
+2. Download and extract `SyncLyrics-vX.X.X-windows-x64.zip` anywhere on your computer. Ensure all files are within a dedicated folder.
 3. Run `SyncLyrics.exe`
 4. (Optional) Configure `.env.example` for Spotify API credentials and other advanced features then rename it to `.env`.
 
@@ -82,7 +82,40 @@ You can also delete `SyncLyrics.exe` for safety.
 
 Then extract the new version and replace any old files. This should maintain your existing database and settings (including Spotify cache) while avoiding any conflict from previous versions.
 
-### Option 2: Home Assistant Addon
+### Option 2: Linux (AppImage or Tarball)
+1. Go to **[Releases](../../releases)**
+2. Download either:
+   - `SyncLyrics-vX.X.X-linux-x64.AppImage` (recommended - single file, no install)
+   - `SyncLyrics-vX.X.X-linux-x64.tar.gz` (for developers)
+3. For AppImage:
+   ```bash
+   chmod +x SyncLyrics-*.AppImage
+   ./SyncLyrics-*.AppImage
+   ```
+4. For Tarball:
+   ```bash
+   tar -xzf SyncLyrics-*.tar.gz
+   cd SyncLyrics
+   ./SyncLyrics
+   ```
+
+> **Note:** Linux builds require `playerctl` for media detection. Install via your package manager.
+
+### Option 3: macOS (Unsigned)
+1. Go to **[Releases](../../releases)**
+2. Download:
+   - `SyncLyrics-vX.X.X-macos-x64.zip` (Intel Macs)
+   - `SyncLyrics-vX.X.X-macos-arm64.zip` (Apple Silicon)
+3. Extract and move `SyncLyrics.app` to Applications
+4. **First launch** (bypass Gatekeeper):
+   - Right-click → Open (not double-click)
+   - Click "Open" in the warning dialog
+   - If blocked: System Preferences → Security → "Open Anyway"
+
+> **Note:** macOS builds are unsigned. You'll need to allow the app through Gatekeeper on first run.
+
+### Option 4: Home Assistant Addon
+
 1. Add https://github.com/AnshulJ999/homeassistant-addons as a repository to your Home Assistant addon store
 2. Install the SyncLyrics addon
 3. Configure environment variables in addon settings
@@ -90,9 +123,11 @@ Then extract the new version and replace any old files. This should maintain you
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Addon-blue)](https://github.com/AnshulJ999/homeassistant-addons)
 
-### Option 3: Run from Source
+### Option 5: Run from Source
 
 You can use the included run.bat or 'Run SyncLyrics Hidden.vbs' to run the app directly. Install the requirements first. 
+
+Clone the repo and run directly with Python:
 
 ```bash
 git clone https://github.com/AnshulJ999/SyncLyrics.git
@@ -107,7 +142,7 @@ copy .env.example .env
 python sync_lyrics.py
 ```
 
-### Option 4: Docker
+### Option 6: Docker
 
 Docker images are available from:
 - **Docker Hub**: `anshulj99/synclyrics`

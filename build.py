@@ -1,9 +1,11 @@
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 
 def clean_artifacts():
     """Remove previous build artifacts."""
@@ -19,25 +21,55 @@ def clean_artifacts():
             except Exception as e:
                 print(f"Error removing {artifact}: {e}")
 
+
+def get_spec_file():
+    """Get the appropriate spec file for the current platform."""
+    system = platform.system()
+    if system == "Windows":
+        return "sync_lyrics.spec"
+    elif system == "Linux":
+        return "sync_lyrics_linux.spec"
+    elif system == "Darwin":  # macOS
+        return "sync_lyrics_macos.spec"
+    else:
+        print(f"Unsupported platform: {system}")
+        sys.exit(1)
+
+
+def get_executable_name():
+    """Get the executable name for the current platform."""
+    if platform.system() == "Windows":
+        return "SyncLyrics.exe"
+    else:
+        return "SyncLyrics"
+
+
 def build(debug_mode=False):
     """Run PyInstaller build.
     
     Args:
         debug_mode: If True, build with console window enabled for debugging.
     """
+    system = platform.system()
     mode_str = "DEBUG (with console)" if debug_mode else "RELEASE (no console)"
     print(f"Starting SyncLyrics Build (PyInstaller) - {mode_str}...")
+    print(f"Platform: {system}")
     
     # Clean first
     clean_artifacts()
     
-    spec_file = "sync_lyrics.spec"
+    spec_file = get_spec_file()
     temp_spec_file = None
+    
+    # Check spec file exists
+    if not os.path.exists(spec_file):
+        print(f"ERROR: Spec file not found: {spec_file}")
+        sys.exit(1)
     
     # For debug builds, create a temporary spec file with console=True
     if debug_mode:
         print("Creating debug spec file with console enabled...")
-        temp_spec_file = "sync_lyrics_debug_temp.spec"
+        temp_spec_file = spec_file.replace(".spec", "_debug_temp.spec")
         
         with open(spec_file, "r", encoding="utf-8") as f:
             spec_content = f.read()
@@ -75,92 +107,100 @@ def build(debug_mode=False):
             os.remove(temp_spec_file)
             print(f"Cleaned up temporary spec file: {temp_spec_file}")
         
-        # Manual Copy of Resources (PyInstaller often puts them in _internal)
-        # We want them next to the EXE as per config.py
+        # Determine output directory based on platform
+        if system == "Darwin":
+            # macOS creates SyncLyrics.app bundle
+            output_dir = Path("build_final/SyncLyrics.app/Contents/MacOS")
+            resources_dst = Path("build_final/SyncLyrics.app/Contents/Resources")
+        else:
+            output_dir = Path("build_final/SyncLyrics")
+            resources_dst = output_dir / "resources"
+        
+        # Copy resources (all platforms)
         print("Copying resources to output directory...")
         src_resources = Path("resources")
-        dst_resources = Path("build_final/SyncLyrics/resources")
         
         if src_resources.exists():
-            if dst_resources.exists():
-                shutil.rmtree(dst_resources)
-            shutil.copytree(src_resources, dst_resources)
-            print(f"Copied resources to {dst_resources}")
+            if resources_dst.exists():
+                shutil.rmtree(resources_dst)
+            shutil.copytree(src_resources, resources_dst)
+            print(f"Copied resources to {resources_dst}")
         else:
             print("WARNING: Source 'resources' directory not found!")
 
         # Copy .env.example to build output
         print("Copying .env.example to output directory...")
         src_env = Path(".env.example")
-        dst_env = Path("build_final/SyncLyrics/.env.example")
+        
+        if system == "Darwin":
+            dst_env = Path("build_final/SyncLyrics.app/Contents/MacOS/.env.example")
+        else:
+            dst_env = output_dir / ".env.example"
         
         if src_env.exists():
             shutil.copy2(src_env, dst_env)
             print(f"Copied .env.example to {dst_env}")
-            print("OPTIONAL: For Spotify integration, rename .env.example to .env and add credentials")
         else:
             print("WARNING: .env.example not found!")
 
-        # Copy VBS launchers to build output
-        print("Copying VBS launchers to output directory...")
-        vbs_launchers = ["Run SyncLyrics Hidden.vbs"]
-        for launcher in vbs_launchers:
-            src_vbs = Path(launcher)
-            dst_vbs = Path(f"build_final/{launcher}")
+        # Copy docs folder to build output (skip for macOS app bundle)
+        if system != "Darwin":
+            print("Copying documentation to output directory...")
+            src_docs = Path("docs")
+            dst_docs = output_dir / "docs"
             
-            if src_vbs.exists():
-                shutil.copy2(src_vbs, dst_vbs)
-                print(f"Copied {launcher} to build_final/")
+            if src_docs.exists():
+                if dst_docs.exists():
+                    shutil.rmtree(dst_docs)
+                shutil.copytree(src_docs, dst_docs)
+                print(f"Copied docs to {dst_docs}")
             else:
-                print(f"WARNING: {launcher} not found!")
+                print("WARNING: docs directory not found!")
 
-        # Copy docs folder to build output
-        print("Copying documentation to output directory...")
-        src_docs = Path("docs")
-        dst_docs = Path("build_final/SyncLyrics/docs")
-        
-        if src_docs.exists():
-            if dst_docs.exists():
-                shutil.rmtree(dst_docs)
-            shutil.copytree(src_docs, dst_docs)
-            print(f"Copied docs to {dst_docs}")
-        else:
-            print("WARNING: docs directory not found!")
+            # Copy README.md to build output
+            src_readme = Path("README.md")
+            dst_readme = output_dir / "README.md"
+            
+            if src_readme.exists():
+                shutil.copy2(src_readme, dst_readme)
+                print(f"Copied README.md to {dst_readme}")
+            else:
+                print("WARNING: README.md not found!")
 
-        # Copy README.md to build output
-        src_readme = Path("README.md")
-        dst_readme = Path("build_final/SyncLyrics/README.md")
-        
-        if src_readme.exists():
-            shutil.copy2(src_readme, dst_readme)
-            print(f"Copied README.md to {dst_readme}")
-        else:
-            print("WARNING: README.md not found!")
-
+        # Print success message
         print("\n" + "="*60)
         print(f"Build completed successfully! ({mode_str})")
         print("="*60)
-        print(f"Output directory: build_final/SyncLyrics")
-        print(f"\nHow to run:")
-        print(f"  - Double-click: build_final/SyncLyrics/SyncLyrics.exe")
+        
+        if system == "Darwin":
+            print(f"Output: build_final/SyncLyrics.app")
+            print(f"\nHow to run:")
+            print(f"  - Double-click: build_final/SyncLyrics.app")
+        else:
+            exe_name = get_executable_name()
+            print(f"Output directory: {output_dir}")
+            print(f"\nHow to run:")
+            print(f"  - Execute: {output_dir}/{exe_name}")
+            
         if debug_mode:
             print(f"  - Console window will appear with logs")
+            
         print(f"\nOptional: Spotify Integration")
-        print(f"  - App works without .env (Windows Media + LRCLib/NetEase/QQ lyrics)")
+        print(f"  - App works without .env (uses available media sources)")
         print(f"  - For Spotify: Copy .env.example to .env and add credentials")
         print("="*60)
+        
     except subprocess.CalledProcessError as e:
-        # Clean up temporary spec file on error
         if temp_spec_file and os.path.exists(temp_spec_file):
             os.remove(temp_spec_file)
         print(f"\nBuild failed with exit code {e.returncode}")
         sys.exit(1)
     except Exception as e:
-        # Clean up temporary spec file on error
         if temp_spec_file and os.path.exists(temp_spec_file):
             os.remove(temp_spec_file)
         print(f"\nError during post-build steps: {e}")
         sys.exit(1)
+
 
 def print_usage():
     """Print usage information."""
@@ -171,6 +211,10 @@ def print_usage():
     print("  python build.py --debug   Build debug version (with console)")
     print("  python build.py clean     Remove build artifacts only")
     print("  python build.py --help    Show this help message")
+    print("")
+    print(f"Current platform: {platform.system()}")
+    print(f"Spec file: {get_spec_file()}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

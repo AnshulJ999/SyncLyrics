@@ -19,24 +19,27 @@ on:
 permissions:
   contents: write
 
-jobs:
-  build-and-release:
-    runs-on: windows-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+env:
+  PYTHON_VERSION: '3.12'
 
+jobs:
+  # ============================================
+  # Prepare: Validate and extract version info
+  # ============================================
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_clean: ${{ steps.version.outputs.version_clean }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
       - name: Determine version
         id: version
-        shell: bash
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual run: use input tag
             VERSION="${{ github.event.inputs.tag }}"
             echo "Using manual tag: $VERSION"
           else
-            # Tag push: use git ref
             VERSION="${GITHUB_REF#refs/tags/}"
             echo "Using git tag: $VERSION"
           fi
@@ -47,7 +50,11 @@ jobs:
             exit 1
           fi
           
+          # Clean version (without 'v' prefix)
+          VERSION_CLEAN="${VERSION#v}"
+          
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_clean=$VERSION_CLEAN" >> $GITHUB_OUTPUT
           
           # Check if prerelease (beta, alpha, rc)
           if [[ "$VERSION" =~ (beta|alpha|rc) ]]; then
@@ -56,19 +63,29 @@ jobs:
           else
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
-      
+
+  # ============================================
+  # Windows Build
+  # ============================================
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-      
+
       - name: Build executable
         run: |
           if ("${{ github.event.inputs.debug_build }}" -eq "true") {
@@ -76,61 +93,363 @@ jobs:
           } else {
             python build.py
           }
-      
+
       - name: Create ZIP archive
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.version }}"
           cd build_final
-          Compress-Archive -Path SyncLyrics -DestinationPath "../SyncLyrics-$version-windows-x64.zip"
-      
-      - name: Generate checksums
+          Compress-Archive -Path SyncLyrics -DestinationPath "../SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip"
+
+      - name: Generate checksum
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $hash = Get-FileHash "SyncLyrics-$version-windows-x64.zip" -Algorithm SHA256
-          "$($hash.Hash.ToLower())  SyncLyrics-$version-windows-x64.zip" | Out-File -FilePath "checksums-windows.txt" -Encoding utf8 -NoNewline
+          $hash = Get-FileHash "SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip" | Out-File -FilePath "checksum-windows.txt" -Encoding utf8 -NoNewline
 
-      - name: Create Release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            SyncLyrics-${{ needs.prepare.outputs.version }}-windows-x64.zip
+            checksum-windows.txt
+
+  # ============================================
+  # Linux Build
+  # ============================================
+  build-linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libportaudio2 \
+            portaudio19-dev \
+            libffi-dev \
+            fuse \
+            libfuse2
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Remove Windows-only packages from requirements before installing
+          grep -v -E "^(winsdk|pywin32|pystray|desktop-notifier)" requirements.txt > requirements_linux.txt
+          pip install -r requirements_linux.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: python build.py
+
+      - name: Create tarball
+        run: |
+          cd build_final
+          tar -czvf "../SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.tar.gz" SyncLyrics
+
+      - name: Create AppImage
+        run: |
+          # Download linuxdeploy
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          
+          # Create AppDir structure
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          # Copy built files
+          cp -r build_final/SyncLyrics/* AppDir/usr/bin/
+          
+          # Copy desktop file and icon
+          cp resources/linux/synclyrics.desktop AppDir/usr/share/applications/
+          cp resources/images/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/synclyrics.png
+          
+          # Create AppImage
+          ARCH=x86_64 ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --desktop-file resources/linux/synclyrics.desktop \
+            --icon-file resources/images/icon.png \
+            --output appimage || true
+          
+          # Rename output (linuxdeploy names it based on desktop file)
+          if [ -f SyncLyrics*.AppImage ]; then
+            mv SyncLyrics*.AppImage "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage"
+          else
+            echo "::warning::AppImage creation failed, only tarball will be available"
+          fi
+
+      - name: Generate checksums
+        run: |
+          sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.tar.gz" > checksum-linux.txt
+          if [ -f "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" ]; then
+            sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" >> checksum-linux.txt
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.tar.gz
+            SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage
+            checksum-linux.txt
+          if-no-files-found: warn
+
+  # ============================================
+  # macOS Build (Intel)
+  # ============================================
+  build-macos-intel:
+    needs: prepare
+    runs-on: macos-13  # Intel runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          brew install portaudio
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Remove Windows-only packages
+          grep -v -E "^(winsdk|pywin32|pystray|desktop-notifier)" requirements.txt > requirements_macos.txt
+          pip install -r requirements_macos.txt
+          pip install pyinstaller
+
+      - name: Convert icon to icns
+        run: |
+          # Create iconset directory
+          mkdir -p SyncLyrics.iconset
+          
+          # Use sips to create various sizes from PNG
+          sips -z 16 16 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16.png
+          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16@2x.png
+          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32.png
+          sips -z 64 64 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32@2x.png
+          sips -z 128 128 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128.png
+          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128@2x.png
+          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256.png
+          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256@2x.png
+          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512.png
+          sips -z 1024 1024 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512@2x.png
+          
+          # Convert to icns
+          iconutil -c icns SyncLyrics.iconset -o resources/images/icon.icns
+
+      - name: Build with PyInstaller
+        env:
+          VERSION: ${{ needs.prepare.outputs.version_clean }}
+        run: python build.py
+
+      - name: Create ZIP archive
+        run: |
+          cd build_final
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" SyncLyrics.app
+
+      - name: Generate checksum
+        run: |
+          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip" > checksum-macos-x64.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-build
+          path: |
+            SyncLyrics-${{ needs.prepare.outputs.version }}-macos-x64.zip
+            checksum-macos-x64.txt
+
+  # ============================================
+  # macOS Build (Apple Silicon)
+  # ============================================
+  build-macos-arm:
+    needs: prepare
+    runs-on: macos-14  # Apple Silicon runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          brew install portaudio
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          grep -v -E "^(winsdk|pywin32|pystray|desktop-notifier)" requirements.txt > requirements_macos.txt
+          pip install -r requirements_macos.txt
+          pip install pyinstaller
+
+      - name: Convert icon to icns
+        run: |
+          mkdir -p SyncLyrics.iconset
+          sips -z 16 16 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16.png
+          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_16x16@2x.png
+          sips -z 32 32 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32.png
+          sips -z 64 64 resources/images/icon.png --out SyncLyrics.iconset/icon_32x32@2x.png
+          sips -z 128 128 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128.png
+          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_128x128@2x.png
+          sips -z 256 256 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256.png
+          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_256x256@2x.png
+          sips -z 512 512 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512.png
+          sips -z 1024 1024 resources/images/icon.png --out SyncLyrics.iconset/icon_512x512@2x.png
+          iconutil -c icns SyncLyrics.iconset -o resources/images/icon.icns
+
+      - name: Build with PyInstaller
+        env:
+          VERSION: ${{ needs.prepare.outputs.version_clean }}
+        run: python build.py
+
+      - name: Create ZIP archive
+        run: |
+          cd build_final
+          zip -r "../SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" SyncLyrics.app
+
+      - name: Generate checksum
+        run: |
+          shasum -a 256 "SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip" > checksum-macos-arm64.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-build
+          path: |
+            SyncLyrics-${{ needs.prepare.outputs.version }}-macos-arm64.zip
+            checksum-macos-arm64.txt
+
+  # ============================================
+  # Create Release (consolidates all builds)
+  # ============================================
+  create-release:
+    needs: [prepare, build-windows, build-linux, build-macos-intel, build-macos-arm]
+    if: always() && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Consolidate checksums
+        run: |
+          echo "# SyncLyrics ${{ needs.prepare.outputs.version }} - SHA256 Checksums" > checksums.txt
+          echo "" >> checksums.txt
+          
+          # Windows
+          if [ -f artifacts/windows-build/checksum-windows.txt ]; then
+            echo "## Windows" >> checksums.txt
+            cat artifacts/windows-build/checksum-windows.txt >> checksums.txt
+            echo "" >> checksums.txt
+          fi
+          
+          # Linux
+          if [ -f artifacts/linux-build/checksum-linux.txt ]; then
+            echo "## Linux" >> checksums.txt
+            cat artifacts/linux-build/checksum-linux.txt >> checksums.txt
+            echo "" >> checksums.txt
+          fi
+          
+          # macOS Intel
+          if [ -f artifacts/macos-intel-build/checksum-macos-x64.txt ]; then
+            echo "## macOS (Intel)" >> checksums.txt
+            cat artifacts/macos-intel-build/checksum-macos-x64.txt >> checksums.txt
+            echo "" >> checksums.txt
+          fi
+          
+          # macOS ARM
+          if [ -f artifacts/macos-arm-build/checksum-macos-arm64.txt ]; then
+            echo "## macOS (Apple Silicon)" >> checksums.txt
+            cat artifacts/macos-arm-build/checksum-macos-arm64.txt >> checksums.txt
+            echo "" >> checksums.txt
+          fi
+          
+          cat checksums.txt
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: SyncLyrics ${{ steps.version.outputs.version }}
+          tag_name: ${{ needs.prepare.outputs.version }}
+          name: SyncLyrics ${{ needs.prepare.outputs.version }}
           files: |
-            SyncLyrics-${{ steps.version.outputs.version }}-windows-x64.zip
-            checksums-windows.txt
+            artifacts/windows-build/*.zip
+            artifacts/linux-build/*.tar.gz
+            artifacts/linux-build/*.AppImage
+            artifacts/macos-intel-build/*.zip
+            artifacts/macos-arm-build/*.zip
+            checksums.txt
           generate_release_notes: true
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Summary
-        shell: bash
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          PRERELEASE="${{ steps.version.outputs.prerelease }}"
-          CHECKSUM=$(cat checksums-windows.txt | cut -d' ' -f1)
+          VERSION="${{ needs.prepare.outputs.version }}"
           
-          echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Version" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
-          if [ "$PRERELEASE" == "true" ]; then
-            echo "- **Type:** ⚠️ Pre-release" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.prepare.outputs.prerelease }}" == "true" ]; then
+            echo "**Type:** ⚠️ Pre-release" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- **Type:** ✅ Stable" >> $GITHUB_STEP_SUMMARY
+            echo "**Type:** ✅ Stable" >> $GITHUB_STEP_SUMMARY
           fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | File | SHA256 |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows x64 | \`SyncLyrics-$VERSION-windows-x64.zip\` | \`${CHECKSUM:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- **Runner:** \`windows-latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Python:** \`3.12\`" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ github.event.inputs.debug_build }}" == "true" ]; then
-            echo "- **Mode:** 🐛 Debug (with console)" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Windows
+          if [ "${{ needs.build-windows.result }}" == "success" ]; then
+            echo "| Windows x64 | ✅ | \`SyncLyrics-$VERSION-windows-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- **Mode:** 📦 Release (no console)" >> $GITHUB_STEP_SUMMARY
+            echo "| Windows x64 | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Linux
+          if [ "${{ needs.build-linux.result }}" == "success" ]; then
+            echo "| Linux x64 | ✅ | \`SyncLyrics-$VERSION-linux-x64.tar.gz\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Linux x64 | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # macOS Intel
+          if [ "${{ needs.build-macos-intel.result }}" == "success" ]; then
+            echo "| macOS Intel | ✅ | \`SyncLyrics-$VERSION-macos-x64.zip\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| macOS Intel | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # macOS ARM
+          if [ "${{ needs.build-macos-arm.result }}" == "success" ]; then
+            echo "| macOS Apple Silicon | ✅ | \`SyncLyrics-$VERSION-macos-arm64.zip\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| macOS Apple Silicon | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
           fi
