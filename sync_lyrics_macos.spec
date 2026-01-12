@@ -126,6 +126,18 @@ a = Analysis(
         'faulthandler',
         'argparse',
         'ctypes',
+        
+        # === Encodings (required for macOS bundle) ===
+        'encodings',
+        'encodings.utf_8',
+        'encodings.ascii',
+        'encodings.latin_1',
+        'encodings.utf_16',
+        'encodings.utf_16_le',
+        'encodings.utf_16_be',
+        'encodings.cp1252',
+        'encodings.idna',
+        'codecs',
     ],
     hookspath=[],
     hooksconfig={},
@@ -160,7 +172,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,  # macOS app bundle should not show terminal
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -175,7 +187,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='SyncLyrics',
 )

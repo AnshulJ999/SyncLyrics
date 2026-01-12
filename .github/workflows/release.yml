@@ -278,7 +278,7 @@ jobs:
           # Remove Windows-only packages
           grep -v -E "^(winsdk|pywin32|pystray|desktop-notifier)" requirements.txt > requirements_macos.txt
           pip install -r requirements_macos.txt
-          pip install pyinstaller
+          pip install --upgrade pyinstaller
 
       - name: Convert icon to icns
         run: |
@@ -366,7 +366,7 @@ jobs:
           python -m pip install --upgrade pip
           grep -v -E "^(winsdk|pywin32|pystray|desktop-notifier)" requirements.txt > requirements_macos.txt
           pip install -r requirements_macos.txt
-          pip install pyinstaller
+          pip install --upgrade pyinstaller
 
       - name: Convert icon to icns
         run: |
