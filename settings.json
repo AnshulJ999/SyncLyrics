@@ -58,6 +58,10 @@
     "lyrics.display.spotify_latency_compensation": -0.5,
     "lyrics.display.update_interval": 0.1,
     "lyrics.display.word_sync_latency_compensation": -0.2,
+    "lyrics.font_family": "System Default",
+    "lyrics.font_weight": "Normal",
+    "lyrics.glow_intensity": 1.0,
+    "lyrics.text_color": "#ffffff",
     "media_source.linux.enabled": true,
     "media_source.linux.priority": 0,
     "media_source.music_assistant.enabled": false,
@@ -156,6 +160,7 @@
         "albumart"
     ],
     "ui.blur_strength": 10,
+    "ui.font_family": "System Default",
     "ui.minimal_mode.enabled": true,
     "ui.minimal_mode.hide_elements": [
         "bottom-nav",
