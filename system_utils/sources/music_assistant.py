@@ -147,7 +147,7 @@ async def _connect() -> bool:
         )
         
         # Connect with timeout
-        await asyncio.wait_for(_client.connect(), timeout=10.0)
+        await asyncio.wait_for(_client.connect(), timeout=4.0)
         
         _connected = True
         _reconnect_delay = 1  # Reset backoff on success
