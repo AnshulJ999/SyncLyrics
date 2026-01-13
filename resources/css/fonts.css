@@ -1,596 +1,112 @@
 /* ========== BUNDLED FONTS ========== */
-/* Font files should be placed in resources/fonts/bundled/<fontname>/ */
-/* Each font folder should contain woff2 files for different weights */
+/* Auto-generated from downloaded font files */
 
-/* Inter - Clean, UI-optimized */
-@font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/inter/Inter-Light.woff2') format('woff2'),
-         url('/fonts/bundled/inter/Inter-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/inter/Inter-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/inter/Inter-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/inter/Inter-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/inter/Inter-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/inter/Inter-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/inter/Inter-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/inter/Inter-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/inter/Inter-Bold.ttf') format('truetype');
-}
+/* Inter */
+@font-face { font-family: 'Inter'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/inter/inter-v20-latin-300.woff2') format('woff2'), url('/fonts/bundled/inter/inter-v20-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/inter/inter-v20-latin-500.woff2') format('woff2'), url('/fonts/bundled/inter/inter-v20-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/inter/inter-v20-latin-600.woff2') format('woff2'), url('/fonts/bundled/inter/inter-v20-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/inter/inter-v20-latin-700.woff2') format('woff2'), url('/fonts/bundled/inter/inter-v20-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/inter/inter-v20-latin-regular.woff2') format('woff2'), url('/fonts/bundled/inter/inter-v20-latin-regular.woff') format('woff'); }
 
-/* Outfit - Modern geometric */
-@font-face {
-    font-family: 'Outfit';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/outfit/Outfit-Light.woff2') format('woff2'),
-         url('/fonts/bundled/outfit/Outfit-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Outfit';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/outfit/Outfit-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/outfit/Outfit-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Outfit';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/outfit/Outfit-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/outfit/Outfit-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Outfit';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/outfit/Outfit-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/outfit/Outfit-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Outfit';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/outfit/Outfit-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/outfit/Outfit-Bold.ttf') format('truetype');
-}
+/* Outfit */
+@font-face { font-family: 'Outfit'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/outfit/outfit-v15-latin-300.woff2') format('woff2'), url('/fonts/bundled/outfit/outfit-v15-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Outfit'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/outfit/outfit-v15-latin-500.woff2') format('woff2'), url('/fonts/bundled/outfit/outfit-v15-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Outfit'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/outfit/outfit-v15-latin-600.woff2') format('woff2'), url('/fonts/bundled/outfit/outfit-v15-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Outfit'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/outfit/outfit-v15-latin-700.woff2') format('woff2'), url('/fonts/bundled/outfit/outfit-v15-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Outfit'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/outfit/outfit-v15-latin-regular.woff2') format('woff2'), url('/fonts/bundled/outfit/outfit-v15-latin-regular.woff') format('woff'); }
 
-/* Poppins - Friendly, rounded */
-@font-face {
-    font-family: 'Poppins';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/poppins/Poppins-Light.woff2') format('woff2'),
-         url('/fonts/bundled/poppins/Poppins-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Poppins';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/poppins/Poppins-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/poppins/Poppins-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Poppins';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/poppins/Poppins-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/poppins/Poppins-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Poppins';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/poppins/Poppins-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/poppins/Poppins-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Poppins';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/poppins/Poppins-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/poppins/Poppins-Bold.ttf') format('truetype');
-}
+/* Poppins */
+@font-face { font-family: 'Poppins'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/poppins/poppins-v24-latin-300.woff2') format('woff2'), url('/fonts/bundled/poppins/poppins-v24-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/poppins/poppins-v24-latin-500.woff2') format('woff2'), url('/fonts/bundled/poppins/poppins-v24-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/poppins/poppins-v24-latin-600.woff2') format('woff2'), url('/fonts/bundled/poppins/poppins-v24-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/poppins/poppins-v24-latin-700.woff2') format('woff2'), url('/fonts/bundled/poppins/poppins-v24-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/poppins/poppins-v24-latin-regular.woff2') format('woff2'), url('/fonts/bundled/poppins/poppins-v24-latin-regular.woff') format('woff'); }
 
-/* Open Sans - Humanist, readable */
-@font-face {
-    font-family: 'Open Sans';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/opensans/OpenSans-Light.woff2') format('woff2'),
-         url('/fonts/bundled/opensans/OpenSans-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Open Sans';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/opensans/OpenSans-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/opensans/OpenSans-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Open Sans';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/opensans/OpenSans-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/opensans/OpenSans-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Open Sans';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/opensans/OpenSans-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/opensans/OpenSans-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Open Sans';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/opensans/OpenSans-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/opensans/OpenSans-Bold.ttf') format('truetype');
-}
+/* Open Sans */
+@font-face { font-family: 'Open Sans'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/opensans/open-sans-v44-latin-300.woff2') format('woff2'), url('/fonts/bundled/opensans/open-sans-v44-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Open Sans'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/opensans/open-sans-v44-latin-500.woff2') format('woff2'), url('/fonts/bundled/opensans/open-sans-v44-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Open Sans'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/opensans/open-sans-v44-latin-600.woff2') format('woff2'), url('/fonts/bundled/opensans/open-sans-v44-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Open Sans'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/opensans/open-sans-v44-latin-700.woff2') format('woff2'), url('/fonts/bundled/opensans/open-sans-v44-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Open Sans'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/opensans/open-sans-v44-latin-regular.woff2') format('woff2'), url('/fonts/bundled/opensans/open-sans-v44-latin-regular.woff') format('woff'); }
 
-/* Nunito - Soft, rounded */
-@font-face {
-    font-family: 'Nunito';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/nunito/Nunito-Light.woff2') format('woff2'),
-         url('/fonts/bundled/nunito/Nunito-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Nunito';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/nunito/Nunito-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/nunito/Nunito-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Nunito';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/nunito/Nunito-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/nunito/Nunito-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Nunito';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/nunito/Nunito-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/nunito/Nunito-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Nunito';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/nunito/Nunito-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/nunito/Nunito-Bold.ttf') format('truetype');
-}
+/* Nunito */
+@font-face { font-family: 'Nunito'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/nunito/nunito-v32-latin-300.woff2') format('woff2'), url('/fonts/bundled/nunito/nunito-v32-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Nunito'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/nunito/nunito-v32-latin-500.woff2') format('woff2'), url('/fonts/bundled/nunito/nunito-v32-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Nunito'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/nunito/nunito-v32-latin-600.woff2') format('woff2'), url('/fonts/bundled/nunito/nunito-v32-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Nunito'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/nunito/nunito-v32-latin-700.woff2') format('woff2'), url('/fonts/bundled/nunito/nunito-v32-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Nunito'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/nunito/nunito-v32-latin-regular.woff2') format('woff2'), url('/fonts/bundled/nunito/nunito-v32-latin-regular.woff') format('woff'); }
 
-/* Roboto - Android default */
-@font-face {
-    font-family: 'Roboto';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/roboto/Roboto-Light.woff2') format('woff2'),
-         url('/fonts/bundled/roboto/Roboto-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Roboto';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/roboto/Roboto-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/roboto/Roboto-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Roboto';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/roboto/Roboto-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/roboto/Roboto-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Roboto';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/roboto/Roboto-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/roboto/Roboto-Bold.ttf') format('truetype');
-}
+/* Roboto */
+@font-face { font-family: 'Roboto'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/roboto/roboto-v50-latin-300.woff2') format('woff2'), url('/fonts/bundled/roboto/roboto-v50-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Roboto'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/roboto/roboto-v50-latin-500.woff2') format('woff2'), url('/fonts/bundled/roboto/roboto-v50-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Roboto'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/roboto/roboto-v50-latin-600.woff2') format('woff2'), url('/fonts/bundled/roboto/roboto-v50-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Roboto'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/roboto/roboto-v50-latin-700.woff2') format('woff2'), url('/fonts/bundled/roboto/roboto-v50-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Roboto'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/roboto/roboto-v50-latin-regular.woff2') format('woff2'), url('/fonts/bundled/roboto/roboto-v50-latin-regular.woff') format('woff'); }
 
-/* Montserrat - Urban, geometric */
-@font-face {
-    font-family: 'Montserrat';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/montserrat/Montserrat-Light.woff2') format('woff2'),
-         url('/fonts/bundled/montserrat/Montserrat-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Montserrat';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/montserrat/Montserrat-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/montserrat/Montserrat-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Montserrat';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/montserrat/Montserrat-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/montserrat/Montserrat-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Montserrat';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/montserrat/Montserrat-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/montserrat/Montserrat-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Montserrat';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/montserrat/Montserrat-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/montserrat/Montserrat-Bold.ttf') format('truetype');
-}
+/* Montserrat */
+@font-face { font-family: 'Montserrat'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/montserrat/montserrat-v31-latin-300.woff2') format('woff2'), url('/fonts/bundled/montserrat/montserrat-v31-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Montserrat'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/montserrat/montserrat-v31-latin-500.woff2') format('woff2'), url('/fonts/bundled/montserrat/montserrat-v31-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Montserrat'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/montserrat/montserrat-v31-latin-600.woff2') format('woff2'), url('/fonts/bundled/montserrat/montserrat-v31-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Montserrat'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/montserrat/montserrat-v31-latin-700.woff2') format('woff2'), url('/fonts/bundled/montserrat/montserrat-v31-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Montserrat'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/montserrat/montserrat-v31-latin-regular.woff2') format('woff2'), url('/fonts/bundled/montserrat/montserrat-v31-latin-regular.woff') format('woff'); }
 
-/* Work Sans - Friendly, versatile */
-@font-face {
-    font-family: 'Work Sans';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/worksans/WorkSans-Light.woff2') format('woff2'),
-         url('/fonts/bundled/worksans/WorkSans-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Work Sans';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/worksans/WorkSans-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/worksans/WorkSans-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Work Sans';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/worksans/WorkSans-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/worksans/WorkSans-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Work Sans';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/worksans/WorkSans-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/worksans/WorkSans-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Work Sans';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/worksans/WorkSans-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/worksans/WorkSans-Bold.ttf') format('truetype');
-}
+/* Work Sans */
+@font-face { font-family: 'Work Sans'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/worksans/work-sans-v24-latin-300.woff2') format('woff2'), url('/fonts/bundled/worksans/work-sans-v24-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Work Sans'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/worksans/work-sans-v24-latin-500.woff2') format('woff2'), url('/fonts/bundled/worksans/work-sans-v24-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Work Sans'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/worksans/work-sans-v24-latin-600.woff2') format('woff2'), url('/fonts/bundled/worksans/work-sans-v24-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Work Sans'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/worksans/work-sans-v24-latin-700.woff2') format('woff2'), url('/fonts/bundled/worksans/work-sans-v24-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Work Sans'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/worksans/work-sans-v24-latin-regular.woff2') format('woff2'), url('/fonts/bundled/worksans/work-sans-v24-latin-regular.woff') format('woff'); }
 
-/* Oswald - Condensed, impactful */
-@font-face {
-    font-family: 'Oswald';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/oswald/Oswald-Light.woff2') format('woff2'),
-         url('/fonts/bundled/oswald/Oswald-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Oswald';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/oswald/Oswald-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/oswald/Oswald-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Oswald';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/oswald/Oswald-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/oswald/Oswald-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Oswald';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/oswald/Oswald-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/oswald/Oswald-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Oswald';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/oswald/Oswald-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/oswald/Oswald-Bold.ttf') format('truetype');
-}
+/* Oswald */
+@font-face { font-family: 'Oswald'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/oswald/oswald-v57-latin-300.woff2') format('woff2'), url('/fonts/bundled/oswald/oswald-v57-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Oswald'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/oswald/oswald-v57-latin-500.woff2') format('woff2'), url('/fonts/bundled/oswald/oswald-v57-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Oswald'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/oswald/oswald-v57-latin-600.woff2') format('woff2'), url('/fonts/bundled/oswald/oswald-v57-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Oswald'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/oswald/oswald-v57-latin-700.woff2') format('woff2'), url('/fonts/bundled/oswald/oswald-v57-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Oswald'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/oswald/oswald-v57-latin-regular.woff2') format('woff2'), url('/fonts/bundled/oswald/oswald-v57-latin-regular.woff') format('woff'); }
 
-/* Raleway - Elegant, minimal */
-@font-face {
-    font-family: 'Raleway';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/raleway/Raleway-Light.woff2') format('woff2'),
-         url('/fonts/bundled/raleway/Raleway-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Raleway';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/raleway/Raleway-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/raleway/Raleway-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Raleway';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/raleway/Raleway-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/raleway/Raleway-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Raleway';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/raleway/Raleway-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/raleway/Raleway-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Raleway';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/raleway/Raleway-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/raleway/Raleway-Bold.ttf') format('truetype');
-}
+/* Raleway */
+@font-face { font-family: 'Raleway'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/raleway/raleway-v37-latin-300.woff2') format('woff2'), url('/fonts/bundled/raleway/raleway-v37-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Raleway'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/raleway/raleway-v37-latin-500.woff2') format('woff2'), url('/fonts/bundled/raleway/raleway-v37-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Raleway'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/raleway/raleway-v37-latin-600.woff2') format('woff2'), url('/fonts/bundled/raleway/raleway-v37-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Raleway'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/raleway/raleway-v37-latin-700.woff2') format('woff2'), url('/fonts/bundled/raleway/raleway-v37-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Raleway'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/raleway/raleway-v37-latin-regular.woff2') format('woff2'), url('/fonts/bundled/raleway/raleway-v37-latin-regular.woff') format('woff'); }
 
-/* Bebas Neue - All-caps, strong */
-@font-face {
-    font-family: 'Bebas Neue';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/bebasneue/BebasNeue-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/bebasneue/BebasNeue-Regular.ttf') format('truetype');
-}
+/* Bebas Neue */
+@font-face { font-family: 'Bebas Neue'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/bebasneue/bebas-neue-v16-latin-regular.woff2') format('woff2'), url('/fonts/bundled/bebasneue/bebas-neue-v16-latin-regular.woff') format('woff'); }
 
-/* Space Grotesk - Dynamic, techy */
-@font-face {
-    font-family: 'Space Grotesk';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Light.woff2') format('woff2'),
-         url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Space Grotesk';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Space Grotesk';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Space Grotesk';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/spacegrotesk/SpaceGrotesk-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/spacegrotesk/SpaceGrotesk-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Space Grotesk';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/spacegrotesk/SpaceGrotesk-Bold.ttf') format('truetype');
-}
+/* Space Grotesk */
+@font-face { font-family: 'Space Grotesk'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-300.woff2') format('woff2'), url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-500.woff2') format('woff2'), url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-600.woff2') format('woff2'), url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-700.woff2') format('woff2'), url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-regular.woff2') format('woff2'), url('/fonts/bundled/spacegrotesk/space-grotesk-v22-latin-regular.woff') format('woff'); }
 
-/* Playfair Display - High contrast, luxurious */
-@font-face {
-    font-family: 'Playfair Display';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Playfair Display';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Playfair Display';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/playfairdisplay/PlayfairDisplay-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/playfairdisplay/PlayfairDisplay-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Playfair Display';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/playfairdisplay/PlayfairDisplay-Bold.ttf') format('truetype');
-}
+/* Playfair Display */
+@font-face { font-family: 'Playfair Display'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-500.woff2') format('woff2'), url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-600.woff2') format('woff2'), url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-700.woff2') format('woff2'), url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-regular.woff2') format('woff2'), url('/fonts/bundled/playfairdisplay/playfair-display-v40-latin-regular.woff') format('woff'); }
 
-/* Lora - Calligraphic, readable */
-@font-face {
-    font-family: 'Lora';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/lora/Lora-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/lora/Lora-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Lora';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/lora/Lora-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/lora/Lora-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Lora';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/lora/Lora-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/lora/Lora-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Lora';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/lora/Lora-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/lora/Lora-Bold.ttf') format('truetype');
-}
+/* Lora */
+@font-face { font-family: 'Lora'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/lora/lora-v37-latin-500.woff2') format('woff2'), url('/fonts/bundled/lora/lora-v37-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Lora'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/lora/lora-v37-latin-600.woff2') format('woff2'), url('/fonts/bundled/lora/lora-v37-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Lora'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/lora/lora-v37-latin-700.woff2') format('woff2'), url('/fonts/bundled/lora/lora-v37-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Lora'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/lora/lora-v37-latin-regular.woff2') format('woff2'), url('/fonts/bundled/lora/lora-v37-latin-regular.woff') format('woff'); }
 
-/* Fraunces - Modern serif */
-@font-face {
-    font-family: 'Fraunces';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/bundled/fraunces/Fraunces-Light.woff2') format('woff2'),
-         url('/fonts/bundled/fraunces/Fraunces-Light.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Fraunces';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/bundled/fraunces/Fraunces-Regular.woff2') format('woff2'),
-         url('/fonts/bundled/fraunces/Fraunces-Regular.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Fraunces';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('/fonts/bundled/fraunces/Fraunces-Medium.woff2') format('woff2'),
-         url('/fonts/bundled/fraunces/Fraunces-Medium.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Fraunces';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/bundled/fraunces/Fraunces-SemiBold.woff2') format('woff2'),
-         url('/fonts/bundled/fraunces/Fraunces-SemiBold.ttf') format('truetype');
-}
-@font-face {
-    font-family: 'Fraunces';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/bundled/fraunces/Fraunces-Bold.woff2') format('woff2'),
-         url('/fonts/bundled/fraunces/Fraunces-Bold.ttf') format('truetype');
-}
+/* Fraunces */
+@font-face { font-family: 'Fraunces'; font-weight: 300; font-display: swap; src: url('/fonts/bundled/fraunces/fraunces-v38-latin-300.woff2') format('woff2'), url('/fonts/bundled/fraunces/fraunces-v38-latin-300.woff') format('woff'); }
+@font-face { font-family: 'Fraunces'; font-weight: 500; font-display: swap; src: url('/fonts/bundled/fraunces/fraunces-v38-latin-500.woff2') format('woff2'), url('/fonts/bundled/fraunces/fraunces-v38-latin-500.woff') format('woff'); }
+@font-face { font-family: 'Fraunces'; font-weight: 600; font-display: swap; src: url('/fonts/bundled/fraunces/fraunces-v38-latin-600.woff2') format('woff2'), url('/fonts/bundled/fraunces/fraunces-v38-latin-600.woff') format('woff'); }
+@font-face { font-family: 'Fraunces'; font-weight: 700; font-display: swap; src: url('/fonts/bundled/fraunces/fraunces-v38-latin-700.woff2') format('woff2'), url('/fonts/bundled/fraunces/fraunces-v38-latin-700.woff') format('woff'); }
+@font-face { font-family: 'Fraunces'; font-weight: 400; font-display: swap; src: url('/fonts/bundled/fraunces/fraunces-v38-latin-regular.woff2') format('woff2'), url('/fonts/bundled/fraunces/fraunces-v38-latin-regular.woff') format('woff'); }
 
 /* ========== CSS VARIABLES FOR FONTS & STYLING ========== */
 :root {
-    /* System font stack - used as fallback and default */
     --system-font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    
-    /* Font families - set dynamically via JavaScript from config */
     --ui-font-family: var(--system-font-stack);
     --lyrics-font-family: var(--system-font-stack);
-    
-    /* Lyrics styling - set dynamically via JavaScript from config */
     --lyrics-glow-intensity: 1;
     --lyrics-text-color: #ffffff;
     --lyrics-font-weight: 400;
+    --lyrics-font-weight-current: 500;
 }
-
-/* ========== FONT WEIGHT MAPPING ========== */
-/* Maps display names to CSS values */
-/* Light = 300, Normal = 400, Medium = 500, Semi-Bold = 600, Bold = 700 */

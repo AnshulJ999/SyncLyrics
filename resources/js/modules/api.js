@@ -144,8 +144,11 @@ export async function getConfig() {
         if (config.lyricsFontWeight) {
             // Map display names to CSS values
             const weightMap = { 'Light': 300, 'Normal': 400, 'Medium': 500, 'Semi-Bold': 600, 'Bold': 700 };
-            const weight = weightMap[config.lyricsFontWeight] || 400;
-            document.documentElement.style.setProperty('--lyrics-font-weight', weight);
+            const baseWeight = weightMap[config.lyricsFontWeight] || 400;
+            // Current line is one step heavier (capped at 700)
+            const currentWeight = Math.min(baseWeight + 100, 700);
+            document.documentElement.style.setProperty('--lyrics-font-weight', baseWeight);
+            document.documentElement.style.setProperty('--lyrics-font-weight-current', currentWeight);
         }
 
         // Set soft album art mode from server config only if URL didn't explicitly set it

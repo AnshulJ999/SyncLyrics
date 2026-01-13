@@ -147,7 +147,7 @@ body {
     /* Configurable styling */
     font-family: var(--lyrics-font-family, inherit);
     color: var(--lyrics-text-color, #ffffff);
-    font-weight: var(--lyrics-font-weight, 500);
+    font-weight: var(--lyrics-font-weight-current, 500);
     
     transform: scale(1.02);
     letter-spacing: 0.5px;
@@ -1913,23 +1913,24 @@ body.soft-mode .background-overlay {
 /* Words not yet sung (upcoming) */
 .word-upcoming {
     opacity: 0.6;
-    color: rgba(255, 255, 255, 0.7);
+    /* Use lyrics color with reduced opacity */
+    color: color-mix(in srgb, var(--lyrics-text-color, white) 70%, transparent);
 }
 
 /* Words already sung */
 .word-sung {
     opacity: 1;
-    color: white;
+    color: var(--lyrics-text-color, white);
 }
 
 /* Currently active word - FADE style */
 /* Uses CSS gradient mask to reveal the word progressively */
 .word-active {
     opacity: 1;
-    color: white;
+    color: var(--lyrics-text-color, white);
     /* font-weight: 600; */  /* Commented out to prevent wrap flicker */
-    /* Subtle glow for active word */
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    /* Subtle glow for active word - uses configurable intensity */
+    text-shadow: 0 0 calc(15px * var(--lyrics-glow-intensity, 1)) color-mix(in srgb, var(--lyrics-text-color, white) 50%, transparent);
     /* GPU layer promotion - only for the active word, not all words */
     will-change: transform, opacity;
 }
@@ -1938,10 +1939,10 @@ body.soft-mode .background-overlay {
 .word-sync-fade .word-active {
     background: linear-gradient(
         90deg,
-        white 0%,
-        white var(--word-progress, 0%),
-        rgba(255, 255, 255, 0.5) var(--word-progress, 0%),
-        rgba(255, 255, 255, 0.5) 100%
+        var(--lyrics-text-color, white) 0%,
+        var(--lyrics-text-color, white) var(--word-progress, 0%),
+        color-mix(in srgb, var(--lyrics-text-color, white) 50%, transparent) var(--word-progress, 0%),
+        color-mix(in srgb, var(--lyrics-text-color, white) 50%, transparent) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
@@ -1961,7 +1962,7 @@ body.soft-mode .background-overlay {
 .word-sync-fade .word-sung,
 .word-sync-pop .word-sung {
     opacity: 1;
-    color: white;
+    color: var(--lyrics-text-color, white);
     /* font-weight: 500; */  /* Commented out to prevent wrap flicker */
 }
 
