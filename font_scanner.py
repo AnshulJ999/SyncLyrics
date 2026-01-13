@@ -73,6 +73,9 @@ def _scan_custom_fonts_uncached(fonts_dir: Path) -> Dict[str, List[Tuple[Path, i
     """
     Internal: Scan custom fonts directory without caching.
     Recursively scans subdirectories to support folder-based font downloads.
+    
+    Prefers variable fonts: if a directory contains a variable font file,
+    the 'static' subdirectory is skipped to avoid duplicate entries.
     """
     fonts = {}
     custom_dir = fonts_dir / "custom"
@@ -80,11 +83,27 @@ def _scan_custom_fonts_uncached(fonts_dir: Path) -> Dict[str, List[Tuple[Path, i
     if not custom_dir.exists():
         return fonts
     
-    # Use rglob to recursively find font files in subdirectories
+    # First, identify directories that contain variable fonts
+    # so we can skip their 'static' subdirectories
+    dirs_with_variable_fonts = set()
+    for file in custom_dir.rglob('*VariableFont*.ttf'):
+        dirs_with_variable_fonts.add(file.parent)
+    for file in custom_dir.rglob('*VariableFont*.woff2'):
+        dirs_with_variable_fonts.add(file.parent)
+    
+    # Now scan for font files
     for ext in ['.woff2', '.woff', '.ttf', '.otf']:
         for file in custom_dir.rglob(f'*{ext}'):
             if file.name.startswith('.'):
                 continue  # Skip hidden files
+            
+            # Skip files in 'static' subdirectories if parent has variable font
+            if 'static' in file.parts:
+                # Find the parent directory that contains the 'static' folder
+                static_idx = file.parts.index('static')
+                parent_of_static = Path(*file.parts[:static_idx])
+                if parent_of_static in dirs_with_variable_fonts:
+                    continue  # Skip - variable font exists, prefer it
             
             family_name, weight = get_font_info(file)
             
