@@ -22,7 +22,7 @@ homeassistant-addons/
 backups/
 # share_project.py
 .cursor
-
+resources/fonts/custom
 
 album_art_database
 
