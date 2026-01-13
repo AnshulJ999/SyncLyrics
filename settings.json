@@ -65,7 +65,7 @@
     "media_source.linux.enabled": true,
     "media_source.linux.priority": 0,
     "media_source.music_assistant.enabled": true,
-    "media_source.music_assistant.priority": 2,
+    "media_source.music_assistant.priority": -1,
     "media_source.spicetify.enabled": true,
     "media_source.spicetify.priority": 0,
     "media_source.spotify.enabled": true,
