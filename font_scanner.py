@@ -127,6 +127,7 @@ def generate_custom_css(fonts_dir: Path) -> str:
         return _cached_css
     
     fonts = scan_custom_fonts(fonts_dir)
+    custom_dir = fonts_dir / "custom"
     
     if not fonts:
         _cached_css = "/* No custom fonts found */"
@@ -149,9 +150,12 @@ def generate_custom_css(fonts_dir: Path) -> str:
             else:
                 fmt = 'truetype'
             
+            # Use relative path from custom/ to support subdirectories
+            relative_path = file_path.relative_to(custom_dir).as_posix()
+            
             lines.append(
                 f"@font-face {{ font-family: '{font_name}'; font-weight: {weight}; "
-                f"font-display: swap; src: url('/fonts/custom/{file_path.name}') format('{fmt}'); }}"
+                f"font-display: swap; src: url('/fonts/custom/{relative_path}') format('{fmt}'); }}"
             )
     
     _cached_css = '\n'.join(lines)
