@@ -307,6 +307,16 @@ async def cleanup() -> None:
         except Exception as e:
             logger.error(f"Failed to stop audio recognition: {e}")
     
+    # Stop Music Assistant background connection task
+    logger.debug("CLEANUP: Stopping Music Assistant background connection...")
+    if 'system_utils.sources.music_assistant' in sys.modules:
+        try:
+            from system_utils.sources.music_assistant import stop_background_connection
+            stop_background_connection()
+            logger.debug("CLEANUP: Music Assistant background connection stopped")
+        except Exception as e:
+            logger.debug(f"Failed to stop MA background connection: {e}")
+    
     # Fix C2: REMOVED sd.stop() call
     # Calling sd.stop() while an InputStream is blocked in a C-level call (in the daemon thread)
     # can cause PortAudio deadlock on Windows, hanging the entire cleanup process.

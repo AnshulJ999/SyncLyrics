@@ -40,6 +40,10 @@ _listening = False
 _last_connect_attempt = 0
 _reconnect_delay = 1  # Start at 1 second, exponential backoff
 
+# Background connection management (non-blocking)
+_connection_lock: Optional[asyncio.Lock] = None  # Created lazily for event loop safety
+_connecting = False  # Fast check to avoid duplicate connection tasks
+
 # State cache (updated by WebSocket events)
 _current_player_id: Optional[str] = None
 _current_queue_id: Optional[str] = None
@@ -82,6 +86,19 @@ def is_configured() -> bool:
 def is_connected() -> bool:
     """Check if connected to Music Assistant server."""
     return _connected and _client is not None
+
+
+def is_ready() -> bool:
+    """Check if MA is connected and listening (non-blocking)."""
+    return _connected and _client is not None and _listening
+
+
+def _get_connection_lock() -> asyncio.Lock:
+    """Get or create the connection lock (lazy init for event loop safety)."""
+    global _connection_lock
+    if _connection_lock is None:
+        _connection_lock = asyncio.Lock()
+    return _connection_lock
 
 
 async def _connect() -> bool:
@@ -207,10 +224,55 @@ async def _start_listening():
 
 
 async def _ensure_connected() -> bool:
-    """Ensure we're connected, attempt reconnection if needed."""
+    """Ensure we're connected, attempt reconnection if needed (BLOCKING - legacy)."""
     if _connected and _client and _listening:
         return True
     return await _connect()
+
+
+async def _ensure_connected_nonblocking() -> bool:
+    """
+    Check connection, trigger background reconnect if needed.
+    
+    NEVER BLOCKS - returns immediately.
+    If not connected, schedules background connection task.
+    Use this in get_metadata() and frequent poll paths.
+    """
+    global _connection_task, _connecting
+    
+    if is_ready():
+        return True
+    
+    # Not connected - trigger background connection if not already running
+    if not _connecting and (_connection_task is None or _connection_task.done()):
+        _connecting = True
+        _connection_task = asyncio.create_task(_background_connect())
+    
+    return False  # Not ready yet - caller should return None
+
+
+async def _background_connect():
+    """
+    Background connection task with exponential backoff.
+    
+    Runs until connected or cancelled. Uses lock to prevent
+    multiple simultaneous connection attempts.
+    """
+    global _connecting
+    
+    async with _get_connection_lock():
+        try:
+            while not _connected:
+                success = await _connect()
+                if success:
+                    break
+                
+                # Wait before retry (exponential backoff already handled in _connect)
+                await asyncio.sleep(_reconnect_delay)
+        except asyncio.CancelledError:
+            logger.debug("Background connection task cancelled")
+        finally:
+            _connecting = False
 
 
 def _get_target_player_id() -> Optional[str]:
@@ -358,7 +420,7 @@ class MusicAssistantSource(BaseMetadataSource):
         global _metadata_cache, _cache_time, _current_player_id, _last_active_time
         
         # Ensure connected
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return None
         
         try:
@@ -511,7 +573,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def toggle_playback(self) -> bool:
         """Toggle play/pause on the active queue."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -528,7 +590,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def play(self) -> bool:
         """Resume playback."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -544,7 +606,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def pause(self) -> bool:
         """Pause playback."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -560,7 +622,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def next_track(self) -> bool:
         """Skip to next track."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -576,7 +638,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def previous_track(self) -> bool:
         """Skip to previous track."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -592,7 +654,7 @@ class MusicAssistantSource(BaseMetadataSource):
     
     async def seek(self, position_ms: int) -> bool:
         """Seek to position in milliseconds."""
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -615,7 +677,7 @@ class MusicAssistantSource(BaseMetadataSource):
         Returns queue in Spotify-compatible format for frontend compatibility.
         Only returns songs AFTER the current playing song, not history.
         """
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return None
         
         try:
@@ -706,7 +768,7 @@ class MusicAssistantSource(BaseMetadataSource):
             if cache_age < FAVORITE_CACHE_TTL:
                 return _favorite_cache[item_id]
         
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -749,7 +811,7 @@ class MusicAssistantSource(BaseMetadataSource):
             logger.debug(f"Music Assistant add_to_favorites: item_id is empty/None")
             return False
         
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -792,7 +854,7 @@ class MusicAssistantSource(BaseMetadataSource):
             logger.debug(f"Music Assistant remove_from_favorites: item_id is empty/None")
             return False
         
-        if not await _ensure_connected():
+        if not await _ensure_connected_nonblocking():
             return False
         
         try:
@@ -811,4 +873,44 @@ class MusicAssistantSource(BaseMetadataSource):
         except Exception as e:
             logger.debug(f"Music Assistant remove_from_favorites failed: {e}")
             return False
+
+
+# =============================================================================
+# Lifecycle Management (Non-blocking connection startup/shutdown)
+# =============================================================================
+
+def start_background_connection():
+    """
+    Start background connection task at app startup.
+    
+    Call this when MA is configured to begin connection in background.
+    Non-blocking - connection happens asynchronously.
+    """
+    global _connection_task, _connecting
+    
+    if not is_configured():
+        return
+    
+    if _connecting or (_connection_task and not _connection_task.done()):
+        return  # Already connecting
+    
+    _connecting = True
+    _connection_task = asyncio.create_task(_background_connect())
+    logger.debug("Started Music Assistant background connection task")
+
+
+def stop_background_connection():
+    """
+    Cancel background connection task on shutdown.
+    
+    Call this on app exit for clean shutdown.
+    """
+    global _connection_task, _connecting
+    
+    _connecting = False
+    if _connection_task and not _connection_task.done():
+        _connection_task.cancel()
+        _connection_task = None
+        logger.debug("Cancelled Music Assistant background connection task")
+
 
