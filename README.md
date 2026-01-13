@@ -1,10 +1,10 @@
 # SyncLyrics
 
-A feature-rich desktop and web application that displays synchronized lyrics for your currently playing music. Supports Spotify, Windows Media, and audio recognition.
+A feature-rich lyrics server that displays synchronized lyrics for your currently playing music. Supports multiple platforms and audio sources, including Spotify, Windows Media, Linux, macOS, and audio recognition.
 
 This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). SyncLyrics aims to be a visual companion to the music experience, built for tablet dashboards.
 
-> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Linux *may* work but is untested. Can be used with Home Assistant as an addon. Now supports Docker. 
+> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Can be used with Home Assistant as an addon. Now supports Docker and multi-platform. 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
@@ -30,7 +30,7 @@ _Video demo showcasing the app's main features_
 
 ### 🎨 Visual Modes
 - **Background Styles:** Sharp, Soft, and Blur modes for album art display
-- **Visual Mode:** Activates during instrumentals with artist image slideshow
+- **Visual Mode:** Activates during instrumentals with optional artist image slideshow
 - **Album Art Database:** Caches high-quality art from iTunes, Spotify and LastFM (requires API key)
 - **Artist Images:** Fetches from Deezer, FanArt.tv, TheAudioDB, Spotify
 
@@ -114,12 +114,16 @@ Then extract the new version and replace any old files. This should maintain you
 
 > **Note:** macOS builds are unsigned. You'll need to allow the app through Gatekeeper on first run.
 
+For full support on macOS, it is recommended to install `nowplaying-cli` via Homebrew. Simply run this command: 
+
+`brew install nowplaying-cli`
+
 ### Option 4: Home Assistant Addon
 
 1. Add https://github.com/AnshulJ999/homeassistant-addons as a repository to your Home Assistant addon store
 2. Install the SyncLyrics addon
 3. Configure environment variables in addon settings
-4. Start the addon and access via Ingress or direct URL
+4. Start the addon and access via direct URL
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Addon-blue)](https://github.com/AnshulJ999/homeassistant-addons)
 
