@@ -106,17 +106,24 @@ Then extract the new version and replace any old files. This should maintain you
 2. Download:
    - `SyncLyrics-vX.X.X-macos-x64.zip` (Intel Macs)
    - `SyncLyrics-vX.X.X-macos-arm64.zip` (Apple Silicon)
-3. Extract and move `SyncLyrics.app` to Applications
+3. Extract the zip - you'll get a `SyncLyrics` folder
 4. **First launch** (bypass Gatekeeper):
-   - Right-click → Open (not double-click)
-   - Click "Open" in the warning dialog
-   - If blocked: System Preferences → Security → "Open Anyway"
+   ```bash
+   cd /path/to/SyncLyrics
+   xattr -cr .  # Remove quarantine attributes
+   ./sync_lyrics
+   ```
+   Or right-click the executable → Open → click "Open" in the warning dialog.
 
-> **Note:** macOS builds are unsigned. You'll need to allow the app through Gatekeeper on first run.
+> **Note:** macOS builds are unsigned, so you'll need to allow them through Gatekeeper on first run.
 
 For full support on macOS, it is recommended to install `nowplaying-cli` via Homebrew. Simply run this command: 
 
-`brew install nowplaying-cli`
+```bash
+brew install nowplaying-cli
+```
+
+Without it, only Apple Music and Spotify are detected. With it, any app that shows in Control Center works (Firefox, VLC, etc.).
 
 ### Option 4: Home Assistant Addon
 
@@ -208,13 +215,15 @@ The app auto-generates a self-signed certificate. You'll need to accept the brow
 
 ## 🛠️ Build
 
-To create a standalone Windows executable yourself:
+To create a standalone Windows/Linux/macOS executable yourself:
+
+Clone the repo and then run this command: 
 
 ```bash
 python build.py
 ```
 
-Output: `build_final/SyncLyrics/SyncLyrics.exe`
+Output: `build_final/SyncLyrics/`
 
 ---
 
@@ -224,6 +233,8 @@ Detailed guides for all features:
 - [Quick Start](docs/Quick%20Start.md) - Get running in 5 minutes
 - [FAQ](docs/FAQ.md) - Common questions answered
 - [Features Overview](docs/Features%20Overview.md)
+- [Linux Support](docs/Linux%20Support.md) - MPRIS via playerctl
+- [macOS Support](docs/macOS%20Support.md) - Now Playing via nowplaying-cli
 - [Word Sync and Karaoke](docs/Word%20Sync%20and%20Karaoke.md)
 - [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
 - [Audio Recognition](docs/Audio%20Recognition.md)
