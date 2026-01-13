@@ -3,15 +3,24 @@ Font Scanner Module
 
 Scans custom fonts directory and generates CSS @font-face rules.
 Extracts font family names directly from font file metadata using fonttools.
+
+IMPORTANT: Results are cached at first access. Adding new custom fonts
+requires a server restart.
 """
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Lazy import to avoid loading fonttools unless needed
 _TTFont = None
+
+# Cache for font data (populated once, never re-scanned)
+_cached_fonts: Optional[Dict[str, List[Tuple[Path, int]]]] = None
+_cached_css: Optional[str] = None
+_cached_font_names: Optional[List[str]] = None
+
 
 def _get_ttfont():
     """Lazy load fonttools.TTFont to avoid startup overhead."""
@@ -25,6 +34,9 @@ def _get_ttfont():
 def get_font_info(font_path: Path) -> Tuple[str, int]:
     """
     Extract font family name and weight from font file metadata.
+    
+    Supports variable fonts (e.g., Rubik-VariableFont_wght.ttf) by reading
+    from the embedded name table.
     
     Returns:
         Tuple of (family_name, weight) where weight is 100-900
@@ -44,6 +56,7 @@ def get_font_info(font_path: Path) -> Tuple[str, int]:
                     continue
         
         # Try to get weight from OS/2 table
+        # For variable fonts, this is typically 400 (the default instance)
         weight = 400
         if 'OS/2' in font:
             weight = font['OS/2'].usWeightClass
@@ -56,12 +69,9 @@ def get_font_info(font_path: Path) -> Tuple[str, int]:
         return font_path.stem, 400
 
 
-def scan_custom_fonts(fonts_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
+def _scan_custom_fonts_uncached(fonts_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     """
-    Scan custom fonts directory and return font info.
-    
-    Returns:
-        Dict mapping font family names to list of (file_path, weight) tuples
+    Internal: Scan custom fonts directory without caching.
     """
     fonts = {}
     custom_dir = fonts_dir / "custom"
@@ -84,17 +94,42 @@ def scan_custom_fonts(fonts_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     return fonts
 
 
+def scan_custom_fonts(fonts_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
+    """
+    Scan custom fonts directory and return font info.
+    Results are cached after first call.
+    
+    Returns:
+        Dict mapping font family names to list of (file_path, weight) tuples
+    """
+    global _cached_fonts
+    if _cached_fonts is None:
+        logger.info("Scanning custom fonts directory (one-time)")
+        _cached_fonts = _scan_custom_fonts_uncached(fonts_dir)
+        if _cached_fonts:
+            logger.info(f"Found {len(_cached_fonts)} custom font(s): {list(_cached_fonts.keys())}")
+        else:
+            logger.info("No custom fonts found")
+    return _cached_fonts
+
+
 def generate_custom_css(fonts_dir: Path) -> str:
     """
     Generate @font-face CSS rules for all custom fonts.
+    Results are cached after first call.
     
     Returns:
         CSS string with @font-face declarations
     """
+    global _cached_css
+    if _cached_css is not None:
+        return _cached_css
+    
     fonts = scan_custom_fonts(fonts_dir)
     
     if not fonts:
-        return "/* No custom fonts found */"
+        _cached_css = "/* No custom fonts found */"
+        return _cached_css
     
     lines = ["/* ========== CUSTOM FONTS ========== */"]
     
@@ -118,14 +153,20 @@ def generate_custom_css(fonts_dir: Path) -> str:
                 f"font-display: swap; src: url('/fonts/custom/{file_path.name}') format('{fmt}'); }}"
             )
     
-    return '\n'.join(lines)
+    _cached_css = '\n'.join(lines)
+    return _cached_css
 
 
 def get_custom_font_names(fonts_dir: Path) -> List[str]:
     """
     Get list of available custom font family names.
+    Results are cached after first call.
     
     Returns:
         Sorted list of font family names
     """
-    return sorted(scan_custom_fonts(fonts_dir).keys())
+    global _cached_font_names
+    if _cached_font_names is None:
+        _cached_font_names = sorted(scan_custom_fonts(fonts_dir).keys())
+    return _cached_font_names
+

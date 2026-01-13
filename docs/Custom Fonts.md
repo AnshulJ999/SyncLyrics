@@ -1,6 +1,8 @@
 # Custom Fonts
 
-Place your `.ttf` or `.woff2` font files in this folder.
+Place your `.ttf` or `.woff2` custom font files in:
+
+`resources/fonts/custom`
 
 ## How It Works
 
@@ -15,15 +17,22 @@ Place your `.ttf` or `.woff2` font files in this folder.
 - `.ttf`
 - `.otf`
 
-## Naming Convention
+## Where to Get Fonts
 
-The font name shown in the dropdown is derived from the filename:
-- `MyFont-Regular.woff2` → "MyFont"
-- `Open_Sans.ttf` → "Open Sans"
-- `Roboto-Bold.woff2` → "Roboto"
+- [Google Fonts](https://fonts.google.com) - download TTF files
+- [Font Squirrel](https://www.fontsquirrel.com) - free commercial fonts
+
+## Font Names
+
+The font name shown in the dropdown is extracted from the font file's 
+internal metadata (the "name table"). This means:
+
+- The filename doesn't matter for display purposes
+- Variable fonts like `Rubik-VariableFont_wght.ttf` show as "Rubik"
+- If metadata can't be read, the filename is used as fallback
 
 ## Notes
 
 - Fonts are scanned once at startup
 - Invalid font files are skipped with a warning in the log
-- For variable fonts, use the standard weight (Regular/400)
+- Variable fonts work too; they'll just use default weight.
