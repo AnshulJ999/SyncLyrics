@@ -15,3 +15,9 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.vbs text eol=crlf
+
+# Treat font files as binary (prevents diff clutter)
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
