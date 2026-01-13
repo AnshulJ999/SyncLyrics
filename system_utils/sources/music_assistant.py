@@ -520,6 +520,14 @@ class MusicAssistantSource(BaseMetadataSource):
             # IMPORTANT: Only use corrected_elapsed_time when PLAYING
             # When paused/stopped, use raw elapsed_time to avoid infinite interpolation
             # (corrected_elapsed_time interpolates based on queue.state, which can get stuck)
+            #
+            # TODO: MA Server PR #2959 (Jan 2026) adds elapsed_time_updated_at from server
+            # This will eliminate clock drift between MA server and client by providing
+            # the server's timestamp when elapsed_time was measured.
+            # Track: https://github.com/music-assistant/server/pull/2959
+            # When merged, update to use server timestamp instead of client time.time()
+            # Current workaround: users adjust music_assistant_latency_compensation setting
+            #
             if is_playing:
                 position = queue.corrected_elapsed_time if queue.corrected_elapsed_time is not None else 0
             else:
