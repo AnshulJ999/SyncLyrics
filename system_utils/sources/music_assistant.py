@@ -43,6 +43,7 @@ _reconnect_delay = 1  # Start at 1 second, exponential backoff
 # Background connection management (non-blocking)
 _connection_lock: Optional[asyncio.Lock] = None  # Created lazily for event loop safety
 _connecting = False  # Fast check to avoid duplicate connection tasks
+_listener_task: Optional[asyncio.Task] = None  # Track listener to prevent duplicates
 
 # State cache (updated by WebSocket events)
 _current_player_id: Optional[str] = None
@@ -156,7 +157,11 @@ async def _connect() -> bool:
         
         # Start listening in background to receive player/queue updates
         # This populates _client.players.players and _client.player_queues.player_queues
-        asyncio.create_task(_start_listening())
+        # Cancel any existing listener first to prevent duplicates
+        global _listener_task
+        if _listener_task and not _listener_task.done():
+            _listener_task.cancel()
+        _listener_task = asyncio.create_task(_start_listening())
         
         return True
         
@@ -901,16 +906,49 @@ def start_background_connection():
 
 def stop_background_connection():
     """
-    Cancel background connection task on shutdown.
+    Cancel background connection task and disconnect client on shutdown.
     
     Call this on app exit for clean shutdown.
     """
-    global _connection_task, _connecting
+    global _connection_task, _connecting, _listener_task, _client, _connected, _listening
     
     _connecting = False
+    
+    # Cancel background connection task
     if _connection_task and not _connection_task.done():
         _connection_task.cancel()
         _connection_task = None
         logger.debug("Cancelled Music Assistant background connection task")
+    
+    # Cancel listener task
+    if _listener_task and not _listener_task.done():
+        _listener_task.cancel()
+        _listener_task = None
+        logger.debug("Cancelled Music Assistant listener task")
+    
+    # Disconnect client (sync wrapper - schedules async disconnect)
+    if _client:
+        try:
+            # Try to get running loop and schedule disconnect
+            loop = asyncio.get_running_loop()
+            loop.create_task(_disconnect_client())
+        except RuntimeError:
+            # No running loop - we're in sync context during shutdown
+            # Client will be garbage collected, which triggers cleanup
+            pass
+        _client = None
+        _connected = False
+        _listening = False
+        logger.debug("Music Assistant client marked for disconnect")
 
+
+async def _disconnect_client():
+    """Helper to disconnect client asynchronously."""
+    global _client
+    if _client:
+        try:
+            await _client.disconnect()
+            logger.debug("Music Assistant client disconnected")
+        except Exception as e:
+            logger.debug(f"Error disconnecting MA client: {e}")
 
