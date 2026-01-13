@@ -330,8 +330,8 @@ class MacOSSource(BaseMetadataSource):
             try:
                 duration_val = float(lines[3].strip())
                 # Spotify returns duration in ms, Music.app in seconds
-                # Heuristic: if > 1000, it's probably milliseconds
-                if duration_val > 1000:
+                # Heuristic: if > 10000, it's probably milliseconds
+                if duration_val > 10000:
                     duration_ms = int(duration_val)
                 else:
                     duration_ms = int(duration_val * 1000)
