@@ -72,6 +72,7 @@ def get_font_info(font_path: Path) -> Tuple[str, int]:
 def _scan_custom_fonts_uncached(fonts_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     """
     Internal: Scan custom fonts directory without caching.
+    Recursively scans subdirectories to support folder-based font downloads.
     """
     fonts = {}
     custom_dir = fonts_dir / "custom"
@@ -79,17 +80,17 @@ def _scan_custom_fonts_uncached(fonts_dir: Path) -> Dict[str, List[Tuple[Path, i
     if not custom_dir.exists():
         return fonts
     
-    for file in custom_dir.iterdir():
-        if file.suffix.lower() not in ['.woff2', '.woff', '.ttf', '.otf']:
-            continue
-        if file.name.startswith('.'):
-            continue  # Skip hidden files
-        
-        family_name, weight = get_font_info(file)
-        
-        if family_name not in fonts:
-            fonts[family_name] = []
-        fonts[family_name].append((file, weight))
+    # Use rglob to recursively find font files in subdirectories
+    for ext in ['.woff2', '.woff', '.ttf', '.otf']:
+        for file in custom_dir.rglob(f'*{ext}'):
+            if file.name.startswith('.'):
+                continue  # Skip hidden files
+            
+            family_name, weight = get_font_info(file)
+            
+            if family_name not in fonts:
+                fonts[family_name] = []
+            fonts[family_name].append((file, weight))
     
     return fonts
 
