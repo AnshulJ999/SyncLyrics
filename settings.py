@@ -236,6 +236,13 @@ class SettingsManager:
             "media_source.linux.priority": Setting("Linux Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
             "system.linux.paused_timeout": Setting("Linux Paused Timeout", int, 600, False, "System", "Accept paused Linux source for N seconds (0=forever)", "number"),
             
+            # macOS Plugin Source
+            "media_source.macos.enabled": Setting("macOS Source", bool, True, True, "Media", "Enable macOS Now Playing source (via nowplaying-cli)", "switch"),
+            "media_source.macos.priority": Setting("macOS Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
+            "system.macos.paused_timeout": Setting("macOS Paused Timeout", int, 600, False, "System", "Accept paused macOS source for N seconds (0=forever)", "number"),
+            "lyrics.display.macos_latency_compensation": Setting("macOS Latency", float, 0.0, False, "Lyrics", "macOS sync offset (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
+
+            
             # Music Assistant Plugin
             "media_source.music_assistant.enabled": Setting("Music Assistant", bool, True, True, "Media", "Enable Music Assistant source", "switch"),
             "media_source.music_assistant.priority": Setting("MA Priority", int, 1, False, "Media", "Source priority (lower = first)", "number"),
