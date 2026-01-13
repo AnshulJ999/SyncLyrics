@@ -133,6 +133,14 @@ async def add_cache_headers(response):
 
 # --- Font Files Route ---
 # Explicit route for serving font files (Quart's static folder doesn't always pick up new directories)
+
+@app.route('/fonts/custom.css')
+async def serve_custom_fonts_css():
+    """Dynamically generate CSS for custom fonts."""
+    from font_scanner import generate_custom_css
+    css = generate_custom_css(RESOURCES_DIR / "fonts")
+    return css, 200, {'Content-Type': 'text/css', 'Cache-Control': 'public, max-age=360'}
+
 @app.route('/fonts/<path:filename>')
 async def serve_fonts(filename):
     """Serve font files from resources/fonts directory."""
@@ -2981,6 +2989,10 @@ async def restart_server():
 
 @app.route('/config')
 async def get_client_config():
+    # Get custom font names for dropdown
+    from font_scanner import get_custom_font_names
+    custom_fonts = get_custom_font_names(RESOURCES_DIR / "fonts")
+    
     return {
         "updateInterval": LYRICS["display"]["update_interval"] * 1000,
         "blurStrength": settings.get("ui.blur_strength"),
@@ -3013,6 +3025,8 @@ async def get_client_config():
         "lyricsTextColor": settings.get("lyrics.text_color"),
         "lyricsFontWeight": settings.get("lyrics.font_weight"),
         "uiFontFamily": settings.get("ui.font_family"),
+        # Custom fonts for dropdown
+        "customFonts": custom_fonts,
     }
 
 @app.route("/callback")

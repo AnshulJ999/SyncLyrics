@@ -24,6 +24,9 @@ itsdangerous>=2.1.2
 numpy>=1.26.4
 # matplotlib>=3.8.0  # Not used - was kept for potential future use
 
+# Font Metadata
+fonttools>=4.50.0     # Extract font family names from font files
+
 # Utilities
 colorama>=0.4.6
 pyyaml>=6.0.2
