@@ -139,6 +139,13 @@ class SettingsManager:
             "lyrics.display.font_size_adjacent": Setting("Adjacent Lines Size", float, 1.0, False, "Lyrics", "Font scale for prev/next lines", "slider", min_val=0.7, max_val=1.5),
             "lyrics.display.font_size_far": Setting("Distant Lines Size", float, 1.0, False, "Lyrics", "Font scale for far-prev/far-next lines", "slider", min_val=0.7, max_val=1.5),
             "lyrics.display.font_size_mobile": Setting("Mobile Font Scale", float, 1.0, False, "Lyrics", "Additional font scale for mobile screens", "slider", min_val=0.7, max_val=1.5),
+            "lyrics.font_family": Setting("Lyrics Font", str, "System Default", False, "Lyrics", "Font for lyrics display", "select", options=["System Default", "Inter", "Outfit", "Poppins", "Open Sans", "Nunito", "Roboto", "Montserrat", "Work Sans", "Oswald", "Raleway", "Bebas Neue", "Space Grotesk", "Playfair Display", "Lora", "Fraunces"]),
+            "lyrics.glow_intensity": Setting("Glow Intensity", float, 1.0, False, "Lyrics", "Text glow strength (0=off, 2=max)", "slider", min_val=0.0, max_val=2.0),
+            "lyrics.text_color": Setting("Lyrics Color", str, "#ffffff", False, "Lyrics", "Lyrics text color", "color"),
+            "lyrics.font_weight": Setting("Font Weight", str, "Normal", False, "Lyrics", "Lyrics font weight", "select", options=["Light", "Normal", "Medium", "Semi-Bold", "Bold"]),
+
+            # UI Appearance
+            "ui.font_family": Setting("UI Font", str, "System Default", False, "UI", "Font for menus and controls", "select", options=["System Default", "Inter", "Outfit", "Poppins", "Open Sans", "Nunito", "Roboto", "Montserrat", "Work Sans", "Oswald", "Raleway", "Bebas Neue", "Space Grotesk", "Playfair Display", "Lora", "Fraunces"]),
 
             # Providers
             "providers.lrclib.enabled": Setting("LRCLib", bool, True, True, "Providers", "Enable LRCLib", "switch"),

@@ -128,6 +128,26 @@ export async function getConfig() {
             document.documentElement.style.setProperty('--lyrics-font-scale-mobile', config.lyricsFontSizeMobile);
         }
 
+        // Font and styling settings
+        if (config.lyricsFontFamily && config.lyricsFontFamily !== 'System Default') {
+            document.documentElement.style.setProperty('--lyrics-font-family', `'${config.lyricsFontFamily}', var(--system-font-stack)`);
+        }
+        if (config.uiFontFamily && config.uiFontFamily !== 'System Default') {
+            document.documentElement.style.setProperty('--ui-font-family', `'${config.uiFontFamily}', var(--system-font-stack)`);
+        }
+        if (config.lyricsGlowIntensity !== undefined) {
+            document.documentElement.style.setProperty('--lyrics-glow-intensity', config.lyricsGlowIntensity);
+        }
+        if (config.lyricsTextColor) {
+            document.documentElement.style.setProperty('--lyrics-text-color', config.lyricsTextColor);
+        }
+        if (config.lyricsFontWeight) {
+            // Map display names to CSS values
+            const weightMap = { 'Light': 300, 'Normal': 400, 'Medium': 500, 'Semi-Bold': 600, 'Bold': 700 };
+            const weight = weightMap[config.lyricsFontWeight] || 400;
+            document.documentElement.style.setProperty('--lyrics-font-weight', weight);
+        }
+
         // Set soft album art mode from server config only if URL didn't explicitly set it
         // IMPORTANT: Frontend default is now TRUE, so only apply server config if it's enabling
         // (server returning false should NOT override frontend default of true)

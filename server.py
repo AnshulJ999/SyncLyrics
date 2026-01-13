@@ -2999,6 +2999,12 @@ async def get_client_config():
         "lyricsFontSizeAdjacent": settings.get("lyrics.display.font_size_adjacent"),
         "lyricsFontSizeFar": settings.get("lyrics.display.font_size_far"),
         "lyricsFontSizeMobile": settings.get("lyrics.display.font_size_mobile"),
+        # Font and styling settings
+        "lyricsFontFamily": settings.get("lyrics.font_family"),
+        "lyricsGlowIntensity": settings.get("lyrics.glow_intensity"),
+        "lyricsTextColor": settings.get("lyrics.text_color"),
+        "lyricsFontWeight": settings.get("lyrics.font_weight"),
+        "uiFontFamily": settings.get("ui.font_family"),
     }
 
 @app.route("/callback")
