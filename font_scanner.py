@@ -31,6 +31,30 @@ def _get_ttfont():
     return _TTFont
 
 
+# Weight suffixes to strip from variable font family names
+WEIGHT_SUFFIXES = ['Thin', 'ExtraLight', 'Light', 'Medium', 'SemiBold', 'Bold', 'ExtraBold', 'Black']
+
+
+def is_variable_font(file_path: Path) -> bool:
+    """Check if a font file is a variable font based on filename."""
+    return 'VariableFont' in file_path.name
+
+
+def normalize_family_name(name: str, file_path: Path) -> str:
+    """
+    Normalize font family name for variable fonts.
+    Strips weight suffixes like 'Light', 'Bold' from variable font names.
+    """
+    if not is_variable_font(file_path):
+        return name
+    
+    # Strip weight suffixes from variable font names
+    for suffix in WEIGHT_SUFFIXES:
+        if name.endswith(f' {suffix}'):
+            return name.rsplit(' ', 1)[0]
+    return name
+
+
 def get_font_info(font_path: Path) -> Tuple[str, int]:
     """
     Extract font family name and weight from font file metadata.
@@ -172,8 +196,17 @@ def generate_custom_css(fonts_dir: Path) -> str:
             # Use relative path from custom/ to support subdirectories
             relative_path = file_path.relative_to(custom_dir).as_posix()
             
+            # Normalize family name (strip weight suffixes for variable fonts)
+            display_name = normalize_family_name(font_name, file_path)
+            
+            # Variable fonts support all weights (100-900)
+            if is_variable_font(file_path):
+                weight_css = '100 900'
+            else:
+                weight_css = str(weight)
+            
             lines.append(
-                f"@font-face {{ font-family: '{font_name}'; font-weight: {weight}; "
+                f"@font-face {{ font-family: '{display_name}'; font-weight: {weight_css}; "
                 f"font-display: swap; src: url('/fonts/custom/{relative_path}') format('{fmt}'); }}"
             )
     
@@ -187,10 +220,19 @@ def get_custom_font_names(fonts_dir: Path) -> List[str]:
     Results are cached after first call.
     
     Returns:
-        Sorted list of font family names
+        Sorted list of font family names (normalized, deduplicated)
     """
     global _cached_font_names
     if _cached_font_names is None:
-        _cached_font_names = sorted(scan_custom_fonts(fonts_dir).keys())
+        fonts = scan_custom_fonts(fonts_dir)
+        # Normalize names and deduplicate
+        normalized_names = set()
+        for font_name, variants in fonts.items():
+            # Use the first variant's file path for normalization
+            if variants:
+                file_path = variants[0][0]
+                normalized_names.add(normalize_family_name(font_name, file_path))
+            else:
+                normalized_names.add(font_name)
+        _cached_font_names = sorted(normalized_names)
     return _cached_font_names
-
