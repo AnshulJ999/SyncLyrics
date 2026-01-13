@@ -129,11 +129,12 @@ export async function getConfig() {
         }
 
         // Font and styling settings
+        const systemFontStack = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif";
         if (config.lyricsFontFamily && config.lyricsFontFamily !== 'System Default') {
-            document.documentElement.style.setProperty('--lyrics-font-family', `'${config.lyricsFontFamily}', var(--system-font-stack)`);
+            document.documentElement.style.setProperty('--lyrics-font-family', `'${config.lyricsFontFamily}', ${systemFontStack}`);
         }
         if (config.uiFontFamily && config.uiFontFamily !== 'System Default') {
-            document.documentElement.style.setProperty('--ui-font-family', `'${config.uiFontFamily}', var(--system-font-stack)`);
+            document.documentElement.style.setProperty('--ui-font-family', `'${config.uiFontFamily}', ${systemFontStack}`);
         }
         if (config.lyricsGlowIntensity !== undefined) {
             document.documentElement.style.setProperty('--lyrics-glow-intensity', config.lyricsGlowIntensity);

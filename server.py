@@ -131,6 +131,14 @@ async def add_cache_headers(response):
     
     return response
 
+# --- Font Files Route ---
+# Explicit route for serving font files (Quart's static folder doesn't always pick up new directories)
+@app.route('/fonts/<path:filename>')
+async def serve_fonts(filename):
+    """Serve font files from resources/fonts directory."""
+    fonts_dir = RESOURCES_DIR / "fonts"
+    return await send_from_directory(str(fonts_dir), filename)
+
 # --- Routes ---
 
 @app.route("/health")
