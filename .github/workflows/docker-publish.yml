@@ -146,16 +146,216 @@ jobs:
           readme-filepath: "./docs/Docker Reference.md"
           short-description: "Real-time synchronized lyrics for Spotify 🎵"
 
-      - name: Summary
+    outputs:
+      version_tag: ${{ steps.version.outputs.tag }}
+      dockerhub_login: ${{ steps.dockerhub-login.outcome }}
+
+  # ============================================
+  # Smoke Tests - Validate published images
+  # Runs AFTER push to test what users will pull
+  # Tests both amd64 and arm64 architectures
+  # ============================================
+  smoke-test:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Don't fail the workflow if smoke tests fail - just warn
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Set up QEMU (for arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Login to GHCR (to pull image)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test (amd64)
+        id: smoke-amd64
+        run: |
+          echo "🔍 Testing amd64 image..."
+          IMAGE="${{ env.GHCR_IMAGE }}:${{ needs.build-and-push.outputs.version_tag }}"
+          
+          # Pull the published image
+          docker pull --platform linux/amd64 "$IMAGE"
+          
+          # Run container in background (no env vars - pure defaults)
+          docker run --platform linux/amd64 -d --name smoke-amd64 -p 9012:9012 "$IMAGE"
+          
+          # Wait for startup
+          echo "Waiting 15s for startup..."
+          sleep 15
+          
+          # Check health endpoint
+          HEALTH_RESPONSE=$(curl -sf http://localhost:9012/health 2>&1) || HEALTH_RESPONSE="FAILED"
+          echo "health_response<<EOF" >> $GITHUB_OUTPUT
+          echo "$HEALTH_RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Check for Python errors in logs
+          CONTAINER_LOGS=$(docker logs smoke-amd64 2>&1 | tail -50)
+          echo "container_logs<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTAINER_LOGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Check for critical errors
+          if echo "$CONTAINER_LOGS" | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" > /dev/null 2>&1; then
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            echo "❌ Found Python errors in logs"
+          else
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Determine pass/fail
+          if [ "$HEALTH_RESPONSE" != "FAILED" ] && echo "$HEALTH_RESPONSE" | grep -q '"status"'; then
+            echo "result=passed" >> $GITHUB_OUTPUT
+            echo "✅ Health check passed"
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+            echo "❌ Health check failed"
+          fi
+          
+          # Cleanup
+          docker stop smoke-amd64 > /dev/null 2>&1 || true
+          docker rm smoke-amd64 > /dev/null 2>&1 || true
+
+      - name: Smoke test (arm64)
+        id: smoke-arm64
+        run: |
+          echo "🔍 Testing arm64 image (via QEMU)..."
+          IMAGE="${{ env.GHCR_IMAGE }}:${{ needs.build-and-push.outputs.version_tag }}"
+          
+          # Pull the published image (arm64 variant)
+          docker pull --platform linux/arm64 "$IMAGE"
+          
+          # Run container in background (different port to avoid conflict)
+          docker run --platform linux/arm64 -d --name smoke-arm64 -p 9022:9012 "$IMAGE"
+          
+          # Wait for startup (arm64 via QEMU is slower)
+          echo "Waiting 20s for startup (QEMU emulation)..."
+          sleep 20
+          
+          # Check health endpoint
+          HEALTH_RESPONSE=$(curl -sf http://localhost:9022/health 2>&1) || HEALTH_RESPONSE="FAILED"
+          echo "health_response<<EOF" >> $GITHUB_OUTPUT
+          echo "$HEALTH_RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Check for Python errors in logs
+          CONTAINER_LOGS=$(docker logs smoke-arm64 2>&1 | tail -50)
+          echo "container_logs<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTAINER_LOGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Check for critical errors
+          if echo "$CONTAINER_LOGS" | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" > /dev/null 2>&1; then
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            echo "❌ Found Python errors in logs"
+          else
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Determine pass/fail
+          if [ "$HEALTH_RESPONSE" != "FAILED" ] && echo "$HEALTH_RESPONSE" | grep -q '"status"'; then
+            echo "result=passed" >> $GITHUB_OUTPUT
+            echo "✅ Health check passed"
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+            echo "❌ Health check failed"
+          fi
+          
+          # Cleanup
+          docker stop smoke-arm64 > /dev/null 2>&1 || true
+          docker rm smoke-arm64 > /dev/null 2>&1 || true
+
+      - name: Smoke Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.GHCR_IMAGE }}:${{ needs.build-and-push.outputs.version_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # amd64 Results
+          echo "### linux/amd64" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.smoke-amd64.outputs.result }}" == "passed" ]; then
+            echo "✅ **Status:** Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Response:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.smoke-amd64.outputs.health_response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.smoke-amd64.outputs.has_errors }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Python Errors Detected in Logs:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo '${{ steps.smoke-amd64.outputs.container_logs }}' | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" | head -10 >> $GITHUB_STEP_SUMMARY || echo "(see full logs)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # arm64 Results
+          echo "### linux/arm64" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.smoke-arm64.outputs.result }}" == "passed" ]; then
+            echo "✅ **Status:** Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Response:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.smoke-arm64.outputs.health_response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.smoke-arm64.outputs.has_errors }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Python Errors Detected in Logs:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo '${{ steps.smoke-arm64.outputs.container_logs }}' | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" | head -10 >> $GITHUB_STEP_SUMMARY || echo "(see full logs)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall summary
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.smoke-amd64.outputs.result }}" == "passed" ] && [ "${{ steps.smoke-arm64.outputs.result }}" == "passed" ]; then
+            echo "### ✅ All smoke tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Some smoke tests failed - review results above" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================
+  # Build Summary (runs after smoke tests)
+  # ============================================
+  summary:
+    needs: [build-and-push, smoke-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
         run: |
           echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### GHCR (Primary)" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Successfully pushed to \`${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully pushed to \`${{ env.GHCR_IMAGE }}:${{ needs.build-and-push.outputs.version_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Docker Hub (Secondary)" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.dockerhub-login.outcome }}" == "success" ]; then
-            echo "✅ Pushed to \`${{ env.DOCKERHUB_IMAGE }}:${{ steps.version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build-and-push.outputs.dockerhub_login }}" == "success" ]; then
+            echo "✅ Pushed to \`${{ env.DOCKERHUB_IMAGE }}:${{ needs.build-and-push.outputs.version_tag }}\`" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Docker Hub push skipped (login failed or service unavailable)" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Docker Hub push skipped (login failed or not configured)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Smoke Tests" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.smoke-test.result }}" == "success" ]; then
+            echo "✅ All smoke tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Smoke tests had issues - see Smoke Test Results above" >> $GITHUB_STEP_SUMMARY
           fi

@@ -140,7 +140,6 @@ SPICETIFY_DB_DIR = Path(os.getenv("SYNCLYRICS_SPICETIFY_DB", str(DATA_DIR / "spi
 CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(DATA_DIR / "certs")))
 
 # FIX: Wrap directory creation in try-except for permission errors
-# Note: Don't try to create RESOURCES_DIR (it's read-only in AppImage)
 for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, SPICETIFY_DB_DIR, CERTS_DIR]:
     try:
         d.mkdir(parents=True, exist_ok=True)
