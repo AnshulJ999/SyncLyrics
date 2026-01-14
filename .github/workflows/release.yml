@@ -294,6 +294,14 @@ jobs:
           echo "=== Checking for encodings ==="
           ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
 
+      - name: Add macOS launcher script
+        run: |
+          # Copy launcher script to build output
+          cp resources/macos/start.command build_final/SyncLyrics/
+          chmod +x build_final/SyncLyrics/start.command
+          chmod +x build_final/SyncLyrics/SyncLyrics
+          echo "✅ Added start.command launcher"
+
       - name: Create ZIP archive
         run: |
           cd build_final
@@ -370,6 +378,14 @@ jobs:
           ls -la build_final/SyncLyrics/ | head -20
           echo "=== Checking for encodings ==="
           ls -la build_final/SyncLyrics/encodings/ 2>/dev/null | head -5 || echo "Encodings compiled into exe"
+
+      - name: Add macOS launcher script
+        run: |
+          # Copy launcher script to build output
+          cp resources/macos/start.command build_final/SyncLyrics/
+          chmod +x build_final/SyncLyrics/start.command
+          chmod +x build_final/SyncLyrics/SyncLyrics
+          echo "✅ Added start.command launcher"
 
       - name: Create ZIP archive
         run: |
