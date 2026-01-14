@@ -14,6 +14,8 @@ Not directly. However, you can use **Audio Recognition** to identify songs from 
 
 However any music playing on your Windows device can be recognized via the SMTC integration.
 
+I can consider adding native support for these sources based on requests. 
+
 **Apple Music**: Use Audio Recognition to identify songs playing through your speakers.
 
 **YouTube Music (browser)**: Windows Media detection works, but has limitations:
@@ -42,7 +44,7 @@ Spicetify requires the Spotify Desktop app but provides much better sync.
 
 ### Why are lyrics missing for some songs?
 - The song may be instrumental (marked with ♪)
-- None of the 5 providers have lyrics for it
+- None of the 5 providers have synced lyrics for it
 - Try clicking the provider badge to manually select a source
 
 ### Why are lyrics out of sync?
@@ -58,6 +60,8 @@ Partially. Cached lyrics and album art work offline, but:
 - Spotify API requires internet
 - Audio recognition requires internet
 - New songs need provider access
+
+Full offline support may work once the lyrics/art have been cached and if you use an offline music source. This is untested but I plan to add support for full offline usage. 
 
 ### Can I use this on a tablet dashboard?
 Yes! Common setups:

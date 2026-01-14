@@ -4,6 +4,8 @@ Get SyncLyrics running in 5 minutes.
 
 ## 1. Install
 
+Follow installation instructions from main README to get up and running quickly. 
+
 **Windows**: Download from [Releases](../../releases), extract, run `SyncLyrics.exe`
 
 **Docker** (choose one):
@@ -17,7 +19,7 @@ docker run -d -p 9012:9012 -v synclyrics_data:/data ghcr.io/anshulj999/synclyric
 
 **Home Assistant**: Add `https://github.com/AnshulJ999/homeassistant-addons` as a repository
 
-## 2. Get Spotify Credentials
+## 2. Get Spotify Credentials (optional)
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new app

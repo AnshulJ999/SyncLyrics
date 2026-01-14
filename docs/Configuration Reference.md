@@ -17,6 +17,8 @@ Settings are loaded in this priority order (highest wins):
 
 ---
 
+Below list may be outdated. Use the built-in settings menu for updated reference. 
+
 ## Server
 
 | Setting | Default | Description |

@@ -207,7 +207,7 @@ Just return an `album_art_url` and enrichment handles the rest!
    loop = asyncio.get_running_loop()
    result = await loop.run_in_executor(None, blocking_function)
    ```
-
+Ensure all source-specific operations are non-blocking and don't interfere with the main loop.
 2. **Handle errors gracefully** - Return `None`, don't raise:
    ```python
    async def get_metadata(self):

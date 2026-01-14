@@ -41,6 +41,8 @@ This offset is saved per-song and persists across sessions.
 
 If you need to adjust the global latency, please do so in the main app settings.
 
+**Update:** The latency controls are shown directly on the main UI next to the provider badge, when word-sync is ON. So you can simply control it from there. If you wish to hide these, click the provider badge and click 'Hide' next to the latency controls.
+
 ### Keyboard Shortcuts
 - **[** and **]**: Adjust timing by 50ms (when available)
 
@@ -69,6 +71,10 @@ Use the timing adjustment (see above) to offset by ±50ms increments.
 
 If the word-sync timing is _really_ off; it's mostly like bad data from the provider (this is quite common as word-sync data is hard to synchronize). Try switching providers or using line-sync instead. You can also try deleting the cache and re-fetching fresh lyrics.
 
-### Animation is choppy
-- With Spicetify: Should be smooth (~100ms updates)
-- Without Spicetify: Limited to ~4s polling, animation interpolates between updates
+## Animation Styles
+
+The default animation style is 'Pop'. You can adjust this by going to the Provider menu (bottom-right icon) and clicking on 'Pop' to cycle it. The available styles are: 
+
+**Pop**: Words scale up when active
+**Fade**: Gradient sweep across words as they're sung
+**Pop-Fade**: Hybrid animation where both Pop and Fade occur simultaneously.

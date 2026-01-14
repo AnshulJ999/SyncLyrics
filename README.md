@@ -1,10 +1,14 @@
 # SyncLyrics
 
-A feature-rich lyrics server that displays synchronized lyrics for your currently playing music. Supports multiple platforms and audio sources, including Spotify, Windows Media, Linux, macOS, and audio recognition.
+A real-time synced lyrics server that can run on multiple platforms and serves beautiful lyrics to any device with a web-browser.
 
-This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to become what I believe is one of the best lyrics apps out there (and will continue to grow in that direction). SyncLyrics aims to be a visual companion to the music experience, built for tablet dashboards.
+The app's philosophy is simple: configure it once and let it run in the background all the time. When you're not listening to music; it does nothing. When you are; it activates and shows you lyrics + album art + rich metadata.
 
-> **Note:** Forked for personal use. Primarily tested on Windows 10/11 with Spotify desktop client. Can be used with Home Assistant as an addon. Now supports Docker and multi-platform. 
+This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to be a feature-rich self-hosted lyrics server. SyncLyrics is a visual companion to all music, anywhere. 
+
+**Supported Platforms:** Windows, Home Assistant, Docker, Linux, macOS (coming soon)
+
+**Supported Audio Sources:** Spotify, Windows Media (SMTC), Music Assistant, Audio Recognition (Shazam), Linux, macOS, and Spicetify. 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
@@ -17,6 +21,8 @@ _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 https://github.com/user-attachments/assets/ddb9fd10-f082-44c3-ab36-563fca2cc75e
 
 _Video demo showcasing the app's main features_
+
+[More Screenshots](<screenshots/>)
 
 ## ✨ Features
 
@@ -63,6 +69,15 @@ _Video demo showcasing the app's main features_
 - **Modular Settings:** See [Configuration Reference](docs/Configuration%20Reference.md)
 
 ---
+
+## Quick Start: 
+
+1) Install the app using your preferred method. 
+2) Visit `http://synclyrics.local:9012` or `http://localhost:9012` in your browser.
+3) Login to Spotify if needed (optional)
+4) Play music from a supported source and watch the lyrics on screen!
+
+**Tip:** Embed it as an iFrame in any existing dashboard or run it standalone inside Fully Kiosk Browser. Make sure the app is fullscreen for the best experience; and keep your device plugged-in as running it continuously can be a battery drain.
 
 ## 🚀 Installation
 
@@ -168,6 +183,18 @@ Docker images are available from:
 
 ---
 
+## UI UX Shortcuts
+
+The UI supports many gestures and shortcuts, such as: 
+
+1) **Long-press:** Several buttons can be long-pressed to access more features. For example: 
+a) Visual Mode Toggle: Holding this will lead to 'Art Mode', which hides all on-screen elements to focus on the album art. Combine with Slideshow to turn your device into an art slideshow using artist images. Long-press on a screen corner or press ESC to exit it. 
+b) Slideshow Icon: Holding this will show the Slideshow Menu, where you can configure all slideshow settings and exclude images you don't want. 
+
+2) **Three-finger tap** will play/pause the music. This is for touchsceen devices. 
+
+3) **Four-finger tap** will start/stop the slideshow.
+
 ## ⚙️ Configuration
 
 The app works best with a Spotify API connection, which requires you to create a custom app in your Spotify Developer Dashboard. 
@@ -269,6 +296,8 @@ See [Troubleshooting Guide](docs/Troubleshooting.md) for detailed solutions.
 
 Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test on Windows or HASS before submitting. Even small fixes help!
 
+The extensible plugin system makes it easy to add new metadata sources, so I welcome any requests and contributions.
+
 ---
 
 ## 📜 License
@@ -279,7 +308,7 @@ Found a bug? Have an idea? PRs are super welcome! 🙌 Just give it a quick test
 
 ## ⚠️ Disclaimer (AI Usage)
 
-This project was built with AI assistance (spent over 300+ hours on it myself). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
+This project was built with AI assistance (I spent over 300+ hours on it myself). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
 
 ---
 

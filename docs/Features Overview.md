@@ -34,7 +34,7 @@ Four background modes for album art:
 - **Sharp**: Full-res album art behind lyrics
 - **Soft**: Medium blur for readability
 - **Blur**: Heavy blur (classic style)
-- **Auto**: Automatically selects based on image
+- **Auto**: Automatically selects based on URL params
 
 See [Visual Modes and Slideshow](Visual%20Modes%20and%20Slideshow.md) for details.
 

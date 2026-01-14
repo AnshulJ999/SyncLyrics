@@ -32,6 +32,8 @@ docker run -d \
   ghcr.io/anshulj999/synclyrics:latest
 ```
 
+Please do check .env.example and docker-compose for full list of supported ENV variables. 
+
 ### Using Docker Compose
 
 1. Download the [docker-compose.yml](../docker/docker-compose.yml) file

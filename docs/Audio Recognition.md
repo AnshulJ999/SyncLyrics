@@ -6,7 +6,7 @@ SyncLyrics includes Shazam-like audio recognition for identifying songs when sta
 
 Audio recognition is useful when:
 - Playing music through a DAW (like Reaper)
-- Using a media player without SMTC support
+- Using a media player without native metadata support
 - Playing audio from external devices
 - Identifying songs from TV/speakers
 
@@ -16,11 +16,11 @@ Audio recognition is useful when:
 Captures audio directly from your system using a loopback device.
 
 **Requirements**:
-- Loopback audio device (e.g., VB-Cable, WASAPI loopback)
+- Microphone OR Loopback audio device (e.g., VB-Cable, WASAPI loopback)
 - Works on HTTP (no HTTPS required)
 
 **Setup**:
-1. Install a virtual audio cable or loopback driver
+1. Install a virtual audio cable or loopback driver or use your microphone
 2. Configure your audio to route through the loopback
 3. Select the loopback device in SyncLyrics
 
@@ -79,15 +79,19 @@ If Shazam fails to identify a song, SyncLyrics can fall back to ACRCloud (option
 
 ACRCloud is only called when Shazam returns no match. Results bypass verification (high confidence).
 
+ACRCloud is only enabled if you provide the correct ENV variables; it will not be enabled otherwise. Please reach out if you face any issues. 
+
 ## Reaper DAW Integration
 
-SyncLyrics auto-detects when Reaper is running and can automatically start recognition.
+SyncLyrics can auto-detect when Reaper is running and can automatically start recognition.
 
 **How it works**:
 1. Enable "Reaper Auto-Detect" in settings
 2. When Reaper is detected, audio recognition starts automatically
 3. Recognition uses your configured loopback device
 4. Songs are matched and enriched with Spotify metadata
+
+Similar to Reaper; other apps can be added to auto-detect if required. Please reach out for any help or requests regarding this. 
 
 ## Spotify Enrichment
 
@@ -102,9 +106,11 @@ This gives you full SyncLyrics features even for non-Spotify playback.
 
 ### No match found
 - Ensure audio is actually playing and audible
-- Increase capture duration (5-10s works best)
+- Increase capture duration (6-10s works best)
 - Lower silence threshold if audio is quiet
 - Try backend mode if frontend mic has poor quality
+
+Shazam does not have all songs in its library, so certain niche songs are not picked up by it. If this is a requirement for you, I recommend trying ACRCloud.
 
 ### Wrong song matched
 - This can happen with covers or remixes
