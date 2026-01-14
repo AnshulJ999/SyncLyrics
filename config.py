@@ -21,10 +21,37 @@ except ImportError:
 # ==========================================
 # Path Configuration
 # ==========================================
+
+# ROOT_DIR: Where the executable/code lives (contains resources/, templates)
+# DATA_DIR: Where writable data goes (logs, settings, databases)
+#
+# For most builds, these are the same. For AppImage, DATA_DIR uses XDG standard.
+
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
+    # Running as compiled executable
     ROOT_DIR = Path(sys.executable).parent
+    
+    # Check if running as AppImage (read-only filesystem)
+    if os.getenv("APPIMAGE"):
+        # AppImage mounts as read-only - use XDG standard for writable data
+        # XDG_DATA_HOME defaults to ~/.local/share
+        xdg_data = os.getenv("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+        DATA_DIR = Path(xdg_data) / "synclyrics"
+        # Ensure the data directory exists
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            print(f"Warning: Could not create data directory {DATA_DIR}: {e}")
+            # Fallback to current working directory
+            DATA_DIR = Path.cwd() / ".synclyrics"
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        # Normal frozen build (Windows exe, Linux tarball, macOS) - use executable dir
+        DATA_DIR = ROOT_DIR
 else:
+    # Running from source
     ROOT_DIR = Path(__file__).parent
+    DATA_DIR = ROOT_DIR
 
 # ==========================================
 # Version
@@ -104,15 +131,16 @@ def _safe_bool(val, default: bool) -> bool:
 
 RESOURCES_DIR = ROOT_DIR / "resources"
 
-# Data directories - can be overridden via environment variables for persistent storage
-# In HAOS, set these to /config/synclyrics/* for persistence across addon restarts
-DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(ROOT_DIR / "lyrics_database")))
-CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(ROOT_DIR / "cache")))
-ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(ROOT_DIR / "album_art_database")))
-SPICETIFY_DB_DIR = Path(os.getenv("SYNCLYRICS_SPICETIFY_DB", str(ROOT_DIR / "spicetify_database")))
-CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(ROOT_DIR / "certs")))
+# Data directories - use DATA_DIR for writable data (supports AppImage)
+# Can be overridden via environment variables for persistent storage (Docker/HAOS)
+DATABASE_DIR = Path(os.getenv("SYNCLYRICS_LYRICS_DB", str(DATA_DIR / "lyrics_database")))
+CACHE_DIR = Path(os.getenv("SYNCLYRICS_CACHE_DIR", str(DATA_DIR / "cache")))
+ALBUM_ART_DB_DIR = Path(os.getenv("SYNCLYRICS_ALBUM_ART_DB", str(DATA_DIR / "album_art_database")))
+SPICETIFY_DB_DIR = Path(os.getenv("SYNCLYRICS_SPICETIFY_DB", str(DATA_DIR / "spicetify_database")))
+CERTS_DIR = Path(os.getenv("SYNCLYRICS_CERTS_DIR", str(DATA_DIR / "certs")))
 
 # FIX: Wrap directory creation in try-except for permission errors
+# Note: Don't try to create RESOURCES_DIR (it's read-only in AppImage)
 for d in [RESOURCES_DIR, DATABASE_DIR, CACHE_DIR, ALBUM_ART_DB_DIR, SPICETIFY_DB_DIR, CERTS_DIR]:
     try:
         d.mkdir(parents=True, exist_ok=True)

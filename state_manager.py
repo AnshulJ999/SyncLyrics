@@ -18,10 +18,26 @@ logger = logging.getLogger(__name__)
 # This ensures state.json is written to /config/state.json instead of /app/state.json
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
     ROOT_DIR = Path(sys.executable).parent
+    
+    # Check if running as AppImage (read-only filesystem)
+    if os.getenv("APPIMAGE"):
+        # AppImage mounts as read-only - use XDG standard for state
+        xdg_data = os.getenv("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+        DATA_DIR = Path(xdg_data) / "synclyrics"
+        # Ensure data directory exists
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            # Fallback to current working directory
+            DATA_DIR = Path.cwd() / ".synclyrics"
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        DATA_DIR = ROOT_DIR
 else:
     ROOT_DIR = Path(__file__).parent
+    DATA_DIR = ROOT_DIR
 
-STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", str(ROOT_DIR / "state.json"))
+STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", str(DATA_DIR / "state.json"))
 
 DEFAULT_STATE = {
     "theme": "dark",

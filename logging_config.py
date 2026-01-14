@@ -14,8 +14,17 @@ import sys
 
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
     ROOT_DIR = Path(sys.executable).parent  # FIX: use sys.executable instead of sys.argv[0]
+    
+    # Check if running as AppImage (read-only filesystem)
+    if os.getenv("APPIMAGE"):
+        # AppImage mounts as read-only - use XDG standard for logs
+        xdg_data = os.getenv("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+        DATA_DIR = Path(xdg_data) / "synclyrics"
+    else:
+        DATA_DIR = ROOT_DIR
 else:
     ROOT_DIR = Path(__file__).parent
+    DATA_DIR = ROOT_DIR
 
 # Create logs directory if it doesn't exist
 # Allow overriding via environment variable for HAOS/Docker persistence
@@ -23,9 +32,16 @@ env_logs_dir = os.getenv("SYNCLYRICS_LOGS_DIR")
 if env_logs_dir:
     LOGS_DIR = Path(env_logs_dir)
 else:
-    LOGS_DIR = ROOT_DIR / "logs"
+    LOGS_DIR = DATA_DIR / "logs"
 
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError) as e:
+    # Fallback to temp directory if all else fails
+    import tempfile
+    LOGS_DIR = Path(tempfile.gettempdir()) / "synclyrics_logs"
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Warning: Using temp directory for logs: {LOGS_DIR}")
 
 # Define log formats
 CONSOLE_FORMAT = '(%(filename)s:%(lineno)d) %(levelname)s - %(message)s'

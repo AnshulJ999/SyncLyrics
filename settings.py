@@ -21,10 +21,26 @@ logger = get_logger(__name__)
 # This is crucial for HAOS/Docker persistence
 if "__compiled__" in globals() or getattr(sys, 'frozen', False):
     ROOT_DIR = Path(sys.executable).parent
+    
+    # Check if running as AppImage (read-only filesystem)
+    if os.getenv("APPIMAGE"):
+        # AppImage mounts as read-only - use XDG standard for settings
+        xdg_data = os.getenv("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+        DATA_DIR = Path(xdg_data) / "synclyrics"
+        # Ensure data directory exists
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            # Fallback to current working directory
+            DATA_DIR = Path.cwd() / ".synclyrics"
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        DATA_DIR = ROOT_DIR
 else:
     ROOT_DIR = Path(__file__).parent
+    DATA_DIR = ROOT_DIR
 
-SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(ROOT_DIR / "settings.json")))
+SETTINGS_FILE = Path(os.getenv("SYNCLYRICS_SETTINGS_FILE", str(DATA_DIR / "settings.json")))
 
 @dataclass
 class Setting:
