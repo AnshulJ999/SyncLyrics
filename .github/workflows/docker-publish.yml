@@ -199,9 +199,6 @@ jobs:
           
           # Check for Python errors in logs
           CONTAINER_LOGS=$(docker logs smoke-amd64 2>&1 | tail -50)
-          echo "container_logs<<EOF" >> $GITHUB_OUTPUT
-          echo "$CONTAINER_LOGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
           
           # Check for critical errors
           if echo "$CONTAINER_LOGS" | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" > /dev/null 2>&1; then
@@ -248,9 +245,6 @@ jobs:
           
           # Check for Python errors in logs
           CONTAINER_LOGS=$(docker logs smoke-arm64 2>&1 | tail -50)
-          echo "container_logs<<EOF" >> $GITHUB_OUTPUT
-          echo "$CONTAINER_LOGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
           
           # Check for critical errors
           if echo "$CONTAINER_LOGS" | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" > /dev/null 2>&1; then
@@ -295,10 +289,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.smoke-amd64.outputs.has_errors }}" == "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ **Python Errors Detected in Logs:**" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo '${{ steps.smoke-amd64.outputs.container_logs }}' | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" | head -10 >> $GITHUB_STEP_SUMMARY || echo "(see full logs)" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Python Errors Detected** - Check workflow logs for details" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
@@ -316,10 +307,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.smoke-arm64.outputs.has_errors }}" == "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ **Python Errors Detected in Logs:**" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo '${{ steps.smoke-arm64.outputs.container_logs }}' | grep -iE "segfault|segmentation fault|fatal python error|traceback|exception" | head -10 >> $GITHUB_STEP_SUMMARY || echo "(see full logs)" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Python Errors Detected** - Check workflow logs for details" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
