@@ -97,8 +97,8 @@ class SettingsManager:
             "debug.log_rotation.backup_count": Setting("Log Backups", int, 10, False, "Debug", "Number of backups to keep", "number"),
 
             # Server
-            "server.port": Setting("Port", int, 9012, True, "Server", "Server port", "number"),
-            "server.host": Setting("Host", str, "0.0.0.0", True, "Server", "Bind address"),
+            "server.port": Setting("Port", int, 9012, True, "Server", "Server port (9012 is default)", "number"),
+            "server.host": Setting("Host", str, "0.0.0.0", True, "Server", "Bind address (0.0.0.0 is default)"),
             "server.debug": Setting("Server Debug", bool, False, True, "Server", "Quart debug mode", "switch"),
 
             # UI - Active settings
@@ -304,7 +304,7 @@ class SettingsManager:
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, True, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),
-            "server.https.port": Setting("HTTPS Port", int, 9013, True, "HTTPS", "HTTPS port (0 = same as HTTP, >0 = dual-stack)", "number"),
+            "server.https.port": Setting("HTTPS Port", int, 9013, True, "HTTPS", "HTTPS port (0 = same as HTTP, >0 = dual-stack, 9013 is default)", "number"),
             "server.https.auto_generate": Setting("Auto Generate Cert", bool, True, False, "HTTPS", "Auto-generate self-signed certificate", "switch"),
             "server.https.cert_file": Setting("Cert File", str, "certs/server.crt", True, "HTTPS", "SSL certificate file path"),
             "server.https.key_file": Setting("Key File", str, "certs/server.key", True, "HTTPS", "SSL private key file path"),
