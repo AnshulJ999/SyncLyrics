@@ -598,7 +598,8 @@ async function updateLoop() {
         // Detect source change (e.g., Spicetify -> MusicBee)
         // Reset waveform/spectrum since audio analysis data changes
         const currentSource = trackInfo?.source;
-        if (currentSource && currentSource !== lastSource) {
+        const sourceChanged = currentSource && currentSource !== lastSource;
+        if (sourceChanged) {
             console.log(`[Main] Source changed: ${lastSource} -> ${currentSource}`);
             lastSource = currentSource;
             
@@ -606,13 +607,15 @@ async function updateLoop() {
             // (audio analysis data is source-specific)
             resetWaveform();
             resetSpectrum();
-            
-            // Update media browser button icon based on source
-            updateMediaBrowserIcon();
         }
 
-        // Update track info
+        // Update track info (must happen before icon update)
         setLastTrackInfo(trackInfo);
+        
+        // Update media browser button icon AFTER track info is set
+        if (sourceChanged) {
+            updateMediaBrowserIcon();
+        }
 
         // Apply background style with priority: Saved Preference > URL Params > Default
         // Only apply saved style if user has opted-in to art background via URL or settings
