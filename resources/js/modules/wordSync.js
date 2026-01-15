@@ -763,7 +763,11 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
     if (cachedLineId !== lineId) {
         cachedLineId = lineId;
         
-        // Reset anticipation state since we've now officially changed lines
+        // IMPORTANT: Capture anticipation state BEFORE resetting
+        // If anticipation ran, we'll skip fade-out and swap immediately
+        const anticipationRan = anticipationStarted;
+        
+        // NOW reset anticipation state for the next line
         pendingNextLineId = null;
         anticipationStarted = false;
         
@@ -806,28 +810,13 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         
-        // === GAP-AWARE TRANSITION TIMING ===
-        // Calculate how much time we have before this line's first word needs to be visible
-        // If we're late (line already started), use instant. If we have time, use smooth.
-        let effectiveTransitionMs = wordSyncTransitionMs;
-        
-        // Calculate time until this line's first word (in ms)
-        // lineData.start is when this line begins; selectionPosition is current playback time
+        // DEBUG LOGGING (remove after testing)
         const timeUntilLineStart = (lineData.start - selectionPosition) * 1000;
+        console.log(`[WordSync] Line change: timeUntilLineStart=${timeUntilLineStart.toFixed(0)}ms, anticipationRan=${anticipationRan}, setting=${wordSyncTransitionMs}ms`);
         
-        if (timeUntilLineStart < 0) {
-            // Already late! Line has started, use instant or minimal transition
-            // Use at most 80% of how late we are (negative), capped at 50ms
-            effectiveTransitionMs = Math.min(50, Math.max(0, effectiveTransitionMs + timeUntilLineStart * 0.8));
-        } else if (timeUntilLineStart < effectiveTransitionMs) {
-            // Limited time available - use 90% of available gap
-            effectiveTransitionMs = Math.floor(timeUntilLineStart * 0.9);
-        }
-        // else: plenty of time, use full configured transition
-        
-        // === INSTANT MODE (0ms or gap-forced instant) ===
+        // === INSTANT MODE (0ms) ===
         // Direct content swap, no fade animation - like line-sync
-        if (effectiveTransitionMs <= 0) {
+        if (wordSyncTransitionMs <= 0) {
             // Clear any lingering CSS variable and classes
             currentEl.style.removeProperty('--ws-transition-duration');
             currentEl.classList.remove('line-entering', 'line-exiting');
@@ -839,24 +828,18 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             return; // Skip word updates this frame, next frame will handle them
         }
         
-        // === SMOOTH MODE (50/50 Split with gap-awareness) ===
-        // Setting = total transition time, split evenly between fade-out and fade-in
-        // This ensures content swaps exactly when opacity hits 0, preventing flicker
-        const halfDuration = Math.max(10, Math.floor(effectiveTransitionMs / 2));
-        
-        // Set CSS variable so transition duration matches our setTimeout
-        currentEl.style.setProperty('--ws-transition-duration', `${halfDuration}ms`);
-        
-        // Start fade-out animation
-        currentEl.classList.remove('line-entering');
-        currentEl.classList.add('line-exiting');
-        
-        // Wait exactly halfDuration (when opacity reaches 0) before swapping content
-        setTimeout(() => {
-            // Check if this transition was cancelled by a newer line change
-            if (transitionToken !== myToken) return;
+        // === SMOOTH MODE ===
+        if (anticipationRan) {
+            // ANTICIPATION PATH: Fade-out already happened, just swap and fade-in
+            console.log(`[WordSync] Using anticipation path - immediate swap + fade-in`);
             
-            // Swap content (line is now fully invisible)
+            // Use configured halfDuration for fade-in
+            const halfDuration = Math.max(10, Math.floor(wordSyncTransitionMs / 2));
+            
+            // Set CSS variable for fade-in
+            currentEl.style.setProperty('--ws-transition-duration', `${halfDuration}ms`);
+            
+            // Swap content immediately (fade-out is done)
             currentEl.innerHTML = html;
             currentEl.classList.remove('line-exiting');
             currentEl.classList.add('line-entering');
@@ -865,17 +848,73 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
             
             // Cleanup after fade-in animation completes
-            // Hybrid approach: setTimeout waits for animation duration, rAF syncs with next paint
             setTimeout(() => {
                 requestAnimationFrame(() => {
                     if (transitionToken !== myToken) return;
                     currentEl.classList.remove('line-entering');
-                    // Clean up inline style so DOM stays tidy
                     currentEl.style.removeProperty('--ws-transition-duration');
                 });
             }, halfDuration);
+        } else {
+            // NORMAL PATH: Do full fade-out + swap + fade-in
+            // This happens when there was no time for anticipation (tight transitions)
             
-        }, halfDuration);
+            // Calculate effective transition based on how late we are
+            let effectiveTransitionMs = wordSyncTransitionMs;
+            
+            if (timeUntilLineStart < 0) {
+                // Already late - use minimal transition
+                // The more late we are, the shorter the transition
+                effectiveTransitionMs = Math.max(0, Math.min(100, wordSyncTransitionMs + timeUntilLineStart));
+            } else if (timeUntilLineStart < effectiveTransitionMs) {
+                // Limited time - use 90% of available gap
+                effectiveTransitionMs = Math.floor(timeUntilLineStart * 0.9);
+            }
+            
+            console.log(`[WordSync] Normal path - effectiveTransitionMs=${effectiveTransitionMs.toFixed(0)}ms`);
+            
+            // If effective is too small, use instant
+            if (effectiveTransitionMs <= 20) {
+                currentEl.style.removeProperty('--ws-transition-duration');
+                currentEl.classList.remove('line-entering', 'line-exiting');
+                currentEl.innerHTML = html;
+                wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+                return;
+            }
+            
+            const halfDuration = Math.max(10, Math.floor(effectiveTransitionMs / 2));
+            
+            // Set CSS variable so transition duration matches our setTimeout
+            currentEl.style.setProperty('--ws-transition-duration', `${halfDuration}ms`);
+            
+            // Start fade-out animation
+            currentEl.classList.remove('line-entering');
+            currentEl.classList.add('line-exiting');
+            
+            // Wait exactly halfDuration (when opacity reaches 0) before swapping content
+            setTimeout(() => {
+                // Check if this transition was cancelled by a newer line change
+                if (transitionToken !== myToken) return;
+                
+                // Swap content (line is now fully invisible)
+                currentEl.innerHTML = html;
+                currentEl.classList.remove('line-exiting');
+                currentEl.classList.add('line-entering');
+                
+                // Cache element references for fast updates
+                wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+                
+                // Cleanup after fade-in animation completes
+                setTimeout(() => {
+                    requestAnimationFrame(() => {
+                        if (transitionToken !== myToken) return;
+                        currentEl.classList.remove('line-entering');
+                        currentEl.style.removeProperty('--ws-transition-duration');
+                    });
+                }, halfDuration);
+                
+            }, halfDuration);
+        }
         
         return; // Skip word updates during transition
     }
@@ -1275,6 +1314,9 @@ function animateWordSync(timestamp) {
                     
                     // Calculate effective duration based on time available
                     const effectiveHalfDuration = Math.max(10, Math.floor(timeUntilNextLine * 0.9));
+                    
+                    // DEBUG LOGGING (remove after testing)
+                    console.log(`[WordSync] Anticipation triggered: timeUntilNextLine=${timeUntilNextLine.toFixed(0)}ms, effectiveHalfDuration=${effectiveHalfDuration}ms`);
                     
                     // Set CSS variable for fade-out duration
                     currentEl.style.setProperty('--ws-transition-duration', `${effectiveHalfDuration}ms`);
