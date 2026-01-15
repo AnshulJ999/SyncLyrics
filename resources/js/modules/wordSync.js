@@ -814,7 +814,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         const myToken = ++transitionToken;
         
         // DEBUG LOGGING (commented out - uncomment for debugging)
-        // const timeUntilLineStart = (lineData.start - selectionPosition) * 1000;
+        const timeUntilLineStart = (lineData.start - selectionPosition) * 1000;  // Keep this - used in normal path!
         // console.log(`[WordSync] Line change: timeUntilLineStart=${timeUntilLineStart.toFixed(0)}ms, anticipationRan=${anticipationRan}, setting=${wordSyncTransitionMs}ms`);
         
         // === INSTANT MODE (0ms) ===
@@ -1385,6 +1385,10 @@ function cleanupWordSync() {
     introDisplayed = false;  // Reset intro state for next song
     gapDisplayed = false;    // Reset gap state for next song
     inSafeSnapZone = false;  // Reset safe zone flag
+    // Reset anticipation state for consistency
+    pendingNextLineId = null;
+    anticipationStarted = false;
+    anticipationDuration = 0;
     // Invalidate any pending outro callbacks by incrementing token
     outroToken++;
     activeOutroToken = 0;
