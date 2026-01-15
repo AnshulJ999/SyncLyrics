@@ -697,8 +697,9 @@ body[data-minimal="true"] .top-right-controls {
     font-size: clamp(0.7rem, 2vw, 0.8rem);
     font-style: italic;
     color: rgba(255, 255, 255, 0.6);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-    margin-top: 0.4rem;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    margin-top: 0.45rem;
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
