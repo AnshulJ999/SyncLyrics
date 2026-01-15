@@ -23,7 +23,7 @@ backups/
 # share_project.py
 .cursor
 resources/fonts/custom
-
+.spotify-react-web-client-source-code
 album_art_database
 
 
