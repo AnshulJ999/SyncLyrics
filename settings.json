@@ -59,7 +59,7 @@
     "lyrics.display.spotify_latency_compensation": -0.5,
     "lyrics.display.update_interval": 0.1,
     "lyrics.display.word_sync_latency_compensation": -0.2,
-    "lyrics.display.word_sync_transition_ms": 300,
+    "lyrics.display.word_sync_transition_ms": 80,
     "lyrics.font_family": "System Default",
     "lyrics.font_weight": "Normal",
     "lyrics.glow_intensity": 1.0,
