@@ -38,7 +38,8 @@ import {
     debugPollInterval,
     debugSource,
     debugBadSamples,
-    instrumentalMarkers
+    instrumentalMarkers,
+    wordSyncTransitionMs
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -797,11 +798,23 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         
+        // Check for INSTANT MODE (0ms) - swap content directly like line-sync
+        if (wordSyncTransitionMs === 0) {
+            // INSTANT MODE: Direct content swap, no fade animation
+            currentEl.classList.remove('line-entering', 'line-exiting');
+            currentEl.innerHTML = html;
+            
+            // Cache element references for fast updates
+            wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
+            
+            return; // Skip word updates this frame, next frame will handle them
+        }
+        
         // SMOOTH TRANSITION: Fade-out old line, wait, then swap content
         currentEl.classList.remove('line-entering');
         currentEl.classList.add('line-exiting');
         
-        // Delay content swap until fade-out completes
+        // Delay content swap until fade-out completes (configurable delay)
         setTimeout(() => {
             // Check if this transition was cancelled by a newer one
             if (transitionToken !== myToken) return;
@@ -821,7 +834,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                     currentEl.classList.remove('line-entering');
                 });
             });
-        }, 70); // Reduced from 100ms for snappier transitions
+        }, wordSyncTransitionMs); // Use configurable transition delay
         
         return; // Skip word updates during transition
     }

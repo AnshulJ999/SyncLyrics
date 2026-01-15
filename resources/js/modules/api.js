@@ -27,6 +27,7 @@ import {
     setSongWordSyncOffset,
     setAnyProviderHasWordSync,
     setInstrumentalMarkers,
+    setWordSyncTransitionMs,
     setDebugRtt,
     setDebugRttSmoothed,
     setDebugRttJitter,
@@ -221,6 +222,11 @@ export async function getConfig() {
         if (config.word_sync_default_enabled !== undefined && !urlParams.has('wordSync')) {
             setWordSyncEnabled(config.word_sync_default_enabled);
             console.log(`Word-sync default: ${config.word_sync_default_enabled}`);
+        }
+
+        // Apply word-sync transition timing (0 = instant, >0 = fade delay in ms)
+        if (config.wordSyncTransitionMs !== undefined) {
+            setWordSyncTransitionMs(config.wordSyncTransitionMs);
         }
 
         console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);

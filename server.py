@@ -3014,6 +3014,7 @@ async def get_client_config():
         "slideshowTransitionDuration": settings.get("slideshow.transition_duration"),
         # Word-sync settings
         "word_sync_default_enabled": settings.get("features.word_sync_default_enabled", True),
+        "wordSyncTransitionMs": settings.get("lyrics.display.word_sync_transition_ms", 0),
         # Lyrics font size multipliers
         "lyricsFontSizeCurrent": settings.get("lyrics.display.font_size_current"),
         "lyricsFontSizeAdjacent": settings.get("lyrics.display.font_size_adjacent"),
