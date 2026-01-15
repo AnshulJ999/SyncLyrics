@@ -693,6 +693,17 @@ body[data-minimal="true"] .top-right-controls {
     text-overflow: ellipsis;
 }
 
+.track-album {
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.6);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    margin-top: 0.4rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ========== PLAYER UI CONTAINER ========== */
 /* Groups progress bar and controls for dynamic positioning */
 #player-ui-container {
@@ -1093,6 +1104,10 @@ body:not(.hide-nav) .slideshow-toggle-btn {
 
     .track-artist {
         font-size: 0.85rem;
+    }
+
+    .track-album {
+        font-size: 0.7rem;
     }
 
     .control-btn {

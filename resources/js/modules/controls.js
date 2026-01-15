@@ -544,9 +544,14 @@ export function updateTrackInfo(trackInfo) {
 
     const titleEl = document.getElementById('track-title');
     const artistEl = document.getElementById('track-artist');
+    const albumEl = document.getElementById('track-album');
 
     if (titleEl) titleEl.textContent = trackInfo.title || 'Unknown Track';
     if (artistEl) artistEl.textContent = trackInfo.artist || 'Unknown Artist';
+    if (albumEl) {
+        albumEl.textContent = trackInfo.album || '';
+        albumEl.style.display = displayConfig.showAlbumName && trackInfo.album ? 'block' : 'none';
+    }
 }
 
 // ========== ALBUM ART ==========

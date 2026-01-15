@@ -36,6 +36,9 @@ export function initializeDisplay() {
     if (params.has('showTrackInfo')) {
         displayConfig.showTrackInfo = params.get('showTrackInfo') === 'true';
     }
+    if (params.has('showAlbumName')) {
+        displayConfig.showAlbumName = params.get('showAlbumName') === 'true';
+    }
     if (params.has('showControls')) {
         displayConfig.showControls = params.get('showControls') === 'true';
     }
@@ -207,6 +210,12 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
         trackInfoEl.style.display = displayConfig.showTrackInfo ? 'block' : 'none';
     }
 
+    // Album name visibility (independent toggle, only show if track info is also visible)
+    const trackAlbumEl = document.getElementById('track-album');
+    if (trackAlbumEl) {
+        trackAlbumEl.style.display = (displayConfig.showTrackInfo && displayConfig.showAlbumName) ? 'block' : 'none';
+    }
+
     // Album art link visibility (independent of track info)
     const albumArtLink = document.getElementById('album-art-link');
     if (albumArtLink) {
@@ -332,6 +341,7 @@ export function setupSettingsPanel() {
     const checkboxMap = {
         'opt-album-art': 'showAlbumArt',
         'opt-track-info': 'showTrackInfo',
+        'opt-album-name': 'showAlbumName',
         'opt-controls': 'showControls',
         'opt-progress': 'showProgress',
         'opt-bottom-nav': 'showBottomNav',
@@ -510,6 +520,7 @@ export function setupSettingsPanel() {
 function handleCheckboxChange(id, checked) {
     if (id === 'opt-album-art') displayConfig.showAlbumArt = checked;
     if (id === 'opt-track-info') displayConfig.showTrackInfo = checked;
+    if (id === 'opt-album-name') displayConfig.showAlbumName = checked;
     if (id === 'opt-controls') displayConfig.showControls = checked;
     if (id === 'opt-progress') displayConfig.showProgress = checked;
     if (id === 'opt-bottom-nav') displayConfig.showBottomNav = checked;
@@ -613,6 +624,7 @@ export function generateCurrentUrl() {
 
     if (!displayConfig.showAlbumArt) params.set('showAlbumArt', 'false');
     if (!displayConfig.showTrackInfo) params.set('showTrackInfo', 'false');
+    if (displayConfig.showAlbumName) params.set('showAlbumName', 'true');
     if (!displayConfig.showControls) params.set('showControls', 'false');
     if (!displayConfig.showProgress) params.set('showProgress', 'false');
     // showBottomNav is now default=false, so only add param if true

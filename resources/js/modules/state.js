@@ -58,6 +58,7 @@ export let displayConfig = {
     minimal: false,
     showAlbumArt: true,
     showTrackInfo: true,
+    showAlbumName: false,  // Album name below artist (default OFF)
     showControls: true,
     showProgress: true,
     showBottomNav: false,  // Default OFF - cleaner UI, users enable via URL param or settings
