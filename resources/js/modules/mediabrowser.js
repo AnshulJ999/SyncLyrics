@@ -17,11 +17,23 @@ import { lastTrackInfo } from './state.js';
 export function setupMediaBrowser() {
     const browserBtn = document.getElementById('btn-media-browser');
     const modal = document.getElementById('media-browser-modal');
+    const content = modal?.querySelector('.media-browser-content');
     const frame = document.getElementById('media-browser-frame');
     const closeBtn = document.getElementById('media-browser-close');
-    const titleEl = document.querySelector('.media-browser-title');
+    const refreshBtn = document.getElementById('media-browser-refresh');
     
     if (!browserBtn || !modal || !frame) return;
+    
+    // Track current URL for refresh
+    let currentFrameUrl = '';
+    
+    // Helper to close modal
+    const closeModal = () => {
+        modal.classList.add('hidden');
+        frame.src = '';  // Unload iframe
+        currentFrameUrl = '';
+        browserBtn.classList.remove('active', 'active-ma');
+    };
     
     // Open media browser
     browserBtn.addEventListener('click', async () => {
@@ -31,8 +43,8 @@ export function setupMediaBrowser() {
         
         if (isMA) {
             // Music Assistant - just open iframe to MA server
-            frame.src = '/media-browser/?source=music_assistant';
-            if (titleEl) titleEl.textContent = 'Music Assistant';
+            currentFrameUrl = '/media-browser/?source=music_assistant';
+            frame.src = currentFrameUrl;
             browserBtn.classList.add('active-ma');
             browserBtn.classList.remove('active');
             
@@ -49,22 +61,21 @@ export function setupMediaBrowser() {
                 const tokenRes = await fetch('/api/spotify/browser-token');
                 if (!tokenRes.ok) {
                     console.error('[MediaBrowser] Failed to get token:', tokenRes.status);
-                    // Still open but may require login
-                    frame.src = '/media-browser/';
+                    currentFrameUrl = '/media-browser/';
                 } else {
                     const data = await tokenRes.json();
                     if (data.access_token) {
-                        frame.src = `/media-browser/?token=${encodeURIComponent(data.access_token)}`;
+                        currentFrameUrl = `/media-browser/?token=${encodeURIComponent(data.access_token)}`;
                     } else {
-                        frame.src = '/media-browser/';
+                        currentFrameUrl = '/media-browser/';
                     }
                 }
             } catch (e) {
                 console.error('[MediaBrowser] Token fetch error:', e);
-                frame.src = '/media-browser/';
+                currentFrameUrl = '/media-browser/';
             }
             
-            if (titleEl) titleEl.textContent = 'Spotify Browser';
+            frame.src = currentFrameUrl;
             browserBtn.classList.add('active');
             browserBtn.classList.remove('active-ma');
             
@@ -80,21 +91,31 @@ export function setupMediaBrowser() {
         modal.classList.remove('hidden');
     });
     
-    // Close modal
+    // Close modal - button
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            modal.classList.add('hidden');
-            frame.src = '';  // Unload iframe
-            browserBtn.classList.remove('active', 'active-ma');
+        closeBtn.addEventListener('click', closeModal);
+    }
+    
+    // Refresh iframe
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            if (currentFrameUrl) {
+                frame.src = currentFrameUrl;
+            }
         });
     }
+    
+    // Click outside to close (click on backdrop, not on content)
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    });
     
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-            modal.classList.add('hidden');
-            frame.src = '';
-            browserBtn.classList.remove('active', 'active-ma');
+            closeModal();
         }
     });
 }
@@ -113,25 +134,25 @@ export function updateMediaBrowserIcon() {
     
     const currentSource = lastTrackInfo?.source || 'spotify';
     const isMA = currentSource === 'music_assistant';
-    const icon = browserBtn.querySelector('i');
     
-    if (!icon) return;
+    // Find current icon (could be i or span)
+    const currentIcon = browserBtn.querySelector('i, span');
+    if (!currentIcon) return;
     
     if (isMA) {
-        // Replace with MA icon span
-        if (!icon.classList.contains('icon-ma')) {
+        // Switch to MA icon if not already
+        if (!currentIcon.classList.contains('icon-ma')) {
             const maIcon = document.createElement('span');
             maIcon.className = 'icon-ma';
-            icon.replaceWith(maIcon);
+            currentIcon.replaceWith(maIcon);
         }
         browserBtn.title = 'Music Assistant Browser';
     } else {
-        // Replace with Spotify Bootstrap icon
-        if (!icon.classList.contains('bi-spotify')) {
+        // Switch to Spotify icon if not already
+        if (!currentIcon.classList.contains('bi-spotify')) {
             const spotifyIcon = document.createElement('i');
             spotifyIcon.className = 'bi bi-spotify';
-            const currentIcon = browserBtn.querySelector('i, span');
-            if (currentIcon) currentIcon.replaceWith(spotifyIcon);
+            currentIcon.replaceWith(spotifyIcon);
         }
         browserBtn.title = 'Spotify Browser';
     }

@@ -441,13 +441,20 @@
     </div>
 </div>
 
-<!-- Media Browser Modal -->
+<!-- Media Browser Modal (click backdrop to close) -->
 <div id="media-browser-modal" class="media-browser-modal hidden">
-    <div class="media-browser-header">
-        <span class="media-browser-title">Media Browser</span>
-        <button id="media-browser-close" class="modal-close">×</button>
+    <div class="media-browser-content">
+        <!-- Minimalist controls overlay -->
+        <div class="media-browser-controls">
+            <button id="media-browser-refresh" class="media-browser-control-btn" title="Refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <button id="media-browser-close" class="media-browser-control-btn close-btn" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <iframe id="media-browser-frame" class="media-browser-frame" src="" allow="autoplay"></iframe>
     </div>
-    <iframe id="media-browser-frame" class="media-browser-frame" src="" allow="autoplay"></iframe>
 </div>
 
 
