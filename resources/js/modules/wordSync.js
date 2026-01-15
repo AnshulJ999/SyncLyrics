@@ -837,11 +837,16 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             // Cache element references for fast updates
             wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
             
-            // Remove entering class after fade-in animation completes
+            // Cleanup after fade-in animation completes
+            // Hybrid approach: setTimeout waits for animation duration, rAF syncs with next paint
             setTimeout(() => {
-                if (transitionToken !== myToken) return;
-                currentEl.classList.remove('line-entering');
-            }, halfDuration + 16); // +16ms buffer (1 frame at 60fps)
+                requestAnimationFrame(() => {
+                    if (transitionToken !== myToken) return;
+                    currentEl.classList.remove('line-entering');
+                    // Clean up inline style so DOM stays tidy
+                    currentEl.style.removeProperty('--ws-transition-duration');
+                });
+            }, halfDuration);
             
         }, halfDuration);
         
