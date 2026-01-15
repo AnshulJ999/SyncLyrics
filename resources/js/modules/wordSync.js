@@ -65,6 +65,7 @@ let transitionToken = 0;
 // Anticipatory transition state - for starting transitions before line change
 let pendingNextLineId = null;      // ID of the line we're transitioning TO
 let anticipationStarted = false;   // True if we've started an anticipatory fade-out
+let anticipationDuration = 0;      // Duration (ms) used for anticipatory fade-out (for symmetric fade-in)
 
 // Track if we've logged word-sync activation (reset on song change)
 let _wordSyncLogged = false;
@@ -766,10 +767,12 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // IMPORTANT: Capture anticipation state BEFORE resetting
         // If anticipation ran, we'll skip fade-out and swap immediately
         const anticipationRan = anticipationStarted;
+        const anticipationHalf = anticipationDuration;  // Capture duration for symmetric fade-in
         
         // NOW reset anticipation state for the next line
         pendingNextLineId = null;
         anticipationStarted = false;
+        anticipationDuration = 0;
         
         // Build word spans for the new line
         const spans = lineData.words.map((word, i) => {
@@ -810,9 +813,9 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         
-        // DEBUG LOGGING (remove after testing)
-        const timeUntilLineStart = (lineData.start - selectionPosition) * 1000;
-        console.log(`[WordSync] Line change: timeUntilLineStart=${timeUntilLineStart.toFixed(0)}ms, anticipationRan=${anticipationRan}, setting=${wordSyncTransitionMs}ms`);
+        // DEBUG LOGGING (commented out - uncomment for debugging)
+        // const timeUntilLineStart = (lineData.start - selectionPosition) * 1000;
+        // console.log(`[WordSync] Line change: timeUntilLineStart=${timeUntilLineStart.toFixed(0)}ms, anticipationRan=${anticipationRan}, setting=${wordSyncTransitionMs}ms`);
         
         // === INSTANT MODE (0ms) ===
         // Direct content swap, no fade animation - like line-sync
@@ -831,12 +834,12 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // === SMOOTH MODE ===
         if (anticipationRan) {
             // ANTICIPATION PATH: Fade-out already happened, just swap and fade-in
-            console.log(`[WordSync] Using anticipation path - immediate swap + fade-in`);
+            // console.log(`[WordSync] Using anticipation path - immediate swap + fade-in`);
             
-            // Use configured halfDuration for fade-in
-            const halfDuration = Math.max(10, Math.floor(wordSyncTransitionMs / 2));
+            // Use the SAME duration that was used for fade-out (symmetric)
+            const halfDuration = anticipationHalf > 0 ? anticipationHalf : Math.max(10, Math.floor(wordSyncTransitionMs / 2));
             
-            // Set CSS variable for fade-in
+            // Set CSS variable for fade-in (matches fade-out duration)
             currentEl.style.setProperty('--ws-transition-duration', `${halfDuration}ms`);
             
             // Swap content immediately (fade-out is done)
@@ -871,7 +874,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                 effectiveTransitionMs = Math.floor(timeUntilLineStart * 0.9);
             }
             
-            console.log(`[WordSync] Normal path - effectiveTransitionMs=${effectiveTransitionMs.toFixed(0)}ms`);
+            // console.log(`[WordSync] Normal path - effectiveTransitionMs=${effectiveTransitionMs.toFixed(0)}ms`);
             
             // If effective is too small, use instant
             if (effectiveTransitionMs <= 20) {
@@ -1125,6 +1128,7 @@ function animateWordSync(timestamp) {
         wordElements = [];
         pendingNextLineId = null;
         anticipationStarted = false;
+        anticipationDuration = 0;
         
         // Mark as safe zone for next frame's flywheel (intro = hidden)
         inSafeSnapZone = true;
@@ -1159,6 +1163,7 @@ function animateWordSync(timestamp) {
         wordElements = [];
         pendingNextLineId = null;
         anticipationStarted = false;
+        anticipationDuration = 0;
         
         // Mark as safe zone for next frame's flywheel (gap = hidden)
         inSafeSnapZone = true;
@@ -1315,8 +1320,11 @@ function animateWordSync(timestamp) {
                     // Calculate effective duration based on time available
                     const effectiveHalfDuration = Math.max(10, Math.floor(timeUntilNextLine * 0.9));
                     
-                    // DEBUG LOGGING (remove after testing)
-                    console.log(`[WordSync] Anticipation triggered: timeUntilNextLine=${timeUntilNextLine.toFixed(0)}ms, effectiveHalfDuration=${effectiveHalfDuration}ms`);
+                    // Store duration for symmetric fade-in later
+                    anticipationDuration = effectiveHalfDuration;
+                    
+                    // DEBUG LOGGING (commented out - uncomment for debugging)
+                    // console.log(`[WordSync] Anticipation triggered: timeUntilNextLine=${timeUntilNextLine.toFixed(0)}ms, effectiveHalfDuration=${effectiveHalfDuration}ms`);
                     
                     // Set CSS variable for fade-out duration
                     currentEl.style.setProperty('--ws-transition-duration', `${effectiveHalfDuration}ms`);
