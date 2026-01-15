@@ -760,7 +760,7 @@ if __name__ == "__main__":
     def handle_interrupt(signum=None, frame=None):
         """Handle keyboard interrupt (works for both signal.signal and loop.add_signal_handler)"""
         logger.info("Received interrupt signal, initiating shutdown...")
-        # Set shutdown event FIRST - this immediately unblocks any async waits
+        # Set shutdown event FIRST - signals the main loop condition to exit
         _shutdown_event.set()
         if _tray_icon:
             _tray_icon.stop()
