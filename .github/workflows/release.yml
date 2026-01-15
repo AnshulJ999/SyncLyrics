@@ -76,6 +76,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: pwsh
+        run: |
+          "VERSION = `"${{ needs.prepare.outputs.version_clean }}`"" | Out-File -FilePath version.py -Encoding utf8
+          Write-Host "Version set to: ${{ needs.prepare.outputs.version_clean }}"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -150,6 +156,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: |
+          echo "VERSION = \"${{ needs.prepare.outputs.version_clean }}\"" > version.py
+          echo "Version set to: ${{ needs.prepare.outputs.version_clean }}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -262,6 +273,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set version from tag
+        run: |
+          echo "VERSION = \"${{ needs.prepare.outputs.version_clean }}\"" > version.py
+          echo "Version set to: ${{ needs.prepare.outputs.version_clean }}"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -347,6 +363,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: |
+          echo "VERSION = \"${{ needs.prepare.outputs.version_clean }}\"" > version.py
+          echo "Version set to: ${{ needs.prepare.outputs.version_clean }}"
 
       - name: Set up Python
         uses: actions/setup-python@v5

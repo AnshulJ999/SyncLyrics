@@ -54,9 +54,9 @@ else:
     DATA_DIR = ROOT_DIR
 
 # ==========================================
-# Version
+# Version (auto-injected from Git tag during CI builds)
 # ==========================================
-VERSION = "1.9.1"
+from version import VERSION
 
 # FIX: Only load .env if it exists (optimization)
 env_file = ROOT_DIR / '.env'

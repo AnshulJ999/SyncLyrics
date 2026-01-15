@@ -30,6 +30,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set version from tag
+        run: |
+          # Determine version (same logic as version step below, but needed early)
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            RAW_TAG="${{ github.event.inputs.tag }}"
+          else
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          CLEAN_TAG="${RAW_TAG#v}"
+          echo "VERSION = \"${CLEAN_TAG}\"" > version.py
+          echo "Version set to: ${CLEAN_TAG}"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
