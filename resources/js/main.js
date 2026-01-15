@@ -120,6 +120,9 @@ import { initTouchGestures } from './modules/touchGestures.js';
 // Keyboard Shortcuts (Level 3)
 import { initKeyboardShortcuts } from './modules/keyboard.js';
 
+// Media Browser (Level 2)
+import { setupMediaBrowser } from './modules/mediabrowser.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -730,6 +733,9 @@ async function main() {
     // Initialize audio source module
     audioSource.init();
 
+    // Initialize media browser
+    setupMediaBrowser();
+
     // Initialize waveform and spectrum visualizers
     initWaveform();
     initSpectrum();
@@ -829,9 +835,6 @@ async function main() {
         console.log('[Main] Word-sync outro detected, entering visual mode');
         enterVisualMode();  // Already has internal guard for visualModeActive
     });
-
-    // Setup Media Browser button and modal
-    setupMediaBrowser();
 
     console.log('[Main] Initialization complete. Starting update loop...');
 

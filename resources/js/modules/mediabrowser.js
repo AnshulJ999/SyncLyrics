@@ -1,11 +1,20 @@
+/**
+ * mediabrowser.js - Media Browser Module
+ * 
+ * Provides embedded Spotify library browser and Music Assistant iframe.
+ * 
+ * Level 2 - Imports: state
+ */
 
-// ========== MEDIA BROWSER HELPER ==========
+import { lastTrackInfo } from './state.js';
+
+// ========== MEDIA BROWSER SETUP ==========
 
 /**
  * Setup Media Browser button and modal
  * Opens Spotify library browser or Music Assistant iframe based on current source
  */
-function setupMediaBrowser() {
+export function setupMediaBrowser() {
     const browserBtn = document.getElementById('btn-media-browser');
     const modal = document.getElementById('media-browser-modal');
     const frame = document.getElementById('media-browser-frame');
