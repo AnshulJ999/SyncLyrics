@@ -121,7 +121,7 @@ import { initTouchGestures } from './modules/touchGestures.js';
 import { initKeyboardShortcuts } from './modules/keyboard.js';
 
 // Media Browser (Level 2)
-import { setupMediaBrowser } from './modules/mediabrowser.js';
+import { setupMediaBrowser, updateMediaBrowserIcon } from './modules/mediabrowser.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -606,6 +606,9 @@ async function updateLoop() {
             // (audio analysis data is source-specific)
             resetWaveform();
             resetSpectrum();
+            
+            // Update media browser button icon based on source
+            updateMediaBrowserIcon();
         }
 
         // Update track info
