@@ -564,6 +564,26 @@ async def main() -> NoReturn:
     """
     global _tray_thread, _server_task, _mdns_service
     
+    # Register asyncio-native signal handlers on Unix
+    # This is the recommended approach for asyncio apps - properly interrupts async operations
+    # Windows doesn't support add_signal_handler, so we fall back to signal.signal() (set in __main__)
+    if sys.platform != 'win32':
+        import signal
+        loop = asyncio.get_running_loop()
+        
+        def unix_signal_handler():
+            """Unix signal handler - called by asyncio event loop"""
+            logger.info("Received Unix signal, initiating shutdown...")
+            _shutdown_event.set()
+            if _tray_icon:
+                _tray_icon.stop()
+            queue.put("exit")
+        
+        # Register for SIGINT (Ctrl+C) and SIGTERM (Docker/systemd stop)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, unix_signal_handler)
+        logger.debug("Registered asyncio signal handlers for SIGINT/SIGTERM")
+    
     # Start the server and store task globally
     logger.info(f"Starting server on port {PORT}...")
     _server_task = asyncio.create_task(run_server())
@@ -657,7 +677,7 @@ async def main() -> NoReturn:
         logger.debug(f"State file path: {state_file_path}")
         logger.debug(f"State file exists: {path.exists(state_file_path)}")
         loop_iteration = 0
-        while True:
+        while not _shutdown_event.is_set():
             loop_iteration += 1
             
             # Periodic state logging every 5 minutes (3000 iterations at 0.1s interval)
@@ -737,9 +757,11 @@ if __name__ == "__main__":
             set_audio_rec_runtime_enabled(enabled, auto_detect)
             logger.debug(f"Audio rec runtime flags from config: enabled={enabled}, auto_detect={auto_detect}")
     
-    def handle_interrupt(signum, frame):
-        """Handle keyboard interrupt"""
-        logger.info("Received keyboard interrupt...")
+    def handle_interrupt(signum=None, frame=None):
+        """Handle keyboard interrupt (works for both signal.signal and loop.add_signal_handler)"""
+        logger.info("Received interrupt signal, initiating shutdown...")
+        # Set shutdown event FIRST - this immediately unblocks any async waits
+        _shutdown_event.set()
         if _tray_icon:
             _tray_icon.stop()
         queue.put("exit")
@@ -748,6 +770,7 @@ if __name__ == "__main__":
         """Windows-specific control handler"""
         if ctrl_type in (win32con.CTRL_C_EVENT, win32con.CTRL_BREAK_EVENT):
             logger.info("Received Windows interrupt signal...")
+            _shutdown_event.set()  # Set shutdown event for immediate loop exit
             if _tray_icon:
                 _tray_icon.stop()
             queue.put("exit")
@@ -755,6 +778,9 @@ if __name__ == "__main__":
         return False
     
     # Set up signal handlers
+    # On Windows: Use signal.signal() - works correctly with asyncio.run()
+    # On Unix: signal.signal() is set here as fallback, but the main handler is
+    # registered via loop.add_signal_handler() inside main() for proper asyncio integration
     import signal
     signal.signal(signal.SIGINT, handle_interrupt)
     signal.signal(signal.SIGTERM, handle_interrupt)  # Docker/HA graceful shutdown
