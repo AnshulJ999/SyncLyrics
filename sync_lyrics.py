@@ -70,7 +70,7 @@ ICON_URL = str(RESOURCES_DIR / "images" / "icon.ico")
 PORT = int(SERVER["port"])
 _tray_icon = None
 _tray_thread = None
-_shutdown_event = asyncio.Event()
+_shutdown_event = th.Event()  # Thread-safe for signal handlers (runs in different contexts)
 _server_task = None  # Global to track server task
 _mdns_service = None # Global mDNS service
 
