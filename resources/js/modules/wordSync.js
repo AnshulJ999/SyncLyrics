@@ -798,9 +798,11 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         
-        // Check for INSTANT MODE (0ms) - swap content directly like line-sync
-        if (wordSyncTransitionMs === 0) {
-            // INSTANT MODE: Direct content swap, no fade animation
+        // === INSTANT MODE (0ms) ===
+        // Direct content swap, no fade animation - like line-sync
+        if (wordSyncTransitionMs <= 0) {
+            // Clear any lingering CSS variable and classes
+            currentEl.style.removeProperty('--ws-transition-duration');
             currentEl.classList.remove('line-entering', 'line-exiting');
             currentEl.innerHTML = html;
             
@@ -810,16 +812,24 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             return; // Skip word updates this frame, next frame will handle them
         }
         
-        // SMOOTH TRANSITION: Fade-out old line, wait, then swap content
+        // === SMOOTH MODE (50/50 Split) ===
+        // Setting = total transition time, split evenly between fade-out and fade-in
+        // This ensures content swaps exactly when opacity hits 0, preventing flicker
+        const halfDuration = Math.max(10, Math.floor(wordSyncTransitionMs / 2));
+        
+        // Set CSS variable so transition duration matches our setTimeout
+        currentEl.style.setProperty('--ws-transition-duration', `${halfDuration}ms`);
+        
+        // Start fade-out animation
         currentEl.classList.remove('line-entering');
         currentEl.classList.add('line-exiting');
         
-        // Delay content swap until fade-out completes (configurable delay)
+        // Wait exactly halfDuration (when opacity reaches 0) before swapping content
         setTimeout(() => {
-            // Check if this transition was cancelled by a newer one
+            // Check if this transition was cancelled by a newer line change
             if (transitionToken !== myToken) return;
             
-            // Now swap the content (old line has faded out)
+            // Swap content (line is now fully invisible)
             currentEl.innerHTML = html;
             currentEl.classList.remove('line-exiting');
             currentEl.classList.add('line-entering');
@@ -827,14 +837,13 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             // Cache element references for fast updates
             wordElements = Array.from(currentEl.querySelectorAll('.word-sync-word'));
             
-            // Remove entering class after animation completes (use requestAnimationFrame for efficiency)
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (transitionToken !== myToken) return;
-                    currentEl.classList.remove('line-entering');
-                });
-            });
-        }, wordSyncTransitionMs); // Use configurable transition delay
+            // Remove entering class after fade-in animation completes
+            setTimeout(() => {
+                if (transitionToken !== myToken) return;
+                currentEl.classList.remove('line-entering');
+            }, halfDuration + 16); // +16ms buffer (1 frame at 60fps)
+            
+        }, halfDuration);
         
         return; // Skip word updates during transition
     }

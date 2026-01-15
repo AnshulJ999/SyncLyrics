@@ -1850,8 +1850,10 @@ body.soft-mode .background-overlay {
     /* Preserve spaces between word spans - prevents whitespace collapsing on line wrap */
     white-space: pre-wrap;
     
-    /* Smooth line transitions - balanced for visual comfort */
-    transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+    /* Smooth line transitions - duration controlled by JS via CSS variable
+       Default: 0ms (instant) - JS sets value for smooth transitions */
+    transition: opacity var(--ws-transition-duration, 0ms) ease-out, 
+                transform var(--ws-transition-duration, 0ms) ease-out;
 }
 
 /* Fade out old line before replacement */
@@ -1862,7 +1864,7 @@ body.soft-mode .background-overlay {
 
 /* Fade in new line after replacement */
 .current.word-sync-active.line-entering {
-    animation: lineEnter 0.1s ease-out forwards;
+    animation: lineEnter var(--ws-transition-duration, 0ms) ease-out forwards;
 }
 
 @keyframes lineEnter {
