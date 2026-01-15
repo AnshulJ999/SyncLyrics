@@ -321,6 +321,11 @@
     </button>
 </div>
 
+<!-- NEW: Media Browser Button (2nd row above visual mode toggle) -->
+<button id="btn-media-browser" class="media-browser-toggle-btn" title="Media Browser">
+    <i class="ph-bold ph-spotify-logo"></i>
+</button>
+
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
     <i class="bi bi-music-note"></i>
@@ -434,6 +439,15 @@
             <!-- Populated dynamically -->
         </div>
     </div>
+</div>
+
+<!-- Media Browser Modal -->
+<div id="media-browser-modal" class="media-browser-modal hidden">
+    <div class="media-browser-header">
+        <span class="media-browser-title">Media Browser</span>
+        <button id="media-browser-close" class="modal-close">×</button>
+    </div>
+    <iframe id="media-browser-frame" class="media-browser-frame" src="" allow="autoplay"></iframe>
 </div>
 
 

@@ -3106,6 +3106,92 @@ async def spotify_callback():
         </html>
         """, 500
 
+# --- Media Browser Routes ---
+# Serves embedded Spotify UI client and Music Assistant iframe
+
+@app.route('/media-browser/')
+@app.route('/media-browser/<path:subpath>')
+async def media_browser(subpath='index.html'):
+    """
+    Serves the media browser.
+    - For Spotify: serves static React client files from resources/spotify-browser
+    - For MA: returns page with iframe to user's MA server URL
+    
+    Query params:
+    - source: 'spotify' (default) or 'music_assistant'  
+    - token: Spotify access token (for Spotify source)
+    """
+    source = request.args.get('source', 'spotify')
+    
+    if source == 'music_assistant':
+        # Get MA server URL from settings
+        ma_url = settings.get('system.music_assistant.server_url', '')
+        if not ma_url:
+            return """
+            <html>
+            <head><title>Music Assistant Not Configured</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #1a1a2e; color: #fff;">
+                <h1>⚠️ Music Assistant Not Configured</h1>
+                <p>Please configure the Music Assistant server URL in Settings.</p>
+            </body>
+            </html>
+            """, 400
+        
+        # Return a simple page that iframes the MA server
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Music Assistant</title>
+            <style>
+                body, html {{ margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1a2e; }}
+                iframe {{ width: 100%; height: 100%; border: none; }}
+            </style>
+        </head>
+        <body>
+            <iframe src="{ma_url}" allow="autoplay"></iframe>
+        </body>
+        </html>
+        """
+    else:
+        # Serve Spotify React client static files
+        spotify_browser_dir = RESOURCES_DIR / "spotify-browser"
+        
+        # Handle the root path
+        if subpath == '' or subpath == 'index.html':
+            subpath = 'index.html'
+        
+        return await send_from_directory(str(spotify_browser_dir), subpath)
+
+
+@app.route('/api/spotify/browser-token')
+async def get_spotify_browser_token():
+    """
+    Return fresh access token for Spotify browser client.
+    The React client uses this token for API calls.
+    """
+    client = get_spotify_client()
+    
+    if not client:
+        return jsonify({'error': 'Spotify not authenticated'}), 401
+    
+    try:
+        # Get fresh access token from Spotipy auth manager
+        token_info = client.sp.auth_manager.get_access_token(as_dict=True)
+        
+        if token_info and 'access_token' in token_info:
+            return jsonify({
+                'access_token': token_info['access_token'],
+                'expires_in': token_info.get('expires_in', 3600)
+            })
+        else:
+            return jsonify({'error': 'Failed to get token'}), 500
+            
+    except Exception as e:
+        logger.error(f"Failed to get Spotify browser token: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Add this new route near other /api routes, e.g. after /api/artist/images
 
 @app.route('/api/slideshow/random-images')

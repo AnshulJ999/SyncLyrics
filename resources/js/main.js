@@ -830,6 +830,9 @@ async function main() {
         enterVisualMode();  // Already has internal guard for visualModeActive
     });
 
+    // Setup Media Browser button and modal
+    setupMediaBrowser();
+
     console.log('[Main] Initialization complete. Starting update loop...');
 
     // Start the main loop
