@@ -38,7 +38,7 @@ export function setupMediaBrowser() {
             
             // Update icon to MA icon
             const icon = browserBtn.querySelector('i');
-            if (icon) icon.className = 'ph-bold ph-music-notes';
+            if (icon) icon.className = 'bi bi-music-note-list';
         } else {
             // Spotify - fetch fresh token first
             try {
@@ -66,7 +66,7 @@ export function setupMediaBrowser() {
             
             // Update icon to Spotify icon
             const icon = browserBtn.querySelector('i');
-            if (icon) icon.className = 'ph-bold ph-spotify-logo';
+            if (icon) icon.className = 'bi bi-spotify';
         }
         
         modal.classList.remove('hidden');

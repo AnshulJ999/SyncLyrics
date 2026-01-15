@@ -10,7 +10,7 @@ from lyrics import get_timed_lyrics_previous_and_next, get_current_provider, _is
 import lyrics as lyrics_module
 from system_utils import get_current_song_meta_data, get_album_db_folder, load_album_art_from_db, save_album_db_metadata, get_cached_art_path, cleanup_old_art, clear_artist_image_cache
 from state_manager import *
-from config import LYRICS, RESOURCES_DIR, ALBUM_ART_DB_DIR, SERVER
+from config import LYRICS, RESOURCES_DIR, ALBUM_ART_DB_DIR, SERVER, conf
 from settings import settings
 from logging_config import get_logger
 
@@ -3124,15 +3124,16 @@ async def media_browser(subpath='index.html'):
     source = request.args.get('source', 'spotify')
     
     if source == 'music_assistant':
-        # Get MA server URL from settings
-        ma_url = settings.get('system.music_assistant.server_url', '')
+        # Get MA server URL from config (checks env vars first, then settings.json)
+        ma_url = conf('system.music_assistant.server_url', '')
         if not ma_url:
             return """
             <html>
             <head><title>Music Assistant Not Configured</title></head>
             <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #1a1a2e; color: #fff;">
                 <h1>⚠️ Music Assistant Not Configured</h1>
-                <p>Please configure the Music Assistant server URL in Settings.</p>
+                <p>Please configure the Music Assistant server URL in Settings or .env file.</p>
+                <p><code>SYSTEM_MUSIC_ASSISTANT_SERVER_URL=http://your-ma-server:8095</code></p>
             </body>
             </html>
             """, 400
@@ -3157,10 +3158,12 @@ async def media_browser(subpath='index.html'):
         # Serve Spotify React client static files
         spotify_browser_dir = RESOURCES_DIR / "spotify-browser"
         
-        # Handle the root path
+        # Handle the root path - serve index.html
         if subpath == '' or subpath == 'index.html':
             subpath = 'index.html'
         
+        # CRITICAL: React build uses /static/ paths which conflict with SyncLyrics' own /static/ route
+        # We need to serve static files from the spotify-browser directory
         return await send_from_directory(str(spotify_browser_dir), subpath)
 
 
