@@ -131,7 +131,12 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     right: 8px;
     z-index: 10;
     display: flex;
-    gap: 6px;
+    gap: 12px;
+}
+
+/* Add extra spacing after toggle button to separate from refresh/close */
+#media-browser-toggle-source {
+    margin-right: 2px;
 }
 
 .media-browser-control-btn {
