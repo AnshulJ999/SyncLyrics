@@ -259,11 +259,27 @@ SPOTIFY = {
     "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET", ""),
     "redirect_uri": conf("spotify.redirect_uri", "http://127.0.0.1:9012/callback"),
     "scope": [
+        # Playback
         "user-read-playback-state", 
         "user-modify-playback-state", 
         "user-read-currently-playing",
-        "user-library-read",    # ADDED: Check if song is liked
-        "user-library-modify"   # ADDED: Like/Unlike songs
+        "streaming",                    # ADDED: Web Playback SDK (optional)
+        # Library
+        "user-library-read",            # Check if song is liked
+        "user-library-modify",          # Like/Unlike songs
+        # Playlists (ADDED for Media Browser)
+        "playlist-read-private",        # View private playlists
+        "playlist-read-collaborative",  # View collaborative playlists
+        "playlist-modify-public",       # Edit public playlists
+        "playlist-modify-private",      # Edit private playlists
+        # User data (ADDED for Media Browser)
+        "user-follow-read",             # View followed artists
+        "user-follow-modify",           # Follow/unfollow artists
+        "user-top-read",                # Top tracks/artists
+        "user-read-recently-played",    # Recently played
+        "user-read-playback-position",  # Podcast playback position
+        # Images (optional)
+        "ugc-image-upload",             # Upload playlist cover images
     ],
     "cache": {
         "metadata_ttl": _safe_float(conf("spotify.cache.metadata_ttl"), 2.0),
