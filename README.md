@@ -56,6 +56,11 @@ _Video demo showcasing the app's main features_
 - Spectrum visualizer (Spicetify Required)
 - **Keyboard shortcuts:** Space, arrows, and letter keys for quick control
 
+### 📚 Media Browser
+- **Embedded library browser** for Spotify and Music Assistant
+- Browse playlists, albums, and artists without leaving the app
+- Toggle between libraries with a single click
+
 ### ⚡ Spicetify Integration
 - **Real-time Updates:** ~100ms position updates via WebSocket
 - **Audio Analysis:** Enables waveform and spectrum features

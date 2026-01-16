@@ -96,6 +96,13 @@ Custom extension providing:
 
 See [Spicetify Integration](Spicetify%20Integration.md) for installation.
 
+### 📚 Media Browser
+Embedded library browser accessible via the Spotify button:
+- Browse Spotify playlists, albums, and artists
+- Music Assistant library support (if configured)
+- Toggle between sources without leaving the lyrics view
+- Selected tracks play on your active device
+
 ---
 
 ## Quick Links
