@@ -199,6 +199,10 @@ class LinuxSource(BaseMetadataSource):
                 "is_playing": status == "playing",
                 "source": "linux",
                 "colors": ("#24273a", "#363b54"),  # Default, will be enriched
+                # TODO: MPRIS supports shuffle/loop via `playerctl shuffle` and `playerctl loop`
+                # Commands: shuffle returns On/Off, loop returns None/Track/Playlist
+                "shuffle_state": None,
+                "repeat_state": None,
             }
             
         except subprocess.TimeoutExpired:

@@ -713,7 +713,10 @@ async def _get_current_song_meta_data_windows() -> Optional[dict]:
             "is_playing": playback_status == 4,  # True only if Playing (not Paused)
             "source": "windows_media",
             "app_id": app_id,  # ADDED: Pass app_id for optimistic control enabling (enables controls for spotify.exe before enrichment)
-            "background_style": saved_background_style  # Return saved style preference
+            "background_style": saved_background_style,  # Return saved style preference
+            # Windows SMTC doesn't expose shuffle/repeat, but spotify_hybrid enrichment will copy from Spotify API
+            "shuffle_state": None,
+            "repeat_state": None,
         }
         
         # Track last active time for paused timeout logic

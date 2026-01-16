@@ -645,6 +645,13 @@ async def get_current_song_meta_data() -> Optional[dict]:
                         if spotify_data.get("background_style"):
                             result["background_style"] = spotify_data.get("background_style")
                         
+                        # Copy Shuffle/Repeat state for playback controls
+                        # These come from Spotify API and enable correct button states
+                        if spotify_data.get("shuffle_state") is not None:
+                            result["shuffle_state"] = spotify_data.get("shuffle_state")
+                        if spotify_data.get("repeat_state") is not None:
+                            result["repeat_state"] = spotify_data.get("repeat_state")
+                        
                         # if DEBUG["enabled"]:
                         #    logger.info(f"Hybrid mode: Enriched Windows Media data with Spotify album art and controls")
             except Exception as e:

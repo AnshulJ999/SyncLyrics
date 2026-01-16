@@ -229,6 +229,9 @@ class MacOSSource(BaseMetadataSource):
                 "is_playing": is_playing,
                 "source": "macos",
                 "colors": ("#24273a", "#363b54"),  # Default, will be enriched
+                # TODO: macOS shuffle/repeat could be fetched via AppleScript for Music.app/Spotify
+                "shuffle_state": None,
+                "repeat_state": None,
             }
             
         except subprocess.TimeoutExpired:
@@ -362,6 +365,9 @@ class MacOSSource(BaseMetadataSource):
                 "is_playing": is_playing,
                 "source": "macos",
                 "colors": ("#24273a", "#363b54"),
+                # TODO: macOS shuffle/repeat could be fetched via AppleScript for Music.app/Spotify
+                "shuffle_state": None,
+                "repeat_state": None,
             }
             
         except subprocess.TimeoutExpired:

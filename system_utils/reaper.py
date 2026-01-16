@@ -704,6 +704,9 @@ class ReaperAudioSource:
             "_enrichment_source": song.get("_enrichment_source"),
             "_shazam_artist": song.get("_shazam_artist"),  # Original Shazam artist
             "_shazam_title": song.get("_shazam_title"),    # Original Shazam title
+            # Audio recognition doesn't have playback controls
+            "shuffle_state": None,
+            "repeat_state": None,
         }
     
     def get_status(self) -> Dict[str, Any]:

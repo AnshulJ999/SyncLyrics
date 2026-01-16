@@ -15,7 +15,7 @@ from quart import websocket
 from . import state
 from .helpers import _normalize_track_id
 from logging_config import get_logger
-from providers.spotify_api import enhance_spotify_image_url_async
+from providers.spotify_api import enhance_spotify_image_url_async, get_shared_spotify_client
 
 logger = get_logger(__name__)
 
@@ -230,6 +230,14 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         raw_album_art_url = _convert_spotify_image_uri(track.get('album_art_url'))
         enhanced_album_art_url = await enhance_spotify_image_url_async(raw_album_art_url)
         
+        # Get shuffle/repeat state from Spotify API cache (Spicetify controls same Spotify Desktop)
+        spotify_client = get_shared_spotify_client()
+        shuffle_state = None
+        repeat_state = None
+        if spotify_client and spotify_client._metadata_cache:
+            shuffle_state = spotify_client._metadata_cache.get('shuffle_state')
+            repeat_state = spotify_client._metadata_cache.get('repeat_state')
+        
         return {
             'track_id': current_track_id,
             'id': spotify_id,  # Spotify track ID for like button
@@ -256,6 +264,9 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
             'artist_id': track.get('artist_id'),  # For Visual Mode artist slideshow
             'url': track.get('url'),  # For 'open in Spotify' feature
             'artist_visuals': _spicetify_state.get('artist_visuals'),  # GraphQL header/gallery images
+            # Playback control states (from Spotify API cache)
+            'shuffle_state': shuffle_state,
+            'repeat_state': repeat_state,
         }
 
 

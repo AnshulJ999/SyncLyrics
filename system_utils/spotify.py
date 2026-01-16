@@ -710,7 +710,10 @@ async def _get_current_song_meta_data_spotify(target_title: str = None, target_a
             "artist_name": track.get("artist_name"),  # For display purposes
             "background_style": saved_background_style,  # Return saved style preference (Phase 2)
             "url": track.get("url"),  # Spotify Web URL for album art click functionality
-            "last_active_time": state._spotify_last_active_time  # For paused timeout
+            "last_active_time": state._spotify_last_active_time,  # For paused timeout
+            # Playback control states (for shuffle/repeat button UI)
+            "shuffle_state": track.get("shuffle_state"),
+            "repeat_state": track.get("repeat_state")
         }
         
         # Add album_art_path if we have a direct path (DB file)
