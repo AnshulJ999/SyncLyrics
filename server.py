@@ -2521,6 +2521,9 @@ async def set_shuffle():
     
     success = await client.set_shuffle(state)
     if success:
+        # Update cache so next toggle uses correct current state
+        if client._metadata_cache:
+            client._metadata_cache['shuffle_state'] = state
         return jsonify({"status": "success", "shuffle": state})
     return jsonify({"error": "Failed to set shuffle"}), 500
 
@@ -2550,6 +2553,9 @@ async def set_repeat():
     
     success = await client.set_repeat(mode)
     if success:
+        # Update cache so next cycle uses correct current state
+        if client._metadata_cache:
+            client._metadata_cache['repeat_state'] = mode
         return jsonify({"status": "success", "repeat": mode})
     return jsonify({"error": "Failed to set repeat"}), 500
 

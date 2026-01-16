@@ -808,11 +808,11 @@ body.hide-nav #player-ui-container {
 }
 
 .controls-left {
-    justify-content: flex-start;
+    justify-content: space-between;
 }
 
 .controls-right {
-    justify-content: flex-end;
+    justify-content: space-between;
 }
 
 .controls-center {
@@ -1049,13 +1049,13 @@ body[data-minimal="true"] .slideshow-toggle-btn {
 /* Like and Queue buttons - smaller icons */
 #btn-like i,
 #btn-queue i {
-    font-size: 1rem;
+    font-size: 1.1rem;
 }
 
 /* Playback controls (prev/next) - slightly larger */
 #btn-previous i,
 #btn-next i {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
 }
 
 .play-pause-btn {

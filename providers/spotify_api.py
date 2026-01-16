@@ -1077,7 +1077,7 @@ class SpotifyAPI:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None, 
-                lambda: self.sp.transfer_playback(device_ids=[device_id], force_play=force_play)
+                lambda: self.sp.transfer_playback(device_id=device_id, force_play=force_play)
             )
             return True
         except Exception as e:

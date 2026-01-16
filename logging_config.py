@@ -178,6 +178,7 @@ def setup_logging(
     logging.getLogger('shazamio_core').setLevel(logging.WARNING) 
     logging.getLogger('aiohttp_retry').setLevel(logging.WARNING)
     logging.getLogger('fontTools').setLevel(logging.WARNING)  # Suppress fonttools table parsing spam
+    logging.getLogger('comtypes').setLevel(logging.WARNING)  # Suppress COM interface noise
     
     # Force UTF-8 encoding for Windows console
     if sys.platform.startswith('win'):
