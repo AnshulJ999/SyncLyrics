@@ -91,8 +91,11 @@ async def add_cache_headers(response):
     """
     req_path = request.path
     
+    # Media browser static assets (React build with content hashes - safe to cache forever)
+    if req_path.startswith('/media-browser/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     # Static assets (CSS, JS, images, fonts)
-    if req_path.startswith('/static/'):
+    elif req_path.startswith('/static/'):
         # Reduced from 3600s (1hr) to 360s (6min) to ensure updates propagate faster
         # Combined with ETag/Last-Modified, this enables efficient revalidation
         response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
