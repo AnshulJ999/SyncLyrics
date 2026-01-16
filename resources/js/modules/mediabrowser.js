@@ -10,6 +10,72 @@ import { lastTrackInfo } from './state.js';
 
 // ========== MEDIA BROWSER SETUP ==========
 
+// Track current source for modal (can differ from playback source when user toggles)
+let currentModalSource = 'spotify';
+let currentFrameUrl = '';
+
+/**
+ * Get Spotify iframe URL with fresh token
+ */
+async function getSpotifyUrl() {
+    try {
+        const tokenRes = await fetch('/api/spotify/browser-token');
+        if (!tokenRes.ok) {
+            console.error('[MediaBrowser] Failed to get token:', tokenRes.status);
+            return '/media-browser/';
+        }
+        const data = await tokenRes.json();
+        if (data.access_token) {
+            return `/media-browser/?token=${encodeURIComponent(data.access_token)}`;
+        }
+        return '/media-browser/';
+    } catch (e) {
+        console.error('[MediaBrowser] Token fetch error:', e);
+        return '/media-browser/';
+    }
+}
+
+/**
+ * Get Music Assistant iframe URL
+ */
+function getMAUrl() {
+    return '/media-browser/?source=music_assistant';
+}
+
+/**
+ * Update the toggle button UI to reflect current source
+ */
+function updateToggleButton(toggleBtn, source) {
+    if (!toggleBtn) return;
+    
+    const icon = toggleBtn.querySelector('i, .icon-ma');
+    const label = toggleBtn.querySelector('span');
+    
+    if (source === 'music_assistant') {
+        // Currently showing MA - button shows "Switch to Spotify"
+        if (icon) {
+            const newIcon = document.createElement('i');
+            newIcon.className = 'bi bi-spotify';
+            icon.replaceWith(newIcon);
+        }
+        if (label) label.textContent = 'Spotify';
+        toggleBtn.classList.remove('ma-active');
+        toggleBtn.classList.add('spotify-active');
+        toggleBtn.title = 'Switch to Spotify';
+    } else {
+        // Currently showing Spotify - button shows "Switch to MA"
+        if (icon) {
+            const newIcon = document.createElement('span');
+            newIcon.className = 'icon-ma';
+            icon.replaceWith(newIcon);
+        }
+        if (label) label.textContent = 'Music Assistant';
+        toggleBtn.classList.remove('spotify-active');
+        toggleBtn.classList.add('ma-active');
+        toggleBtn.title = 'Switch to Music Assistant';
+    }
+}
+
 /**
  * Setup Media Browser button and modal
  * Opens Spotify library browser or Music Assistant iframe based on current source
@@ -17,15 +83,12 @@ import { lastTrackInfo } from './state.js';
 export function setupMediaBrowser() {
     const browserBtn = document.getElementById('btn-media-browser');
     const modal = document.getElementById('media-browser-modal');
-    const content = modal?.querySelector('.media-browser-content');
     const frame = document.getElementById('media-browser-frame');
     const closeBtn = document.getElementById('media-browser-close');
     const refreshBtn = document.getElementById('media-browser-refresh');
+    const toggleBtn = document.getElementById('media-browser-toggle-source');
     
     if (!browserBtn || !modal || !frame) return;
-    
-    // Track current URL for refresh
-    let currentFrameUrl = '';
     
     // Helper to close modal
     const closeModal = () => {
@@ -35,68 +98,64 @@ export function setupMediaBrowser() {
         browserBtn.classList.remove('active', 'active-ma');
     };
     
-    // Open media browser
-    browserBtn.addEventListener('click', async () => {
-        // Determine source based on current track source
-        const currentSource = lastTrackInfo?.source || 'spotify';
-        const isMA = currentSource === 'music_assistant';
+    // Helper to load a source
+    const loadSource = async (source) => {
+        currentModalSource = source;
         
-        if (isMA) {
-            // Music Assistant - just open iframe to MA server
-            currentFrameUrl = '/media-browser/?source=music_assistant';
+        if (source === 'music_assistant') {
+            currentFrameUrl = getMAUrl();
             frame.src = currentFrameUrl;
             browserBtn.classList.add('active-ma');
             browserBtn.classList.remove('active');
-            
-            // Update icon to MA icon (custom SVG)
-            const icon = browserBtn.querySelector('i, span');
-            if (icon) {
-                const maIcon = document.createElement('span');
-                maIcon.className = 'icon-ma';
-                icon.replaceWith(maIcon);
-            }
         } else {
-            // Spotify - fetch fresh token first
-            try {
-                const tokenRes = await fetch('/api/spotify/browser-token');
-                if (!tokenRes.ok) {
-                    console.error('[MediaBrowser] Failed to get token:', tokenRes.status);
-                    currentFrameUrl = '/media-browser/';
-                } else {
-                    const data = await tokenRes.json();
-                    if (data.access_token) {
-                        currentFrameUrl = `/media-browser/?token=${encodeURIComponent(data.access_token)}`;
-                    } else {
-                        currentFrameUrl = '/media-browser/';
-                    }
-                }
-            } catch (e) {
-                console.error('[MediaBrowser] Token fetch error:', e);
-                currentFrameUrl = '/media-browser/';
-            }
-            
+            currentFrameUrl = await getSpotifyUrl();
             frame.src = currentFrameUrl;
             browserBtn.classList.add('active');
             browserBtn.classList.remove('active-ma');
-            
-            // Update icon to Spotify icon
-            const icon = browserBtn.querySelector('i, span');
-            if (icon && !icon.classList.contains('bi-spotify')) {
+        }
+        
+        // Update button icon on main button
+        const icon = browserBtn.querySelector('i, span');
+        if (icon) {
+            if (source === 'music_assistant') {
+                const maIcon = document.createElement('span');
+                maIcon.className = 'icon-ma';
+                icon.replaceWith(maIcon);
+            } else if (!icon.classList.contains('bi-spotify')) {
                 const spotifyIcon = document.createElement('i');
                 spotifyIcon.className = 'bi bi-spotify';
                 icon.replaceWith(spotifyIcon);
             }
         }
         
+        // Update toggle button to show OTHER source
+        updateToggleButton(toggleBtn, source);
+    };
+    
+    // Open media browser
+    browserBtn.addEventListener('click', async () => {
+        // Determine initial source based on current track source
+        const trackSource = lastTrackInfo?.source || 'spotify';
+        currentModalSource = trackSource === 'music_assistant' ? 'music_assistant' : 'spotify';
+        
+        await loadSource(currentModalSource);
         modal.classList.remove('hidden');
     });
+    
+    // Toggle between sources
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', async () => {
+            const newSource = currentModalSource === 'music_assistant' ? 'spotify' : 'music_assistant';
+            await loadSource(newSource);
+        });
+    }
     
     // Close modal - button
     if (closeBtn) {
         closeBtn.addEventListener('click', closeModal);
     }
     
-    // Refresh iframe
+    // Refresh iframe (reloads current URL, not the whole page)
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             if (currentFrameUrl) {
