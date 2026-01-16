@@ -38,6 +38,7 @@ import {
     toggleLikeStatus,
     seekToPosition,
     getSpotifyDevices,
+    getDevices,
     transferPlayback,
     getVolume,
     setVolume as apiSetVolume,
@@ -1193,11 +1194,15 @@ async function loadDevices() {
     list.innerHTML = '<div class="device-loading">Loading devices...</div>';
     
     try {
-        const result = await getSpotifyDevices();
+        const result = await getDevices();
         const devices = result.devices || [];
+        const source = result.source || 'spotify';
         
         if (devices.length === 0) {
-            list.innerHTML = '<div class="device-empty">No devices found. Open Spotify on a device to see it here.</div>';
+            const emptyMsg = source === 'music_assistant' 
+                ? 'No players found in Music Assistant.'
+                : 'No devices found. Open Spotify on a device to see it here.';
+            list.innerHTML = `<div class="device-empty">${emptyMsg}</div>`;
             return;
         }
         

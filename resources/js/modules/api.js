@@ -753,7 +753,7 @@ export async function stopAudioRecognition() {
 // ========== DEVICE & PLAYBACK CONTROLS ==========
 
 /**
- * Get list of available Spotify devices
+ * Get list of available Spotify devices (Spotify-specific)
  * 
  * @returns {Promise<Object>} Device list {devices: [...]}
  */
@@ -762,14 +762,34 @@ export async function getSpotifyDevices() {
 }
 
 /**
- * Transfer playback to a specific device
+ * Get list of available devices for current source (auto-detects source)
+ * 
+ * @returns {Promise<Object>} Device list {devices: [...], source: 'spotify'|'music_assistant'}
+ */
+export async function getDevices() {
+    return apiFetch('/api/playback/devices');
+}
+
+/**
+ * Transfer Spotify playback to a specific device (Spotify-specific)
  * 
  * @param {string} deviceId - Target device ID
  * @param {boolean} forcePlay - Whether to start playback immediately
  * @returns {Promise<Object>} Result
  */
-export async function transferPlayback(deviceId, forcePlay = true) {
+export async function transferSpotifyPlayback(deviceId, forcePlay = true) {
     return postJson('/api/spotify/transfer', { device_id: deviceId, force_play: forcePlay });
+}
+
+/**
+ * Transfer playback to a specific device (auto-detects source)
+ * 
+ * @param {string} deviceId - Target device ID
+ * @param {boolean} forcePlay - Whether to start playback immediately (Spotify only)
+ * @returns {Promise<Object>} Result with source info
+ */
+export async function transferPlayback(deviceId, forcePlay = true) {
+    return postJson('/api/playback/transfer', { device_id: deviceId, force_play: forcePlay });
 }
 
 /**

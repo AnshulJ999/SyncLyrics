@@ -2402,6 +2402,67 @@ async def transfer_spotify_playback():
     return jsonify({"error": "Transfer failed"}), 500
 
 
+# --- Generic Playback Device Routes (Auto-detect source) ---
+
+@app.route("/api/playback/devices", methods=['GET'])
+async def get_playback_devices():
+    """Get list of available devices for current source.
+    
+    Auto-detects source from current playback metadata and returns devices
+    from either Music Assistant or Spotify.
+    """
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        devices = await ma_source.get_devices()
+        return jsonify({"devices": devices, "source": "music_assistant"})
+    else:
+        # Default to Spotify
+        client = get_spotify_client()
+        if not client:
+            return jsonify({"error": "Spotify not connected", "devices": []}), 503
+        devices = await client.get_devices()
+        return jsonify({"devices": devices, "source": "spotify"})
+
+
+@app.route("/api/playback/transfer", methods=['POST'])
+async def transfer_playback():
+    """Transfer playback to a specific device.
+    
+    Body: {"device_id": "...", "force_play": true}
+    Auto-detects source and routes to MA or Spotify accordingly.
+    """
+    data = await request.get_json()
+    device_id = data.get('device_id')
+    force_play = data.get('force_play', True)
+    
+    if not device_id:
+        return jsonify({"error": "device_id required"}), 400
+    
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    if source == 'music_assistant':
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        success = await ma_source.transfer_playback(device_id)
+        if success:
+            return jsonify({"status": "success", "message": f"Transferred to {device_id}", "source": "music_assistant"})
+        return jsonify({"error": "MA transfer failed"}), 500
+    else:
+        # Default to Spotify
+        client = get_spotify_client()
+        if not client:
+            return jsonify({"error": "Spotify not connected"}), 503
+        success = await client.transfer_playback(device_id, force_play)
+        if success:
+            return jsonify({"status": "success", "message": f"Transferred to {device_id}", "source": "spotify"})
+        return jsonify({"error": "Transfer failed"}), 500
+
+
 @app.route("/api/playback/volume", methods=['GET'])
 async def get_volume():
     """Get volume levels for all available sources.
@@ -2504,28 +2565,51 @@ async def set_shuffle():
     """Set shuffle mode.
     
     Body: {"state": true|false} or empty body to toggle
+    Routes to Music Assistant or Spotify based on current playback source.
     """
-    client = get_spotify_client()
-    if not client:
-        return jsonify({"error": "Spotify not connected"}), 503
-    
     data = await request.get_json() or {}
     
-    # If state not provided, toggle based on current state
-    if 'state' not in data:
-        track = await client.get_current_track()
-        current_shuffle = track.get('shuffle_state', False) if track else False
-        state = not current_shuffle
-    else:
-        state = bool(data.get('state'))
+    # Check current source to determine which backend to use
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
     
-    success = await client.set_shuffle(state)
-    if success:
-        # Update cache so next toggle uses correct current state
-        if client._metadata_cache:
-            client._metadata_cache['shuffle_state'] = state
-        return jsonify({"status": "success", "shuffle": state})
-    return jsonify({"error": "Failed to set shuffle"}), 500
+    if source == 'music_assistant':
+        # Use Music Assistant
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        
+        # If state not provided, toggle based on current state
+        if 'state' not in data:
+            current_shuffle = await ma_source.get_shuffle()
+            state = not current_shuffle if current_shuffle is not None else True
+        else:
+            state = bool(data.get('state'))
+        
+        success = await ma_source.set_shuffle(state)
+        if success:
+            return jsonify({"status": "success", "shuffle": state, "source": "music_assistant"})
+        return jsonify({"error": "Failed to set MA shuffle"}), 500
+    else:
+        # Use Spotify
+        client = get_spotify_client()
+        if not client:
+            return jsonify({"error": "Spotify not connected"}), 503
+        
+        # If state not provided, toggle based on current state
+        if 'state' not in data:
+            track = await client.get_current_track()
+            current_shuffle = track.get('shuffle_state', False) if track else False
+            state = not current_shuffle
+        else:
+            state = bool(data.get('state'))
+        
+        success = await client.set_shuffle(state)
+        if success:
+            # Update cache so next toggle uses correct current state
+            if client._metadata_cache:
+                client._metadata_cache['shuffle_state'] = state
+            return jsonify({"status": "success", "shuffle": state, "source": "spotify"})
+        return jsonify({"error": "Failed to set shuffle"}), 500
 
 
 @app.route("/api/playback/repeat", methods=['POST'])
@@ -2533,31 +2617,57 @@ async def set_repeat():
     """Set repeat mode.
     
     Body: {"mode": "off"|"context"|"track"} or empty body to cycle
+    Routes to Music Assistant or Spotify based on current playback source.
     """
-    client = get_spotify_client()
-    if not client:
-        return jsonify({"error": "Spotify not connected"}), 503
-    
     data = await request.get_json() or {}
     
-    # If mode not provided, cycle through: off -> context -> track -> off
-    if 'mode' not in data:
-        track = await client.get_current_track()
-        current_repeat = track.get('repeat_state', 'off') if track else 'off'
-        cycle = {'off': 'context', 'context': 'track', 'track': 'off'}
-        mode = cycle.get(current_repeat, 'off')
-    else:
-        mode = data.get('mode')
-        if mode not in ['off', 'context', 'track']:
-            return jsonify({"error": "Invalid mode. Use: off, context, track"}), 400
+    # Check current source to determine which backend to use
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
     
-    success = await client.set_repeat(mode)
-    if success:
-        # Update cache so next cycle uses correct current state
-        if client._metadata_cache:
-            client._metadata_cache['repeat_state'] = mode
-        return jsonify({"status": "success", "repeat": mode})
-    return jsonify({"error": "Failed to set repeat"}), 500
+    if source == 'music_assistant':
+        # Use Music Assistant
+        from system_utils.sources.music_assistant import MusicAssistantSource
+        ma_source = MusicAssistantSource()
+        
+        # If mode not provided, cycle through: off -> context -> track -> off
+        if 'mode' not in data:
+            current_repeat = await ma_source.get_repeat() or 'off'
+            cycle = {'off': 'context', 'context': 'track', 'track': 'off'}
+            mode = cycle.get(current_repeat, 'off')
+        else:
+            mode = data.get('mode')
+            if mode not in ['off', 'context', 'track']:
+                return jsonify({"error": "Invalid mode. Use: off, context, track"}), 400
+        
+        success = await ma_source.set_repeat(mode)
+        if success:
+            return jsonify({"status": "success", "repeat": mode, "source": "music_assistant"})
+        return jsonify({"error": "Failed to set MA repeat"}), 500
+    else:
+        # Use Spotify
+        client = get_spotify_client()
+        if not client:
+            return jsonify({"error": "Spotify not connected"}), 503
+        
+        # If mode not provided, cycle through: off -> context -> track -> off
+        if 'mode' not in data:
+            track = await client.get_current_track()
+            current_repeat = track.get('repeat_state', 'off') if track else 'off'
+            cycle = {'off': 'context', 'context': 'track', 'track': 'off'}
+            mode = cycle.get(current_repeat, 'off')
+        else:
+            mode = data.get('mode')
+            if mode not in ['off', 'context', 'track']:
+                return jsonify({"error": "Invalid mode. Use: off, context, track"}), 400
+        
+        success = await client.set_repeat(mode)
+        if success:
+            # Update cache so next cycle uses correct current state
+            if client._metadata_cache:
+                client._metadata_cache['repeat_state'] = mode
+            return jsonify({"status": "success", "repeat": mode, "source": "spotify"})
+        return jsonify({"error": "Failed to set repeat"}), 500
 
 
 # ============================================================================

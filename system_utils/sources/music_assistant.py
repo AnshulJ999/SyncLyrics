@@ -932,11 +932,201 @@ class MusicAssistantSource(BaseMetadataSource):
             if not player_id:
                 return False
             
-            await _client.players.player_command_volume_set(player_id, volume)
+            await _client.players.volume_set(player_id, volume)
             logger.debug(f"Set MA player volume to {volume}%")
             return True
         except Exception as e:
             logger.debug(f"Music Assistant set_volume failed: {e}")
+            return False
+
+    # === Shuffle Control ===
+    
+    async def get_shuffle(self) -> Optional[bool]:
+        """Get current shuffle state.
+        
+        Returns:
+            True if shuffle enabled, False if disabled, None if unavailable
+        """
+        if not await _ensure_connected_nonblocking():
+            return None
+        
+        try:
+            player_id = _get_target_player_id()
+            if not player_id:
+                return None
+            
+            queue_id = await _get_active_queue_id(player_id)
+            if not queue_id:
+                return None
+            
+            queue = _client.player_queues.get(queue_id)
+            if queue and hasattr(queue, 'shuffle_enabled'):
+                return bool(queue.shuffle_enabled)
+            return None
+        except Exception as e:
+            logger.debug(f"Music Assistant get_shuffle failed: {e}")
+            return None
+    
+    async def set_shuffle(self, enabled: bool) -> bool:
+        """Set shuffle mode.
+        
+        Args:
+            enabled: True to enable shuffle, False to disable
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected_nonblocking():
+            return False
+        
+        try:
+            player_id = _get_target_player_id()
+            if not player_id:
+                return False
+            
+            queue_id = await _get_active_queue_id(player_id)
+            if not queue_id:
+                return False
+            
+            await _client.player_queues.shuffle(queue_id, enabled)
+            logger.info(f"Set MA shuffle to {enabled}")
+            return True
+        except Exception as e:
+            logger.debug(f"Music Assistant set_shuffle failed: {e}")
+            return False
+    
+    # === Repeat Control ===
+    
+    async def get_repeat(self) -> Optional[str]:
+        """Get current repeat mode.
+        
+        Returns:
+            'off', 'all', or 'one' (mapped from MA's RepeatMode enum), None if unavailable
+        """
+        if not await _ensure_connected_nonblocking():
+            return None
+        
+        try:
+            player_id = _get_target_player_id()
+            if not player_id:
+                return None
+            
+            queue_id = await _get_active_queue_id(player_id)
+            if not queue_id:
+                return None
+            
+            queue = _client.player_queues.get(queue_id)
+            if queue and hasattr(queue, 'repeat_mode'):
+                # Map MA's RepeatMode to our string format
+                # MA uses: OFF, ONE, ALL
+                # We use: 'off', 'track' (for ONE), 'context' (for ALL)
+                mode_value = queue.repeat_mode.value if hasattr(queue.repeat_mode, 'value') else str(queue.repeat_mode)
+                mode_map = {'off': 'off', 'one': 'track', 'all': 'context'}
+                return mode_map.get(mode_value.lower(), 'off')
+            return None
+        except Exception as e:
+            logger.debug(f"Music Assistant get_repeat failed: {e}")
+            return None
+    
+    async def set_repeat(self, mode: str) -> bool:
+        """Set repeat mode.
+        
+        Args:
+            mode: 'off', 'context' (all), or 'track' (one)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected_nonblocking():
+            return False
+        
+        try:
+            from music_assistant_models.enums import RepeatMode
+            
+            # Map our mode names to MA's RepeatMode
+            mode_map = {'off': RepeatMode.OFF, 'context': RepeatMode.ALL, 'track': RepeatMode.ONE}
+            ma_mode = mode_map.get(mode)
+            if not ma_mode:
+                logger.warning(f"Invalid repeat mode: {mode}")
+                return False
+            
+            player_id = _get_target_player_id()
+            if not player_id:
+                return False
+            
+            queue_id = await _get_active_queue_id(player_id)
+            if not queue_id:
+                return False
+            
+            await _client.player_queues.repeat(queue_id, ma_mode)
+            logger.info(f"Set MA repeat to {mode}")
+            return True
+        except ImportError:
+            logger.debug("music_assistant_models not available for repeat mode")
+            return False
+        except Exception as e:
+            logger.debug(f"Music Assistant set_repeat failed: {e}")
+            return False
+    
+    # === Device/Player Selection ===
+    
+    async def get_devices(self) -> List[Dict[str, Any]]:
+        """Get list of available players/devices.
+        
+        Returns:
+            List of player dicts with id, name, type, is_active, state
+        """
+        if not await _ensure_connected_nonblocking():
+            return []
+        
+        try:
+            devices = []
+            current_player_id = _get_target_player_id()
+            
+            for player in _client.players:
+                devices.append({
+                    'id': player.player_id,
+                    'name': player.display_name or player.name or player.player_id,
+                    'type': player.type.value if hasattr(player.type, 'value') else str(player.type),
+                    'is_active': player.player_id == current_player_id,
+                    'state': player.playback_state.value if player.playback_state else 'idle',
+                    'volume': int(player.volume_level) if hasattr(player, 'volume_level') else None,
+                })
+            
+            return devices
+        except Exception as e:
+            logger.debug(f"Music Assistant get_devices failed: {e}")
+            return []
+    
+    async def transfer_playback(self, target_player_id: str) -> bool:
+        """Transfer playback to another player.
+        
+        Args:
+            target_player_id: ID of the player to transfer to
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected_nonblocking():
+            return False
+        
+        try:
+            source_player_id = _get_target_player_id()
+            if not source_player_id:
+                return False
+            
+            source_queue_id = await _get_active_queue_id(source_player_id)
+            if not source_queue_id:
+                return False
+            
+            # For transfer, target queue ID is usually same as player ID
+            target_queue_id = target_player_id
+            
+            await _client.player_queues.transfer(source_queue_id, target_queue_id)
+            logger.info(f"Transferred MA playback from {source_player_id} to {target_player_id}")
+            return True
+        except Exception as e:
+            logger.debug(f"Music Assistant transfer_playback failed: {e}")
             return False
 
 
