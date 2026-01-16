@@ -804,6 +804,7 @@ body.hide-nav #player-ui-container {
     flex: 1;
     display: flex;
     align-items: center;
+    gap: 0.5rem;  /* Space between buttons in left/right groups */
 }
 
 .controls-left {

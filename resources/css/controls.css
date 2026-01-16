@@ -96,7 +96,26 @@
 .volume-label {
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.8);
-    min-width: 80px;
+    min-width: 90px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Music Assistant SVG icon for volume label */
+.volume-label .icon-ma {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='100 160 312 200'%3E%3Cpath d='m224.9 336.6 60.7-161.2h17.8l-60.7 161.2zm150.7 0-60.7-161.2h17.8l60.7 161.2zm-257.1 0V175.4h17v161.2zm38.6 0V175.4h17v161.2zm38.5 0V175.4h17v161.2z'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='100 160 312 200'%3E%3Cpath d='m224.9 336.6 60.7-161.2h17.8l-60.7 161.2zm150.7 0-60.7-161.2h17.8l60.7 161.2zm-257.1 0V175.4h17v161.2zm38.6 0V175.4h17v161.2zm38.5 0V175.4h17v161.2z'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
 }
 
 .volume-slider {
