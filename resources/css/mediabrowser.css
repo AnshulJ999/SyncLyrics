@@ -139,6 +139,11 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     margin-right: 2px;
 }
 
+/* Add spacing after devices button to separate from toggle */
+#media-browser-devices {
+    margin-right: 4px;
+}
+
 .media-browser-control-btn {
     width: 32px;
     height: 32px;

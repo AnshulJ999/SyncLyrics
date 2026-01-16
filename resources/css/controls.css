@@ -177,7 +177,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: 3500;  /* Higher than media browser modal (2000) */
     transition: opacity 0.2s ease, visibility 0.2s ease;
     pointer-events: auto;  /* Override parent's pointer-events:none */
 

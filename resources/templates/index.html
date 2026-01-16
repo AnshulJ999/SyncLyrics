@@ -463,6 +463,21 @@
     </div>
 </div>
 
+<!-- Device Picker Modal (outside player-ui-container for proper z-index) -->
+<div id="device-picker-modal" class="device-picker-modal hidden">
+    <div class="device-picker-content">
+        <div class="device-picker-header">
+            <h3>📱 Select Device</h3>
+            <div class="device-picker-actions">
+                <button id="device-refresh" class="device-action-btn" title="Refresh devices"><i class="bi bi-arrow-clockwise"></i></button>
+                <button id="device-close" class="device-action-btn" title="Close">×</button>
+            </div>
+        </div>
+        <div id="device-list" class="device-list">
+            <div class="device-loading">Loading devices...</div>
+        </div>
+    </div>
+</div>
 
 <!-- Provider Selection Modal (NEW) -->
 <div id="provider-modal" class="provider-modal hidden">
@@ -647,22 +662,6 @@
             <span class="volume-label"><span class="icon-ma"></span> MA</span>
             <input type="range" class="volume-slider" data-source="music_assistant" min="0" max="100" value="50">
             <span class="volume-value">50%</span>
-        </div>
-    </div>
-
-    <!-- Device Picker Modal -->
-    <div id="device-picker-modal" class="device-picker-modal hidden">
-        <div class="device-picker-content">
-            <div class="device-picker-header">
-                <h3>📱 Select Device</h3>
-                <div class="device-picker-actions">
-                    <button id="device-refresh" class="device-action-btn" title="Refresh devices"><i class="bi bi-arrow-clockwise"></i></button>
-                    <button id="device-close" class="device-action-btn" title="Close">×</button>
-                </div>
-            </div>
-            <div id="device-list" class="device-list">
-                <div class="device-loading">Loading devices...</div>
-            </div>
         </div>
     </div>
 
