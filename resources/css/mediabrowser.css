@@ -193,11 +193,11 @@ body:not(.hide-nav) .media-browser-toggle-btn {
 }
 
 /* ========== MOBILE LAYOUT ========== */
-/* The mobile-specific controls stay in base.css for ease of editing.
+/* Position media browser button on right edge for mobile (separate from left stack) */
 @media (max-width: 825px) {
-    /* Stack vertically along left edge */
-/*    .media-browser-toggle-btn {
-        left: 16px;
-        bottom: calc(var(--buttons-base, 80px) + 150px);
+    .media-browser-toggle-btn {
+        left: auto;
+        right: 16px;
+        bottom: calc(var(--buttons-base, 80px) + 50px);
     }
-/* } */
+}
