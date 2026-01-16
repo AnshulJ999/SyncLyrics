@@ -7,7 +7,7 @@
     position: fixed;
     bottom: 76px; /* 24px + 40px + 12px gap = second row above visual mode */
     left: 24px;
-    z-index: 150;
+    z-index: 140;
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -196,8 +196,8 @@ body:not(.hide-nav) .media-browser-toggle-btn {
 /* Position media browser button on right edge for mobile (separate from left stack) */
 @media (max-width: 825px) {
     .media-browser-toggle-btn {
-        left: auto;
-        right: 16px;
-        bottom: calc(var(--buttons-base, 80px) + 50px);
+        right: auto;
+        left: 16px;
+        bottom: calc(var(--buttons-base, 80px) + 150px);
     }
 }
