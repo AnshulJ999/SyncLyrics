@@ -162,40 +162,20 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     color: #f87171;
 }
 
-/* Source toggle button styling - subtle, blends with other controls */
-.media-browser-control-btn.toggle-source {
-    width: auto;
-    padding: 0 10px;
-    border-radius: 16px;
-    font-size: 0.7rem;
-    font-weight: 400;
-    gap: 4px;
-    /* Same neutral colors as other buttons */
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.7);
-}
-
-.media-browser-control-btn.toggle-source:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.media-browser-control-btn.toggle-source i,
-.media-browser-control-btn.toggle-source .icon-ma {
-    font-size: 0.85rem;
-    width: 0.85rem;
-    height: 0.85rem;
-}
-
-/* Remove the bright colored active states - keep it subtle */
-.media-browser-control-btn.toggle-source.spotify-active,
-.media-browser-control-btn.toggle-source.ma-active {
-    /* Keep same as base styles - no color pop */
-    background: rgba(0, 0, 0, 0.6);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.7);
+/* Toggle source button icon sizing (same as other buttons) */
+.media-browser-control-btn .icon-ma {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    background-color: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='100 160 312 200'%3E%3Cpath d='m224.9 336.6 60.7-161.2h17.8l-60.7 161.2zm150.7 0-60.7-161.2h17.8l60.7 161.2zm-257.1 0V175.4h17v161.2zm38.6 0V175.4h17v161.2zm38.5 0V175.4h17v161.2z'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='100 160 312 200'%3E%3Cpath d='m224.9 336.6 60.7-161.2h17.8l-60.7 161.2zm150.7 0-60.7-161.2h17.8l60.7 161.2zm-257.1 0V175.4h17v161.2zm38.6 0V175.4h17v161.2zm38.5 0V175.4h17v161.2z'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
 }
 
 /* iframe takes remaining space */

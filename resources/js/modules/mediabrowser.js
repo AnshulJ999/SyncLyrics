@@ -43,35 +43,31 @@ function getMAUrl() {
 }
 
 /**
- * Update the toggle button UI to reflect current source
+ * Update the toggle button icon to show the OTHER source (what you'll switch to)
+ * If currently showing Spotify → show MA icon (click to switch to MA)
+ * If currently showing MA → show Spotify icon (click to switch to Spotify)
  */
-function updateToggleButton(toggleBtn, source) {
+function updateToggleButton(toggleBtn, currentSource) {
     if (!toggleBtn) return;
     
-    const icon = toggleBtn.querySelector('i, .icon-ma');
-    const label = toggleBtn.querySelector('span');
+    const currentIcon = toggleBtn.querySelector('i, .icon-ma');
+    if (!currentIcon) return;
     
-    if (source === 'music_assistant') {
-        // Currently showing MA - button shows "Switch to Spotify"
-        if (icon) {
-            const newIcon = document.createElement('i');
-            newIcon.className = 'bi bi-spotify';
-            icon.replaceWith(newIcon);
+    if (currentSource === 'music_assistant') {
+        // Currently showing MA → show Spotify icon (click to switch to Spotify)
+        if (!currentIcon.classList?.contains('bi-spotify')) {
+            const spotifyIcon = document.createElement('i');
+            spotifyIcon.className = 'bi bi-spotify';
+            currentIcon.replaceWith(spotifyIcon);
         }
-        if (label) label.textContent = 'Spotify';
-        toggleBtn.classList.remove('ma-active');
-        toggleBtn.classList.add('spotify-active');
         toggleBtn.title = 'Switch to Spotify';
     } else {
-        // Currently showing Spotify - button shows "Switch to MA"
-        if (icon) {
-            const newIcon = document.createElement('span');
-            newIcon.className = 'icon-ma';
-            icon.replaceWith(newIcon);
+        // Currently showing Spotify → show MA icon (click to switch to MA)
+        if (!currentIcon.classList?.contains('icon-ma')) {
+            const maIcon = document.createElement('span');
+            maIcon.className = 'icon-ma';
+            currentIcon.replaceWith(maIcon);
         }
-        if (label) label.textContent = 'Music Assistant';
-        toggleBtn.classList.remove('spotify-active');
-        toggleBtn.classList.add('ma-active');
         toggleBtn.title = 'Switch to Music Assistant';
     }
 }
