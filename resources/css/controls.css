@@ -63,6 +63,14 @@
     font-size: 1.2rem;
 }
 
+/* Hide new controls on mobile - not enough space */
+@media (max-width: 600px) {
+    #btn-menu,
+    #btn-volume {
+        display: none !important;
+    }
+}
+
 /* ========== VOLUME POPUP ========== */
 .volume-popup {
     position: fixed;
