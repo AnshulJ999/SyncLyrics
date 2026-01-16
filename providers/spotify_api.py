@@ -726,7 +726,12 @@ class SpotifyAPI:
                 'url': current['item']['external_urls']['spotify'],
                 'duration_ms': current['item']['duration_ms'],
                 'progress_ms': current['progress_ms'],
-                'is_playing': is_playing
+                'is_playing': is_playing,
+                # Device info for volume control (volume_percent, name, id, type)
+                'device': current.get('device'),
+                # Playback state for shuffle/repeat controls
+                'shuffle_state': current.get('shuffle_state'),
+                'repeat_state': current.get('repeat_state')
             }
             
             # CRITICAL FIX: Store track ID for validation in _calculate_progress

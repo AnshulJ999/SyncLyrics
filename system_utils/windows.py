@@ -184,32 +184,6 @@ async def windows_seek(position_ms: int) -> bool:
 # WINDOWS VOLUME CONTROL (Core Audio API)
 # ==========================================
 
-# Lazy-loaded volume interface (expensive to init, so cache it)
-_volume_interface = None
-
-def _get_volume_interface():
-    """Get the Windows Core Audio volume interface (lazy initialization)."""
-    global _volume_interface
-    if _volume_interface is not None:
-        return _volume_interface
-    
-    try:
-        from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        _volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
-        return _volume_interface
-    except ImportError:
-        logger.debug("pycaw not installed - Windows volume control unavailable")
-        return None
-    except Exception as e:
-        logger.debug(f"Failed to get Windows volume interface: {e}")
-        return None
-
-
 async def get_windows_volume() -> Optional[int]:
     """Get Windows master volume level (0-100).
     
@@ -217,16 +191,27 @@ async def get_windows_volume() -> Optional[int]:
         Volume percentage (0-100) or None if unavailable
     """
     try:
-        loop = asyncio.get_running_loop()
+        from pycaw.pycaw import AudioUtilities
         
         def _get_vol():
-            vol = _get_volume_interface()
-            if vol:
+            try:
+                # GetSpeakers() returns AudioDevice with EndpointVolume property
+                speakers = AudioUtilities.GetSpeakers()
+                if speakers is None:
+                    return None
+                # EndpointVolume property handles COM activation internally
+                volume = speakers.EndpointVolume
                 # GetMasterVolumeLevelScalar returns 0.0-1.0
-                return int(vol.GetMasterVolumeLevelScalar() * 100)
-            return None
+                return int(volume.GetMasterVolumeLevelScalar() * 100)
+            except Exception as e:
+                logger.debug(f"Failed to get Windows volume: {e}")
+                return None
         
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _get_vol)
+    except ImportError:
+        logger.debug("pycaw not installed - Windows volume control unavailable")
+        return None
     except Exception as e:
         logger.debug(f"Failed to get Windows volume: {e}")
         return None
@@ -245,18 +230,28 @@ async def set_windows_volume(volume: int) -> bool:
     volume = max(0, min(100, volume))
     
     try:
-        loop = asyncio.get_running_loop()
+        from pycaw.pycaw import AudioUtilities
         
         def _set_vol():
-            vol = _get_volume_interface()
-            if vol:
+            try:
+                speakers = AudioUtilities.GetSpeakers()
+                if speakers is None:
+                    return False
+                # EndpointVolume property handles COM activation internally
+                endpoint = speakers.EndpointVolume
                 # SetMasterVolumeLevelScalar expects 0.0-1.0
-                vol.SetMasterVolumeLevelScalar(volume / 100.0, None)
+                endpoint.SetMasterVolumeLevelScalar(volume / 100.0, None)
                 logger.debug(f"Set Windows volume to {volume}%")
                 return True
-            return False
+            except Exception as e:
+                logger.debug(f"Failed to set Windows volume: {e}")
+                return False
         
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _set_vol)
+    except ImportError:
+        logger.debug("pycaw not installed - Windows volume control unavailable")
+        return False
     except Exception as e:
         logger.debug(f"Failed to set Windows volume: {e}")
         return False

@@ -1,8 +1,8 @@
 
 /* ========== CONTROLS MENU (Hamburger) ========== */
 .controls-menu {
-    position: absolute;
-    bottom: 80px;
+    position: fixed;
+    bottom: 100px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -13,8 +13,9 @@
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    z-index: 950;
+    z-index: 1100;
     transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: auto;  /* Override parent's pointer-events:none */
 }
 
 .controls-menu.hidden {
@@ -56,11 +57,17 @@
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
+/* New control button icon sizing (match existing like/queue icons) */
+#btn-menu i,
+#btn-volume i {
+    font-size: 1.2rem;
+}
+
 /* ========== VOLUME POPUP ========== */
 .volume-popup {
-    position: absolute;
-    bottom: 80px;
-    right: 10%;
+    position: fixed;
+    bottom: 90px;
+    right: 25%;
     min-width: 220px;
     background: rgba(26, 27, 38, 0.95);
     backdrop-filter: blur(15px);
@@ -68,8 +75,9 @@
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    z-index: 950;
+    z-index: 1100;
     transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: auto;  /* Override parent's pointer-events:none */
 }
 
 .volume-popup.hidden {
@@ -144,6 +152,8 @@
     justify-content: center;
     z-index: 2000;
     transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: auto;  /* Override parent's pointer-events:none */
+
 }
 
 .device-picker-modal.hidden {

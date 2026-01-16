@@ -1075,15 +1075,17 @@ async function refreshVolumeSliders() {
     try {
         const volumes = await getVolume();
         
-        // Windows volume
-        if (volumes.windows !== undefined) {
-            const row = document.getElementById('volume-windows');
-            if (row) {
-                row.style.display = 'flex';
-                const slider = row.querySelector('.volume-slider');
-                const value = row.querySelector('.volume-value');
+        // Windows volume (only show if we got a valid number, not null)
+        const winRow = document.getElementById('volume-windows');
+        if (winRow) {
+            if (volumes.windows !== undefined && volumes.windows !== null) {
+                winRow.style.display = 'flex';
+                const slider = winRow.querySelector('.volume-slider');
+                const value = winRow.querySelector('.volume-value');
                 if (slider) slider.value = volumes.windows;
                 if (value) value.textContent = `${volumes.windows}%`;
+            } else {
+                winRow.style.display = 'none';
             }
         }
         

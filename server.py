@@ -2422,29 +2422,27 @@ async def get_volume():
             logger.debug(f"Could not get Windows volume: {e}")
     
     # Spotify volume (from current playback if available)
-    metadata = await get_current_song_meta_data()
-    source = metadata.get('source') if metadata else None
-    
-    # Only show Spotify volume if source is Spotify-related
-    if source in ['spotify', 'spotify_hybrid', 'spicetify', 'windows_media']:
-        client = get_spotify_client()
-        if client:
-            try:
-                # Get volume from current playback
-                track = await client.get_current_track()
-                if track and 'device' in track:
-                    volumes['spotify'] = track['device'].get('volume_percent')
-            except Exception as e:
-                logger.debug(f"Could not get Spotify volume: {e}")
-    
-    # Music Assistant volume
-    if source == 'music_assistant':
+    # Always try if Spotify client is configured - useful for all sources
+    client = get_spotify_client()
+    if client:
         try:
+            # Get volume from current playback device
+            track = await client.get_current_track()
+            if track and 'device' in track:
+                volumes['spotify'] = track['device'].get('volume_percent')
+        except Exception as e:
+            logger.debug(f"Could not get Spotify volume: {e}")
+    
+    # Music Assistant volume (only if MA is the active source)
+    try:
+        metadata = await get_current_song_meta_data()
+        source = metadata.get('source') if metadata else None
+        if source == 'music_assistant':
             from system_utils.sources.music_assistant import MusicAssistantSource
             ma_source = MusicAssistantSource()
             volumes['music_assistant'] = await ma_source.get_volume()
-        except Exception as e:
-            logger.debug(f"Could not get MA volume: {e}")
+    except Exception as e:
+        logger.debug(f"Could not get MA volume: {e}")
     
     return jsonify(volumes)
 
