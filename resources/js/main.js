@@ -63,7 +63,10 @@ import {
     toggleLike,
     setupTouchControls,
     attachProgressBarSeek,
-    toggleArtOnlyMode
+    toggleArtOnlyMode,
+    setupControlsMenu,
+    setupVolumePopup,
+    updatePlaybackState
 } from './modules/controls.js';
 
 // Background (Level 2)
@@ -723,6 +726,8 @@ async function main() {
     initWordSyncStyle();  // Initialize word-sync style from localStorage
     setupQueueInteractions();
     setupTouchControls();
+    setupControlsMenu();      // Hamburger menu (shuffle, repeat, devices)
+    setupVolumePopup();       // Volume control popup
 
     // Initialize multi-finger touch gestures (3-finger tap for play/pause)
     initTouchGestures();

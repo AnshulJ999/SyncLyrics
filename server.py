@@ -2365,6 +2365,198 @@ async def toggle_liked_status():
 
 
 # ============================================================================
+# Playback Controls API (Device Picker, Volume, Shuffle, Repeat)
+# ============================================================================
+
+@app.route("/api/spotify/devices", methods=['GET'])
+async def get_spotify_devices():
+    """Get list of available Spotify Connect devices."""
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    devices = await client.get_devices()
+    return jsonify({"devices": devices})
+
+
+@app.route("/api/spotify/transfer", methods=['POST'])
+async def transfer_spotify_playback():
+    """Transfer playback to a specific device.
+    
+    Body: {"device_id": "...", "force_play": true}
+    """
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    data = await request.get_json()
+    device_id = data.get('device_id')
+    force_play = data.get('force_play', True)
+    
+    if not device_id:
+        return jsonify({"error": "device_id required"}), 400
+    
+    success = await client.transfer_playback(device_id, force_play)
+    if success:
+        return jsonify({"status": "success", "message": f"Transferred to {device_id}"})
+    return jsonify({"error": "Transfer failed"}), 500
+
+
+@app.route("/api/playback/volume", methods=['GET'])
+async def get_volume():
+    """Get volume levels for all available sources.
+    
+    Returns volume for Windows (if on Windows), Spotify, and Music Assistant.
+    Only returns sources that are available/configured.
+    """
+    import platform
+    
+    volumes = {}
+    
+    # Windows system volume (Windows only)
+    if platform.system() == 'Windows':
+        try:
+            from system_utils.windows import get_windows_volume
+            volumes['windows'] = await get_windows_volume()
+        except Exception as e:
+            logger.debug(f"Could not get Windows volume: {e}")
+    
+    # Spotify volume (from current playback if available)
+    metadata = await get_current_song_meta_data()
+    source = metadata.get('source') if metadata else None
+    
+    # Only show Spotify volume if source is Spotify-related
+    if source in ['spotify', 'spotify_hybrid', 'spicetify', 'windows_media']:
+        client = get_spotify_client()
+        if client:
+            try:
+                # Get volume from current playback
+                track = await client.get_current_track()
+                if track and 'device' in track:
+                    volumes['spotify'] = track['device'].get('volume_percent')
+            except Exception as e:
+                logger.debug(f"Could not get Spotify volume: {e}")
+    
+    # Music Assistant volume
+    if source == 'music_assistant':
+        try:
+            from system_utils.sources.music_assistant import MusicAssistantSource
+            ma_source = MusicAssistantSource()
+            volumes['music_assistant'] = await ma_source.get_volume()
+        except Exception as e:
+            logger.debug(f"Could not get MA volume: {e}")
+    
+    return jsonify(volumes)
+
+
+@app.route("/api/playback/volume", methods=['POST'])
+async def set_volume():
+    """Set volume for a specific source.
+    
+    Body: {"source": "windows"|"spotify"|"music_assistant", "volume": 0-100}
+    """
+    data = await request.get_json()
+    source = data.get('source')
+    volume = data.get('volume')
+    
+    if source not in ['windows', 'spotify', 'music_assistant']:
+        return jsonify({"error": "Invalid source"}), 400
+    
+    if volume is None or not isinstance(volume, (int, float)):
+        return jsonify({"error": "volume required (0-100)"}), 400
+    
+    volume = int(max(0, min(100, volume)))
+    
+    if source == 'windows':
+        import platform
+        if platform.system() != 'Windows':
+            return jsonify({"error": "Windows volume only available on Windows"}), 400
+        try:
+            from system_utils.windows import set_windows_volume
+            success = await set_windows_volume(volume)
+            if success:
+                return jsonify({"status": "success", "source": "windows", "volume": volume})
+            return jsonify({"error": "Failed to set Windows volume"}), 500
+        except ImportError:
+            return jsonify({"error": "Windows volume control not available"}), 500
+    
+    elif source == 'spotify':
+        client = get_spotify_client()
+        if not client:
+            return jsonify({"error": "Spotify not connected"}), 503
+        success = await client.set_volume(volume)
+        if success:
+            return jsonify({"status": "success", "source": "spotify", "volume": volume})
+        return jsonify({"error": "Failed to set Spotify volume"}), 500
+    
+    elif source == 'music_assistant':
+        try:
+            from system_utils.sources.music_assistant import MusicAssistantSource
+            ma_source = MusicAssistantSource()
+            success = await ma_source.set_volume(volume)
+            if success:
+                return jsonify({"status": "success", "source": "music_assistant", "volume": volume})
+            return jsonify({"error": "Failed to set MA volume"}), 500
+        except ImportError:
+            return jsonify({"error": "Music Assistant not available"}), 500
+
+
+@app.route("/api/playback/shuffle", methods=['POST'])
+async def set_shuffle():
+    """Set shuffle mode.
+    
+    Body: {"state": true|false} or empty body to toggle
+    """
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    data = await request.get_json() or {}
+    
+    # If state not provided, toggle based on current state
+    if 'state' not in data:
+        track = await client.get_current_track()
+        current_shuffle = track.get('shuffle_state', False) if track else False
+        state = not current_shuffle
+    else:
+        state = bool(data.get('state'))
+    
+    success = await client.set_shuffle(state)
+    if success:
+        return jsonify({"status": "success", "shuffle": state})
+    return jsonify({"error": "Failed to set shuffle"}), 500
+
+
+@app.route("/api/playback/repeat", methods=['POST'])
+async def set_repeat():
+    """Set repeat mode.
+    
+    Body: {"mode": "off"|"context"|"track"} or empty body to cycle
+    """
+    client = get_spotify_client()
+    if not client:
+        return jsonify({"error": "Spotify not connected"}), 503
+    
+    data = await request.get_json() or {}
+    
+    # If mode not provided, cycle through: off -> context -> track -> off
+    if 'mode' not in data:
+        track = await client.get_current_track()
+        current_repeat = track.get('repeat_state', 'off') if track else 'off'
+        cycle = {'off': 'context', 'context': 'track', 'track': 'off'}
+        mode = cycle.get(current_repeat, 'off')
+    else:
+        mode = data.get('mode')
+        if mode not in ['off', 'context', 'track']:
+            return jsonify({"error": "Invalid mode. Use: off, context, track"}), 400
+    
+    success = await client.set_repeat(mode)
+    if success:
+        return jsonify({"status": "success", "repeat": mode})
+    return jsonify({"error": "Failed to set repeat"}), 500
+
+
+# ============================================================================
 # Audio Recognition API (Reaper Integration)
 # ============================================================================
 

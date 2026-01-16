@@ -886,6 +886,58 @@ class MusicAssistantSource(BaseMetadataSource):
         except Exception as e:
             logger.debug(f"Music Assistant remove_from_favorites failed: {e}")
             return False
+    
+    # === Volume Control ===
+    
+    async def get_volume(self) -> Optional[int]:
+        """Get current player volume (0-100).
+        
+        Returns:
+            Volume percentage (0-100) or None if unavailable
+        """
+        if not await _ensure_connected_nonblocking():
+            return None
+        
+        try:
+            player_id = _get_target_player_id()
+            if not player_id:
+                return None
+            
+            player = _client.players.get(player_id)
+            if player and hasattr(player, 'volume_level'):
+                # MA volume is 0-100
+                return int(player.volume_level)
+            return None
+        except Exception as e:
+            logger.debug(f"Music Assistant get_volume failed: {e}")
+            return None
+    
+    async def set_volume(self, volume: int) -> bool:
+        """Set player volume (0-100).
+        
+        Args:
+            volume: Volume percentage (0-100)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await _ensure_connected_nonblocking():
+            return False
+        
+        # Clamp to valid range
+        volume = max(0, min(100, volume))
+        
+        try:
+            player_id = _get_target_player_id()
+            if not player_id:
+                return False
+            
+            await _client.players.player_command_volume_set(player_id, volume)
+            logger.debug(f"Set MA player volume to {volume}%")
+            return True
+        except Exception as e:
+            logger.debug(f"Music Assistant set_volume failed: {e}")
+            return False
 
 
 # =============================================================================

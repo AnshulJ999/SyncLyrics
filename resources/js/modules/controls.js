@@ -36,11 +36,19 @@ import {
     fetchQueue,
     checkLikedStatus as apiCheckLikedStatus,
     toggleLikeStatus,
-    seekToPosition
+    seekToPosition,
+    getSpotifyDevices,
+    transferPlayback,
+    getVolume,
+    setVolume as apiSetVolume,
+    setShuffle,
+    setRepeat
 } from './api.js';
 
 // ========== SEEK STATE ==========
 let seekTimeout = null;
+let volumeDebounceTimer = null;
+const VOLUME_DEBOUNCE_MS = 100;
 let isDragging = false;
 let previewPositionMs = null;
 let seekTooltip = null;
@@ -889,5 +897,372 @@ function handleSwipe(startX, startY, endX, endY) {
             toggleQueueDrawer();
             return;
         }
+    }
+}
+
+// ========== CONTROLS MENU (Shuffle, Repeat, Devices) ==========
+
+let controlsMenuOpen = false;
+let volumePopupOpen = false;
+let deviceModalOpen = false;
+let currentShuffleState = false;
+let currentRepeatMode = 'off';  // 'off', 'context', 'track'
+
+/**
+ * Setup controls menu (hamburger menu) interactions
+ */
+export function setupControlsMenu() {
+    const menuBtn = document.getElementById('btn-menu');
+    const menu = document.getElementById('controls-menu');
+    const shuffleBtn = document.getElementById('btn-shuffle');
+    const repeatBtn = document.getElementById('btn-repeat');
+    const devicesBtn = document.getElementById('btn-devices');
+    
+    if (!menuBtn || !menu) return;
+    
+    // Toggle menu on button click
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleControlsMenu();
+    });
+    
+    // Shuffle button
+    if (shuffleBtn) {
+        shuffleBtn.addEventListener('click', async () => {
+            try {
+                const result = await setShuffle();
+                if (result.shuffle !== undefined) {
+                    currentShuffleState = result.shuffle;
+                    updateShuffleButton();
+                    showToast(currentShuffleState ? 'Shuffle On' : 'Shuffle Off', 'success', 1000);
+                }
+            } catch (e) {
+                showToast('Shuffle failed', 'error');
+            }
+        });
+    }
+    
+    // Repeat button
+    if (repeatBtn) {
+        repeatBtn.addEventListener('click', async () => {
+            try {
+                const result = await setRepeat();
+                if (result.repeat !== undefined) {
+                    currentRepeatMode = result.repeat;
+                    updateRepeatButton();
+                    const modeText = { off: 'Off', context: 'All', track: 'One' };
+                    showToast(`Repeat: ${modeText[currentRepeatMode] || currentRepeatMode}`, 'success', 1000);
+                }
+            } catch (e) {
+                showToast('Repeat failed', 'error');
+            }
+        });
+    }
+    
+    // Devices button
+    if (devicesBtn) {
+        devicesBtn.addEventListener('click', () => {
+            toggleControlsMenu(false);
+            openDevicePickerModal();
+        });
+    }
+    
+    // Close menu on outside click
+    document.addEventListener('click', (e) => {
+        if (controlsMenuOpen && !menu.contains(e.target) && e.target !== menuBtn) {
+            toggleControlsMenu(false);
+        }
+    });
+}
+
+/**
+ * Toggle controls menu visibility
+ */
+function toggleControlsMenu(forceState = null) {
+    const menu = document.getElementById('controls-menu');
+    if (!menu) return;
+    
+    controlsMenuOpen = forceState !== null ? forceState : !controlsMenuOpen;
+    menu.classList.toggle('hidden', !controlsMenuOpen);
+}
+
+/**
+ * Update shuffle button state
+ */
+function updateShuffleButton() {
+    const btn = document.getElementById('btn-shuffle');
+    if (btn) {
+        btn.classList.toggle('active', currentShuffleState);
+    }
+}
+
+/**
+ * Update repeat button state and icon
+ */
+function updateRepeatButton() {
+    const btn = document.getElementById('btn-repeat');
+    if (!btn) return;
+    
+    const icon = btn.querySelector('i');
+    btn.classList.toggle('active', currentRepeatMode !== 'off');
+    
+    if (icon) {
+        // Change icon for repeat one
+        icon.className = currentRepeatMode === 'track' ? 'bi bi-repeat-1' : 'bi bi-repeat';
+    }
+}
+
+// ========== VOLUME POPUP ==========
+
+/**
+ * Setup volume popup interactions
+ */
+export function setupVolumePopup() {
+    const volumeBtn = document.getElementById('btn-volume');
+    const popup = document.getElementById('volume-popup');
+    
+    if (!volumeBtn || !popup) return;
+    
+    // Toggle popup on button click
+    volumeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        
+        if (volumePopupOpen) {
+            toggleVolumePopup(false);
+        } else {
+            // Fetch current volumes before opening
+            await refreshVolumeSliders();
+            toggleVolumePopup(true);
+        }
+    });
+    
+    // Setup sliders with debounced input
+    popup.querySelectorAll('.volume-slider').forEach(slider => {
+        slider.addEventListener('input', (e) => {
+            const source = e.target.dataset.source;
+            const volume = parseInt(e.target.value);
+            const valueSpan = e.target.parentElement.querySelector('.volume-value');
+            if (valueSpan) valueSpan.textContent = `${volume}%`;
+            
+            // Debounced API call
+            debouncedSetVolume(source, volume);
+        });
+    });
+    
+    // Close popup on outside click
+    document.addEventListener('click', (e) => {
+        if (volumePopupOpen && !popup.contains(e.target) && e.target.id !== 'btn-volume') {
+            toggleVolumePopup(false);
+        }
+    });
+}
+
+/**
+ * Toggle volume popup visibility
+ */
+function toggleVolumePopup(forceState = null) {
+    const popup = document.getElementById('volume-popup');
+    if (!popup) return;
+    
+    volumePopupOpen = forceState !== null ? forceState : !volumePopupOpen;
+    popup.classList.toggle('hidden', !volumePopupOpen);
+}
+
+/**
+ * Refresh volume sliders with current values
+ */
+async function refreshVolumeSliders() {
+    try {
+        const volumes = await getVolume();
+        
+        // Windows volume
+        if (volumes.windows !== undefined) {
+            const row = document.getElementById('volume-windows');
+            if (row) {
+                row.style.display = 'flex';
+                const slider = row.querySelector('.volume-slider');
+                const value = row.querySelector('.volume-value');
+                if (slider) slider.value = volumes.windows;
+                if (value) value.textContent = `${volumes.windows}%`;
+            }
+        }
+        
+        // Spotify volume
+        if (volumes.spotify !== undefined && volumes.spotify !== null) {
+            const row = document.getElementById('volume-spotify');
+            if (row) {
+                row.style.display = 'flex';
+                const slider = row.querySelector('.volume-slider');
+                const value = row.querySelector('.volume-value');
+                if (slider) slider.value = volumes.spotify;
+                if (value) value.textContent = `${volumes.spotify}%`;
+            }
+        }
+        
+        // Music Assistant volume
+        if (volumes.music_assistant !== undefined && volumes.music_assistant !== null) {
+            const row = document.getElementById('volume-ma');
+            if (row) {
+                row.style.display = 'flex';
+                const slider = row.querySelector('.volume-slider');
+                const value = row.querySelector('.volume-value');
+                if (slider) slider.value = volumes.music_assistant;
+                if (value) value.textContent = `${volumes.music_assistant}%`;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to fetch volume:', e);
+    }
+}
+
+/**
+ * Debounced volume setter
+ */
+function debouncedSetVolume(source, volume) {
+    if (volumeDebounceTimer) clearTimeout(volumeDebounceTimer);
+    
+    volumeDebounceTimer = setTimeout(async () => {
+        try {
+            await apiSetVolume(source, volume);
+        } catch (e) {
+            console.error('Failed to set volume:', e);
+        }
+    }, VOLUME_DEBOUNCE_MS);
+}
+
+// ========== DEVICE PICKER MODAL ==========
+
+/**
+ * Open device picker modal and load devices
+ */
+export async function openDevicePickerModal() {
+    const modal = document.getElementById('device-picker-modal');
+    const closeBtn = document.getElementById('device-close');
+    const refreshBtn = document.getElementById('device-refresh');
+    
+    if (!modal) return;
+    
+    deviceModalOpen = true;
+    modal.classList.remove('hidden');
+    
+    // Load devices
+    await loadDevices();
+    
+    // Close button
+    if (closeBtn) {
+        closeBtn.onclick = () => closeDevicePickerModal();
+    }
+    
+    // Refresh button
+    if (refreshBtn) {
+        refreshBtn.onclick = async () => {
+            refreshBtn.classList.add('spinning');
+            await loadDevices();
+            refreshBtn.classList.remove('spinning');
+        };
+    }
+    
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeDevicePickerModal();
+        }
+    });
+}
+
+/**
+ * Close device picker modal
+ */
+function closeDevicePickerModal() {
+    const modal = document.getElementById('device-picker-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        deviceModalOpen = false;
+    }
+}
+
+/**
+ * Load devices into the device list
+ */
+async function loadDevices() {
+    const list = document.getElementById('device-list');
+    if (!list) return;
+    
+    list.innerHTML = '<div class="device-loading">Loading devices...</div>';
+    
+    try {
+        const result = await getSpotifyDevices();
+        const devices = result.devices || [];
+        
+        if (devices.length === 0) {
+            list.innerHTML = '<div class="device-empty">No devices found. Open Spotify on a device to see it here.</div>';
+            return;
+        }
+        
+        list.innerHTML = '';
+        devices.forEach(device => {
+            const item = document.createElement('div');
+            item.className = `device-item ${device.is_active ? 'active' : ''}`;
+            
+            // Device type icon
+            const icons = {
+                'Computer': 'bi-laptop',
+                'Smartphone': 'bi-phone',
+                'Speaker': 'bi-speaker',
+                'TV': 'bi-tv',
+                'CastVideo': 'bi-chromecast',
+                'default': 'bi-speaker'
+            };
+            const iconClass = icons[device.type] || icons.default;
+            
+            item.innerHTML = `
+                <i class="bi ${iconClass} device-icon"></i>
+                <div class="device-info">
+                    <div class="device-name">${device.name}</div>
+                    <div class="device-type">${device.type}${device.is_active ? ' • Active' : ''}</div>
+                </div>
+            `;
+            
+            item.addEventListener('click', async () => {
+                if (device.is_active) return;
+                
+                try {
+                    item.classList.add('loading');
+                    const result = await transferPlayback(device.id);
+                    if (result.status === 'success') {
+                        showToast(`Switched to ${device.name}`, 'success');
+                        closeDevicePickerModal();
+                    } else {
+                        throw new Error(result.error || 'Transfer failed');
+                    }
+                } catch (e) {
+                    showToast(`Failed: ${e.message}`, 'error');
+                    item.classList.remove('loading');
+                }
+            });
+            
+            list.appendChild(item);
+        });
+    } catch (e) {
+        list.innerHTML = '<div class="device-error">Failed to load devices</div>';
+        console.error('Failed to load devices:', e);
+    }
+}
+
+/**
+ * Update shuffle/repeat state from track info
+ * Call this from main.js when track info is updated
+ */
+export function updatePlaybackState(trackInfo) {
+    if (!trackInfo) return;
+    
+    if (trackInfo.shuffle_state !== undefined) {
+        currentShuffleState = trackInfo.shuffle_state;
+        updateShuffleButton();
+    }
+    
+    if (trackInfo.repeat_state !== undefined) {
+        currentRepeatMode = trackInfo.repeat_state;
+        updateRepeatButton();
     }
 }

@@ -12,7 +12,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
 import re
 import threading
@@ -1018,6 +1018,155 @@ class SpotifyAPI:
             logger.error(f"Failed to seek: {e}")
             return False
     
+    # ========== Device & Playback Control Methods ==========
+    
+    async def get_devices(self) -> List[Dict[str, Any]]:
+        """Get list of available Spotify Connect devices.
+        
+        Returns:
+            List of device dicts with id, name, type, is_active, volume_percent
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return []
+            
+        try:
+            # Track this API call
+            self.request_stats['api_calls']['other'] += 1
+            
+            logger.debug("Fetching available Spotify devices")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self.sp.devices)
+            
+            devices = result.get('devices', [])
+            logger.info(f"Found {len(devices)} Spotify devices")
+            return devices
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to fetch devices: {e}")
+            return []
+    
+    async def transfer_playback(self, device_id: str, force_play: bool = True) -> bool:
+        """Transfer playback to a specific device.
+        
+        Args:
+            device_id: Target device ID
+            force_play: If True, start playback immediately on new device
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        if not device_id:
+            logger.warning("No device_id provided for transfer")
+            return False
+            
+        try:
+            # Track this API call
+            self.request_stats['api_calls']['playback_control'] += 1
+            
+            logger.info(f"Transferring playback to device {device_id}")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, 
+                lambda: self.sp.transfer_playback(device_ids=[device_id], force_play=force_play)
+            )
+            return True
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to transfer playback: {e}")
+            return False
+    
+    async def set_volume(self, volume_percent: int) -> bool:
+        """Set Spotify playback volume.
+        
+        Args:
+            volume_percent: Volume level (0-100)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        # Clamp volume to valid range
+        volume_percent = max(0, min(100, volume_percent))
+            
+        try:
+            # Track this API call
+            self.request_stats['api_calls']['playback_control'] += 1
+            
+            logger.debug(f"Setting Spotify volume to {volume_percent}%")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: self.sp.volume(volume_percent))
+            return True
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to set volume: {e}")
+            return False
+    
+    async def set_shuffle(self, state: bool) -> bool:
+        """Enable or disable shuffle mode.
+        
+        Args:
+            state: True to enable shuffle, False to disable
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        try:
+            # Track this API call
+            self.request_stats['api_calls']['playback_control'] += 1
+            
+            logger.info(f"Setting shuffle to {state}")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: self.sp.shuffle(state))
+            return True
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to set shuffle: {e}")
+            return False
+    
+    async def set_repeat(self, mode: str) -> bool:
+        """Set repeat mode.
+        
+        Args:
+            mode: 'off', 'context' (repeat playlist/album), or 'track' (repeat one)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.initialized:
+            logger.warning("Spotify API not initialized")
+            return False
+            
+        # Validate mode
+        valid_modes = ['off', 'context', 'track']
+        if mode not in valid_modes:
+            logger.warning(f"Invalid repeat mode '{mode}', must be one of {valid_modes}")
+            return False
+            
+        try:
+            # Track this API call
+            self.request_stats['api_calls']['playback_control'] += 1
+            
+            logger.info(f"Setting repeat mode to '{mode}'")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: self.sp.repeat(mode))
+            return True
+        except Exception as e:
+            self.request_stats['errors']['other'] += 1
+            logger.error(f"Failed to set repeat: {e}")
+            return False
+
     async def get_artist_images(self, artist_id: str) -> list:
         """
         Fetch artist images from Spotify API.

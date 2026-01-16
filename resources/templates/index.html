@@ -592,9 +592,10 @@
 
     <!-- Playback Controls -->
     <div id="playback-controls" class="playback-controls">
-        <!-- Left: Like Button -->
+        <!-- Left: Like Button + Menu -->
         <div class="controls-left">
             <button id="btn-like" class="control-btn" title="Save to Liked Songs"><i class="bi bi-heart"></i></button>
+            <button id="btn-menu" class="control-btn" title="More Controls"><i class="bi bi-list"></i></button>
         </div>
 
         <!-- Center: Main Playback -->
@@ -604,11 +605,62 @@
             <button id="btn-next" class="control-btn" title="Next Track"><i class="bi bi-fast-forward-fill"></i></button>
         </div>
 
-        <!-- Right: Queue Button -->
+        <!-- Right: Volume + Queue Button -->
         <div class="controls-right">
+            <button id="btn-volume" class="control-btn" title="Volume"><i class="bi bi-volume-up"></i></button>
             <button id="btn-queue" class="control-btn" title="Show Queue"><i class="bi bi-music-note-list"></i></button>
         </div>
-        <!-- REMOVED: Old Visual Mode Button -->
+    </div>
+
+    <!-- Controls Menu Popup (Shuffle, Repeat, Devices) -->
+    <div id="controls-menu" class="controls-menu hidden">
+        <button id="btn-shuffle" class="menu-btn" title="Shuffle">
+            <i class="bi bi-shuffle"></i>
+            <span>Shuffle</span>
+        </button>
+        <button id="btn-repeat" class="menu-btn" title="Repeat">
+            <i class="bi bi-repeat"></i>
+            <span>Repeat</span>
+        </button>
+        <button id="btn-devices" class="menu-btn" title="Devices">
+            <i class="bi bi-speaker"></i>
+            <span>Devices</span>
+        </button>
+    </div>
+
+    <!-- Volume Popup (Horizontal Sliders) -->
+    <div id="volume-popup" class="volume-popup hidden">
+        <div class="volume-row" id="volume-windows" style="display: none;">
+            <span class="volume-label">🖥️ Windows</span>
+            <input type="range" class="volume-slider" data-source="windows" min="0" max="100" value="50">
+            <span class="volume-value">50%</span>
+        </div>
+        <div class="volume-row" id="volume-spotify" style="display: none;">
+            <span class="volume-label">🎵 Spotify</span>
+            <input type="range" class="volume-slider" data-source="spotify" min="0" max="100" value="50">
+            <span class="volume-value">50%</span>
+        </div>
+        <div class="volume-row" id="volume-ma" style="display: none;">
+            <span class="volume-label">🎶 MA</span>
+            <input type="range" class="volume-slider" data-source="music_assistant" min="0" max="100" value="50">
+            <span class="volume-value">50%</span>
+        </div>
+    </div>
+
+    <!-- Device Picker Modal -->
+    <div id="device-picker-modal" class="device-picker-modal hidden">
+        <div class="device-picker-content">
+            <div class="device-picker-header">
+                <h3>📱 Select Device</h3>
+                <div class="device-picker-actions">
+                    <button id="device-refresh" class="device-action-btn" title="Refresh devices"><i class="bi bi-arrow-clockwise"></i></button>
+                    <button id="device-close" class="device-action-btn" title="Close">×</button>
+                </div>
+            </div>
+            <div id="device-list" class="device-list">
+                <div class="device-loading">Loading devices...</div>
+            </div>
+        </div>
     </div>
 
     <!-- NEW: Queue Drawer -->

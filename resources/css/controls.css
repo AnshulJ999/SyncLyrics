@@ -1,0 +1,293 @@
+
+/* ========== CONTROLS MENU (Hamburger) ========== */
+.controls-menu {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    background: rgba(26, 27, 38, 0.95);
+    backdrop-filter: blur(15px);
+    padding: 8px 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    z-index: 950;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.controls-menu.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.menu-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.75rem;
+}
+
+.menu-btn i {
+    font-size: 1.2rem;
+}
+
+.menu-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.menu-btn.active {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.menu-btn.active i {
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+/* ========== VOLUME POPUP ========== */
+.volume-popup {
+    position: absolute;
+    bottom: 80px;
+    right: 10%;
+    min-width: 220px;
+    background: rgba(26, 27, 38, 0.95);
+    backdrop-filter: blur(15px);
+    padding: 12px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    z-index: 950;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.volume-popup.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.volume-label {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.8);
+    min-width: 80px;
+}
+
+.volume-slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
+.volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
+.volume-value {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    min-width: 35px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ========== DEVICE PICKER MODAL ========== */
+.device-picker-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.device-picker-modal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.device-picker-content {
+    background: rgba(26, 27, 38, 0.98);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+    width: clamp(280px, 90vw, 400px);
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+.device-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.device-picker-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: white;
+}
+
+.device-picker-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.device-action-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 1rem;
+}
+
+.device-action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.device-action-btn.spinning i {
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.device-list {
+    padding: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.device-loading,
+.device-empty,
+.device-error {
+    padding: 24px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9rem;
+}
+
+.device-error {
+    color: rgba(239, 68, 68, 0.8);
+}
+
+.device-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin: 4px 0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: transparent;
+}
+
+.device-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.device-item.active {
+    background: rgba(255, 255, 255, 0.1);
+    cursor: default;
+}
+
+.device-item.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.device-icon {
+    font-size: 1.4rem;
+    color: rgba(255, 255, 255, 0.7);
+    width: 32px;
+    text-align: center;
+}
+
+.device-item.active .device-icon {
+    color: #1db954;
+}
+
+.device-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.device-name {
+    font-size: 0.95rem;
+    color: white;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-type {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 2px;
+}
+
+.device-item.active .device-type {
+    color: #1db954;
+}
+
