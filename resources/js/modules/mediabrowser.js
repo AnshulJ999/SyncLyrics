@@ -118,7 +118,10 @@ export function setupMediaBrowser() {
     
     // Helper to check if iframe has valid content
     const isIframeAlive = () => {
-        return frame.src && frame.src !== '' && frame.src !== 'about:blank';
+        // Must have a tracked URL AND a valid src attribute
+        if (!currentFrameUrl) return false;
+        const src = frame.src || '';
+        return src !== '' && src !== 'about:blank';
     };
     
     // Helper to close modal (keeps iframe alive, starts destroy timer)
