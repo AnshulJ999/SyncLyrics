@@ -1086,11 +1086,11 @@ class MusicAssistantSource(BaseMetadataSource):
             for player in _client.players:
                 devices.append({
                     'id': player.player_id,
-                    'name': player.display_name or player.name or player.player_id,
+                    'name': player.name or player.player_id,
                     'type': player.type.value if hasattr(player.type, 'value') else str(player.type),
                     'is_active': player.player_id == current_player_id,
                     'state': player.playback_state.value if player.playback_state else 'idle',
-                    'volume': int(player.volume_level) if hasattr(player, 'volume_level') else None,
+                    'volume': int(player.volume_level) if hasattr(player, 'volume_level') and player.volume_level is not None else None,
                 })
             
             return devices
