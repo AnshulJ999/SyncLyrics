@@ -1137,8 +1137,9 @@ function debouncedSetVolume(source, volume) {
 
 /**
  * Open device picker modal and load devices
+ * @param {string} [forceSource] - Optional. Force 'spotify' or 'music_assistant'
  */
-export async function openDevicePickerModal() {
+export async function openDevicePickerModal(forceSource = null) {
     const modal = document.getElementById('device-picker-modal');
     const closeBtn = document.getElementById('device-close');
     const refreshBtn = document.getElementById('device-refresh');
@@ -1148,8 +1149,11 @@ export async function openDevicePickerModal() {
     deviceModalOpen = true;
     modal.classList.remove('hidden');
     
+    // Store forced source for refresh button
+    modal.dataset.forceSource = forceSource || '';
+    
     // Load devices
-    await loadDevices();
+    await loadDevices(forceSource);
     
     // Close button
     if (closeBtn) {
@@ -1160,7 +1164,8 @@ export async function openDevicePickerModal() {
     if (refreshBtn) {
         refreshBtn.onclick = async () => {
             refreshBtn.classList.add('spinning');
-            await loadDevices();
+            const savedSource = modal.dataset.forceSource || null;
+            await loadDevices(savedSource);
             refreshBtn.classList.remove('spinning');
         };
     }
@@ -1186,15 +1191,16 @@ function closeDevicePickerModal() {
 
 /**
  * Load devices into the device list
+ * @param {string} [forceSource] - Optional. Force 'spotify' or 'music_assistant'
  */
-async function loadDevices() {
+async function loadDevices(forceSource = null) {
     const list = document.getElementById('device-list');
     if (!list) return;
     
     list.innerHTML = '<div class="device-loading">Loading devices...</div>';
     
     try {
-        const result = await getDevices();
+        const result = await getDevices(forceSource);
         const devices = result.devices || [];
         const source = result.source || 'spotify';
         

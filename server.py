@@ -2408,11 +2408,21 @@ async def transfer_spotify_playback():
 async def get_playback_devices():
     """Get list of available devices for current source.
     
+    Query params:
+        source: Optional. Force 'spotify' or 'music_assistant' instead of auto-detecting.
+    
     Auto-detects source from current playback metadata and returns devices
     from either Music Assistant or Spotify.
     """
-    metadata = await get_current_song_meta_data()
-    source = metadata.get('source') if metadata else None
+    # Check for forced source from query param
+    forced_source = request.args.get('source')
+    
+    if forced_source:
+        source = forced_source
+    else:
+        # Auto-detect from current playback
+        metadata = await get_current_song_meta_data()
+        source = metadata.get('source') if metadata else None
     
     if source == 'music_assistant':
         from system_utils.sources.music_assistant import MusicAssistantSource

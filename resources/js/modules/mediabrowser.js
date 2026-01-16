@@ -3,10 +3,11 @@
  * 
  * Provides embedded Spotify library browser and Music Assistant iframe.
  * 
- * Level 2 - Imports: state
+ * Level 2 - Imports: state, controls
  */
 
 import { lastTrackInfo } from './state.js';
+import { openDevicePickerModal } from './controls.js';
 
 // ========== MEDIA BROWSER SETUP ==========
 
@@ -83,6 +84,7 @@ export function setupMediaBrowser() {
     const closeBtn = document.getElementById('media-browser-close');
     const refreshBtn = document.getElementById('media-browser-refresh');
     const toggleBtn = document.getElementById('media-browser-toggle-source');
+    const devicesBtn = document.getElementById('media-browser-devices');
     
     if (!browserBtn || !modal || !frame) return;
     
@@ -157,6 +159,13 @@ export function setupMediaBrowser() {
             if (currentFrameUrl) {
                 frame.src = currentFrameUrl;
             }
+        });
+    }
+    
+    // Device picker button - opens device picker for current modal source
+    if (devicesBtn) {
+        devicesBtn.addEventListener('click', () => {
+            openDevicePickerModal(currentModalSource);
         });
     }
     

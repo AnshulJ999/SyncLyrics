@@ -764,10 +764,14 @@ export async function getSpotifyDevices() {
 /**
  * Get list of available devices for current source (auto-detects source)
  * 
+ * @param {string} [forceSource] - Optional. Force 'spotify' or 'music_assistant'
  * @returns {Promise<Object>} Device list {devices: [...], source: 'spotify'|'music_assistant'}
  */
-export async function getDevices() {
-    return apiFetch('/api/playback/devices');
+export async function getDevices(forceSource = null) {
+    const url = forceSource 
+        ? `/api/playback/devices?source=${encodeURIComponent(forceSource)}`
+        : '/api/playback/devices';
+    return apiFetch(url);
 }
 
 /**
