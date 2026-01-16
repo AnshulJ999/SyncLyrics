@@ -3,7 +3,7 @@
 .controls-menu {
     position: fixed;
     bottom: 100px;
-    left: 50%;
+    left: 45%;
     transform: translateX(-50%);
     display: flex;
     gap: 8px;
@@ -74,7 +74,7 @@
 /* ========== VOLUME POPUP ========== */
 .volume-popup {
     position: fixed;
-    bottom: 90px;
+    bottom: 100px;
     right: 25%;
     min-width: 220px;
     background: rgba(26, 27, 38, 0.95);

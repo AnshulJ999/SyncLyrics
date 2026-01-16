@@ -615,6 +615,9 @@ async function updateLoop() {
         // Update track info (must happen before icon update)
         setLastTrackInfo(trackInfo);
         
+        // Update shuffle/repeat button states from track info
+        updatePlaybackState(trackInfo);
+        
         // Update media browser button icon AFTER track info is set
         if (sourceChanged) {
             updateMediaBrowserIcon();

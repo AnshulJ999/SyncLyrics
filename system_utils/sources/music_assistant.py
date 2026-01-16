@@ -415,6 +415,15 @@ class MusicAssistantSource(BaseMetadataSource):
         """
         return is_configured()
     
+    def _map_ma_repeat_mode(self, repeat_mode) -> str:
+        """Map MA's RepeatMode enum to our string format ('off', 'context', 'track')."""
+        if repeat_mode is None:
+            return 'off'
+        mode_value = repeat_mode.value if hasattr(repeat_mode, 'value') else str(repeat_mode)
+        # MA uses: OFF, ONE, ALL -> we use: 'off', 'track', 'context'
+        mode_map = {'off': 'off', 'one': 'track', 'all': 'context'}
+        return mode_map.get(mode_value.lower(), 'off')
+    
     async def get_metadata(self) -> Optional[Dict[str, Any]]:
         """
         Fetch metadata from Music Assistant.
@@ -567,6 +576,9 @@ class MusicAssistantSource(BaseMetadataSource):
                 "colors": ("#24273a", "#363b54"),  # Default, will be enriched
                 "last_active_time": self._last_active_time,
                 "ma_item_id": ma_item_id,  # For favorites/like functionality
+                # Shuffle/repeat state for UI buttons (fetched from queue)
+                "shuffle_state": queue.shuffle_enabled if hasattr(queue, 'shuffle_enabled') else False,
+                "repeat_state": self._map_ma_repeat_mode(queue.repeat_mode) if hasattr(queue, 'repeat_mode') else 'off',
             }
             
             return result
