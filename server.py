@@ -3138,6 +3138,16 @@ async def media_browser(subpath='index.html'):
             </html>
             """, 400
         
+        # Get MA token for auto-authentication (optional)
+        ma_token = conf('system.music_assistant.token', '')
+        
+        # Build iframe URL with optional ?code= parameter for auto-auth
+        iframe_url = ma_url
+        if ma_token:
+            # MA uses ?code= for long-lived token auth
+            separator = '&' if '?' in ma_url else '?'
+            iframe_url = f"{ma_url}{separator}code={ma_token}"
+        
         # Return a simple page that iframes the MA server
         return f"""
         <!DOCTYPE html>
@@ -3150,7 +3160,7 @@ async def media_browser(subpath='index.html'):
             </style>
         </head>
         <body>
-            <iframe src="{ma_url}" allow="autoplay"></iframe>
+            <iframe src="{iframe_url}" allow="autoplay"></iframe>
         </body>
         </html>
         """
