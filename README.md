@@ -333,3 +333,4 @@ Based on the original work by [Konstantinos Petrakis](https://github.com/konstan
 - [LRCLib](https://lrclib.net/) - Lyrics database
 - [Quart](https://github.com/pallets/quart) - Async web framework
 - [Spotify Lyrics](https://github.com/akashrchandran/spotify-lyrics-api) - Spotify lyrics proxy
+- [Spotify React Web Client](https://github.com/francoborrelli/spotify-react-web-client) - Spotify Library Browser
