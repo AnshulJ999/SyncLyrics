@@ -14,6 +14,8 @@ import { openDevicePickerModal } from './controls.js';
 // Track current source for modal (can differ from playback source when user toggles)
 let currentModalSource = 'spotify';
 let currentFrameUrl = '';
+let iframeDestroyTimer = null;  // Timer to destroy iframe after inactivity
+const IFRAME_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
 
 /**
  * Get Spotify iframe URL with fresh token
@@ -88,26 +90,75 @@ export function setupMediaBrowser() {
     
     if (!browserBtn || !modal || !frame) return;
     
-    // Helper to close modal
-    const closeModal = () => {
-        modal.classList.add('hidden');
-        frame.src = '';  // Unload iframe
+    // Helper to destroy iframe (called by timer or when switching sources)
+    const destroyIframe = () => {
+        frame.src = '';
         currentFrameUrl = '';
-        browserBtn.classList.remove('active', 'active-ma');
     };
     
-    // Helper to load a source
-    const loadSource = async (source) => {
+    // Helper to start/reset the destroy timer
+    const startDestroyTimer = () => {
+        if (iframeDestroyTimer) {
+            clearTimeout(iframeDestroyTimer);
+        }
+        iframeDestroyTimer = setTimeout(() => {
+            console.log('[MediaBrowser] Iframe destroyed after 10min inactivity');
+            destroyIframe();
+            iframeDestroyTimer = null;
+        }, IFRAME_TIMEOUT_MS);
+    };
+    
+    // Helper to cancel the destroy timer (when modal is opened)
+    const cancelDestroyTimer = () => {
+        if (iframeDestroyTimer) {
+            clearTimeout(iframeDestroyTimer);
+            iframeDestroyTimer = null;
+        }
+    };
+    
+    // Helper to check if iframe has valid content
+    const isIframeAlive = () => {
+        return frame.src && frame.src !== '' && frame.src !== 'about:blank';
+    };
+    
+    // Helper to close modal (keeps iframe alive, starts destroy timer)
+    const closeModal = () => {
+        modal.classList.add('hidden');
+        browserBtn.classList.remove('active', 'active-ma');
+        // Start timer to destroy iframe after inactivity
+        startDestroyTimer();
+    };
+    
+    // Helper to load a source (only reloads if needed)
+    const loadSource = async (source, forceReload = false) => {
         currentModalSource = source;
         
+        // Cancel any pending destroy timer since we're opening
+        cancelDestroyTimer();
+        
+        // Determine target URL
+        let targetUrl;
         if (source === 'music_assistant') {
-            currentFrameUrl = getMAUrl();
-            frame.src = currentFrameUrl;
+            targetUrl = getMAUrl();
+        } else {
+            targetUrl = await getSpotifyUrl();
+        }
+        
+        // Only reload if forced, URL changed, or iframe is empty
+        const needsReload = forceReload || !isIframeAlive() || 
+            (source === 'music_assistant' && !currentFrameUrl.includes('music_assistant')) ||
+            (source !== 'music_assistant' && currentFrameUrl.includes('music_assistant'));
+        
+        if (needsReload) {
+            currentFrameUrl = targetUrl;
+            frame.src = targetUrl;
+        }
+        
+        // Update button styling
+        if (source === 'music_assistant') {
             browserBtn.classList.add('active-ma');
             browserBtn.classList.remove('active');
         } else {
-            currentFrameUrl = await getSpotifyUrl();
-            frame.src = currentFrameUrl;
             browserBtn.classList.add('active');
             browserBtn.classList.remove('active-ma');
         }
@@ -132,7 +183,25 @@ export function setupMediaBrowser() {
     
     // Open media browser
     browserBtn.addEventListener('click', async () => {
-        // Determine initial source based on current track source
+        // Cancel any pending destroy timer
+        cancelDestroyTimer();
+        
+        // Check if iframe is already alive with content
+        if (isIframeAlive()) {
+            // Just show the modal without reloading
+            modal.classList.remove('hidden');
+            // Update button state based on current source
+            if (currentModalSource === 'music_assistant') {
+                browserBtn.classList.add('active-ma');
+                browserBtn.classList.remove('active');
+            } else {
+                browserBtn.classList.add('active');
+                browserBtn.classList.remove('active-ma');
+            }
+            return;
+        }
+        
+        // Iframe is empty/expired, load fresh content
         const trackSource = lastTrackInfo?.source || 'spotify';
         currentModalSource = trackSource === 'music_assistant' ? 'music_assistant' : 'spotify';
         
