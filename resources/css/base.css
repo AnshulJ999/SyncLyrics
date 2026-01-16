@@ -1119,6 +1119,8 @@ body:not(.hide-nav) .media-browser-toggle-btn {
         font-size: 0.7rem;
     }
 
+    /* COMMENTED OUT: Now handled by controls.css @media (max-width: 600px) */
+    /*
     .control-btn {
         width: 38px;
         height: 38px;
@@ -1130,6 +1132,7 @@ body:not(.hide-nav) .media-browser-toggle-btn {
         height: 48px;
         font-size: 1.6rem;
     }
+    */
 
     /* Adjust container position for mobile */
     #player-ui-container {
