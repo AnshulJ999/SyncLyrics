@@ -1059,9 +1059,9 @@ body[data-minimal="true"] .slideshow-toggle-btn {
 }
 
 .play-pause-btn {
-    width: 54px;
-    height: 54px;
-    font-size: 1.8rem;
+    width: 60px;
+    height: 60px;
+    font-size: 2rem;
     background: transparent;
     position: relative;
     /* Override any emoji rendering */

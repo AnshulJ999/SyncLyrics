@@ -63,13 +63,7 @@
     font-size: 1.2rem;
 }
 
-/* Hide new controls on mobile - not enough space */
-@media (max-width: 600px) {
-    #btn-menu,
-    #btn-volume {
-        display: none !important;
-    }
-}
+/* Mobile: Menu and Volume buttons now visible with condensed sizing (see base.css) */
 
 /* ========== VOLUME POPUP ========== */
 .volume-popup {
@@ -328,3 +322,63 @@
     color: #1db954;
 }
 
+/* ========== MOBILE: Condensed Playback Controls ========== */
+/* Compact controls to fit 7 buttons (like, menu, prev, play, next, volume, queue) */
+@media (max-width: 600px) {
+    /* Center controls menu popup */
+    .controls-menu {
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    /* Center volume popup */
+    .volume-popup {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: calc(100vw - 40px);  /* Full width minus margins */
+        max-width: 320px;            /* Cap for larger phones */
+        min-width: auto;             /* Override desktop min-width */
+    }
+
+    /* Compact playback controls pill */
+    .playback-controls {
+        padding: 0.4rem 0.6rem;  /* Reduced from 0.5rem 1.5rem */
+        gap: 2px;                  /* Reduced from 10px */
+    }
+
+    .controls-center {
+        gap: 0.5rem;              /* Reduced from 1.5rem */
+    }
+
+    .controls-left,
+    .controls-right {
+        gap: 0.25rem;              /* Reduced from 0.5rem */
+    }
+
+    /* Smaller buttons for compact layout */
+    .control-btn {
+        width: 36px;               /* Reduced from 38px */
+        height: 36px;
+        font-size: 1rem;         /* Reduced from 0.95rem */
+    }
+
+    .play-pause-btn {
+        width: 48px;               /* Reduced from 48px */
+        height: 48px;
+        font-size: 2rem;         /* Reduced from 1.6rem */
+    }
+
+    /* Smaller icons for compact mobile controls */
+    #btn-like i,
+    #btn-queue i,
+    #btn-menu i,
+    #btn-volume i {
+        font-size: 1rem;        /* Reduced from 1.1rem */
+    }
+
+    #btn-previous i,
+    #btn-next i {
+        font-size: 1rem;           /* Reduced from 1.2rem */
+    }
+}
