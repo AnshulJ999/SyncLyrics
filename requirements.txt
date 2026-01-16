@@ -9,6 +9,7 @@ desktop-notifier>=3.5.6
 # Platform Specific
 winsdk>=1.0.0b9; platform_system == "Windows"
 pywin32>=306; platform_system == "Windows"
+pycaw; platform_system == "Windows"
 
 # dbus-next>=0.2.3; platform_system == "Linux"
 # python-xlib>=0.33; platform_system == "Linux"
