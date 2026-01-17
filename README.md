@@ -6,7 +6,7 @@ The app's philosophy is simple: configure it once and let it run in the backgrou
 
 This started as a hobby project where I just wanted real-time lyrics on any of my tablet devices, but has grown to be a feature-rich self-hosted lyrics server. SyncLyrics is a visual companion to all music, anywhere. 
 
-**Supported Platforms:** Windows, Home Assistant, Docker, Linux, macOS (coming soon)
+**Supported Platforms:** Windows, Home Assistant, Docker, Linux, macOS (unsigned)
 
 **Supported Audio Sources:** Spotify, Windows Media (SMTC), Music Assistant, Audio Recognition (Shazam), Linux, macOS, and Spicetify. 
 
