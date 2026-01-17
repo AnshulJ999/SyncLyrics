@@ -544,9 +544,15 @@ async def get_audio_analysis():
     analysis = None
     analysis_track_id = None
     
-    # 1. Try live Spicetify state first (ONLY if Spicetify data is fresh AND has actual data)
-    # If Spicetify is stale, the old data in memory is for a different track
-    if is_spicetify_fresh():
+    # Get current metadata first - we need to know which source is active
+    # and also need artist/title for DB fallback anyway
+    metadata = await get_current_song_meta_data()
+    active_source = metadata.get('source') if metadata else None
+    
+    # 1. Try live Spicetify state ONLY if Spicetify is the ACTIVE source
+    # This prevents a paused Spicetify from providing wrong analysis when
+    # another source (e.g., Music Assistant) is playing a different track
+    if active_source == 'spicetify' and is_spicetify_fresh():
         live_analysis = _spicetify_state.get('audio_analysis')
         # Check if it has actual segment data (not just empty arrays)
         if live_analysis and live_analysis.get('segments'):
@@ -559,23 +565,22 @@ async def get_audio_analysis():
             title = track_info.get('name', 'Unknown')
             logger.debug(f"Using live Spicetify audio analysis: {artist} - {title}")
     
-    # 2. If not in memory, try database cache (works for any source)
-    if not analysis:
-        metadata = await get_current_song_meta_data()
-        if metadata:
-            artist = metadata.get('artist', '')
-            title = metadata.get('title', '')
-            if artist and title:
-                # Non-blocking file I/O using thread pool
-                cached = await asyncio.to_thread(load_from_db, artist, title)
-                if cached and cached.get('audio_analysis'):
-                    analysis = cached['audio_analysis']
-                    # Compute track ID from the metadata we used to load
-                    # This ensures frontend validation works correctly
-                    analysis_track_id = _normalize_track_id(artist, title)
-                    logger.info(f"Loaded audio analysis from Spicetify cache: {artist} - {title}")
-                else:
-                    logger.debug(f"No cached audio analysis for: {artist} - {title}")
+    # 2. Fall back to database cache (works for ANY source)
+    # This finds cached analysis by artist/title, regardless of which source cached it
+    if not analysis and metadata:
+        artist = metadata.get('artist', '')
+        title = metadata.get('title', '')
+        if artist and title:
+            # Non-blocking file I/O using thread pool
+            cached = await asyncio.to_thread(load_from_db, artist, title)
+            if cached and cached.get('audio_analysis'):
+                analysis = cached['audio_analysis']
+                # Compute track ID from the metadata we used to load
+                # This ensures frontend validation works correctly
+                analysis_track_id = _normalize_track_id(artist, title)
+                logger.info(f"Loaded audio analysis from Spicetify cache: {artist} - {title} (source: {active_source})")
+            else:
+                logger.debug(f"No cached audio analysis for: {artist} - {title}")
     
     if not analysis:
         return jsonify({"error": "No audio analysis available"}), 404
