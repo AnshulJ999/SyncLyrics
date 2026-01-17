@@ -147,3 +147,15 @@ INFO: Connected to Music Assistant
 INFO: Music Assistant disconnected
 DEBUG: Reconnecting to Music Assistant (attempt 2)
 ```
+
+## Setting Music Assistant as Default Source
+
+If you want to set Music Assistant as your default source, always, a simple way is to make use of our existing settings: 
+
+1) Set MA to the highest priority, even -1 will work. This makes it win over any other source. 
+
+2) Set Music Assistant 'paused timeout' to 0, or a very high number (in seconds, such as 14400). 
+
+This creates 'source stickiness', where MA will stay as the active source even when it's paused, showing you the last song you played on MA, no matter how old it is.
+
+You can then use all playback controls/device picker to resume MA playback anytime.

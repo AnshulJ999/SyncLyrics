@@ -438,9 +438,10 @@ async function updateLoop() {
                         'windows_media': 'Windows',
                         'reaper': 'Reaper',
                         'music_assistant': 'Music Assistant',
-                        'linux': 'Linux'
+                        'linux': 'Linux',
+                        'macos': 'Mac'
                     };
-                    sourceBtn.textContent = sourceMap[trackInfo.source] || 'Spotify';
+                    sourceBtn.textContent = sourceMap[trackInfo.source] || 'Idle';
                 }
             }
         }

@@ -26,7 +26,7 @@ let pollInterval = null;
 let currentConfig = null;
 let isActive = false;
 let isFrontendCapture = false; // True if currently using frontend mic capture
-let currentTrackSource = 'Spotify'; // Default display
+let currentTrackSource = null; // Default: no source (shows Idle)
 let lastKnownProvider = null; // Last known recognition provider (prevents flashing)
 
 // DOM Elements (cached on init)
@@ -451,9 +451,10 @@ function updateStatusDisplay(status) {
                 'acrcloud': 'ACRCloud',
                 'reaper': 'Reaper',
                 'music_assistant': 'Music Assistant',
-                'linux': 'Linux'
+                'linux': 'Linux',
+                'macos': 'Mac'
             };
-            const displaySource = sourceMap[currentTrackSource] || 'Spotify';
+            const displaySource = sourceMap[currentTrackSource] || 'Idle';
             elements.sourceName.textContent = displaySource;
         }
     }
