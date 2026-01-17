@@ -1382,8 +1382,8 @@ body.soft-mode .background-overlay {
     background: linear-gradient(135deg, #1e2030 0%, #2f354d 100%);
     border-radius: 16px;
     padding: 40px;
-    max-width: 400px;
-    width: 90%;
+    max-width: 520px;
+    width: 95%;
     /* Center content */
     text-align: center;
     /* Subtle shadow for depth */
@@ -1508,8 +1508,8 @@ body.soft-mode .background-overlay {
     color: white;
 }
 
-/* Redirect URI hint box */
-.spotify-redirect-hint {
+/* Redirect URI hints container */
+.spotify-redirect-hints {
     background: rgba(0, 0, 0, 0.3);
     border-radius: 8px;
     padding: 12px;
@@ -1517,37 +1517,62 @@ body.soft-mode .background-overlay {
     text-align: left;
 }
 
-.spotify-redirect-hint .hint-label {
+.spotify-redirect-hints .hints-label {
     display: block;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 6px;
+    margin-bottom: 10px;
 }
 
-.spotify-redirect-hint .redirect-uri {
-    display: block;
-    font-family: monospace;
-    font-size: 12px;
-    color: #1DB954;
-    word-break: break-all;
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 4px;
+/* URI row - horizontal layout */
+.uri-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-bottom: 8px;
+    flex-wrap: nowrap;
 }
 
-.copy-uri-btn {
+.uri-row:last-child {
+    margin-bottom: 0;
+}
+
+.uri-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    min-width: 85px;
+}
+
+.uri-value {
+    flex: 1;
+    font-family: monospace;
+    font-size: 11px;
+    color: #1DB954;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px 8px;
+    border-radius: 4px;
+    word-break: break-all;
+    white-space: normal;
+}
+
+.uri-copy-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
     color: white;
-    padding: 4px 10px;
+    width: 28px;
+    height: 28px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
     transition: background 0.2s ease;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.copy-uri-btn:hover {
+.uri-copy-btn:hover {
     background: rgba(255, 255, 255, 0.2);
 }
 

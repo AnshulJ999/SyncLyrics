@@ -171,9 +171,12 @@ async def health():
 @app.route("/")
 async def index() -> str:
     """Main page - pass Spotify auth URL if not authenticated"""
+    from config import SPOTIFY
+    
     # Check if Spotify needs authentication
     spotify_auth_url = None
     spotify_needs_auth = False
+    configured_redirect_uri = None
     suggested_redirect_uri = None
     
     # Use the shared singleton client (ensures all stats consolidated)
@@ -185,6 +188,9 @@ async def index() -> str:
         try:
             spotify_auth_url = client.get_auth_url()
             spotify_needs_auth = True
+            
+            # Get configured redirect URI from ENV (if any)
+            configured_redirect_uri = SPOTIFY.get("redirect_uri")
             
             # Generate suggested redirect URI based on auto-detected local IP
             # This helps users configure Spotify Developer Dashboard correctly
@@ -209,6 +215,7 @@ async def index() -> str:
     return await render_template('index.html', 
                                 spotify_auth_url=spotify_auth_url,
                                 spotify_needs_auth=spotify_needs_auth,
+                                configured_redirect_uri=configured_redirect_uri,
                                 suggested_redirect_uri=suggested_redirect_uri)
 
 

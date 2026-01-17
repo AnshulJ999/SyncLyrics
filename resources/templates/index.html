@@ -27,14 +27,26 @@
         <h2>Connect to Spotify</h2>
         <p>To use Spotify features, please authorize this application.</p>
         
-        <!-- Suggested redirect URI hint -->
-        {% if suggested_redirect_uri %}
-        <div class="spotify-redirect-hint">
-            <span class="hint-label">Add this Redirect URI to your Spotify Developer Dashboard:</span>
-            <code class="redirect-uri" id="redirect-uri-text">{{ suggested_redirect_uri }}</code>
-            <button class="copy-uri-btn" id="copy-redirect-uri" title="Copy to clipboard">📋</button>
+        <!-- Redirect URI hints -->
+        <div class="spotify-redirect-hints">
+            <span class="hints-label">Add one of these Redirect URIs to your Spotify Developer Dashboard:</span>
+            
+            {% if configured_redirect_uri %}
+            <div class="uri-row">
+                <span class="uri-label">Configured:</span>
+                <code class="uri-value" data-uri="{{ configured_redirect_uri }}">{{ configured_redirect_uri }}</code>
+                <button class="uri-copy-btn" title="Copy">📋</button>
+            </div>
+            {% endif %}
+            
+            {% if suggested_redirect_uri and suggested_redirect_uri != configured_redirect_uri %}
+            <div class="uri-row">
+                <span class="uri-label">{% if configured_redirect_uri %}Suggested:{% else %}Recommended:{% endif %}</span>
+                <code class="uri-value" data-uri="{{ suggested_redirect_uri }}">{{ suggested_redirect_uri }}</code>
+                <button class="uri-copy-btn" title="Copy">📋</button>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
         
         <a href="{{ spotify_auth_url }}" class="spotify-login-button">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
@@ -48,7 +60,7 @@
     </div>
 </div>
 <script>
-// Spotify login overlay handlers (inline for simplicity)
+// Spotify login overlay handlers
 (function() {
     const overlay = document.getElementById('spotify-login-overlay');
     if (!overlay) return;
@@ -64,16 +76,18 @@
     document.getElementById('spotify-skip-btn')?.addEventListener('click', dismissOverlay);
     document.getElementById('spotify-skip-text')?.addEventListener('click', dismissOverlay);
     
-    // Copy redirect URI button
-    document.getElementById('copy-redirect-uri')?.addEventListener('click', async function() {
-        const uri = document.getElementById('redirect-uri-text')?.textContent;
-        if (uri) {
-            try {
-                await navigator.clipboard.writeText(uri);
-                this.textContent = '✓';
-                setTimeout(() => { this.textContent = '📋'; }, 2000);
-            } catch(e) { console.error('Copy failed:', e); }
-        }
+    // Copy buttons (multiple)
+    document.querySelectorAll('.uri-copy-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const uri = this.previousElementSibling?.dataset?.uri;
+            if (uri) {
+                try {
+                    await navigator.clipboard.writeText(uri);
+                    this.textContent = '✓';
+                    setTimeout(() => { this.textContent = '📋'; }, 1500);
+                } catch(e) { console.error('Copy failed:', e); }
+            }
+        });
     });
     
     // Check if previously dismissed this session
@@ -83,6 +97,7 @@
 })();
 </script>
 {% endif %}
+
 
 
 <!-- Top Right Controls Container (Audio Source + Settings) -->
