@@ -1,8 +1,10 @@
 # Changelog
 
-All notable changes to SyncLyrics will be documented in this file.
-
 ## [2.0.0] - 2026-01-17
+
+### ⚠️ Breaking Changes
+
+**Note:** Due to Spotify OAuth scope changes, you will have to re-login to Spotify and accept the new permissions. This is for the new enhanced features including device picker UI and volume/shuffle/repeat controls.
 
 ### ✨ New Features
 
