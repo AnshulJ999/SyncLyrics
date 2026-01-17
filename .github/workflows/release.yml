@@ -506,7 +506,7 @@ jobs:
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Build Summary
         run: |
