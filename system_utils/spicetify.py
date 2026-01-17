@@ -165,21 +165,26 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         if not _spicetify_state['connected']:
             return None
         
-        # Check staleness
+        # Check staleness - but don't return None immediately if we have track data
+        # This allows metadata.py's paused_timeout logic to handle expiry correctly
         age_ms = (time.time() * 1000) - _spicetify_state['last_update']
-        if age_ms > METADATA_STALE_MS:
-            # Throttle stale log to once per 120 seconds to avoid spam
+        is_data_stale = age_ms > METADATA_STALE_MS
+        
+        # Check for track data first
+        track = _spicetify_state.get('track')
+        if not track:
+            return None
+        
+        # If stale but we have track data, continue with is_playing=False
+        # Log stale state (throttled) but don't return None
+        if is_data_stale:
             if not hasattr(get_current_song_meta_data_spicetify, '_last_stale_log'):
                 get_current_song_meta_data_spicetify._last_stale_log = 0
             now = time.time()
             if now - get_current_song_meta_data_spicetify._last_stale_log > 120:
-                logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms)")
+                logger.debug(f"Spicetify data stale ({age_ms:.0f}ms > {METADATA_STALE_MS}ms), returning cached paused state")
                 get_current_song_meta_data_spicetify._last_stale_log = now
-            return None
-        
-        track = _spicetify_state.get('track')
-        if not track:
-            return None
+            # Continue to build result - is_playing will be forced to False below
         
         artist = track.get('artist') or ''
         title = track.get('name') or ''
@@ -189,7 +194,8 @@ async def get_current_song_meta_data_spicetify() -> Optional[dict]:
         current_track_id = _normalize_track_id(artist, title)
         
         # Update active time if playing
-        is_playing = _spicetify_state['is_playing']
+        # If data is stale (no WS updates), consider it paused regardless of cached state
+        is_playing = _spicetify_state['is_playing'] and not is_data_stale
         if is_playing:
             _spicetify_last_active_time = time.time()
         

@@ -82,6 +82,7 @@
     let messageChannel = null;
     let audioKeepAlive = null;  // Silent audio context to prevent throttling
     let fallbackIntervalId = null;  // setInterval ID for cleanup
+    let pausedHeartbeatId = null;  // Paused state heartbeat (keeps backend timestamp fresh)
 
     // ======== UTILITIES ========
     
@@ -697,6 +698,45 @@
     function hasPositionJumped() {
         const currentPos = Spicetify.Player.getProgress();
         return Math.abs(currentPos - lastReportedPosition) > 1000;  // >1 second = seek
+    }
+
+    // ======== PAUSED HEARTBEAT ========
+    // Sends position updates every 3s while paused to keep backend timestamp fresh
+    // This allows metadata.py's paused_timeout logic to work correctly
+    
+    /**
+     * Start the paused heartbeat interval.
+     * Sends position updates every 3s while paused to prevent staleness timeout.
+     */
+    function startPausedHeartbeat() {
+        if (pausedHeartbeatId) return;  // Already running
+        
+        pausedHeartbeatId = setInterval(() => {
+            // Safety checks
+            if (!isAnyConnected()) return;
+            
+            // If now playing, stop the heartbeat (race condition protection)
+            if (Spicetify?.Player?.isPlaying()) {
+                stopPausedHeartbeat();
+                return;
+            }
+            
+            // Send heartbeat
+            sendPositionUpdate('paused_heartbeat');
+        }, 3000);  // 3 seconds
+        
+        log('Paused heartbeat started');
+    }
+    
+    /**
+     * Stop the paused heartbeat interval.
+     */
+    function stopPausedHeartbeat() {
+        if (!pausedHeartbeatId) return;
+        
+        clearInterval(pausedHeartbeatId);
+        pausedHeartbeatId = null;
+        log('Paused heartbeat stopped');
     }
 
     // ======== TRACK DATA (Audio Analysis + Colors) ========
@@ -1351,6 +1391,13 @@
         // Play/Pause (immediate)
         listeners.onplaypause = function() {
             sendPositionUpdate('playpause');
+            
+            // Start/stop paused heartbeat based on play state
+            if (Spicetify.Player.isPlaying()) {
+                stopPausedHeartbeat();
+            } else {
+                startPausedHeartbeat();
+            }
         };
 
         // Song change - use event.data when available
@@ -1537,6 +1584,9 @@
             log('Fallback interval cleared');
         }
         
+        // Clear paused heartbeat
+        stopPausedHeartbeat();
+        
         // Reset state
         window._SyncLyricsBridgeActive = false;
         
@@ -1601,6 +1651,11 @@
         
         initEventListeners();
         connectAll();  // Connect to all configured servers
+        
+        // Check if initially paused (e.g., Spotify was paused before extension loaded)
+        if (!Spicetify?.Player?.isPlaying()) {
+            startPausedHeartbeat();
+        }
         
         log('SyncLyrics Bridge ready!');
     }
