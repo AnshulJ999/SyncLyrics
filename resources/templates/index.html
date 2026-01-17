@@ -20,9 +20,22 @@
 {% if spotify_needs_auth and spotify_auth_url %}
 <div id="spotify-login-overlay" class="spotify-login-overlay">
     <div class="spotify-login-card">
+        <!-- Dismiss button -->
+        <button id="spotify-skip-btn" class="spotify-skip-btn" title="Continue without Spotify">×</button>
+        
         <div class="spotify-login-icon">🎵</div>
         <h2>Connect to Spotify</h2>
         <p>To use Spotify features, please authorize this application.</p>
+        
+        <!-- Suggested redirect URI hint -->
+        {% if suggested_redirect_uri %}
+        <div class="spotify-redirect-hint">
+            <span class="hint-label">Add this Redirect URI to your Spotify Developer Dashboard:</span>
+            <code class="redirect-uri" id="redirect-uri-text">{{ suggested_redirect_uri }}</code>
+            <button class="copy-uri-btn" id="copy-redirect-uri" title="Copy to clipboard">📋</button>
+        </div>
+        {% endif %}
+        
         <a href="{{ spotify_auth_url }}" class="spotify-login-button">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
                 <path
@@ -31,9 +44,46 @@
             Login with Spotify
         </a>
         <p class="spotify-login-note">You will be redirected to Spotify to authorize this application.</p>
+        <p class="spotify-skip-note">Or <button id="spotify-skip-text" class="spotify-skip-link">continue without Spotify</button></p>
     </div>
 </div>
+<script>
+// Spotify login overlay handlers (inline for simplicity)
+(function() {
+    const overlay = document.getElementById('spotify-login-overlay');
+    if (!overlay) return;
+    
+    function dismissOverlay() {
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => { overlay.style.display = 'none'; }, 300);
+        sessionStorage.setItem('spotifyLoginDismissed', 'true');
+    }
+    
+    // Dismiss buttons
+    document.getElementById('spotify-skip-btn')?.addEventListener('click', dismissOverlay);
+    document.getElementById('spotify-skip-text')?.addEventListener('click', dismissOverlay);
+    
+    // Copy redirect URI button
+    document.getElementById('copy-redirect-uri')?.addEventListener('click', async function() {
+        const uri = document.getElementById('redirect-uri-text')?.textContent;
+        if (uri) {
+            try {
+                await navigator.clipboard.writeText(uri);
+                this.textContent = '✓';
+                setTimeout(() => { this.textContent = '📋'; }, 2000);
+            } catch(e) { console.error('Copy failed:', e); }
+        }
+    });
+    
+    // Check if previously dismissed this session
+    if (sessionStorage.getItem('spotifyLoginDismissed') === 'true') {
+        overlay.style.display = 'none';
+    }
+})();
+</script>
 {% endif %}
+
 
 <!-- Top Right Controls Container (Audio Source + Settings) -->
 <div class="top-right-controls">

@@ -1484,6 +1484,100 @@ body.soft-mode .background-overlay {
     margin-bottom: 0;
 }
 
+/* Dismiss button (top-right X) */
+.spotify-skip-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.spotify-skip-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* Redirect URI hint box */
+.spotify-redirect-hint {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.spotify-redirect-hint .hint-label {
+    display: block;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 6px;
+}
+
+.spotify-redirect-hint .redirect-uri {
+    display: block;
+    font-family: monospace;
+    font-size: 12px;
+    color: #1DB954;
+    word-break: break-all;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.copy-uri-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s ease;
+}
+
+.copy-uri-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Skip option text */
+.spotify-skip-note {
+    margin-top: 12px;
+    margin-bottom: 0;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.spotify-skip-link {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0;
+}
+
+.spotify-skip-link:hover {
+    color: white;
+}
+
+/* Ensure card has relative positioning for dismiss button */
+.spotify-login-card {
+    position: relative;
+}
+
 /* ========== VISUAL MODE STYLES ========== */
 
 /* Visual Mode - Hide Lyrics Container */

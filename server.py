@@ -174,6 +174,7 @@ async def index() -> str:
     # Check if Spotify needs authentication
     spotify_auth_url = None
     spotify_needs_auth = False
+    suggested_redirect_uri = None
     
     # Use the shared singleton client (ensures all stats consolidated)
     client = get_shared_spotify_client()
@@ -184,6 +185,22 @@ async def index() -> str:
         try:
             spotify_auth_url = client.get_auth_url()
             spotify_needs_auth = True
+            
+            # Generate suggested redirect URI based on auto-detected local IP
+            # This helps users configure Spotify Developer Dashboard correctly
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.settimeout(0)
+                s.connect(('8.8.8.8', 1))
+                local_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                local_ip = "localhost"
+            
+            https_port = SERVER.get("https_port", 9013)
+            suggested_redirect_uri = f"https://{local_ip}:{https_port}/callback"
+            
         except Exception as e:
             logger.error(f"Failed to get Spotify auth URL: {e}")
             spotify_auth_url = None
@@ -191,7 +208,9 @@ async def index() -> str:
     # Render the HTML template with Spotify auth info
     return await render_template('index.html', 
                                 spotify_auth_url=spotify_auth_url,
-                                spotify_needs_auth=spotify_needs_auth)
+                                spotify_needs_auth=spotify_needs_auth,
+                                suggested_redirect_uri=suggested_redirect_uri)
+
 
 @app.route("/lyrics")
 async def lyrics() -> dict:
