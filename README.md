@@ -135,6 +135,8 @@ Then extract the new version and replace any old files. This should maintain you
    ```
    Or right-click the executable → Open → click "Open" in the warning dialog.
 
+   You can use the included start.command file.
+
 > **Note:** macOS builds are unsigned, so you'll need to allow them through Gatekeeper on first run.
 
 For full support on macOS, it is recommended to install `nowplaying-cli` via Homebrew. Simply run this command: 
