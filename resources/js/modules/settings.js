@@ -239,26 +239,38 @@ export function applyDisplayConfig(updateBackgroundFn = null) {
  * Toggle minimal mode on/off
  * Exported for keyboard shortcut module
  */
+// Store previous waveform/spectrum state for restoration
+let preMinimalWaveform = false;
+let preMinimalSpectrum = false;
+
 export function toggleMinimalMode() {
     const wasMinimal = displayConfig.minimal;
     displayConfig.minimal = !wasMinimal;
     
     if (displayConfig.minimal) {
-        // Entering minimal mode - hide all UI
+        // Entering minimal mode - save and hide waveform/spectrum
+        preMinimalWaveform = displayConfig.showWaveform;
+        preMinimalSpectrum = displayConfig.showSpectrum;
+        
+        // Hide all UI
         displayConfig.showAlbumArt = false;
         displayConfig.showTrackInfo = false;
         displayConfig.showControls = false;
         displayConfig.showProgress = false;
+        displayConfig.showWaveform = false;
+        displayConfig.showSpectrum = false;
         displayConfig.showBottomNav = false;
         displayConfig.showProvider = false;
         displayConfig.showAudioSource = false;
         displayConfig.showVisualModeToggle = false;
     } else {
-        // Exiting minimal mode - restore defaults
+        // Exiting minimal mode - restore defaults and previous waveform/spectrum state
         displayConfig.showAlbumArt = true;
         displayConfig.showTrackInfo = true;
         displayConfig.showControls = true;
         displayConfig.showProgress = true;
+        displayConfig.showWaveform = preMinimalWaveform;
+        displayConfig.showSpectrum = preMinimalSpectrum;
         displayConfig.showBottomNav = false;  // Default is false
         displayConfig.showProvider = true;
         displayConfig.showAudioSource = true;

@@ -264,7 +264,7 @@ export function checkForVisualMode(data, trackId) {
         if (data && data.is_instrumental_manual === true) {
             delayMs = 0;
         } else if (isInstrumental) {
-            delayMs = 2000;
+            delayMs = 1200;
         } else {
             delayMs = visualModeConfig.delaySeconds * 1000;
         }
