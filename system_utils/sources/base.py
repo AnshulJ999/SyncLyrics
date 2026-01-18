@@ -51,6 +51,7 @@ class SourceConfig:
     paused_timeout: int = 600              # Seconds before paused source expires (0 = never)
     requires_auth: bool = False            # Whether authentication/API keys are needed
     config_keys: List[str] = field(default_factory=list)  # Settings keys this source needs
+    skip_platform_check: bool = False      # Skip platform.system() check; let is_available() decide
 
 
 class BaseMetadataSource(ABC):

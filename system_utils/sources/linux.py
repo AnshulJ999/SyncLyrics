@@ -53,7 +53,8 @@ class LinuxSource(BaseMetadataSource):
         return SourceConfig(
             name="linux",
             display_name="Linux (MPRIS)",
-            platforms=["Linux"],  # Only available on Linux
+            platforms=["Linux"],  # For documentation only
+            skip_platform_check=True,  # Bypass platform.system() check; playerctl is the gate
             default_enabled=True,  # Enabled by default on Linux
             default_priority=1,    # High priority (main source on Linux)
             paused_timeout=600,    # 10 minutes

@@ -95,7 +95,8 @@ def _discover_sources():
                     continue
                 
                 # === PLATFORM CHECK ===
-                if current_platform not in config.platforms:
+                # Sources with skip_platform_check=True bypass this (e.g., Linux uses playerctl as gate)
+                if not config.skip_platform_check and current_platform not in config.platforms:
                     logger.debug(f"Plugin source {config.name}: not supported on {current_platform}, skipping")
                     continue
                 
