@@ -229,7 +229,7 @@ class ACRCloudRecognizer:
             duration = duration_ms / 1000.0 if duration_ms else None
             
             # Score for logging and validation (ACRCloud provides 0-100)
-            score = track.get('score', 100)
+            score = track.get('score', 50)  # Conservative default if missing
             
             # Build result (same format as Shazamio)
             recognition = RecognitionResult(

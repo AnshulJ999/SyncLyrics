@@ -54,7 +54,8 @@ class RecognitionEngine:
     DEFAULT_CAPTURE_DURATION = 5.0   # Seconds of audio to capture
     DEFAULT_STALE_THRESHOLD = 15.0   # Seconds before result is stale
     MAX_CONSECUTIVE_FAILURES = 5     # Failures before pausing
-    ACRCLOUD_MIN_SCORE = 30          # Minimum ACRCloud score (0-100) to accept
+    ACRCLOUD_MIN_SCORE = 80          # Minimum ACRCloud score (0-100) to accept
+    ACRCLOUD_HIGH_SCORE = 100        # Score at which to bypass all validation
     
     def __init__(
         self,
@@ -640,14 +641,23 @@ class RecognitionEngine:
         
         # ACRCloud validation: minimum score + optional Reaper validation
         if result.recognition_provider == "acrcloud":
-            # Check minimum score threshold
+            # Check score threshold
             score = int(result.confidence * 100)  # confidence is 0.0-1.0
+            
+            # Perfect score bypasses all validation (highly confident match)
+            if score >= self.ACRCLOUD_HIGH_SCORE:
+                logger.info(f"ACRCloud perfect score ({score}) - accepting without validation: {result}")
+                self._clear_pending()
+                return True
+            
             if score < self.ACRCLOUD_MIN_SCORE:
                 logger.info(
-                    f"ACRCloud rejected - score {score} below threshold {self.ACRCLOUD_MIN_SCORE}: "
-                    f"{result.artist} - {result.title}"
+                    f"ACRCloud low score {score} (threshold: {self.ACRCLOUD_MIN_SCORE}) - "
+                    f"checking Reaper/verification: {result.artist} - {result.title}"
                 )
-                return False  # Reject outright, don't add to pending
+                # NOTE: Previously rejected outright here. Now falls through to 
+                # Reaper validation and multi-match verification. Uncomment to restore:
+                # return False  # Reject outright, don't add to pending
             
             # Reaper validation (if enabled)
             if get_effective_value("reaper_validation_enabled", False):
@@ -661,9 +671,11 @@ class RecognitionEngine:
                     # Fall through to multi-match verification instead of outright rejection
             else:
                 # No Reaper validation - accept ACRCloud with good score
-                logger.info(f"ACRCloud result (score: {score}) - accepting: {result}")
-                self._clear_pending()
-                return True
+                if score >= self.ACRCLOUD_MIN_SCORE:
+                    logger.info(f"ACRCloud result (score: {score}) - accepting: {result}")
+                    self._clear_pending()
+                    return True
+                # Low score without Reaper - fall through to multi-match
         
         # Reaper validation for Shazam (existing behavior)
         if get_effective_value("reaper_validation_enabled", False):
