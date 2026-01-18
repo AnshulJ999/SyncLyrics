@@ -158,6 +158,9 @@ def get_all_source_classes() -> Dict[str, Type[BaseMetadataSource]]:
     _discover_sources()
     return _registry.copy()
 
+# Track sources that have already logged "not available" to prevent spam
+_logged_unavailable: set = set()
+
 
 def get_enabled_plugin_sources() -> List[BaseMetadataSource]:
     """
@@ -183,7 +186,10 @@ def get_enabled_plugin_sources() -> List[BaseMetadataSource]:
         
         # Check if available (platform, dependencies)
         if not instance.is_available():
-            logger.debug(f"Plugin source {name} not available (dependencies missing?)")
+            # Only log once per source per session to prevent spam
+            if name not in _logged_unavailable:
+                logger.debug(f"Plugin source {name} not available (not configured or dependencies missing)")
+                _logged_unavailable.add(name)
             continue
         
         enabled.append((instance.priority, instance))
