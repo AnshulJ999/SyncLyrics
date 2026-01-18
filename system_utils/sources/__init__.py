@@ -23,6 +23,17 @@ from typing import Dict, Type, List, Optional, Any
 from .base import BaseMetadataSource, SourceConfig, SourceCapability
 from logging_config import get_logger
 
+# =============================================================================
+# EXPLICIT IMPORTS FOR PYINSTALLER
+# =============================================================================
+# PyInstaller's pkgutil.iter_modules() cannot discover modules at runtime in
+# frozen apps. These imports ensure the modules are bundled AND discoverable.
+# When adding a new source, add an import here.
+# =============================================================================
+from . import linux      # noqa: F401
+from . import macos      # noqa: F401
+from . import music_assistant  # noqa: F401
+
 logger = get_logger(__name__)
 
 # Registry of discovered source classes
