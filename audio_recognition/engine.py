@@ -54,6 +54,7 @@ class RecognitionEngine:
     DEFAULT_CAPTURE_DURATION = 5.0   # Seconds of audio to capture
     DEFAULT_STALE_THRESHOLD = 15.0   # Seconds before result is stale
     MAX_CONSECUTIVE_FAILURES = 5     # Failures before pausing
+    ACRCLOUD_MIN_SCORE = 30          # Minimum ACRCloud score (0-100) to accept
     
     def __init__(
         self,
@@ -637,13 +638,34 @@ class RecognitionEngine:
         """
         from system_utils.session_config import get_effective_value
         
-        # ACRCloud bypasses all verification (high confidence)
+        # ACRCloud validation: minimum score + optional Reaper validation
         if result.recognition_provider == "acrcloud":
-            logger.info(f"ACRCloud result - accepting immediately: {result}")
-            self._clear_pending()
-            return True
+            # Check minimum score threshold
+            score = int(result.confidence * 100)  # confidence is 0.0-1.0
+            if score < self.ACRCLOUD_MIN_SCORE:
+                logger.info(
+                    f"ACRCloud rejected - score {score} below threshold {self.ACRCLOUD_MIN_SCORE}: "
+                    f"{result.artist} - {result.title}"
+                )
+                return False  # Reject outright, don't add to pending
+            
+            # Reaper validation (if enabled)
+            if get_effective_value("reaper_validation_enabled", False):
+                reaper_match = await self._check_reaper_validation(result)
+                if reaper_match:
+                    logger.info(f"ACRCloud + Reaper validated (score: {score}) - accepting: {result}")
+                    self._clear_pending()
+                    return True
+                else:
+                    logger.debug(f"ACRCloud Reaper validation failed (score: {score}): {result}")
+                    # Fall through to multi-match verification instead of outright rejection
+            else:
+                # No Reaper validation - accept ACRCloud with good score
+                logger.info(f"ACRCloud result (score: {score}) - accepting: {result}")
+                self._clear_pending()
+                return True
         
-        # Reaper validation (optional)
+        # Reaper validation for Shazam (existing behavior)
         if get_effective_value("reaper_validation_enabled", False):
             reaper_match = await self._check_reaper_validation(result)
             if reaper_match:

@@ -228,6 +228,9 @@ class ACRCloudRecognizer:
             duration_ms = track.get('duration_ms', 0)
             duration = duration_ms / 1000.0 if duration_ms else None
             
+            # Score for logging and validation (ACRCloud provides 0-100)
+            score = track.get('score', 100)
+            
             # Build result (same format as Shazamio)
             recognition = RecognitionResult(
                 title=title,
@@ -235,7 +238,7 @@ class ACRCloudRecognizer:
                 offset=offset,
                 capture_start_time=audio.capture_start_time,
                 recognition_time=recognition_time,
-                confidence=track.get('score', 100) / 100.0,
+                confidence=score / 100.0,
                 time_skew=0.0,
                 frequency_skew=0.0,
                 track_id=track.get('acrid'),
@@ -257,6 +260,7 @@ class ACRCloudRecognizer:
             duration_str = f"{duration:.1f}s ({duration_ms}ms)" if duration else "MISSING"
             logger.info(
                 f"ACRCloud recognized: {artist} - {title} | "
+                f"Score: {score} | "
                 f"Offset: {offset:.1f}s | "
                 f"Duration: {duration_str} | "
                 f"Latency: {latency:.1f}s | "
