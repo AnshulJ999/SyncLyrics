@@ -73,6 +73,7 @@ _tray_thread = None
 _shutdown_event = th.Event()  # Thread-safe for signal handlers (runs in different contexts)
 _server_task = None  # Global to track server task
 _mdns_service = None # Global mDNS service
+_hypercorn_shutdown = None  # asyncio.Event - triggers Hypercorn graceful shutdown
 
 # Watchdog for emergency exit - prevents zombie processes when PortAudio hangs
 import threading
@@ -506,7 +507,7 @@ async def run_server() -> NoReturn:
                 http_config.graceful_timeout = 2
                 http_config.shutdown_timeout = 2
                 http_config.debug = False
-                tasks.append(serve(app, http_config))
+                tasks.append(serve(app, http_config, shutdown_trigger=_hypercorn_shutdown.wait))
                 logger.info(f"HTTP server starting on {host}:{http_port}")
                 
                 # Task B: HTTPS server (with SSL) - for tablet/mobile mic access
@@ -519,14 +520,14 @@ async def run_server() -> NoReturn:
                 https_server_config.graceful_timeout = 2
                 https_server_config.shutdown_timeout = 2
                 https_server_config.debug = False
-                tasks.append(serve(app, https_server_config))
+                tasks.append(serve(app, https_server_config, shutdown_trigger=_hypercorn_shutdown.wait))
                 logger.info(f"HTTPS server starting on {host}:{https_port}")
             else:
                 # HTTPS-ONLY MODE: Same port, HTTPS replaces HTTP
                 base_config.bind = [f"{host}:{http_port}"]
                 base_config.certfile = str(cert_file)
                 base_config.keyfile = str(key_file)
-                tasks.append(serve(app, base_config))
+                tasks.append(serve(app, base_config, shutdown_trigger=_hypercorn_shutdown.wait))
                 logger.info(f"HTTPS-only server starting on {host}:{http_port}")
         else:
             # Certificates not found, fall back to HTTP only
@@ -535,12 +536,12 @@ async def run_server() -> NoReturn:
                 f"Falling back to HTTP only. Install 'cryptography' package: pip install cryptography"
             )
             base_config.bind = [f"{host}:{http_port}"]
-            tasks.append(serve(app, base_config))
+            tasks.append(serve(app, base_config, shutdown_trigger=_hypercorn_shutdown.wait))
             logger.info(f"HTTP server starting on {host}:{http_port}")
     else:
         # HTTP-only mode (default)
         base_config.bind = [f"{host}:{http_port}"]
-        tasks.append(serve(app, base_config))
+        tasks.append(serve(app, base_config, shutdown_trigger=_hypercorn_shutdown.wait))
         logger.info(f"HTTP server starting on {host}:{http_port}")
     
     try:
@@ -575,6 +576,9 @@ async def main() -> NoReturn:
             """Unix signal handler - called by asyncio event loop"""
             logger.info("Received Unix signal, initiating shutdown...")
             _shutdown_event.set()
+            # Trigger Hypercorn graceful shutdown
+            if _hypercorn_shutdown:
+                _hypercorn_shutdown.set()
             if _tray_icon:
                 _tray_icon.stop()
             queue.put("exit")
@@ -583,6 +587,10 @@ async def main() -> NoReturn:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, unix_signal_handler)
         logger.debug("Registered asyncio signal handlers for SIGINT/SIGTERM")
+    
+    # Initialize Hypercorn shutdown trigger (must be created in async context)
+    global _hypercorn_shutdown
+    _hypercorn_shutdown = asyncio.Event()
     
     # Start the server and store task globally
     logger.info(f"Starting server on port {PORT}...")
@@ -762,6 +770,14 @@ if __name__ == "__main__":
         logger.info("Received interrupt signal, initiating shutdown...")
         # Set shutdown event FIRST - signals the main loop condition to exit
         _shutdown_event.set()
+        # Trigger Hypercorn shutdown (safe from signal handler context)
+        if _hypercorn_shutdown:
+            try:
+                # Try to set via call_soon_threadsafe for thread-safety
+                loop = asyncio.get_event_loop()
+                loop.call_soon_threadsafe(_hypercorn_shutdown.set)
+            except RuntimeError:
+                pass  # Loop not running, cleanup will handle it
         if _tray_icon:
             _tray_icon.stop()
         queue.put("exit")
@@ -771,6 +787,13 @@ if __name__ == "__main__":
         if ctrl_type in (win32con.CTRL_C_EVENT, win32con.CTRL_BREAK_EVENT):
             logger.info("Received Windows interrupt signal...")
             _shutdown_event.set()  # Set shutdown event for immediate loop exit
+            # Trigger Hypercorn shutdown
+            if _hypercorn_shutdown:
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.call_soon_threadsafe(_hypercorn_shutdown.set)
+                except RuntimeError:
+                    pass  # Loop not running
             if _tray_icon:
                 _tray_icon.stop()
             queue.put("exit")
