@@ -247,7 +247,17 @@ def restart():
     else:
         creationflags = 0
     
-    if getattr(sys, 'frozen', False):
+    # Check if running as AppImage (Linux)
+    # APPIMAGE env var contains the real path to the .AppImage file,
+    # while sys.executable points to the temporary FUSE mount (/tmp/.mount_*)
+    # which disappears after the old process exits.
+    appimage_path = os.environ.get('APPIMAGE')
+    
+    if appimage_path and os.path.exists(appimage_path):
+        # AppImage: use the original .AppImage file, not the mount point
+        logger.info(f"AppImage restart: using {appimage_path}")
+        subprocess.Popen([appimage_path] + sys.argv[1:])
+    elif getattr(sys, 'frozen', False):
         # PyInstaller frozen executable - use sys.argv[1:] to avoid doubling script name
         subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=creationflags)
     else:
