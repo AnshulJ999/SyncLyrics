@@ -27,6 +27,7 @@ resources/fonts/custom
 album_art_database
 scripts/
 local_fingerprint_database
+sfp-cli/
 
 # resources/images/icon.ico
 lyrics_database/
