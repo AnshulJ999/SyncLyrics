@@ -25,7 +25,7 @@ backups/
 resources/fonts/custom
 .spotify-react-web-client-source-code
 album_art_database
-
+scripts/
 
 # resources/images/icon.ico
 lyrics_database/
