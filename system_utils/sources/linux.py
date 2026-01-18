@@ -76,8 +76,8 @@ class LinuxSource(BaseMetadataSource):
         Caches the result to avoid repeated subprocess calls.
         """
         # Platform check first (fast)
-        if platform.system() != "Linux":
-            return False
+        # if platform.system() != "Linux":
+        #    return False
         
         # Check playerctl installation (cache result)
         if self._playerctl_available is None:
