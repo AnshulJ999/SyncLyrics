@@ -11,6 +11,7 @@ using SoundFingerprinting.Builder;
 using SoundFingerprinting.Data;
 using SoundFingerprinting.Emy;
 using SoundFingerprinting.InMemory;
+using FFmpeg.AutoGen.Bindings.DynamicallyLoaded;
 
 namespace SfpCli;
 
@@ -46,6 +47,11 @@ class Program
 
     static async Task<int> Main(string[] args)
     {
+        // Initialize FFmpeg libraries (required for FFmpegAudioService)
+        var ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FFmpeg", "bin", "x64");
+        DynamicallyLoadedBindings.LibrariesPath = ffmpegPath;
+        DynamicallyLoadedBindings.Initialize();
+        
         // Parse global --db-path option
         var argsList = args.ToList();
         var dbPathIndex = argsList.FindIndex(a => a == "--db-path");
