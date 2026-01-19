@@ -218,6 +218,13 @@ class ShazamRecognizer:
             except Exception:
                 pass  # Best effort cleanup
             self._shazam = None
+        
+        # Stop the local fingerprint daemon if running
+        if self._local:
+            try:
+                self._local.stop_daemon()
+            except Exception:
+                pass  # Best effort cleanup
     
     def _save_debug_audio(self, wav_bytes: bytes) -> None:
         """Save last recognition audio to cache for debugging."""

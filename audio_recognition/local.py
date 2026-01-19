@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any
 from logging_config import get_logger
 from .shazam import RecognitionResult
 from .capture import AudioChunk
+from .daemon import DaemonManager
 
 logger = get_logger(__name__)
 
@@ -58,8 +59,23 @@ class LocalRecognizer:
         self._min_confidence = min_confidence or LOCAL_FINGERPRINT["min_confidence"]
         self._available = None  # Lazy check
         self._exe_path = None  # Path to built executable
+        self._daemon: Optional[DaemonManager] = None  # Lazy initialized
         
         logger.info(f"LocalRecognizer initialized: db={self._db_path}, min_conf={self._min_confidence}")
+    
+    def _get_daemon(self) -> Optional[DaemonManager]:
+        """Get or create daemon manager (lazy initialization)."""
+        if self._daemon is None:
+            exe_path = self._get_exe_path()
+            if exe_path:
+                self._daemon = DaemonManager(exe_path, Path(self._db_path))
+        return self._daemon
+    
+    def stop_daemon(self) -> None:
+        """Stop the daemon process if running. Called when engine stops."""
+        if self._daemon:
+            self._daemon.stop()
+            self._daemon = None
     
     def _get_exe_path(self) -> Optional[Path]:
         """Get path to pre-built sfp-cli executable, building if needed."""
@@ -151,8 +167,47 @@ class LocalRecognizer:
             self._available = False
             return False
     
+    def _query_via_daemon(self, wav_path: str, duration: int, offset: int = 0) -> Optional[Dict[str, Any]]:
+        """
+        Query via daemon (fast path).
+        
+        Returns None if daemon is not available, requiring fallback to subprocess.
+        """
+        daemon = self._get_daemon()
+        if not daemon:
+            return None
+        
+        # If daemon is in fallback mode, skip it
+        if daemon.in_fallback_mode:
+            return None
+        
+        result = daemon.send_command({
+            "cmd": "query",
+            "path": wav_path,
+            "duration": duration,
+            "offset": offset
+        })
+        
+        return result
+    
     def _run_cli_command(self, command: str, *args) -> Dict[str, Any]:
-        """Run sfp-cli command and return JSON result."""
+        """
+        Run sfp-cli command and return JSON result.
+        
+        For 'query' commands, tries daemon first (fast), falls back to subprocess (slow).
+        """
+        # For query commands, try daemon first (fast path)
+        if command == "query" and len(args) >= 2:
+            wav_path = args[0]
+            duration = int(args[1])
+            offset = int(args[2]) if len(args) > 2 else 0
+            
+            daemon_result = self._query_via_daemon(wav_path, duration, offset)
+            if daemon_result is not None:
+                return daemon_result
+            # Daemon unavailable or failed, fall through to subprocess
+        
+        # Subprocess fallback (slow path)
         exe_path = self._get_exe_path()
         if exe_path is None:
             return {"error": "sfp-cli executable not available"}

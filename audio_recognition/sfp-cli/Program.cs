@@ -24,6 +24,7 @@ namespace SfpCli;
 /// Commands:
 ///   fingerprint <wav_file> --metadata <json_file>  - Add song with full metadata
 ///   query <wav_file> [seconds] [offset]            - Find matching song
+///   serve                                          - Run as daemon (stdin/stdout JSON)
 ///   list                                           - List indexed songs
 ///   stats                                          - Show database statistics
 ///   delete <song_id>                               - Remove song from database
@@ -87,6 +88,7 @@ class Program
             {
                 "fingerprint" => await Fingerprint(args.Skip(1).ToArray()),
                 "query" => await Query(args.Skip(1).ToArray()),
+                "serve" => await Serve(),
                 "list" => List(),
                 "stats" => Stats(),
                 "delete" => Delete(args.Skip(1).ToArray()),
@@ -352,6 +354,195 @@ class Program
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Daemon mode - keeps database loaded, reads JSON commands from stdin, responds to stdout.
+    /// 
+    /// Commands (JSON, one per line):
+    ///   {"cmd": "query", "path": "/tmp/audio.wav", "duration": 7, "offset": 0}
+    ///   {"cmd": "stats"}
+    ///   {"cmd": "reload"}  - Reload database from disk
+    ///   {"cmd": "shutdown"}
+    /// 
+    /// Responses (JSON, one per line):
+    ///   {"status": "ready", "songs": 308}
+    ///   {"matched": true, "songId": "...", ...}
+    ///   {"status": "shutdown"}
+    /// </summary>
+    static async Task<int> Serve()
+    {
+        // Output ready signal with database stats
+        Output(new
+        {
+            status = "ready",
+            songs = _metadata.Count,
+            fingerprints = _metadata.Values.Sum(m => m.FingerprintCount)
+        });
+        Console.Out.Flush();
+
+        // Read commands from stdin until shutdown or EOF
+        string? line;
+        while ((line = Console.ReadLine()) != null)
+        {
+            line = line.Trim();
+            if (string.IsNullOrEmpty(line)) continue;
+
+            try
+            {
+                // Parse JSON command
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                
+                var cmd = root.GetProperty("cmd").GetString()?.ToLower() ?? "";
+
+                switch (cmd)
+                {
+                    case "query":
+                        await HandleQueryCommand(root);
+                        break;
+                    
+                    case "stats":
+                        HandleStatsCommand();
+                        break;
+                    
+                    case "reload":
+                        HandleReloadCommand();
+                        break;
+                    
+                    case "shutdown":
+                        Output(new { status = "shutdown" });
+                        Console.Out.Flush();
+                        return 0;
+                    
+                    default:
+                        OutputError($"Unknown command: {cmd}");
+                        break;
+                }
+            }
+            catch (JsonException ex)
+            {
+                OutputError($"Invalid JSON: {ex.Message}");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                OutputError($"Missing field: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                OutputError($"Command error: {ex.Message}");
+            }
+
+            Console.Out.Flush();
+        }
+
+        // EOF reached (stdin closed)
+        return 0;
+    }
+
+    /// <summary>
+    /// Handle query command in daemon mode
+    /// </summary>
+    static async Task HandleQueryCommand(JsonElement root)
+    {
+        var path = root.GetProperty("path").GetString() ?? "";
+        var duration = root.TryGetProperty("duration", out var durProp) ? durProp.GetInt32() : 10;
+        var offset = root.TryGetProperty("offset", out var offProp) ? offProp.GetInt32() : 0;
+
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            Output(new { matched = false, message = $"File not found: {path}" });
+            return;
+        }
+
+        if (_metadata.Count == 0)
+        {
+            Output(new { matched = false, message = "No songs indexed yet" });
+            return;
+        }
+
+        // Query the database (same logic as Query method)
+        var result = await QueryCommandBuilder.Instance
+            .BuildQueryCommand()
+            .From(path, duration, offset)
+            .UsingServices(_modelService, _audioService)
+            .Query();
+
+        if (result.BestMatch != null)
+        {
+            var match = result.BestMatch;
+            var audioResult = match.Audio;
+            
+            if (audioResult != null)
+            {
+                var track = audioResult.Track;
+                _metadata.TryGetValue(track.Id, out var meta);
+
+                Output(new
+                {
+                    matched = true,
+                    songId = track.Id,
+                    title = meta?.Title ?? track.Title,
+                    artist = meta?.Artist ?? track.Artist,
+                    album = meta?.Album,
+                    albumArtist = meta?.AlbumArtist,
+                    duration = meta?.Duration,
+                    trackNumber = meta?.TrackNumber,
+                    discNumber = meta?.DiscNumber,
+                    genre = meta?.Genre,
+                    year = meta?.Year,
+                    isrc = meta?.Isrc,
+                    confidence = audioResult.Confidence,
+                    trackMatchStartsAt = audioResult.TrackMatchStartsAt,
+                    queryMatchStartsAt = audioResult.QueryMatchStartsAt,
+                    originalFilepath = meta?.OriginalFilepath
+                });
+            }
+            else
+            {
+                Output(new { matched = false, message = "Audio match data not available" });
+            }
+        }
+        else
+        {
+            Output(new { matched = false, message = "No match found" });
+        }
+    }
+
+    /// <summary>
+    /// Handle stats command in daemon mode
+    /// </summary>
+    static void HandleStatsCommand()
+    {
+        Output(new
+        {
+            songCount = _metadata.Count,
+            fingerprintCount = _metadata.Values.Sum(m => m.FingerprintCount),
+            status = "ok"
+        });
+    }
+
+    /// <summary>
+    /// Handle reload command - reload database from disk
+    /// </summary>
+    static void HandleReloadCommand()
+    {
+        try
+        {
+            var oldCount = _metadata.Count;
+            LoadDatabase();
+            LoadMetadata();
+            Output(new
+            {
+                status = "reloaded",
+                previousSongs = oldCount,
+                currentSongs = _metadata.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            OutputError($"Reload failed: {ex.Message}");
+        }
     }
 
     static int List()
