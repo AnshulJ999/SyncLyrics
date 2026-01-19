@@ -267,7 +267,7 @@ class LocalRecognizer:
                     f"Offset: {offset:.1f}s | "
                     f"Conf: {confidence:.2f} < {self._min_confidence}"
                 )
-                return None
+                # return None
             
             # Build RecognitionResult
             offset = result.get("trackMatchStartsAt", 0)
