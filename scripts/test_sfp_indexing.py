@@ -354,7 +354,8 @@ def save_json_file(path: Path, data: Dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None) -> Dict[str, Any]:
+def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None, 
+                 required_tags: List[str] = None) -> Dict[str, Any]:
     """
     Index all audio files in a folder.
     
@@ -362,6 +363,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
         folder_path: Path to folder containing audio files
         db_path: Path to database directory
         extensions: List of extensions to include
+        required_tags: Optional list of additional required metadata fields
+                       (e.g., ['album', 'genre']). Artist and title are always required.
     
     Returns:
         Summary dict with results
@@ -415,7 +418,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
         # Extract metadata
         metadata = extract_full_metadata(audio_file)
         
-        # Skip if missing required tags
+        # Skip if missing required tags (artist and title are always required)
         if not metadata['title'] or not metadata['artist']:
             print(f"  ⏭️  Skipped: Missing artist or title tags")
             skip_log['skipped'].append({
@@ -425,6 +428,30 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
             })
             results['skipped'] += 1
             continue
+        
+        # Skip if missing additional required tags
+        if required_tags:
+            missing_tags = []
+            for tag in required_tags:
+                tag_lower = tag.lower()
+                # Map user-friendly names to metadata keys
+                tag_key = tag_lower
+                if tag_lower == 'year':
+                    tag_key = 'year'  # year field in metadata
+                value = metadata.get(tag_key)
+                if not value:
+                    missing_tags.append(tag)
+            
+            if missing_tags:
+                reason = f"Missing required tags: {', '.join(missing_tags)}"
+                print(f"  ⏭️  Skipped: {reason}")
+                skip_log['skipped'].append({
+                    'filepath': file_key,
+                    'reason': reason,
+                    'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                })
+                results['skipped'] += 1
+                continue
         
         # Skip if too long
         if metadata['duration'] and metadata['duration'] > MAX_DURATION_MINUTES * 60:
@@ -823,6 +850,8 @@ def main():
     parser.add_argument("--db-path", type=str, help="Override database path")
     parser.add_argument("--duration", type=int, default=10, help="Clip duration for testing (default: 10)")
     parser.add_argument("--positions", type=str, help="Comma-separated positions to test (default: 10,60,120)")
+    parser.add_argument("--require-tags", type=str, 
+                        help="Comma-separated list of additional required metadata fields (e.g., album,genre,year)")
     
     args = parser.parse_args()
     
@@ -838,7 +867,14 @@ def main():
         if not folder.exists():
             print(f"Error: Folder not found: {folder}")
             return
-        index_folder(folder, db_path)
+        
+        # Parse required tags
+        required_tags = None
+        if args.require_tags:
+            required_tags = [t.strip() for t in args.require_tags.split(',') if t.strip()]
+            print(f"Requiring additional tags: {', '.join(required_tags)}")
+        
+        index_folder(folder, db_path, required_tags=required_tags)
     
     elif args.test:
         # Strip trailing slashes/backslashes (Windows CMD escapes closing quote with trailing \)
