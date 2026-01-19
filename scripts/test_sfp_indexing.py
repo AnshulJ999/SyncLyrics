@@ -622,7 +622,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     print(f"\n=== Indexing {len(audio_files)} files from {folder_path} ===\n")
     print(f"Database: {db_path}")
     print(f"Already indexed: {len(indexed_files)} files")
-    print(f"Using daemon mode for 8x faster indexing...\n")
+    print(f"Using batch mode (8 files parallel) for maximum speed...\n")
     
     results = {
         'total': len(audio_files),
@@ -636,27 +636,27 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     # Start daemon for fast fingerprinting
     daemon = IndexingDaemon(db_path)
     if not daemon.start():
-        print("❌ Failed to start indexing daemon, falling back to subprocess mode")
-        # Fallback to old method would go here, but for now just return error
+        print("❌ Failed to start indexing daemon")
         return {'error': 'Daemon startup failed', **results}
+    
+    BATCH_SIZE = 8
+    
+    # First pass: prepare all files (filter, extract metadata, compute hashes)
+    prepared_files = []
     
     for i, audio_file in enumerate(audio_files, 1):
         file_key = str(audio_file.absolute())
         
         # Skip if already indexed by filepath
         if file_key in indexed_files:
-            print(f"[{i}/{len(audio_files)}] ⏭️  Already indexed: {audio_file.name}")
             results['skipped'] += 1
             continue
-        
-        print(f"[{i}/{len(audio_files)}] {audio_file.name}...")
         
         # Extract metadata
         metadata = extract_full_metadata(audio_file)
         
-        # Skip if missing required tags (artist and title are always required)
+        # Skip if missing required tags
         if not metadata['title'] or not metadata['artist']:
-            print(f"  ⏭️  Skipped: Missing artist or title tags")
             skip_log['skipped'].append({
                 'filepath': file_key,
                 'reason': 'Missing required tags (artist or title)',
@@ -670,17 +670,15 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             missing_tags = []
             for tag in required_tags:
                 tag_lower = tag.lower()
-                # Map user-friendly names to metadata keys
                 tag_key = tag_lower
                 if tag_lower == 'year':
-                    tag_key = 'year'  # year field in metadata
+                    tag_key = 'year'
                 value = metadata.get(tag_key)
                 if not value:
                     missing_tags.append(tag)
             
             if missing_tags:
                 reason = f"Missing required tags: {', '.join(missing_tags)}"
-                print(f"  ⏭️  Skipped: {reason}")
                 skip_log['skipped'].append({
                     'filepath': file_key,
                     'reason': reason,
@@ -692,7 +690,6 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         # Skip if too long
         if metadata['duration'] and metadata['duration'] > MAX_DURATION_MINUTES * 60:
             duration_min = metadata['duration'] / 60
-            print(f"  ⏭️  Skipped: Duration {duration_min:.1f} min exceeds {MAX_DURATION_MINUTES} min limit")
             skip_log['skipped'].append({
                 'filepath': file_key,
                 'reason': f'Duration exceeds limit ({duration_min:.1f} min > {MAX_DURATION_MINUTES} min)',
@@ -701,66 +698,95 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             results['skipped'] += 1
             continue
         
-        # Generate song ID
+        # Generate song ID and content hash
         song_id = normalize_song_id(metadata['artist'], metadata['title'])
         metadata['songId'] = song_id
         
-        # Compute content hash for deduplication
         content_hash = compute_content_hash(audio_file)
         metadata['contentHash'] = content_hash
-        
-        # Add original filepath to metadata
         metadata['originalFilepath'] = file_key
         
-        # Fingerprint via daemon (8x faster - no process spawn per file)
-        fp_start = time.time()
-        result = daemon.fingerprint(audio_file, metadata)
-        fp_time = time.time() - fp_start
+        prepared_files.append({
+            'path': audio_file,
+            'metadata': metadata,
+            'file_key': file_key,
+            'content_hash': content_hash
+        })
+    
+    print(f"Files to index: {len(prepared_files)} (skipped {results['skipped']} already indexed/filtered)\n")
+    
+    # Second pass: process in batches of 8
+    total_batches = (len(prepared_files) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    for batch_num, batch_start in enumerate(range(0, len(prepared_files), BATCH_SIZE), 1):
+        batch = prepared_files[batch_start:batch_start + BATCH_SIZE]
         
-        if result.get('success'):
-            print(f"  ✅ {metadata['artist']} - {metadata['title']}")
-            print(f"     FP: {result.get('fingerprints', 0)}, Time: {fp_time:.1f}s")
-            results['indexed'] += 1
-            results['songs'].append({
-                'song_id': song_id,
-                'title': metadata['title'],
-                'artist': metadata['artist'],
-                'source': file_key,
-                'fingerprints': result.get('fingerprints', 0),
-                'fp_time': fp_time
-            })
+        print(f"\n[Batch {batch_num}/{total_batches}] Processing {len(batch)} files...")
+        
+        # Send batch to daemon for parallel processing
+        batch_start_time = time.time()
+        batch_result = daemon.fingerprint_batch(batch)
+        batch_time = time.time() - batch_start_time
+        
+        if not batch_result.get('success'):
+            error = batch_result.get('error', 'Unknown batch error')
+            print(f"  ❌ Batch failed: {error}")
+            for f in batch:
+                results['failed'] += 1
+                results['errors'].append({'file': f['file_key'], 'error': error})
+            continue
+        
+        # Process individual results
+        batch_results = batch_result.get('results', [])
+        
+        for file_info, result in zip(batch, batch_results):
+            file_key = file_info['file_key']
+            metadata = file_info['metadata']
+            song_id = metadata['songId']
+            content_hash = file_info['content_hash']
             
-            # Track as indexed
-            indexed_files[file_key] = {
-                'songId': song_id,
-                'contentHash': content_hash,
-                'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-            }
-            
-        elif result.get('skipped'):
-            reason = result.get('reason', 'Unknown')
-            print(f"  ⏭️  Skipped: {reason}")
-            results['skipped'] += 1
-            
-            # Still track as indexed if it was a duplicate
-            if 'already' in reason.lower() or 'duplicate' in reason.lower():
+            if result.get('success'):
+                print(f"  ✅ {metadata['artist']} - {metadata['title']} ({result.get('fingerprints', 0)} FPs)")
+                results['indexed'] += 1
+                results['songs'].append({
+                    'song_id': song_id,
+                    'title': metadata['title'],
+                    'artist': metadata['artist'],
+                    'source': file_key,
+                    'fingerprints': result.get('fingerprints', 0)
+                })
+                
                 indexed_files[file_key] = {
                     'songId': song_id,
                     'contentHash': content_hash,
-                    'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-                    'skipped': reason
+                    'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 }
-        else:
-            error = result.get('error', 'Unknown error')
-            print(f"  ❌ {error}")
-            results['failed'] += 1
-            results['errors'].append({'file': file_key, 'error': error})
+                
+            elif result.get('skipped'):
+                reason = result.get('reason', 'Unknown')
+                print(f"  ⏭️  {metadata['artist']} - {metadata['title']}: {reason}")
+                results['skipped'] += 1
+                
+                if 'already' in reason.lower() or 'duplicate' in reason.lower():
+                    indexed_files[file_key] = {
+                        'songId': song_id,
+                        'contentHash': content_hash,
+                        'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                        'skipped': reason
+                    }
+            else:
+                error = result.get('error', 'Unknown error')
+                print(f"  ❌ {metadata['artist']} - {metadata['title']}: {error}")
+                results['failed'] += 1
+                results['errors'].append({'file': file_key, 'error': error})
         
-        # Save every 5 files (daemon database + tracking files)
-        if i % 5 == 0:
-            daemon.save()
-            save_json_file(indexed_files_path, indexed_files)
-            save_json_file(skip_log_path, skip_log)
+        # Print batch summary
+        print(f"  Batch completed in {batch_time:.1f}s ({batch_time/len(batch):.2f}s/file avg)")
+        
+        # Save after each batch
+        daemon.save()
+        save_json_file(indexed_files_path, indexed_files)
+        save_json_file(skip_log_path, skip_log)
     
     # Shutdown daemon (auto-saves database)
     daemon.stop()
@@ -777,8 +803,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     print(f"Failed: {results['failed']}")
     
     if results['songs']:
-        avg_fp_time = sum(s['fp_time'] for s in results['songs']) / len(results['songs'])
-        print(f"Avg fingerprint time: {avg_fp_time:.1f}s")
+        total_fps = sum(s.get('fingerprints', 0) for s in results['songs'])
+        print(f"Total fingerprints: {total_fps:,}")
     
     return results
 
