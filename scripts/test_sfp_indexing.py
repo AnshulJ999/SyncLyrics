@@ -298,18 +298,12 @@ def extract_full_metadata(file_path: Path) -> Dict[str, Any]:
                 except ValueError:
                     pass
         
-        # Fallback to filename if no tags
-        if not metadata['title'] or not metadata['artist']:
-            parsed = parse_filename(file_path)
-            metadata['title'] = metadata['title'] or parsed.get('title')
-            metadata['artist'] = metadata['artist'] or parsed.get('artist')
+        # NO FALLBACK TO FILENAME - per plan, files without tags should be skipped
+        # The calling code will check for missing title/artist and skip the file
         
     except Exception as e:
         logger.warning(f"Could not read metadata from {file_path}: {e}")
-        # Fallback: parse filename
-        parsed = parse_filename(file_path)
-        metadata['title'] = parsed.get('title')
-        metadata['artist'] = parsed.get('artist')
+        # Return with None title/artist - caller will skip this file
     
     return metadata
 
