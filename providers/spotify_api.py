@@ -793,6 +793,7 @@ class SpotifyAPI:
                 'title': track['name'],
                 'artist': track['artists'][0]['name'],
                 'album': track['album']['name'],
+                'track_id': track['id'],  # Spotify track ID for Like button (renamed to 'id' by engine.py)
                 'url': track['external_urls']['spotify'],
                 'album_art': album_art_url,
                 'duration_ms': track['duration_ms'],

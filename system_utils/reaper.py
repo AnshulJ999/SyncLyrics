@@ -483,7 +483,7 @@ class ReaperAudioSource:
                         'artist': result.get('artist', artist),
                         'title': result.get('title', title),
                         'album': result.get('album'),
-                        'track_id': None,  # search_track doesn't return this
+                        'track_id': result.get('track_id'),  # Spotify ID for Like button
                         'duration_ms': result.get('duration_ms', 0),
                         'album_art_url': result.get('album_art'),
                         'url': result.get('url'),
