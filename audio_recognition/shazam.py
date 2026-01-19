@@ -173,6 +173,18 @@ class ShazamRecognizer:
         else:
             self._shazam = Shazam()
         
+        # Initialize Local Fingerprint recognizer (ENV-guarded, disabled by default)
+        # Only imported and initialized if LOCAL_FP_ENABLED=true
+        self._local = None
+        try:
+            from config import LOCAL_FINGERPRINT
+            if LOCAL_FINGERPRINT["enabled"]:
+                from .local import LocalRecognizer
+                self._local = LocalRecognizer()
+                logger.info("Local fingerprint recognition enabled")
+        except ImportError as e:
+            logger.debug(f"Local fingerprint module not available: {e}")
+        
         # Initialize ACRCloud fallback (auto-disabled if not configured)
         try:
             from .acrcloud import ACRCloudRecognizer
@@ -265,6 +277,19 @@ class ShazamRecognizer:
             logger.debug(f"Audio is silent (max amplitude: {max_amp}, threshold: {silence_threshold})")
             return None
         
+        # 1. Try LOCAL FINGERPRINT FIRST (instant, offline, zero cost)
+        if self._local and self._local.is_available():
+            try:
+                local_result = await self._local.recognize(audio)
+                if local_result:
+                    logger.info(f"Local FP recognized match: {local_result.artist} - {local_result.title}")
+                    self._no_match_count = 0
+                    return local_result
+                logger.debug("Local: No match, falling back to ShazamIO")
+            except Exception as e:
+                logger.warning(f"Local recognition error: {e}")
+        
+        # 2. Try ShazamIO (cloud)
         try:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(audio)

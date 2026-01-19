@@ -450,6 +450,21 @@ AUDIO_RECOGNITION = {
     "reaper_validation_threshold": _safe_int(conf("audio_recognition.reaper_validation_threshold"), 80),
 }
 
+# Local Audio Fingerprinting (Personal Feature - Disabled by Default)
+# Uses SoundFingerprinting for instant, offline recognition of songs in your local library.
+# Only activates if LOCAL_FP_ENABLED=true in environment or settings.
+# This feature is ENV-guarded and completely disabled for regular users.
+LOCAL_FINGERPRINT = {
+    # Master switch - completely off by default
+    "enabled": os.getenv("LOCAL_FP_ENABLED", "").lower() == "true" or _safe_bool(conf("local_fingerprint.enabled"), False),
+    # Database path (fingerprints + metadata)
+    "db_path": Path(os.getenv("SFP_DB_PATH", str(DATA_DIR / "local_fingerprint_database"))),
+    # Minimum confidence threshold (0.0-1.0)
+    "min_confidence": _safe_float(os.getenv("LOCAL_FP_MIN_CONFIDENCE") or conf("local_fingerprint.min_confidence"), 0.5),
+    # CLI path (relative to ROOT_DIR or absolute)
+    "cli_path": Path(os.getenv("SFP_CLI_PATH", str(ROOT_DIR / "audio_recognition" / "sfp-cli"))),
+}
+
 # Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})
