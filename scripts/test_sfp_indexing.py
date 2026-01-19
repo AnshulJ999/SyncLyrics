@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 
 # Configuration
 SFP_CLI_DIR = Path(__file__).parent.parent / "audio_recognition" / "sfp-cli"
-SFP_CLI_CMD = ["dotnet", "run", "--"]
+SFP_PUBLISH_DIR = SFP_CLI_DIR / "bin" / "publish"
 
 # Default database path (can be overridden via --db-path or SFP_DB_PATH env)
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "local_fingerprint_database"
@@ -62,17 +62,54 @@ def get_db_path() -> Path:
     return DEFAULT_DB_PATH
 
 
+def get_sfp_exe() -> Optional[Path]:
+    """Get path to pre-built sfp-cli executable, building if needed."""
+    exe_name = "sfp-cli.exe" if sys.platform == "win32" else "sfp-cli"
+    exe_path = SFP_PUBLISH_DIR / exe_name
+    
+    if exe_path.exists():
+        return exe_path
+    
+    # Build the executable
+    print("Building sfp-cli executable (one-time)...")
+    try:
+        result = subprocess.run(
+            ["dotnet", "publish", "-c", "Release", "-o", str(SFP_PUBLISH_DIR)],
+            cwd=str(SFP_CLI_DIR),
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        
+        if result.returncode != 0:
+            print(f"Build failed: {result.stderr}")
+            return None
+        
+        if exe_path.exists():
+            print(f"Built: {exe_path}")
+            return exe_path
+        else:
+            print(f"Build succeeded but exe not found at {exe_path}")
+            return None
+            
+    except Exception as e:
+        print(f"Build failed: {e}")
+        return None
+
+
 def run_sfp_command(db_path: Path, command: str, *args) -> Dict[str, Any]:
     """Run sfp-cli command and return JSON result."""
-    # Ensure db_path is absolute (sfp-cli runs from its own directory)
+    exe_path = get_sfp_exe()
+    if exe_path is None:
+        return {"error": "sfp-cli executable not available"}
+    
+    # Ensure db_path is absolute
     abs_db_path = db_path.absolute()
-    cmd = SFP_CLI_CMD + ["--db-path", str(abs_db_path), command] + list(args)
-
+    cmd = [str(exe_path), "--db-path", str(abs_db_path), command] + list(args)
     
     try:
         result = subprocess.run(
             cmd,
-            cwd=str(SFP_CLI_DIR),
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
