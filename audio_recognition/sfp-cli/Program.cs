@@ -313,51 +313,61 @@ class Program
 
         Console.Error.WriteLine($"Querying: {Path.GetFileName(wavFile)} ({secondsToAnalyze}s from {startAtSecond}s)");
 
-        // Query the database
+        // Query the database with multi-match support (top 6)
         var result = await QueryCommandBuilder.Instance
             .BuildQueryCommand()
             .From(wavFile, secondsToAnalyze, startAtSecond)
+            .WithQueryConfig(config =>
+            {
+                config.Audio.MaxTracksToReturn = 6;
+                return config;
+            })
             .UsingServices(_modelService, _audioService)
             .Query();
 
-        if (result.BestMatch != null)
+        // Build matches array from all results
+        var matches = new List<object>();
+        foreach (var entry in result.ResultEntries.Take(6))
         {
-            var match = result.BestMatch;
-            var audioResult = match.Audio;
+            var audioResult = entry.Audio;
+            if (audioResult == null) continue;
             
-            if (audioResult != null)
+            var track = audioResult.Track;
+            _metadata.TryGetValue(track.Id, out var meta);
+            
+            matches.Add(new
             {
-                var track = audioResult.Track;
-                _metadata.TryGetValue(track.Id, out var meta);
+                songId = track.Id,
+                title = meta?.Title ?? track.Title,
+                artist = meta?.Artist ?? track.Artist,
+                album = meta?.Album,
+                albumArtist = meta?.AlbumArtist,
+                duration = meta?.Duration,
+                trackNumber = meta?.TrackNumber,
+                discNumber = meta?.DiscNumber,
+                genre = meta?.Genre,
+                year = meta?.Year,
+                isrc = meta?.Isrc,
+                confidence = audioResult.Confidence,
+                trackMatchStartsAt = audioResult.TrackMatchStartsAt,
+                queryMatchStartsAt = audioResult.QueryMatchStartsAt,
+                originalFilepath = meta?.OriginalFilepath
+            });
+        }
 
-                Output(new
-                {
-                    matched = true,
-                    songId = track.Id,
-                    title = meta?.Title ?? track.Title,
-                    artist = meta?.Artist ?? track.Artist,
-                    album = meta?.Album,
-                    albumArtist = meta?.AlbumArtist,
-                    duration = meta?.Duration,
-                    trackNumber = meta?.TrackNumber,
-                    discNumber = meta?.DiscNumber,
-                    genre = meta?.Genre,
-                    year = meta?.Year,
-                    isrc = meta?.Isrc,
-                    confidence = audioResult.Confidence,
-                    trackMatchStartsAt = audioResult.TrackMatchStartsAt,
-                    queryMatchStartsAt = audioResult.QueryMatchStartsAt,
-                    originalFilepath = meta?.OriginalFilepath
-                });
-            }
-            else
+        if (matches.Count > 0)
+        {
+            Output(new
             {
-                Output(new { matched = false, message = "Audio match data not available" });
-            }
+                matched = true,
+                matchCount = matches.Count,
+                bestMatch = matches[0],  // Backward compatibility
+                matches = matches
+            });
         }
         else
         {
-            Output(new { matched = false, message = "No match found" });
+            Output(new { matched = false, matchCount = 0, message = "No match found" });
         }
 
         return 0;
@@ -368,13 +378,16 @@ class Program
     /// 
     /// Commands (JSON, one per line):
     ///   {"cmd": "query", "path": "/tmp/audio.wav", "duration": 7, "offset": 0}
+    ///   {"cmd": "fingerprint", "path": "/song.flac", "metadata": {...}}
+    ///   {"cmd": "save"}        - Save database to disk
     ///   {"cmd": "stats"}
-    ///   {"cmd": "reload"}  - Reload database from disk
+    ///   {"cmd": "reload"}      - Reload database from disk
     ///   {"cmd": "shutdown"}
     /// 
     /// Responses (JSON, one per line):
     ///   {"status": "ready", "songs": 308}
-    ///   {"matched": true, "songId": "...", ...}
+    ///   {"matched": true, "matchCount": 3, "bestMatch": {...}, "matches": [...]}
+    ///   {"success": true, "fingerprints": 2500}
     ///   {"status": "shutdown"}
     /// </summary>
     static async Task<int> Serve()
@@ -409,6 +422,14 @@ class Program
                         await HandleQueryCommand(root);
                         break;
                     
+                    case "fingerprint":
+                        await HandleFingerprintCommand(root);
+                        break;
+                    
+                    case "save":
+                        HandleSaveCommand();
+                        break;
+                    
                     case "stats":
                         HandleStatsCommand();
                         break;
@@ -418,6 +439,9 @@ class Program
                         break;
                     
                     case "shutdown":
+                        // Save before shutdown
+                        SaveDatabase();
+                        SaveMetadata();
                         Output(new { status = "shutdown" });
                         Console.Out.Flush();
                         return 0;
@@ -448,7 +472,7 @@ class Program
     }
 
     /// <summary>
-    /// Handle query command in daemon mode
+    /// Handle query command in daemon mode - returns top 6 matches
     /// </summary>
     static async Task HandleQueryCommand(JsonElement root)
     {
@@ -458,61 +482,71 @@ class Program
 
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {
-            Output(new { matched = false, message = $"File not found: {path}" });
+            Output(new { matched = false, matchCount = 0, message = $"File not found: {path}" });
             return;
         }
 
         if (_metadata.Count == 0)
         {
-            Output(new { matched = false, message = "No songs indexed yet" });
+            Output(new { matched = false, matchCount = 0, message = "No songs indexed yet" });
             return;
         }
 
-        // Query the database (same logic as Query method)
+        // Query with multi-match support (top 6)
         var result = await QueryCommandBuilder.Instance
             .BuildQueryCommand()
             .From(path, duration, offset)
+            .WithQueryConfig(config =>
+            {
+                config.Audio.MaxTracksToReturn = 6;
+                return config;
+            })
             .UsingServices(_modelService, _audioService)
             .Query();
 
-        if (result.BestMatch != null)
+        // Build matches array from all results
+        var matches = new List<object>();
+        foreach (var entry in result.ResultEntries.Take(6))
         {
-            var match = result.BestMatch;
-            var audioResult = match.Audio;
+            var audioResult = entry.Audio;
+            if (audioResult == null) continue;
             
-            if (audioResult != null)
+            var track = audioResult.Track;
+            _metadata.TryGetValue(track.Id, out var meta);
+            
+            matches.Add(new
             {
-                var track = audioResult.Track;
-                _metadata.TryGetValue(track.Id, out var meta);
+                songId = track.Id,
+                title = meta?.Title ?? track.Title,
+                artist = meta?.Artist ?? track.Artist,
+                album = meta?.Album,
+                albumArtist = meta?.AlbumArtist,
+                duration = meta?.Duration,
+                trackNumber = meta?.TrackNumber,
+                discNumber = meta?.DiscNumber,
+                genre = meta?.Genre,
+                year = meta?.Year,
+                isrc = meta?.Isrc,
+                confidence = audioResult.Confidence,
+                trackMatchStartsAt = audioResult.TrackMatchStartsAt,
+                queryMatchStartsAt = audioResult.QueryMatchStartsAt,
+                originalFilepath = meta?.OriginalFilepath
+            });
+        }
 
-                Output(new
-                {
-                    matched = true,
-                    songId = track.Id,
-                    title = meta?.Title ?? track.Title,
-                    artist = meta?.Artist ?? track.Artist,
-                    album = meta?.Album,
-                    albumArtist = meta?.AlbumArtist,
-                    duration = meta?.Duration,
-                    trackNumber = meta?.TrackNumber,
-                    discNumber = meta?.DiscNumber,
-                    genre = meta?.Genre,
-                    year = meta?.Year,
-                    isrc = meta?.Isrc,
-                    confidence = audioResult.Confidence,
-                    trackMatchStartsAt = audioResult.TrackMatchStartsAt,
-                    queryMatchStartsAt = audioResult.QueryMatchStartsAt,
-                    originalFilepath = meta?.OriginalFilepath
-                });
-            }
-            else
+        if (matches.Count > 0)
+        {
+            Output(new
             {
-                Output(new { matched = false, message = "Audio match data not available" });
-            }
+                matched = true,
+                matchCount = matches.Count,
+                bestMatch = matches[0],  // Backward compatibility
+                matches = matches
+            });
         }
         else
         {
-            Output(new { matched = false, message = "No match found" });
+            Output(new { matched = false, matchCount = 0, message = "No match found" });
         }
     }
 
@@ -549,6 +583,120 @@ class Program
         catch (Exception ex)
         {
             OutputError($"Reload failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Handle fingerprint command in daemon mode - fast indexing without reloading
+    /// </summary>
+    static async Task HandleFingerprintCommand(JsonElement root)
+    {
+        try
+        {
+            var path = root.GetProperty("path").GetString() ?? "";
+            var metadataObj = root.GetProperty("metadata");
+            
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                Output(new { success = false, error = $"File not found: {path}" });
+                return;
+            }
+            
+            // Parse metadata from JSON
+            var meta = new SongMetadata
+            {
+                SongId = metadataObj.GetProperty("songId").GetString() ?? "",
+                Title = metadataObj.GetProperty("title").GetString() ?? "",
+                Artist = metadataObj.GetProperty("artist").GetString() ?? "",
+                Album = metadataObj.TryGetProperty("album", out var a) ? a.GetString() : null,
+                AlbumArtist = metadataObj.TryGetProperty("albumArtist", out var aa) ? aa.GetString() : null,
+                Duration = metadataObj.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number ? d.GetDouble() : null,
+                TrackNumber = metadataObj.TryGetProperty("trackNumber", out var tn) && tn.ValueKind == JsonValueKind.Number ? tn.GetInt32() : null,
+                DiscNumber = metadataObj.TryGetProperty("discNumber", out var dn) && dn.ValueKind == JsonValueKind.Number ? dn.GetInt32() : null,
+                Genre = metadataObj.TryGetProperty("genre", out var g) ? g.GetString() : null,
+                Year = metadataObj.TryGetProperty("year", out var y) ? y.GetString() : null,
+                Isrc = metadataObj.TryGetProperty("isrc", out var i) ? i.GetString() : null,
+                OriginalFilepath = metadataObj.TryGetProperty("originalFilepath", out var of) ? of.GetString() : null,
+                ContentHash = metadataObj.TryGetProperty("contentHash", out var ch) ? ch.GetString() : null
+            };
+            
+            // Validate required fields
+            if (string.IsNullOrEmpty(meta.SongId) || string.IsNullOrEmpty(meta.Title) || string.IsNullOrEmpty(meta.Artist))
+            {
+                Output(new { success = false, error = "Missing required fields: songId, title, artist" });
+                return;
+            }
+            
+            // Check if already indexed
+            if (_metadata.ContainsKey(meta.SongId))
+            {
+                Output(new { success = false, skipped = true, reason = "Already indexed", songId = meta.SongId });
+                return;
+            }
+            
+            // Check for duplicate content hash
+            if (!string.IsNullOrEmpty(meta.ContentHash))
+            {
+                var existingWithHash = _metadata.Values.FirstOrDefault(m => m.ContentHash == meta.ContentHash);
+                if (existingWithHash != null)
+                {
+                    Output(new { 
+                        success = false, 
+                        skipped = true, 
+                        reason = "Duplicate content hash",
+                        existingSongId = existingWithHash.SongId,
+                        songId = meta.SongId 
+                    });
+                    return;
+                }
+            }
+            
+            // Fingerprint the file
+            var track = new TrackInfo(meta.SongId, meta.Title, meta.Artist);
+            var hashes = await FingerprintCommandBuilder.Instance
+                .BuildFingerprintCommand()
+                .From(path)
+                .UsingServices(_audioService)
+                .Hash();
+            
+            // Store in database
+            _modelService.Insert(track, hashes);
+            
+            // Update metadata
+            meta.FingerprintCount = hashes.Count;
+            meta.IndexedAt = DateTime.UtcNow.ToString("o");
+            _metadata[meta.SongId] = meta;
+            
+            Output(new { 
+                success = true, 
+                songId = meta.SongId,
+                fingerprints = hashes.Count 
+            });
+        }
+        catch (Exception ex)
+        {
+            Output(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Handle save command - persist database and metadata to disk
+    /// </summary>
+    static void HandleSaveCommand()
+    {
+        try
+        {
+            SaveDatabase();
+            SaveMetadata();
+            Output(new { 
+                status = "saved", 
+                songCount = _metadata.Count,
+                fingerprintCount = _metadata.Values.Sum(m => m.FingerprintCount)
+            });
+        }
+        catch (Exception ex)
+        {
+            OutputError($"Save failed: {ex.Message}");
         }
     }
 
