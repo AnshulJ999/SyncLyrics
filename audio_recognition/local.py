@@ -43,21 +43,22 @@ class LocalRecognizer:
     # FFmpeg args for converting to SFP format (5512Hz mono)
     FFMPEG_ARGS = ["-ac", "1", "-ar", "5512", "-loglevel", "error"]
     
-    def __init__(self, db_path: Optional[Path] = None, cli_path: Optional[Path] = None, min_confidence: float = 0.5):
+    def __init__(self, db_path: Optional[Path] = None, cli_path: Optional[Path] = None, min_confidence: Optional[float] = None):
         """
         Initialize local fingerprint recognizer.
         
         Args:
             db_path: Path to fingerprint database (default: from config)
             cli_path: Path to sfp-cli directory (default: from config)
-            min_confidence: Minimum confidence threshold (default: 0.5)
+            min_confidence: Minimum confidence threshold (default: from config)
         """
         # Lazy load config to avoid circular imports
         from config import LOCAL_FINGERPRINT
         
         self._db_path = db_path or LOCAL_FINGERPRINT["db_path"]
         self._cli_path = cli_path or LOCAL_FINGERPRINT["cli_path"]
-        self._min_confidence = min_confidence or LOCAL_FINGERPRINT["min_confidence"]
+        # Use config value if not explicitly passed (None check, not truthy check)
+        self._min_confidence = min_confidence if min_confidence is not None else LOCAL_FINGERPRINT["min_confidence"]
         self._available = None  # Lazy check
         self._exe_path = None  # Path to built executable
         self._daemon: Optional[DaemonManager] = None  # Lazy initialized
@@ -364,7 +365,7 @@ class LocalRecognizer:
             # Fallback to result itself for backward compatibility
             best = result.get("bestMatch", result)
             
-            # Check confidence threshold
+            # Log confidence for debugging (engine handles threshold for acceptance)
             confidence = best.get("confidence", 0)
             if confidence < self._min_confidence:
                 # Log with song details for easier debugging
@@ -377,7 +378,8 @@ class LocalRecognizer:
                     f"Offset: {offset:.1f}s | "
                     f"Conf: {confidence:.2f} < {self._min_confidence}"
                 )
-                # return None
+                # NOTE: We still return the match - engine handles validation/verification
+                # for low confidence matches via Reaper validation or multi-match
             
             # Build RecognitionResult from best match
             offset = best.get("trackMatchStartsAt", 0)

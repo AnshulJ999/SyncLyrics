@@ -649,7 +649,7 @@ class RecognitionEngine:
         # This bypasses multi-match verification since local library is trusted
         if result.recognition_provider == "local_fingerprint":
             from config import LOCAL_FINGERPRINT
-            min_confidence = LOCAL_FINGERPRINT.get("min_confidence", 0.7)
+            min_confidence = LOCAL_FINGERPRINT["min_confidence"]  # From config/ENV
             if result.confidence >= min_confidence:
                 logger.info(f"Local FP high confidence ({result.confidence:.2f} >= {min_confidence}) - accepting: {result}")
                 self._clear_pending()
