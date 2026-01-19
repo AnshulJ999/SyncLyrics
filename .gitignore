@@ -25,7 +25,6 @@ backups/
 resources/fonts/custom
 .spotify-react-web-client-source-code
 album_art_database
-scripts/
 local_fingerprint_database
 sfp-cli/
 
