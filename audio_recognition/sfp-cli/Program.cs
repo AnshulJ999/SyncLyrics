@@ -146,11 +146,11 @@ class Program
             return 1;
         }
 
-        if (!wavFile.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            OutputError("Only WAV files are supported. Please convert your audio to WAV first.");
-            return 1;
-        }
+        //if (!wavFile.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+       // {
+       //     OutputError("Only WAV files are supported. Please convert your audio to WAV first.");
+       //     return 1;
+       // }
 
         // Read metadata from JSON file
         SongMetadata meta;
@@ -293,11 +293,11 @@ class Program
             return 1;
         }
 
-        if (!wavFile.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            OutputError("Only WAV files are supported. Please convert your audio to WAV first.");
-            return 1;
-        }
+       // if (!wavFile.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        //{
+       ////     OutputError("Only WAV files are supported. Please convert your audio to WAV first.");
+       //     return 1;
+       //s }
 
         if (_metadata.Count == 0)
         {

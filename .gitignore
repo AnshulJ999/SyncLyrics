@@ -30,6 +30,7 @@ local_fingerprint_database
 */sfp-cli/obj/
 */sfp-cli/bin/
 */sfp-cli/OLD/
+*/sfp-cli/FFmpeg/
 
 # resources/images/icon.ico
 lyrics_database/
