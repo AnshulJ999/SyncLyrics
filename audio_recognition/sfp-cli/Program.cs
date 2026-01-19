@@ -9,6 +9,7 @@ using SoundFingerprinting;
 using SoundFingerprinting.Audio;
 using SoundFingerprinting.Builder;
 using SoundFingerprinting.Data;
+using SoundFingerprinting.Emy;
 using SoundFingerprinting.InMemory;
 
 namespace SfpCli;
@@ -16,7 +17,7 @@ namespace SfpCli;
 /// <summary>
 /// SoundFingerprinting CLI - Audio fingerprinting tool for local song recognition.
 /// 
-/// IMPORTANT: Only WAV files are supported. Python should convert FLAC/MP3 to WAV.
+/// Supports WAV, FLAC, MP3, and other formats via FFmpegAudioService.
 /// 
 /// Global Options:
 ///   --db-path <path>  Override database directory (default: exe dir or $SFP_DB_PATH)
@@ -38,7 +39,7 @@ class Program
     private static string MetadataPath = "";
     
     private static InMemoryModelService _modelService = null!;
-    private static readonly IAudioService _audioService = new SoundFingerprintingAudioService();
+    private static readonly IAudioService _audioService = new FFmpegAudioService();
     
     // Metadata storage - maps songId to full metadata
     private static Dictionary<string, SongMetadata> _metadata = new();

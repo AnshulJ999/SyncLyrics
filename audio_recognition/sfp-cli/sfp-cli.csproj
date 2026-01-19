@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="SoundFingerprinting" Version="14.0.0" />
+    <PackageReference Include="SoundFingerprinting.Emy" Version="14.0.5" />
   </ItemGroup>
 
 </Project>
