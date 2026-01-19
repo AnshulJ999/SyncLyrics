@@ -610,9 +610,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     skip_log_path = db_path / "skip_log.json"
     
     indexed_files = load_json_file(indexed_files_path)
-    skip_log = load_json_file(skip_log_path)
-    if 'skipped' not in skip_log:
-        skip_log['skipped'] = []
+    skip_log = load_json_file(skip_log_path)  # Dict keyed by filepath
     
     # Find all audio files
     audio_files = []
@@ -640,16 +638,30 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         return {'error': 'Daemon startup failed', **results}
     
     BATCH_SIZE = 8
+    total_files = len(audio_files)
     
     # First pass: prepare all files (filter, extract metadata, compute hashes)
+    print(f"Phase 1: Preparing files (metadata + content hash)...")
     prepared_files = []
+    skipped_in_pass = 0
     
     for i, audio_file in enumerate(audio_files, 1):
         file_key = str(audio_file.absolute())
         
+        # Progress output every 10 files or for small batches
+        if i % 10 == 1 or total_files < 20:
+            print(f"  [{i}/{total_files}] Scanning {audio_file.name[:50]}...")
+        
         # Skip if already indexed by filepath
         if file_key in indexed_files:
             results['skipped'] += 1
+            skipped_in_pass += 1
+            continue
+        
+        # Skip if already in skip_log (previously skipped due to missing tags etc)
+        if file_key in skip_log:
+            results['skipped'] += 1
+            skipped_in_pass += 1
             continue
         
         # Extract metadata
@@ -657,11 +669,10 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         
         # Skip if missing required tags
         if not metadata['title'] or not metadata['artist']:
-            skip_log['skipped'].append({
-                'filepath': file_key,
+            skip_log[file_key] = {
                 'reason': 'Missing required tags (artist or title)',
                 'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-            })
+            }
             results['skipped'] += 1
             continue
         
@@ -679,22 +690,20 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             
             if missing_tags:
                 reason = f"Missing required tags: {', '.join(missing_tags)}"
-                skip_log['skipped'].append({
-                    'filepath': file_key,
+                skip_log[file_key] = {
                     'reason': reason,
                     'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-                })
+                }
                 results['skipped'] += 1
                 continue
         
         # Skip if too long
         if metadata['duration'] and metadata['duration'] > MAX_DURATION_MINUTES * 60:
             duration_min = metadata['duration'] / 60
-            skip_log['skipped'].append({
-                'filepath': file_key,
+            skip_log[file_key] = {
                 'reason': f'Duration exceeds limit ({duration_min:.1f} min > {MAX_DURATION_MINUTES} min)',
                 'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-            })
+            }
             results['skipped'] += 1
             continue
         
@@ -713,7 +722,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             'content_hash': content_hash
         })
     
-    print(f"Files to index: {len(prepared_files)} (skipped {results['skipped']} already indexed/filtered)\n")
+    print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']})")
+    print(f"\nPhase 2: Batch fingerprinting ({BATCH_SIZE} parallel)...")
     
     # Second pass: process in batches of 8
     total_batches = (len(prepared_files) + BATCH_SIZE - 1) // BATCH_SIZE
@@ -1017,10 +1027,10 @@ def show_stats(db_path: Path):
     indexed_files = load_json_file(indexed_files_path)
     print(f"Tracked files: {len(indexed_files)}")
     
-    # Show skip log count
+    # Show skip log count (dict keyed by filepath)
     skip_log_path = db_path / "skip_log.json"
     skip_log = load_json_file(skip_log_path)
-    print(f"Skipped files: {len(skip_log.get('skipped', []))}")
+    print(f"Skipped files: {len(skip_log)}")
     
     print("\n=== Indexed Songs ===\n")
     songs = run_sfp_command(db_path, "list")
