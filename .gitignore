@@ -29,6 +29,7 @@ local_fingerprint_database
 # sfp-cli/
 */sfp-cli/obj/
 */sfp-cli/bin/
+*/sfp-cli/OLD/
 
 # resources/images/icon.ico
 lyrics_database/
