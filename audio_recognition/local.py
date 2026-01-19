@@ -270,45 +270,43 @@ class LocalRecognizer:
             return None
         
         try:
-            # Convert AudioChunk to WAV file for sfp-cli
-            with tempfile.NamedTemporaryFile(suffix="_raw.wav", delete=False) as raw_file:
-                raw_path = Path(raw_file.name)
+            # Write AudioChunk to WAV file for sfp-cli
+            # FFmpegAudioService handles downsampling internally, so we just need standard WAV
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+                wav_path = Path(wav_file.name)
                 
-                # Write raw WAV
-                with wave.open(str(raw_path), 'wb') as wf:
+                # Write standard WAV (FFmpegAudioService will handle conversion to 5512Hz mono)
+                with wave.open(str(wav_path), 'wb') as wf:
                     wf.setnchannels(audio.channels)
                     wf.setsampwidth(2)  # int16
                     wf.setframerate(audio.sample_rate)
                     wf.writeframes(audio.data.tobytes())
             
-            # Convert to SFP format (5512Hz mono)
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as sfp_file:
-                sfp_path = Path(sfp_file.name)
-            
-            # Hide console window on Windows
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            
-            ffmpeg_result = subprocess.run(
-                ["ffmpeg", "-i", str(raw_path)] + self.FFMPEG_ARGS + [str(sfp_path), "-y"],
-                capture_output=True,
-                timeout=10,
-                creationflags=creationflags
-            )
-            
-            # Clean up raw file
-            raw_path.unlink()
-            
-            if ffmpeg_result.returncode != 0:
-                logger.warning("FFmpeg conversion failed for local recognition")
-                sfp_path.unlink()
-                return None
+            # NOTE: FFmpegAudioService now handles format conversion internally
+            # Old FFmpeg conversion code commented out for reference:
+            # with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as sfp_file:
+            #     sfp_path = Path(sfp_file.name)
+            # creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            # ffmpeg_result = subprocess.run(
+            #     ["ffmpeg", "-i", str(raw_path)] + self.FFMPEG_ARGS + [str(sfp_path), "-y"],
+            #     capture_output=True,
+            #     timeout=10,
+            #     creationflags=creationflags
+            # )
+            # raw_path.unlink()
+            # if ffmpeg_result.returncode != 0:
+            #     logger.warning("FFmpeg conversion failed for local recognition")
+            #     sfp_path.unlink()
+            #     return None
             
             # Query sfp-cli (async to not block event loop)
+            # FFmpegAudioService handles the downsampling to 5512Hz mono internally
             duration = int(audio.duration)
-            result = await self._run_cli_command_async("query", str(sfp_path), str(duration), "0")
+            result = await self._run_cli_command_async("query", str(wav_path), str(duration), "0")
             
-            # Clean up
-            sfp_path.unlink()
+            # Clean up temp file
+            wav_path.unlink()
+
             
             recognition_time = time.time()
             

@@ -473,45 +473,43 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         content_hash = compute_content_hash(audio_file)
         metadata['contentHash'] = content_hash
         
-        # Convert to WAV
-        wav_path = temp_dir / f"{song_id}.wav"
-        
-        start_time = time.time()
-        
-        if not convert_to_wav(audio_file, wav_path):
-            print(f"  ❌ FFmpeg conversion failed")
-            results['failed'] += 1
-            results['errors'].append({'file': file_key, 'error': 'FFmpeg failed'})
-            continue
-        
-        convert_time = time.time() - start_time
+        # NOTE: FFmpegAudioService now handles format conversion internally
+        # Old WAV conversion code commented out for reference:
+        # wav_path = temp_dir / f"{song_id}.wav"
+        # start_time = time.time()
+        # if not convert_to_wav(audio_file, wav_path):
+        #     print(f"  ❌ FFmpeg conversion failed")
+        #     results['failed'] += 1
+        #     results['errors'].append({'file': file_key, 'error': 'FFmpeg failed'})
+        #     continue
+        # convert_time = time.time() - start_time
         
         # Write metadata to temp JSON file
         meta_path = temp_dir / f"{song_id}_meta.json"
         with open(meta_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
         
-        # Fingerprint using sfp-cli
+        # Fingerprint using sfp-cli (now accepts FLAC/MP3 directly via FFmpegAudioService)
         fp_start = time.time()
         result = run_sfp_command(
             db_path,
             "fingerprint",
-            str(wav_path.absolute()),
+            str(audio_file.absolute()),  # Direct FLAC/MP3 - no WAV conversion needed
             "--metadata",
             str(meta_path.absolute())
         )
         fp_time = time.time() - fp_start
         
-        # Clean up temp files
+        # Clean up temp metadata file
+        # (no WAV to clean up anymore)
         try:
-            wav_path.unlink()
             meta_path.unlink()
         except:
             pass
         
         if result.get('success'):
             print(f"  ✅ {metadata['artist']} - {metadata['title']}")
-            print(f"     FP: {result.get('fingerprints', 0)}, Convert: {convert_time:.1f}s, Index: {fp_time:.1f}s")
+            print(f"     FP: {result.get('fingerprints', 0)}, Index: {fp_time:.1f}s")
             results['indexed'] += 1
             results['songs'].append({
                 'song_id': song_id,
@@ -519,7 +517,6 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
                 'artist': metadata['artist'],
                 'source': file_key,
                 'fingerprints': result.get('fingerprints', 0),
-                'convert_time': convert_time,
                 'fp_time': fp_time
             })
             
