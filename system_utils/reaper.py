@@ -674,7 +674,7 @@ class ReaperAudioSource:
             # Recognition provider (shazam or acrcloud) for display
             "recognition_provider": song.get("recognition_provider", "shazam"),
             # NEW: Spotify ID for Like button
-            "id": song.get("id") or song.get("track_id"),
+            "id": song.get("id"), # or song.get("track_id"), # this has been disabled since track_id is not valid ID
             # Track ID from Spotify enrichment (for album art cache busting, etc.)
             "track_id": song.get("track_id"),
             # NEW: Artist fields for Visual Mode
