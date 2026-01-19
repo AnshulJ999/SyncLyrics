@@ -25,7 +25,7 @@ import re
 import subprocess
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import sys
@@ -421,7 +421,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
             skip_log['skipped'].append({
                 'filepath': file_key,
                 'reason': 'Missing required tags (artist or title)',
-                'skippedAt': datetime.utcnow().isoformat() + 'Z'
+                'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             })
             results['skipped'] += 1
             continue
@@ -433,7 +433,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
             skip_log['skipped'].append({
                 'filepath': file_key,
                 'reason': f'Duration exceeds limit ({duration_min:.1f} min > {MAX_DURATION_MINUTES} min)',
-                'skippedAt': datetime.utcnow().isoformat() + 'Z'
+                'skippedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             })
             results['skipped'] += 1
             continue
@@ -500,7 +500,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
             indexed_files[file_key] = {
                 'songId': song_id,
                 'contentHash': content_hash,
-                'indexedAt': datetime.utcnow().isoformat() + 'Z'
+                'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             }
             
         elif result.get('skipped'):
@@ -513,7 +513,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None)
                 indexed_files[file_key] = {
                     'songId': song_id,
                     'contentHash': content_hash,
-                    'indexedAt': datetime.utcnow().isoformat() + 'Z',
+                    'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                     'skipped': reason
                 }
         else:
@@ -833,14 +833,16 @@ def main():
         db_path = get_db_path()
     
     if args.index:
-        folder = Path(args.index)
+        # Strip trailing slashes/backslashes (Windows CMD escapes closing quote with trailing \)
+        folder = Path(args.index.rstrip('/\\'))
         if not folder.exists():
             print(f"Error: Folder not found: {folder}")
             return
         index_folder(folder, db_path)
     
     elif args.test:
-        folder = Path(args.test)
+        # Strip trailing slashes/backslashes (Windows CMD escapes closing quote with trailing \)
+        folder = Path(args.test.rstrip('/\\'))
         if not folder.exists():
             print(f"Error: Folder not found: {folder}")
             return
