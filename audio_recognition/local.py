@@ -284,11 +284,11 @@ class LocalRecognizer:
                 track_id=result.get("songId"),
                 album=result.get("album"),
                 album_art_url=None,  # Will be enriched later
-                isrc=None,
+                isrc=result.get("isrc"),  # Now provided by sfp-cli
                 shazam_url=None,
                 spotify_url=None,
                 background_image_url=None,
-                genre=None,
+                genre=result.get("genre"),  # Now provided by sfp-cli
                 shazam_lyrics_text=None,
                 recognition_provider="local_fingerprint",
                 duration=result.get("duration")
