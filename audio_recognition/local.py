@@ -128,7 +128,10 @@ class LocalRecognizer:
         
         Returns True if:
         - sfp-cli executable exists (or can be built)
-        - Database has at least 1 indexed song
+        - Database files exist (fingerprints folder + metadata.json)
+        
+        NOTE: We don't run sfp-cli stats here to avoid loading the database twice
+        (once for the check, once for the daemon). The daemon will verify on startup.
         """
         if self._available is not None:
             return self._available
@@ -146,20 +149,34 @@ class LocalRecognizer:
                 self._available = False
                 return False
             
-            # Check if database has songs
-            result = self._run_cli_command_sync("stats")
-            if result.get("error"):
-                logger.warning(f"sfp-cli stats failed: {result.get('error')}")
+            # Fast check: verify database files exist (no CLI call needed)
+            # This avoids loading the entire database just to check availability
+            db_path = Path(self._db_path)
+            fingerprint_path = db_path / "fingerprints"
+            metadata_path = db_path / "metadata.json"
+            
+            if not fingerprint_path.exists():
+                logger.info(f"Local fingerprint database not found: {fingerprint_path}")
                 self._available = False
                 return False
             
-            song_count = result.get("songCount", 0)
-            if song_count == 0:
-                logger.info("Local fingerprint database is empty")
+            if not metadata_path.exists():
+                logger.info(f"Local fingerprint metadata not found: {metadata_path}")
                 self._available = False
                 return False
             
-            logger.info(f"Local fingerprinting available: {song_count} songs indexed")
+            # Quick check: metadata.json should have content (not empty)
+            try:
+                metadata_size = metadata_path.stat().st_size
+                if metadata_size < 10:  # Empty JSON {} is ~2 bytes
+                    logger.info("Local fingerprint database is empty (no metadata)")
+                    self._available = False
+                    return False
+            except OSError:
+                self._available = False
+                return False
+            
+            logger.info(f"Local fingerprinting available (database exists at {db_path})")
             self._available = True
             return True
             
