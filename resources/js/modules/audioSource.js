@@ -422,6 +422,8 @@ function updateStatusDisplay(status) {
                 const provider = status.current_song?.recognition_provider;
                 if (provider === 'acrcloud') {
                     elements.sourceName.textContent = 'ACRCloud';
+                } else if (provider === 'local_fingerprint') {
+                    elements.sourceName.textContent = 'Local FP';
                 } else if (provider === 'shazam') {
                     elements.sourceName.textContent = 'Shazam';
                 } else if (status.current_song) {
@@ -449,6 +451,7 @@ function updateStatusDisplay(status) {
                 'audiorecognition': 'Shazam',
                 'shazam': 'Shazam',
                 'acrcloud': 'ACRCloud',
+                'local_fingerprint': 'Local',
                 'reaper': 'Reaper',
                 'music_assistant': 'Music Assistant',
                 'linux': 'Linux',

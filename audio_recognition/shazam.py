@@ -62,7 +62,7 @@ class RecognitionResult:
         background_image_url: Background image for visual modes
         genre: Primary genre
         shazam_lyrics_text: Raw lyrics text from Shazam (unsynced)
-        recognition_provider: Which service matched ("shazam" or "acrcloud")
+        recognition_provider: Which service matched ("shazam", "acrcloud", or "local_fingerprint")
         duration: Song duration in seconds (if available)
     """
     title: str
@@ -82,7 +82,7 @@ class RecognitionResult:
     background_image_url: Optional[str] = None
     genre: Optional[str] = None
     shazam_lyrics_text: Optional[str] = None
-    recognition_provider: str = "shazam"  # "shazam" or "acrcloud"
+    recognition_provider: str = "shazam"  # "shazam", "acrcloud", or "local_fingerprint"
     duration: Optional[float] = None  # Song duration in seconds
     
     def get_current_position(self) -> float:

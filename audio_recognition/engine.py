@@ -258,7 +258,7 @@ class RecognitionEngine:
                 "genre": self._last_result.genre,
                 "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
                 "album_art_url": self._enriched_metadata.get("album_art_url") or self._last_result.album_art_url,
-                # Recognition provider (shazam or acrcloud)
+                # Recognition provider (shazam, acrcloud, or local_fingerprint)
                 "recognition_provider": self._last_result.recognition_provider,
                 # Debug fields
                 "_shazam_artist": self._last_result.artist,
@@ -290,7 +290,7 @@ class RecognitionEngine:
             # FIX: Use normalized track_id for frontend change detection (consistent with enriched path)
             "track_id": _normalize_track_id(self._last_result.artist, self._last_result.title),
             "duration_ms": duration_ms,
-            # Recognition provider (shazam or acrcloud)
+            # Recognition provider (shazam, acrcloud, or local_fingerprint)
             "recognition_provider": self._last_result.recognition_provider,
             "_spotify_enriched": False,
         }
@@ -638,6 +638,19 @@ class RecognitionEngine:
         Returns True if song should be accepted, False if pending verification.
         """
         from system_utils.session_config import get_effective_value
+        
+        # Local fingerprint: high confidence = accept immediately (offline, trusted source)
+        # This bypasses multi-match verification since local library is trusted
+        if result.recognition_provider == "local_fingerprint":
+            from config import LOCAL_FINGERPRINT
+            min_confidence = LOCAL_FINGERPRINT.get("min_confidence", 0.7)
+            if result.confidence >= min_confidence:
+                logger.info(f"Local FP high confidence ({result.confidence:.2f} >= {min_confidence}) - accepting: {result}")
+                self._clear_pending()
+                return True
+            else:
+                logger.debug(f"Local FP low confidence ({result.confidence:.2f} < {min_confidence}) - falling to verification")
+                # Low confidence local - fall through to multi-match
         
         # ACRCloud validation: minimum score + optional Reaper validation
         if result.recognition_provider == "acrcloud":

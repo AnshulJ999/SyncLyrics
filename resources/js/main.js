@@ -422,6 +422,8 @@ async function updateLoop() {
                     const provider = trackInfo.recognition_provider;
                     if (provider === 'acrcloud') {
                         sourceBtn.textContent = 'ACRCloud';
+                    } else if (provider === 'local_fingerprint') {
+                        sourceBtn.textContent = 'Local FP';
                     } else if (provider === 'shazam') {
                         sourceBtn.textContent = 'Shazam';
                     } else {
