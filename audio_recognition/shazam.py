@@ -226,6 +226,16 @@ class ShazamRecognizer:
             except Exception:
                 pass  # Best effort cleanup
     
+    async def prewarm(self) -> None:
+        """
+        Pre-warm the local fingerprint daemon to eliminate cold-start latency.
+        
+        Should be called when engine starts. Safe to call even if local FP
+        is not enabled - will just return immediately.
+        """
+        if self._local:
+            await self._local.prewarm_daemon()
+    
     def _save_debug_audio(self, wav_bytes: bytes) -> None:
         """Save last recognition audio to cache for debugging."""
         try:

@@ -379,6 +379,10 @@ class RecognitionEngine:
         # Start the background loop
         self._task = asyncio.create_task(self._run_loop())
         
+        # Pre-warm local fingerprint daemon in background to eliminate cold-start latency
+        # This is fire-and-forget - daemon loads while first capture runs
+        asyncio.create_task(self.recognizer.prewarm())
+        
     async def stop(self):
         """
         Stop the recognition loop.

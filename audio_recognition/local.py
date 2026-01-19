@@ -78,6 +78,34 @@ class LocalRecognizer:
             self._daemon.stop()
             self._daemon = None
     
+    async def prewarm_daemon(self) -> bool:
+        """
+        Pre-warm the daemon in background to eliminate cold-start latency.
+        
+        Called when engine starts to load FFmpeg and fingerprint database
+        before the first recognition request. This reduces first-query
+        latency from ~30s to <1s.
+        
+        Returns:
+            True if daemon started successfully, False otherwise
+        """
+        if not self.is_available():
+            logger.debug("Local FP not available, skipping daemon prewarm")
+            return False
+        
+        daemon = self._get_daemon()
+        if daemon is None:
+            logger.debug("Could not create daemon manager")
+            return False
+        
+        logger.info("Pre-warming local fingerprint daemon...")
+        success = await daemon.start()
+        if success:
+            logger.info("Local fingerprint daemon pre-warmed and ready")
+        else:
+            logger.warning("Daemon prewarm failed - will retry on first query")
+        return success
+    
     def _get_exe_path(self) -> Optional[Path]:
         """Get path to pre-built sfp-cli executable, building if needed."""
         if self._exe_path is not None:
