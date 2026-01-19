@@ -54,7 +54,8 @@ class RecognitionResult:
         confidence: Match confidence (0-1, estimated from Shazam's response)
         time_skew: Shazam's time skew value
         frequency_skew: Shazam's frequency skew value
-        track_id: Shazam's track identifier (for dedup)
+        track_id: Provider-specific identifier (Shazam key, ACRCloud acrid, Local FP songId).
+                  NOTE: This is NOT used for song comparison - artist+title is used instead.
         album_art_url: URL to album cover art
         isrc: International Standard Recording Code
         shazam_url: URL to view song on Shazam
@@ -124,7 +125,10 @@ class RecognitionResult:
         """
         Check if this is the same song as another result.
         
-        Uses track_id if available, otherwise compares artist+title.
+        Uses normalized artist+title comparison for consistency across all providers.
+        NOTE: We intentionally do NOT compare track_id because each provider uses
+        different ID formats (Shazam key, ACRCloud acrid, Local FP songId) which
+        would cause false "different song" results when switching providers.
         
         Args:
             other: Another RecognitionResult to compare
@@ -136,10 +140,13 @@ class RecognitionResult:
             return False
             
         # Prefer track_id comparison if both have it
-        if self.track_id and other.track_id:
-            return self.track_id == other.track_id
+        # if self.track_id and other.track_id:
+        #   return self.track_id == other.track_id
             
         # Fall back to name comparison
+        
+        # Always compare by normalized artist+title (consistent across all providers)
+        # This prevents duplicate song change events when e.g. ACRCloud → Local FP
         return (
             self.artist.lower().strip() == other.artist.lower().strip() and
             self.title.lower().strip() == other.title.lower().strip()

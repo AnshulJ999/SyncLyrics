@@ -289,6 +289,8 @@ class RecognitionEngine:
             "shazam_lyrics_text": self._last_result.shazam_lyrics_text,
             # FIX: Use normalized track_id for frontend change detection (consistent with enriched path)
             "track_id": _normalize_track_id(self._last_result.artist, self._last_result.title),
+            # FIX: Explicit None - no Spotify ID when enrichment fails, frontend will skip liked check
+            "id": None,
             "duration_ms": duration_ms,
             # Recognition provider (shazam, acrcloud, or local_fingerprint)
             "recognition_provider": self._last_result.recognition_provider,
