@@ -769,10 +769,31 @@ def show_stats(db_path: Path):
     return stats
 
 
-def clear_database(db_path: Path):
+def clear_database(db_path: Path, force: bool = False):
     """Clear the entire database."""
     print(f"\n=== Clearing Database ===")
     print(f"DB Path: {db_path}\n")
+    
+    # Get stats first
+    stats = run_sfp_command(db_path, "stats")
+    song_count = stats.get('songCount', 0)
+    
+    if song_count == 0:
+        print("Database is already empty.")
+        return {"success": True, "cleared": 0}
+    
+    # Confirmation prompt
+    if not force:
+        print(f"⚠️  WARNING: This will permanently delete {song_count} songs!")
+        print("   - All fingerprints will be removed")
+        print("   - metadata.json will be cleared")
+        print("   - indexed_files.json will be deleted")
+        print("   - skip_log.json will be deleted")
+        print()
+        confirm = input("Type 'yes' to confirm: ").strip().lower()
+        if confirm != 'yes':
+            print("❌ Cancelled.")
+            return {"cancelled": True}
     
     result = run_sfp_command(db_path, "clear")
     
@@ -802,7 +823,9 @@ def main():
     parser.add_argument("--test", type=str, help="Test recognition accuracy on folder")
     parser.add_argument("--live", action="store_true", help="Test live audio capture")
     parser.add_argument("--stats", action="store_true", help="Show database stats")
-    parser.add_argument("--clear", action="store_true", help="Clear database")
+    parser.add_argument("--clear", action="store_true", help="Clear database (requires confirmation)")
+    parser.add_argument("--delete", type=str, help="Delete a specific song by song_id")
+    parser.add_argument("--force", action="store_true", help="Skip confirmation prompts")
     parser.add_argument("--db-path", type=str, help="Override database path")
     parser.add_argument("--duration", type=int, default=10, help="Clip duration for testing (default: 10)")
     parser.add_argument("--positions", type=str, help="Comma-separated positions to test (default: 10,60,120)")
@@ -840,8 +863,28 @@ def main():
     elif args.stats:
         show_stats(db_path)
     
+    elif args.delete:
+        song_id = args.delete
+        print(f"\n=== Deleting Song ===")
+        print(f"Song ID: {song_id}")
+        result = run_sfp_command(db_path, "delete", song_id)
+        if result.get('success'):
+            print(f"✅ Deleted: {result.get('deleted')}")
+            # Also remove from indexed_files.json
+            indexed_files_path = db_path / "indexed_files.json"
+            indexed_files = load_json_file(indexed_files_path)
+            # Find and remove by song_id
+            to_remove = [k for k, v in indexed_files.items() if v.get('songId') == song_id]
+            for k in to_remove:
+                del indexed_files[k]
+                print(f"✅ Removed from indexed_files.json: {Path(k).name}")
+            if to_remove:
+                save_json_file(indexed_files_path, indexed_files)
+        else:
+            print(f"❌ Failed: {result.get('error', 'Unknown error')}")
+    
     elif args.clear:
-        clear_database(db_path)
+        clear_database(db_path, force=args.force)
     
     else:
         parser.print_help()
