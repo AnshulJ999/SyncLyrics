@@ -331,13 +331,18 @@ class LocalRecognizer:
                 logger.debug(f"Local: No match")
                 return None
             
+            # Extract best match from multi-match response format
+            # New format: {"matched": true, "bestMatch": {...}, "matches": [...]}
+            # Fallback to result itself for backward compatibility
+            best = result.get("bestMatch", result)
+            
             # Check confidence threshold
-            confidence = result.get("confidence", 0)
+            confidence = best.get("confidence", 0)
             if confidence < self._min_confidence:
                 # Log with song details for easier debugging
-                artist = result.get("artist", "Unknown")
-                title = result.get("title", "Unknown")
-                offset = result.get("trackMatchStartsAt", 0)
+                artist = best.get("artist", "Unknown")
+                title = best.get("title", "Unknown")
+                offset = best.get("trackMatchStartsAt", 0)
                 logger.debug(
                     f"Local: Match below threshold | "
                     f"{artist} - {title} | "
@@ -346,29 +351,29 @@ class LocalRecognizer:
                 )
                 # return None
             
-            # Build RecognitionResult
-            offset = result.get("trackMatchStartsAt", 0)
+            # Build RecognitionResult from best match
+            offset = best.get("trackMatchStartsAt", 0)
             
             recognition = RecognitionResult(
-                title=result.get("title", "Unknown"),
-                artist=result.get("artist", "Unknown"),
+                title=best.get("title", "Unknown"),
+                artist=best.get("artist", "Unknown"),
                 offset=float(offset),
                 capture_start_time=audio.capture_start_time,
                 recognition_time=recognition_time,
                 confidence=confidence,
                 time_skew=0.0,
                 frequency_skew=0.0,
-                track_id=result.get("songId"),
-                album=result.get("album"),
+                track_id=best.get("songId"),
+                album=best.get("album"),
                 album_art_url=None,  # Will be enriched later
-                isrc=result.get("isrc"),  # Now provided by sfp-cli
+                isrc=best.get("isrc"),  # Now provided by sfp-cli
                 shazam_url=None,
                 spotify_url=None,
                 background_image_url=None,
-                genre=result.get("genre"),  # Now provided by sfp-cli
+                genre=best.get("genre"),  # Now provided by sfp-cli
                 shazam_lyrics_text=None,
                 recognition_provider="local_fingerprint",
-                duration=result.get("duration")
+                duration=best.get("duration")
             )
             
             latency = recognition.get_latency()
