@@ -13,3 +13,4 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo Build failed with error code %ERRORLEVEL%
 )
+pause
