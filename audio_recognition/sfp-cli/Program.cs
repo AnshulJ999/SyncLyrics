@@ -426,6 +426,10 @@ class Program
                         await HandleFingerprintCommand(root);
                         break;
                     
+                    case "fingerprint-batch":
+                        await HandleFingerprintBatchCommand(root);
+                        break;
+                    
                     case "save":
                         HandleSaveCommand();
                         break;
@@ -676,6 +680,165 @@ class Program
         catch (Exception ex)
         {
             Output(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Handle fingerprint-batch command - parallel process multiple files (8 concurrent)
+    /// 
+    /// Request format:
+    ///   {"cmd": "fingerprint-batch", "files": [{"path": "...", "metadata": {...}}, ...]}
+    /// 
+    /// Response format:
+    ///   {"success": true, "processed": 8, "results": [{songId, fingerprints}, ...]}
+    /// </summary>
+    static async Task HandleFingerprintBatchCommand(JsonElement root)
+    {
+        const int MAX_PARALLEL = 8;
+        
+        try
+        {
+            var filesArray = root.GetProperty("files");
+            var fileCount = filesArray.GetArrayLength();
+            
+            if (fileCount == 0)
+            {
+                Output(new { success = true, processed = 0, results = new List<object>() });
+                return;
+            }
+            
+            // Use semaphore to limit concurrency to 8
+            var semaphore = new SemaphoreSlim(MAX_PARALLEL);
+            var results = new List<object>();
+            var tasks = new List<Task<object>>();
+            
+            foreach (var fileElement in filesArray.EnumerateArray())
+            {
+                await semaphore.WaitAsync();
+                
+                tasks.Add(Task.Run(async () =>
+                {
+                    try
+                    {
+                        return await FingerprintSingleFile(fileElement);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+            }
+            
+            // Wait for all tasks to complete
+            var allResults = await Task.WhenAll(tasks);
+            
+            // Count successes
+            int successCount = 0;
+            int skippedCount = 0;
+            int errorCount = 0;
+            
+            foreach (var r in allResults)
+            {
+                if (r is IDictionary<string, object> dict)
+                {
+                    if (dict.ContainsKey("success") && (bool)dict["success"]) successCount++;
+                    else if (dict.ContainsKey("skipped") && (bool)dict["skipped"]) skippedCount++;
+                    else errorCount++;
+                }
+                results.Add(r);
+            }
+            
+            Output(new { 
+                success = true, 
+                processed = fileCount,
+                successCount = successCount,
+                skippedCount = skippedCount,
+                errorCount = errorCount,
+                results = results 
+            });
+        }
+        catch (Exception ex)
+        {
+            Output(new { success = false, error = $"Batch failed: {ex.Message}" });
+        }
+    }
+
+    /// <summary>
+    /// Fingerprint a single file (used by batch command)
+    /// </summary>
+    static async Task<object> FingerprintSingleFile(JsonElement fileElement)
+    {
+        try
+        {
+            var path = fileElement.GetProperty("path").GetString() ?? "";
+            var metadataObj = fileElement.GetProperty("metadata");
+            
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                return new { success = false, error = $"File not found: {path}" };
+            }
+            
+            // Parse metadata from JSON
+            var meta = new SongMetadata
+            {
+                SongId = metadataObj.GetProperty("songId").GetString() ?? "",
+                Title = metadataObj.GetProperty("title").GetString() ?? "",
+                Artist = metadataObj.GetProperty("artist").GetString() ?? "",
+                Album = metadataObj.TryGetProperty("album", out var a) ? a.GetString() : null,
+                AlbumArtist = metadataObj.TryGetProperty("albumArtist", out var aa) ? aa.GetString() : null,
+                Duration = metadataObj.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number ? d.GetDouble() : null,
+                TrackNumber = metadataObj.TryGetProperty("trackNumber", out var tn) && tn.ValueKind == JsonValueKind.Number ? tn.GetInt32() : null,
+                DiscNumber = metadataObj.TryGetProperty("discNumber", out var dn) && dn.ValueKind == JsonValueKind.Number ? dn.GetInt32() : null,
+                Genre = metadataObj.TryGetProperty("genre", out var g) ? g.GetString() : null,
+                Year = metadataObj.TryGetProperty("year", out var y) ? y.GetString() : null,
+                Isrc = metadataObj.TryGetProperty("isrc", out var i) ? i.GetString() : null,
+                OriginalFilepath = metadataObj.TryGetProperty("originalFilepath", out var of) ? of.GetString() : null,
+                ContentHash = metadataObj.TryGetProperty("contentHash", out var ch) ? ch.GetString() : null
+            };
+            
+            // Validate required fields
+            if (string.IsNullOrEmpty(meta.SongId) || string.IsNullOrEmpty(meta.Title) || string.IsNullOrEmpty(meta.Artist))
+            {
+                return new { success = false, songId = meta.SongId, error = "Missing required fields" };
+            }
+            
+            // Check if already indexed (thread-safe read)
+            if (_metadata.ContainsKey(meta.SongId))
+            {
+                return new { success = false, skipped = true, songId = meta.SongId, reason = "Already indexed" };
+            }
+            
+            // Check for duplicate content hash
+            if (!string.IsNullOrEmpty(meta.ContentHash))
+            {
+                var existingWithHash = _metadata.Values.FirstOrDefault(m => m.ContentHash == meta.ContentHash);
+                if (existingWithHash != null)
+                {
+                    return new { success = false, skipped = true, songId = meta.SongId, reason = "Duplicate content hash" };
+                }
+            }
+            
+            // Fingerprint the file
+            var track = new TrackInfo(meta.SongId, meta.Title, meta.Artist);
+            var hashes = await FingerprintCommandBuilder.Instance
+                .BuildFingerprintCommand()
+                .From(path)
+                .UsingServices(_audioService)
+                .Hash();
+            
+            // Thread-safe insert (InMemoryModelService handles locking internally)
+            _modelService.Insert(track, hashes);
+            
+            // Update metadata (thread-safe via ConcurrentDictionary)
+            meta.FingerprintCount = hashes.Count;
+            meta.IndexedAt = DateTime.UtcNow.ToString("o");
+            _metadata[meta.SongId] = meta;
+            
+            return new { success = true, songId = meta.SongId, fingerprints = hashes.Count };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
         }
     }
 

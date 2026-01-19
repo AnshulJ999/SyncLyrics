@@ -142,6 +142,11 @@ class IndexingDaemon:
     Connects to sfp-cli daemon via stdin/stdout. The daemon loads FFmpeg
     and database once, then processes fingerprint commands without reloading.
     
+    Features:
+    - Retry logic (max 3 attempts)
+    - Auto-restart on crash
+    - Save every N files
+    
     Usage:
         daemon = IndexingDaemon(db_path)
         daemon.start()
@@ -152,6 +157,7 @@ class IndexingDaemon:
         daemon.stop()
     """
     
+    MAX_RESTART_ATTEMPTS = 3
     STARTUP_TIMEOUT = 120  # seconds
     COMMAND_TIMEOUT = 60   # seconds per file
     
@@ -161,18 +167,40 @@ class IndexingDaemon:
         self.process: Optional[subprocess.Popen] = None
         self._ready = False
         self._song_count = 0
+        self._restart_count = 0
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if daemon process is still running."""
+        return self.process is not None and self.process.poll() is None
     
     def start(self) -> bool:
-        """Start the daemon process. Returns True if successful."""
+        """Start the daemon process with retry logic. Returns True if successful."""
         if self.exe_path is None:
             print("❌ sfp-cli executable not available")
             return False
         
-        if self.process is not None:
+        if self.is_running:
             print("⚠️  Daemon already running")
             return True
         
-        print(f"🚀 Starting indexing daemon...")
+        # Retry loop
+        while self._restart_count < self.MAX_RESTART_ATTEMPTS:
+            self._restart_count += 1
+            print(f"🚀 Starting indexing daemon (attempt {self._restart_count}/{self.MAX_RESTART_ATTEMPTS})...")
+            
+            if self._try_start():
+                self._restart_count = 0  # Reset on success
+                return True
+            
+            print(f"   Retry in 2 seconds...")
+            time.sleep(2)
+        
+        print(f"❌ Failed to start daemon after {self.MAX_RESTART_ATTEMPTS} attempts")
+        return False
+    
+    def _try_start(self) -> bool:
+        """Single attempt to start daemon. Returns True if successful."""
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             
@@ -190,7 +218,7 @@ class IndexingDaemon:
             start_time = time.time()
             while time.time() - start_time < self.STARTUP_TIMEOUT:
                 if self.process.poll() is not None:
-                    print(f"❌ Daemon exited during startup")
+                    print(f"   ❌ Daemon exited during startup")
                     return False
                 
                 line = self.process.stdout.readline()
@@ -205,13 +233,24 @@ class IndexingDaemon:
                     except json.JSONDecodeError:
                         pass  # Ignore non-JSON output
             
-            print("❌ Daemon startup timeout")
-            self.stop()
+            print("   ❌ Daemon startup timeout")
+            self._kill_process()
             return False
             
         except Exception as e:
-            print(f"❌ Failed to start daemon: {e}")
+            print(f"   ❌ Failed to start daemon: {e}")
+            self._kill_process()
             return False
+    
+    def _kill_process(self):
+        """Kill daemon process if running."""
+        if self.process is not None:
+            try:
+                self.process.kill()
+            except:
+                pass
+            self.process = None
+            self._ready = False
     
     def fingerprint(self, audio_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -240,6 +279,46 @@ class IndexingDaemon:
             response = self.process.stdout.readline()
             if response:
                 return json.loads(response.strip())
+            else:
+                return {"success": False, "error": "No response from daemon"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def fingerprint_batch(self, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Send batch fingerprint command for parallel processing (8 concurrent in C#).
+        
+        Args:
+            files: List of dicts with 'path' (Path) and 'metadata' (dict) keys
+        
+        Returns:
+            Result dict with processed count and individual results
+        """
+        if not self._ready or self.process is None:
+            return {"success": False, "error": "Daemon not ready"}
+        
+        # Convert paths to strings
+        files_json = []
+        for f in files:
+            files_json.append({
+                "path": str(f["path"].absolute()) if isinstance(f["path"], Path) else str(f["path"]),
+                "metadata": f["metadata"]
+            })
+        
+        cmd = {
+            "cmd": "fingerprint-batch",
+            "files": files_json
+        }
+        
+        try:
+            self.process.stdin.write(json.dumps(cmd) + "\n")
+            self.process.stdin.flush()
+            
+            response = self.process.stdout.readline()
+            if response:
+                result = json.loads(response.strip())
+                self._song_count = result.get("successCount", 0) + self._song_count
+                return result
             else:
                 return {"success": False, "error": "No response from daemon"}
         except Exception as e:
@@ -773,9 +852,12 @@ def test_recognition(folder_path: Path, db_path: Path, clip_duration: int = 10, 
             
             results['total_tests'] += 1
             
-            if result.get('matched') and result.get('songId') == song_id:
-                offset = result.get('trackMatchStartsAt', 0)
-                confidence = result.get('confidence', 0)
+            # Extract best match from multi-match format
+            best = result.get('bestMatch', result)
+            
+            if result.get('matched') and best.get('songId') == song_id:
+                offset = best.get('trackMatchStartsAt', 0)
+                confidence = best.get('confidence', 0)
                 offset_error = abs(offset - pos)
                 
                 if offset_error < 2:  # Within 2 seconds
@@ -873,11 +955,13 @@ def test_live_capture(db_path: Path, duration: int = 10) -> Dict[str, Any]:
         result = asyncio.run(capture_and_recognize())
         
         if result.get('matched'):
+            # Extract best match from multi-match format
+            best = result.get('bestMatch', result)
             print(f"\n✅ MATCH FOUND!")
-            print(f"   Song: {result.get('artist')} - {result.get('title')}")
-            print(f"   Album: {result.get('album')}")
-            print(f"   Position: {result.get('trackMatchStartsAt', 0):.1f}s")
-            print(f"   Confidence: {result.get('confidence', 0):.2f}")
+            print(f"   Song: {best.get('artist')} - {best.get('title')}")
+            print(f"   Album: {best.get('album')}")
+            print(f"   Position: {best.get('trackMatchStartsAt', 0):.1f}s")
+            print(f"   Confidence: {best.get('confidence', 0):.2f}")
         else:
             print(f"\n❌ No match found")
             if result.get('error'):
