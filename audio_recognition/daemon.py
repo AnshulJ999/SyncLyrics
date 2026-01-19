@@ -165,8 +165,10 @@ class DaemonManager:
         Returns:
             True if daemon started successfully, False otherwise
         """
-        if self.is_running:
-            logger.debug("Daemon already running")
+        # Check if daemon is already ready (not just running - must be ready!)
+        # This prevents race conditions where daemon is starting but not ready
+        if self.is_ready:
+            logger.debug("Daemon already running and ready")
             return True
         
         if self._fallback_mode:
@@ -176,7 +178,7 @@ class DaemonManager:
         # Use lock so concurrent callers wait instead of returning False
         async with self._start_lock:
             # Double-check after acquiring lock (another caller may have started it)
-            if self.is_running:
+            if self.is_ready:
                 return True
             
             try:
