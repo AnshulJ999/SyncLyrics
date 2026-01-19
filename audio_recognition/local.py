@@ -9,6 +9,7 @@ This module is ENV-guarded and only loaded if LOCAL_FP_ENABLED=true.
 
 import json
 import subprocess
+import sys
 import tempfile
 import wave
 from pathlib import Path
@@ -108,12 +109,16 @@ class LocalRecognizer:
         ] + list(args)
         
         try:
+            # Hide console window on Windows
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            
             result = subprocess.run(
                 cmd,
                 cwd=str(self._cli_path),
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                creationflags=creationflags
             )
             
             # Parse JSON from stdout
@@ -164,10 +169,14 @@ class LocalRecognizer:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as sfp_file:
                 sfp_path = Path(sfp_file.name)
             
+            # Hide console window on Windows
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            
             ffmpeg_result = subprocess.run(
                 ["ffmpeg", "-i", str(raw_path)] + self.FFMPEG_ARGS + [str(sfp_path), "-y"],
                 capture_output=True,
-                timeout=10
+                timeout=10,
+                creationflags=creationflags
             )
             
             # Clean up raw file
