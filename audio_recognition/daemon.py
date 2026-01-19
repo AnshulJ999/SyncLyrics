@@ -62,7 +62,9 @@ class DaemonManager:
         self._ready = False
         self._last_ready_info: dict = {}
         self._fallback_mode = False  # If True, use subprocess instead of daemon
-        self._starting = False  # Prevent concurrent start attempts
+        # Locks for thread-safe async operations
+        self._start_lock = asyncio.Lock()  # Serializes startup attempts
+        self._io_lock = asyncio.Lock()  # Serializes send/receive transactions
     
     @property
     def is_running(self) -> bool:
@@ -105,7 +107,7 @@ class DaemonManager:
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,  # Avoid deadlock from unbuffered stderr
                 text=True,
                 bufsize=1,  # Line buffered
                 creationflags=creationflags
@@ -157,6 +159,9 @@ class DaemonManager:
         """
         Start the daemon process (async-safe).
         
+        Uses asyncio.Lock to ensure only one startup attempt runs at a time.
+        Other callers wait for the first attempt to complete.
+        
         Returns:
             True if daemon started successfully, False otherwise
         """
@@ -168,28 +173,27 @@ class DaemonManager:
             logger.debug("In fallback mode, not starting daemon")
             return False
         
-        if self._starting:
-            logger.debug("Daemon startup already in progress")
-            return False
-        
-        self._starting = True
-        try:
-            # Run blocking startup in thread to avoid blocking event loop
-            result = await asyncio.wait_for(
-                asyncio.to_thread(self._start_process_sync),
-                timeout=self.STARTUP_TIMEOUT + 5  # Extra buffer
-            )
-            return result
-        except asyncio.TimeoutError:
-            logger.error("Daemon startup timed out in async wrapper")
-            self._kill_process()
-            return False
-        except Exception as e:
-            logger.error(f"Daemon startup failed: {e}")
-            self._kill_process()
-            return False
-        finally:
-            self._starting = False
+        # Use lock so concurrent callers wait instead of returning False
+        async with self._start_lock:
+            # Double-check after acquiring lock (another caller may have started it)
+            if self.is_running:
+                return True
+            
+            try:
+                # Run blocking startup in thread to avoid blocking event loop
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(self._start_process_sync),
+                    timeout=self.STARTUP_TIMEOUT + 5  # Extra buffer
+                )
+                return result
+            except asyncio.TimeoutError:
+                logger.error("Daemon startup timed out in async wrapper")
+                self._kill_process()
+                return False
+            except Exception as e:
+                logger.error(f"Daemon startup failed: {e}")
+                self._kill_process()
+                return False
     
     def _stop_sync(self) -> None:
         """Stop the daemon process (synchronous - for cleanup)."""
@@ -273,6 +277,9 @@ class DaemonManager:
         """
         Send a command to the daemon and get response (async-safe).
         
+        Uses asyncio.Lock to serialize send/receive transactions,
+        ensuring responses are correctly paired with requests.
+        
         Args:
             command: Command dict (e.g., {"cmd": "query", "path": "..."})
             
@@ -284,27 +291,29 @@ class DaemonManager:
             if not await self._ensure_daemon():
                 return None
         
-        try:
-            # Run blocking I/O in thread with timeout
-            result = await asyncio.wait_for(
-                asyncio.to_thread(self._send_command_sync, command),
-                timeout=self.COMMAND_TIMEOUT
-            )
-            
-            if result is None:
-                # Command failed, daemon may have crashed
+        # Lock ensures only one command/response transaction at a time
+        async with self._io_lock:
+            try:
+                # Run blocking I/O in thread with timeout
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(self._send_command_sync, command),
+                    timeout=self.COMMAND_TIMEOUT
+                )
+                
+                if result is None:
+                    # Command failed, daemon may have crashed
+                    await self._handle_crash()
+                
+                return result
+                
+            except asyncio.TimeoutError:
+                logger.error(f"Daemon command timed out: {command.get('cmd')}")
                 await self._handle_crash()
-            
-            return result
-            
-        except asyncio.TimeoutError:
-            logger.error(f"Daemon command timed out: {command.get('cmd')}")
-            await self._handle_crash()
-            return None
-        except Exception as e:
-            logger.error(f"Error sending command to daemon: {e}")
-            await self._handle_crash()
-            return None
+                return None
+            except Exception as e:
+                logger.error(f"Error sending command to daemon: {e}")
+                await self._handle_crash()
+                return None
     
     async def _ensure_daemon(self) -> bool:
         """Ensure daemon is running, starting or restarting if needed."""
