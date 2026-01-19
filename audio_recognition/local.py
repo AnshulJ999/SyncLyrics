@@ -57,15 +57,60 @@ class LocalRecognizer:
         self._cli_path = cli_path or LOCAL_FINGERPRINT["cli_path"]
         self._min_confidence = min_confidence or LOCAL_FINGERPRINT["min_confidence"]
         self._available = None  # Lazy check
+        self._exe_path = None  # Path to built executable
         
         logger.info(f"LocalRecognizer initialized: db={self._db_path}, min_conf={self._min_confidence}")
+    
+    def _get_exe_path(self) -> Optional[Path]:
+        """Get path to pre-built sfp-cli executable, building if needed."""
+        if self._exe_path is not None:
+            return self._exe_path
+        
+        # Check for existing published executable
+        publish_dir = self._cli_path / "bin" / "publish"
+        exe_name = "sfp-cli.exe" if sys.platform == "win32" else "sfp-cli"
+        exe_path = publish_dir / exe_name
+        
+        if exe_path.exists():
+            self._exe_path = exe_path
+            logger.debug(f"Using pre-built sfp-cli: {exe_path}")
+            return exe_path
+        
+        # Build the executable
+        logger.info("Building sfp-cli executable (one-time)...")
+        try:
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            result = subprocess.run(
+                ["dotnet", "publish", "-c", "Release", "-o", str(publish_dir)],
+                cwd=str(self._cli_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                creationflags=creationflags
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to build sfp-cli: {result.stderr}")
+                return None
+            
+            if exe_path.exists():
+                self._exe_path = exe_path
+                logger.info(f"Built sfp-cli executable: {exe_path}")
+                return exe_path
+            else:
+                logger.error(f"Build succeeded but exe not found at {exe_path}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to build sfp-cli: {e}")
+            return None
     
     def is_available(self) -> bool:
         """
         Check if local fingerprinting is available.
         
         Returns True if:
-        - sfp-cli exists and can be run
+        - sfp-cli executable exists (or can be built)
         - Database has at least 1 indexed song
         """
         if self._available is not None:
@@ -75,6 +120,12 @@ class LocalRecognizer:
             # Check if CLI exists
             if not (self._cli_path / "sfp-cli.csproj").exists():
                 logger.warning(f"sfp-cli not found at {self._cli_path}")
+                self._available = False
+                return False
+            
+            # Ensure executable is built
+            if self._get_exe_path() is None:
+                logger.warning("sfp-cli executable not available")
                 self._available = False
                 return False
             
@@ -102,8 +153,12 @@ class LocalRecognizer:
     
     def _run_cli_command(self, command: str, *args) -> Dict[str, Any]:
         """Run sfp-cli command and return JSON result."""
+        exe_path = self._get_exe_path()
+        if exe_path is None:
+            return {"error": "sfp-cli executable not available"}
+        
         cmd = [
-            "dotnet", "run", "--",
+            str(exe_path),
             "--db-path", str(self._db_path.absolute()),
             command
         ] + list(args)
@@ -114,7 +169,6 @@ class LocalRecognizer:
             
             result = subprocess.run(
                 cmd,
-                cwd=str(self._cli_path),
                 capture_output=True,
                 text=True,
                 timeout=30,
