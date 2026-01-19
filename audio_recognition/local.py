@@ -7,6 +7,7 @@ of songs in the user's local music library.
 This module is ENV-guarded and only loaded if LOCAL_FP_ENABLED=true.
 """
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -146,7 +147,7 @@ class LocalRecognizer:
                 return False
             
             # Check if database has songs
-            result = self._run_cli_command("stats")
+            result = self._run_cli_command_sync("stats")
             if result.get("error"):
                 logger.warning(f"sfp-cli stats failed: {result.get('error')}")
                 self._available = False
@@ -167,9 +168,9 @@ class LocalRecognizer:
             self._available = False
             return False
     
-    def _query_via_daemon(self, wav_path: str, duration: int, offset: int = 0) -> Optional[Dict[str, Any]]:
+    async def _query_via_daemon(self, wav_path: str, duration: int, offset: int = 0) -> Optional[Dict[str, Any]]:
         """
-        Query via daemon (fast path).
+        Query via daemon (fast path, async-safe).
         
         Returns None if daemon is not available, requiring fallback to subprocess.
         """
@@ -181,7 +182,7 @@ class LocalRecognizer:
         if daemon.in_fallback_mode:
             return None
         
-        result = daemon.send_command({
+        result = await daemon.send_command({
             "cmd": "query",
             "path": wav_path,
             "duration": duration,
@@ -190,9 +191,9 @@ class LocalRecognizer:
         
         return result
     
-    def _run_cli_command(self, command: str, *args) -> Dict[str, Any]:
+    async def _run_cli_command_async(self, command: str, *args) -> Dict[str, Any]:
         """
-        Run sfp-cli command and return JSON result.
+        Run sfp-cli command and return JSON result (async version).
         
         For 'query' commands, tries daemon first (fast), falls back to subprocess (slow).
         """
@@ -202,12 +203,18 @@ class LocalRecognizer:
             duration = int(args[1])
             offset = int(args[2]) if len(args) > 2 else 0
             
-            daemon_result = self._query_via_daemon(wav_path, duration, offset)
+            daemon_result = await self._query_via_daemon(wav_path, duration, offset)
             if daemon_result is not None:
                 return daemon_result
             # Daemon unavailable or failed, fall through to subprocess
         
-        # Subprocess fallback (slow path)
+        # Subprocess fallback (slow path) - run in thread to avoid blocking
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._run_cli_command_sync, command, *args
+        )
+    
+    def _run_cli_command_sync(self, command: str, *args) -> Dict[str, Any]:
+        """Run sfp-cli command synchronously (for subprocess fallback)."""
         exe_path = self._get_exe_path()
         if exe_path is None:
             return {"error": "sfp-cli executable not available"}
@@ -296,9 +303,9 @@ class LocalRecognizer:
                 sfp_path.unlink()
                 return None
             
-            # Query sfp-cli
+            # Query sfp-cli (async to not block event loop)
             duration = int(audio.duration)
-            result = self._run_cli_command("query", str(sfp_path), str(duration), "0")
+            result = await self._run_cli_command_async("query", str(sfp_path), str(duration), "0")
             
             # Clean up
             sfp_path.unlink()
@@ -366,4 +373,4 @@ class LocalRecognizer:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-        return self._run_cli_command("stats")
+        return self._run_cli_command_sync("stats")
