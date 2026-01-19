@@ -257,7 +257,16 @@ class LocalRecognizer:
             # Check confidence threshold
             confidence = result.get("confidence", 0)
             if confidence < self._min_confidence:
-                logger.debug(f"Local: Match below threshold ({confidence:.2f} < {self._min_confidence})")
+                # Log with song details for easier debugging
+                artist = result.get("artist", "Unknown")
+                title = result.get("title", "Unknown")
+                offset = result.get("trackMatchStartsAt", 0)
+                logger.debug(
+                    f"Local: Match below threshold | "
+                    f"{artist} - {title} | "
+                    f"Offset: {offset:.1f}s | "
+                    f"Conf: {confidence:.2f} < {self._min_confidence}"
+                )
                 return None
             
             # Build RecognitionResult
