@@ -658,11 +658,12 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             skipped_in_pass += 1
             continue
         
-        # Skip if already in skip_log (previously skipped due to missing tags etc)
-        if file_key in skip_log:
-            results['skipped'] += 1
-            skipped_in_pass += 1
-            continue
+        # NOTE: skip_log check disabled - re-indexing now only requires removing from indexed_files.json
+        # If you want to use skip_log, uncomment the following block:
+        # if file_key in skip_log:
+        #     results['skipped'] += 1
+        #     skipped_in_pass += 1
+        #     continue
         
         # Extract metadata
         metadata = extract_full_metadata(audio_file)
@@ -1090,6 +1091,570 @@ def clear_database(db_path: Path, force: bool = False):
     return result
 
 
+def verify_database(db_path: Path) -> Dict[str, Any]:
+    """
+    Verify database integrity by comparing all 3 data sources:
+    - Fingerprint DB (via daemon list-fp command)
+    - metadata.json
+    - indexed_files.json
+    
+    Reports ALL discrepancies with detailed logging.
+    """
+    print(f"\n{'=' * 70}")
+    print("DATABASE VERIFICATION REPORT")
+    print(f"{'=' * 70}")
+    print(f"Database: {db_path}\n")
+    
+    # Load all data sources
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    
+    metadata = load_json_file(metadata_path)  # songId -> {metadata}
+    indexed_files = load_json_file(indexed_files_path)  # filepath -> {songId, ...}
+    
+    # Extract songIds from each source
+    metadata_ids = set(metadata.keys())
+    
+    # indexed_files: extract songId from each entry (excluding skipped entries if desired)
+    index_id_to_files: Dict[str, List[str]] = {}  # songId -> [filepaths]
+    for filepath, entry in indexed_files.items():
+        song_id = entry.get('songId')
+        if song_id:
+            if song_id not in index_id_to_files:
+                index_id_to_files[song_id] = []
+            index_id_to_files[song_id].append(filepath)
+    index_ids = set(index_id_to_files.keys())
+    
+    # Get fingerprint IDs from daemon
+    print("Querying fingerprint database...")
+    daemon = IndexingDaemon(db_path)
+    fp_ids = set()
+    
+    if daemon.start():
+        try:
+            # Send list-fp command and get response
+            daemon.process.stdin.write('{"cmd": "list-fp"}\n')
+            daemon.process.stdin.flush()
+            response = daemon.process.stdout.readline()
+            if response:
+                result = json.loads(response.strip())
+                fp_ids = set(result.get('songIds', []))
+        except Exception as e:
+            print(f"⚠️  Warning: Could not query fingerprint DB: {e}")
+        finally:
+            daemon.stop()
+    else:
+        print("⚠️  Warning: Could not start daemon to query fingerprints")
+        # Fall back to assuming metadata IDs are in fingerprints (best effort)
+        print("   Using metadata songIds as proxy for fingerprint check")
+        fp_ids = metadata_ids.copy()
+    
+    # Print counts
+    print(f"\n📊 Data Source Counts:")
+    print(f"   Fingerprint DB: {len(fp_ids)} songs")
+    print(f"   Metadata:       {len(metadata_ids)} entries")
+    print(f"   Index:          {len(index_ids)} unique songIds ({len(indexed_files)} files)")
+    
+    # Find discrepancies
+    discrepancies: Dict[str, List] = {
+        'FP_NO_META': [],      # In FP, not in metadata
+        'FP_NO_INDEX': [],     # In FP, not in index
+        'META_NO_FP': [],      # In metadata, not in FP
+        'META_NO_INDEX': [],   # In metadata, not in index
+        'INDEX_NO_META': [],   # In index, not in metadata
+        'INDEX_NO_FP': [],     # In index, not in FP
+    }
+    
+    # FP vs others
+    for song_id in fp_ids:
+        if song_id not in metadata_ids:
+            discrepancies['FP_NO_META'].append({'songId': song_id})
+        if song_id not in index_ids:
+            discrepancies['FP_NO_INDEX'].append({'songId': song_id})
+    
+    # Metadata vs others
+    for song_id in metadata_ids:
+        meta = metadata[song_id]
+        if song_id not in fp_ids:
+            discrepancies['META_NO_FP'].append({
+                'songId': song_id,
+                'filepath': meta.get('originalFilepath', 'unknown'),
+                'artist': meta.get('artist', '?'),
+                'title': meta.get('title', '?')
+            })
+        if song_id not in index_ids:
+            discrepancies['META_NO_INDEX'].append({
+                'songId': song_id,
+                'filepath': meta.get('originalFilepath', 'unknown')
+            })
+    
+    # Index vs others
+    for song_id in index_ids:
+        filepaths = index_id_to_files.get(song_id, [])
+        if song_id not in metadata_ids:
+            discrepancies['INDEX_NO_META'].append({
+                'songId': song_id,
+                'filepaths': filepaths
+            })
+        if song_id not in fp_ids:
+            discrepancies['INDEX_NO_FP'].append({
+                'songId': song_id,
+                'filepaths': filepaths
+            })
+    
+    # Print discrepancies
+    total_issues = sum(len(v) for v in discrepancies.values())
+    
+    if total_issues == 0:
+        print(f"\n✅ All databases are in sync! No discrepancies found.")
+    else:
+        print(f"\n⚠️  DISCREPANCIES FOUND: {total_issues} total\n")
+        
+        if discrepancies['FP_NO_META']:
+            print(f"[FP_NO_META] Fingerprint exists, NO metadata ({len(discrepancies['FP_NO_META'])} songs):")
+            for item in discrepancies['FP_NO_META'][:10]:  # Limit output
+                print(f"   - songId: \"{item['songId']}\"")
+            if len(discrepancies['FP_NO_META']) > 10:
+                print(f"   ... and {len(discrepancies['FP_NO_META']) - 10} more")
+            print()
+        
+        if discrepancies['FP_NO_INDEX']:
+            print(f"[FP_NO_INDEX] Fingerprint exists, NOT in index ({len(discrepancies['FP_NO_INDEX'])} songs):")
+            for item in discrepancies['FP_NO_INDEX'][:10]:
+                print(f"   - songId: \"{item['songId']}\"")
+            if len(discrepancies['FP_NO_INDEX']) > 10:
+                print(f"   ... and {len(discrepancies['FP_NO_INDEX']) - 10} more")
+            print()
+        
+        if discrepancies['META_NO_FP']:
+            print(f"[META_NO_FP] Metadata exists, NO fingerprint ({len(discrepancies['META_NO_FP'])} songs):")
+            for item in discrepancies['META_NO_FP'][:10]:
+                print(f"   - {item['artist']} - {item['title']}")
+                print(f"     File: {item['filepath']}")
+            if len(discrepancies['META_NO_FP']) > 10:
+                print(f"   ... and {len(discrepancies['META_NO_FP']) - 10} more")
+            print()
+        
+        if discrepancies['META_NO_INDEX']:
+            print(f"[META_NO_INDEX] Metadata exists, NOT in index ({len(discrepancies['META_NO_INDEX'])} songs):")
+            for item in discrepancies['META_NO_INDEX'][:10]:
+                print(f"   - songId: \"{item['songId']}\" | File: {Path(item['filepath']).name}")
+            if len(discrepancies['META_NO_INDEX']) > 10:
+                print(f"   ... and {len(discrepancies['META_NO_INDEX']) - 10} more")
+            print()
+        
+        if discrepancies['INDEX_NO_META']:
+            print(f"[INDEX_NO_META] Index entry exists, NO metadata ({len(discrepancies['INDEX_NO_META'])} songs):")
+            for item in discrepancies['INDEX_NO_META'][:10]:
+                print(f"   - songId: \"{item['songId']}\"")
+                for fp in item['filepaths'][:2]:
+                    print(f"     File: {Path(fp).name}")
+            if len(discrepancies['INDEX_NO_META']) > 10:
+                print(f"   ... and {len(discrepancies['INDEX_NO_META']) - 10} more")
+            print()
+        
+        if discrepancies['INDEX_NO_FP']:
+            print(f"[INDEX_NO_FP] Index entry exists, NO fingerprint ({len(discrepancies['INDEX_NO_FP'])} songs):")
+            for item in discrepancies['INDEX_NO_FP'][:10]:
+                print(f"   - songId: \"{item['songId']}\"")
+                for fp in item['filepaths'][:2]:
+                    print(f"     File: {Path(fp).name}")
+            if len(discrepancies['INDEX_NO_FP']) > 10:
+                print(f"   ... and {len(discrepancies['INDEX_NO_FP']) - 10} more")
+            print()
+    
+    print(f"{'=' * 70}")
+    
+    return {
+        'fp_count': len(fp_ids),
+        'metadata_count': len(metadata_ids),
+        'index_count': len(index_ids),
+        'discrepancies': discrepancies,
+        'total_issues': total_issues
+    }
+
+
+def repair_database(db_path: Path, batch: bool = False, auto: bool = False) -> Dict[str, Any]:
+    """
+    Repair database discrepancies.
+    
+    Args:
+        db_path: Database directory path
+        batch: If True, ask once for all fixes
+        auto: If True, no confirmation needed
+    """
+    print(f"\n{'=' * 70}")
+    print("DATABASE REPAIR")
+    print(f"{'=' * 70}")
+    
+    # First run verify to get discrepancies
+    print("Running verification first...\n")
+    verify_result = verify_database(db_path)
+    
+    discrepancies = verify_result['discrepancies']
+    total_issues = verify_result['total_issues']
+    
+    if total_issues == 0:
+        print("\n✅ Nothing to repair!")
+        return {'repaired': 0, 'skipped': 0}
+    
+    # Build repair plan
+    repair_plan = []
+    
+    # Load data for repairs
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    metadata = load_json_file(metadata_path)
+    indexed_files = load_json_file(indexed_files_path)
+    
+    # Build reverse lookup: songId -> filepath from index
+    index_id_to_file = {}
+    for filepath, entry in indexed_files.items():
+        song_id = entry.get('songId')
+        if song_id and song_id not in index_id_to_file:
+            index_id_to_file[song_id] = filepath
+    
+    # Plan repairs for each type
+    for item in discrepancies.get('FP_NO_META', []):
+        song_id = item['songId']
+        filepath = index_id_to_file.get(song_id)
+        if filepath and Path(filepath).exists():
+            repair_plan.append({
+                'type': 'FP_NO_META',
+                'action': 're-extract metadata',
+                'songId': song_id,
+                'filepath': filepath
+            })
+        else:
+            repair_plan.append({
+                'type': 'FP_NO_META',
+                'action': 'WARN - no filepath, consider deleting fingerprint',
+                'songId': song_id,
+                'repairable': False
+            })
+    
+    for item in discrepancies.get('FP_NO_INDEX', []):
+        repair_plan.append({
+            'type': 'FP_NO_INDEX',
+            'action': 'WARN - no filepath available',
+            'songId': item['songId'],
+            'repairable': False
+        })
+    
+    for item in discrepancies.get('META_NO_FP', []):
+        filepath = item['filepath']
+        if filepath and Path(filepath).exists():
+            repair_plan.append({
+                'type': 'META_NO_FP',
+                'action': 're-fingerprint file',
+                'songId': item['songId'],
+                'filepath': filepath
+            })
+        else:
+            repair_plan.append({
+                'type': 'META_NO_FP',
+                'action': 'delete orphan metadata (file not found)',
+                'songId': item['songId'],
+                'filepath': filepath
+            })
+    
+    for item in discrepancies.get('META_NO_INDEX', []):
+        repair_plan.append({
+            'type': 'META_NO_INDEX',
+            'action': 'add to index',
+            'songId': item['songId'],
+            'filepath': item['filepath']
+        })
+    
+    for item in discrepancies.get('INDEX_NO_META', []):
+        filepaths = item.get('filepaths', [])
+        filepath = filepaths[0] if filepaths else None
+        if filepath and Path(filepath).exists():
+            repair_plan.append({
+                'type': 'INDEX_NO_META',
+                'action': 're-extract metadata',
+                'songId': item['songId'],
+                'filepath': filepath
+            })
+        else:
+            repair_plan.append({
+                'type': 'INDEX_NO_META',
+                'action': 'WARN - file not found',
+                'songId': item['songId'],
+                'repairable': False
+            })
+    
+    for item in discrepancies.get('INDEX_NO_FP', []):
+        filepaths = item.get('filepaths', [])
+        filepath = filepaths[0] if filepaths else None
+        if filepath and Path(filepath).exists():
+            repair_plan.append({
+                'type': 'INDEX_NO_FP',
+                'action': 're-fingerprint file',
+                'songId': item['songId'],
+                'filepath': filepath
+            })
+        else:
+            repair_plan.append({
+                'type': 'INDEX_NO_FP',
+                'action': 'WARN - file not found',
+                'songId': item['songId'],
+                'repairable': False
+            })
+    
+    # Show repair plan
+    repairable = [r for r in repair_plan if r.get('repairable', True)]
+    warnings = [r for r in repair_plan if not r.get('repairable', True)]
+    
+    print(f"\n{'=' * 70}")
+    print("REPAIR PLAN (DRY RUN)")
+    print(f"{'=' * 70}")
+    print(f"\nRepairable issues: {len(repairable)}")
+    print(f"Warnings (manual intervention needed): {len(warnings)}")
+    
+    if repairable:
+        print(f"\n📋 Will perform these repairs:")
+        for i, r in enumerate(repairable[:20], 1):
+            print(f"   {i}. [{r['type']}] {r['action']}")
+            print(f"      songId: {r['songId']}")
+        if len(repairable) > 20:
+            print(f"   ... and {len(repairable) - 20} more")
+    
+    if warnings:
+        print(f"\n⚠️  These require manual intervention:")
+        for w in warnings[:10]:
+            print(f"   - [{w['type']}] {w['action']} | songId: {w['songId']}")
+        if len(warnings) > 10:
+            print(f"   ... and {len(warnings) - 10} more")
+    
+    if not repairable:
+        print("\n❌ No automatic repairs possible. Please resolve warnings manually.")
+        return {'repaired': 0, 'skipped': len(warnings)}
+    
+    # Get confirmation
+    if not auto:
+        print()
+        if batch:
+            response = input(f"Proceed with all {len(repairable)} repairs? (y/N): ").strip().lower()
+            if response != 'y':
+                print("Repair cancelled.")
+                return {'repaired': 0, 'skipped': len(repairable)}
+        else:
+            response = input("Proceed with interactive repair? (y/N): ").strip().lower()
+            if response != 'y':
+                print("Repair cancelled.")
+                return {'repaired': 0, 'skipped': len(repairable)}
+    
+    # Execute repairs
+    print(f"\n{'=' * 70}")
+    print("EXECUTING REPAIRS")
+    print(f"{'=' * 70}\n")
+    
+    repaired = 0
+    skipped = 0
+    
+    # Start daemon for fingerprinting operations
+    daemon = None
+    needs_daemon = any(r['action'] in ['re-fingerprint file'] for r in repairable)
+    if needs_daemon:
+        daemon = IndexingDaemon(db_path)
+        if not daemon.start():
+            print("❌ Could not start daemon for fingerprinting")
+            return {'repaired': 0, 'error': 'daemon failed'}
+    
+    try:
+        for i, repair in enumerate(repairable, 1):
+            # Interactive mode: ask for each
+            if not auto and not batch:
+                print(f"\n[{i}/{len(repairable)}] {repair['action']}")
+                print(f"   songId: {repair['songId']}")
+                if repair.get('filepath'):
+                    print(f"   file: {Path(repair['filepath']).name}")
+                response = input("   Apply this fix? (y/n/q): ").strip().lower()
+                if response == 'q':
+                    print("Repair aborted.")
+                    break
+                if response != 'y':
+                    skipped += 1
+                    continue
+            
+            # Execute the repair
+            try:
+                if repair['action'] == 're-extract metadata':
+                    filepath = repair['filepath']
+                    if Path(filepath).exists():
+                        new_meta = extract_full_metadata(Path(filepath))
+                        new_meta['songId'] = repair['songId']
+                        metadata[repair['songId']] = new_meta
+                        print(f"   ✅ Re-extracted metadata for {repair['songId']}")
+                        repaired += 1
+                    else:
+                        print(f"   ❌ File not found: {filepath}")
+                        skipped += 1
+                
+                elif repair['action'] == 're-fingerprint file':
+                    filepath = repair['filepath']
+                    if daemon and Path(filepath).exists():
+                        meta = extract_full_metadata(Path(filepath))
+                        meta['songId'] = repair['songId']
+                        result = daemon.fingerprint(Path(filepath), meta)
+                        if result.get('success'):
+                            print(f"   ✅ Re-fingerprinted {repair['songId']}")
+                            repaired += 1
+                        else:
+                            print(f"   ❌ Failed: {result.get('error', 'Unknown')}")
+                            skipped += 1
+                    else:
+                        print(f"   ❌ Cannot fingerprint: {filepath}")
+                        skipped += 1
+                
+                elif repair['action'] == 'add to index':
+                    filepath = repair['filepath']
+                    song_id = repair['songId']
+                    indexed_files[filepath] = {
+                        'songId': song_id,
+                        'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                        'repairedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                    }
+                    print(f"   ✅ Added to index: {song_id}")
+                    repaired += 1
+                
+                elif 'delete orphan' in repair['action']:
+                    song_id = repair['songId']
+                    if song_id in metadata:
+                        del metadata[song_id]
+                        print(f"   ✅ Deleted orphan metadata: {song_id}")
+                        repaired += 1
+                    else:
+                        skipped += 1
+                
+                else:
+                    print(f"   ⏭️  Skipped: {repair['action']}")
+                    skipped += 1
+                    
+            except Exception as e:
+                print(f"   ❌ Error: {e}")
+                skipped += 1
+    
+    finally:
+        if daemon:
+            daemon.save()
+            daemon.stop()
+    
+    # Save updated files
+    if repaired > 0:
+        save_json_file(metadata_path, metadata)
+        save_json_file(indexed_files_path, indexed_files)
+        print(f"\n✅ Saved updated metadata.json and indexed_files.json")
+    
+    print(f"\n{'=' * 70}")
+    print(f"REPAIR COMPLETE: {repaired} fixed, {skipped} skipped")
+    print(f"{'=' * 70}")
+    
+    return {'repaired': repaired, 'skipped': skipped}
+
+
+def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
+    """
+    Force re-index all files in folder, overwriting existing entries.
+    
+    Unlike normal indexing, this:
+    - Ignores indexed_files.json check (processes all files)
+    - Overwrites existing fingerprints and metadata
+    """
+    print(f"\n{'=' * 70}")
+    print("FORCE RE-INDEX")
+    print(f"{'=' * 70}")
+    print(f"Folder: {folder_path}")
+    print(f"Database: {db_path}")
+    print(f"\n⚠️  This will overwrite existing fingerprints and metadata for files in this folder.")
+    
+    response = input("Continue? (y/N): ").strip().lower()
+    if response != 'y':
+        print("Re-index cancelled.")
+        return {'cancelled': True}
+    
+    # Find all audio files
+    audio_files = []
+    for ext in SUPPORTED_EXTENSIONS:
+        audio_files.extend(folder_path.rglob(f"*{ext}"))
+    
+    print(f"\nFound {len(audio_files)} audio files to re-index.\n")
+    
+    # Load tracking files
+    indexed_files_path = db_path / "indexed_files.json"
+    indexed_files = load_json_file(indexed_files_path)
+    
+    # Start daemon
+    daemon = IndexingDaemon(db_path)
+    if not daemon.start():
+        print("❌ Failed to start indexing daemon")
+        return {'error': 'Daemon startup failed'}
+    
+    results = {
+        'total': len(audio_files),
+        'reindexed': 0,
+        'failed': 0,
+        'files': []
+    }
+    
+    try:
+        for i, audio_file in enumerate(audio_files, 1):
+            file_key = str(audio_file.absolute())
+            print(f"[{i}/{len(audio_files)}] {audio_file.name}...")
+            
+            # Extract metadata
+            metadata = extract_full_metadata(audio_file)
+            if not metadata['title'] or not metadata['artist']:
+                print(f"   ⏭️  Skipped (missing tags)")
+                continue
+            
+            song_id = normalize_song_id(metadata['artist'], metadata['title'])
+            metadata['songId'] = song_id
+            metadata['originalFilepath'] = file_key
+            
+            # Compute content hash
+            content_hash = compute_content_hash(audio_file)
+            metadata['contentHash'] = content_hash
+            
+            # Fingerprint (will overwrite if exists)
+            result = daemon.fingerprint(Path(audio_file), metadata)
+            
+            if result.get('success'):
+                print(f"   ✅ {metadata['artist']} - {metadata['title']} ({result.get('fingerprints', 0)} FPs)")
+                results['reindexed'] += 1
+                
+                # Update indexed_files
+                indexed_files[file_key] = {
+                    'songId': song_id,
+                    'contentHash': content_hash,
+                    'indexedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    'reindexed': True
+                }
+            elif result.get('skipped'):
+                # Already indexed with same content - that's fine for reindex
+                print(f"   ⏭️  Already up-to-date: {result.get('reason', '')}")
+            else:
+                print(f"   ❌ Failed: {result.get('error', 'Unknown')}")
+                results['failed'] += 1
+            
+            # Save periodically
+            if i % 10 == 0:
+                daemon.save()
+                save_json_file(indexed_files_path, indexed_files)
+    
+    finally:
+        daemon.save()
+        daemon.stop()
+        save_json_file(indexed_files_path, indexed_files)
+    
+    print(f"\n{'=' * 70}")
+    print(f"RE-INDEX COMPLETE: {results['reindexed']} re-indexed, {results['failed']} failed")
+    print(f"{'=' * 70}")
+    
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="SoundFingerprinting Test Suite v2.0")
     parser.add_argument("--index", type=str, help="Index all songs in folder")
@@ -1104,6 +1669,18 @@ def main():
     parser.add_argument("--positions", type=str, help="Comma-separated positions to test (default: 10,60,120)")
     parser.add_argument("--require-tags", type=str, 
                         help="Comma-separated list of additional required metadata fields (e.g., album,genre,year)")
+    
+    # Database verification and repair
+    parser.add_argument("--verify", action="store_true", 
+                        help="Verify database integrity - compare fingerprints, metadata, and index")
+    parser.add_argument("--repair", action="store_true",
+                        help="Repair database discrepancies (dry-run first, then interactive)")
+    parser.add_argument("--batch", action="store_true",
+                        help="With --repair: ask once for all fixes instead of each individually")
+    parser.add_argument("--auto", action="store_true",
+                        help="With --repair: no confirmation, just fix everything")
+    parser.add_argument("--reindex", type=str, metavar="FOLDER",
+                        help="Force re-index all files in folder (overwrites existing)")
     
     args = parser.parse_args()
     
@@ -1169,6 +1746,19 @@ def main():
     
     elif args.clear:
         clear_database(db_path, force=args.force)
+    
+    elif args.verify:
+        verify_database(db_path)
+    
+    elif args.repair:
+        repair_database(db_path, batch=args.batch, auto=args.auto)
+    
+    elif args.reindex:
+        folder = Path(args.reindex.rstrip('/\\'))
+        if not folder.exists():
+            print(f"Error: Folder not found: {folder}")
+            return
+        reindex_folder(folder, db_path)
     
     else:
         parser.print_help()

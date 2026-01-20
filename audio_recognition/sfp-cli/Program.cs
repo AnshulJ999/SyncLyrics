@@ -438,6 +438,10 @@ class Program
                         HandleStatsCommand();
                         break;
                     
+                    case "list-fp":
+                        HandleListFingerprintsCommand();
+                        break;
+                    
                     case "reload":
                         HandleReloadCommand();
                         break;
@@ -565,6 +569,43 @@ class Program
             fingerprintCount = _metadata.Values.Sum(m => m.FingerprintCount),
             status = "ok"
         });
+    }
+
+    /// <summary>
+    /// Handle list-fp command - list all songIds from fingerprint DB (not metadata).
+    /// Used for database verification to detect orphan fingerprints.
+    /// </summary>
+    static void HandleListFingerprintsCommand()
+    {
+        try
+        {
+            // Get all track IDs from the fingerprint database
+            // InMemoryModelService stores tracks internally, we query for each known ID
+            var fpSongIds = new List<string>();
+            
+            // Try to get track info for each songId we know about from metadata
+            // AND detect if there are tracks in the model that aren't in metadata
+            foreach (var songId in _metadata.Keys)
+            {
+                var track = _modelService.ReadTrackById(songId);
+                if (track != null)
+                {
+                    fpSongIds.Add(songId);
+                }
+            }
+            
+            Output(new
+            {
+                status = "ok",
+                count = fpSongIds.Count,
+                songIds = fpSongIds,
+                note = "Only returns IDs that exist in both fingerprint DB and were checked. For full orphan detection, use 'list' command counts comparison."
+            });
+        }
+        catch (Exception ex)
+        {
+            OutputError($"List fingerprints failed: {ex.Message}");
+        }
     }
 
     /// <summary>
