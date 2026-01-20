@@ -480,20 +480,12 @@ class LocalRecognizer:
         return self._run_cli_command_sync("stats")
     
     def _save_debug_match(self, result: dict, selection_reason: str = "") -> None:
-        """Save last match response to cache for debugging."""
-        try:
-            cache_dir = Path("cache")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            match_path = cache_dir / "last_local_match.json"
-            
-            # Include selection reason for multi-match debugging
-            debug_data = {
-                "selection_reason": selection_reason,
-                "result": result
-            }
-            
-            with open(match_path, 'w', encoding='utf-8') as f:
-                json.dump(debug_data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logger.debug(f"Failed to save debug match: {e}")
+        """Save match to history for debugging (keeps last 6 matches)."""
+        from .debug_utils import save_match_to_history
+        
+        save_match_to_history(
+            provider="local",
+            result=result,
+            extra_data={"selection_reason": selection_reason}
+        )
 

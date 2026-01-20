@@ -246,19 +246,19 @@ class ShazamRecognizer:
         if self._local:
             await self._local.prewarm_daemon()
     
-    def _save_debug_audio(self, wav_bytes: bytes) -> None:
-        """Save last recognition audio to cache for debugging."""
-        try:
-            cache_dir = Path("cache")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            audio_path = cache_dir / "last_recognition_audio.wav"
-            with open(audio_path, 'wb') as f:
-                f.write(wav_bytes)
-            
-            # Verify WAV header sample rate matches expected
-            self._verify_wav_header(wav_bytes)
-        except Exception as e:
-            logger.debug(f"Failed to save debug audio: {e}")
+    def _save_debug_audio(self, wav_bytes: bytes, is_buffered: bool = False) -> None:
+        """Save audio to cache for debugging.
+        
+        Args:
+            wav_bytes: WAV audio data to save
+            is_buffered: If True, this is buffered audio (longer duration)
+        """
+        from .debug_utils import save_debug_audio
+        
+        save_debug_audio(wav_bytes, is_buffered)
+        
+        # Also verify WAV header
+        self._verify_wav_header(wav_bytes)
     
     def _verify_wav_header(self, wav_bytes: bytes) -> None:
         """Verify WAV header sample rate is correct."""
@@ -274,15 +274,10 @@ class ShazamRecognizer:
             logger.debug(f"Failed to verify WAV header: {e}")
     
     def _save_debug_match(self, provider: str, result: dict) -> None:
-        """Save last match response to cache for debugging."""
-        try:
-            cache_dir = Path("cache")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            match_path = cache_dir / f"last_{provider}_match.json"
-            with open(match_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logger.debug(f"Failed to save debug match: {e}")
+        """Save match to history for debugging (keeps last 6 matches)."""
+        from .debug_utils import save_match_to_history
+        
+        save_match_to_history(provider=provider, result=result)
     
     async def recognize(self, audio: AudioChunk, buffer_config: Optional[Dict[str, Any]] = None) -> Optional[RecognitionResult]:
         """
@@ -346,8 +341,12 @@ class ShazamRecognizer:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(shazam_audio)
             
-            # Save last recognition audio to cache for debugging
-            self._save_debug_audio(wav_bytes)
+            # Save debug audio - prefer buffered audio for longer duration if available
+            if buffered_audio:
+                buffered_wav_bytes = self._convert_to_wav(buffered_audio)
+                self._save_debug_audio(buffered_wav_bytes, is_buffered=True)
+            else:
+                self._save_debug_audio(wav_bytes, is_buffered=False)
             
             logger.debug(f"Sending to ShazamIO ({len(wav_bytes) / 1024:.1f} KB)...")
             
