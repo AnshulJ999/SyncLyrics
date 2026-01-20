@@ -465,6 +465,23 @@ LOCAL_FINGERPRINT = {
     "cli_path": Path(os.getenv("SFP_CLI_PATH", str(ROOT_DIR / "audio_recognition" / "sfp-cli"))),
 }
 
+# Audio Buffer (Rolling buffer for improved recognition accuracy)
+# Accumulates multiple capture cycles to send longer audio to recognizers
+AUDIO_BUFFER = {
+    # Maximum number of capture cycles to buffer (buffer_size = max_cycles × capture_duration)
+    # 3 cycles × 6s capture = 18s max buffer
+    "max_cycles": _safe_int(os.getenv("AUDIO_BUFFER_MAX_CYCLES") or conf("audio_buffer.max_cycles"), 3),
+    # Number of consecutive silence cycles before clearing buffer
+    # 1 = Clear immediately on first silence (non-continuous audio invalidates buffer)
+    "silence_clear_cycles": _safe_int(os.getenv("AUDIO_BUFFER_SILENCE_CLEAR_CYCLES") or conf("audio_buffer.silence_clear_cycles"), 1),
+    # Enable buffer for Local FP (default: True - main use case)
+    "local_fp_enabled": _safe_bool(os.getenv("LOCAL_FP_BUFFER_ENABLED") or conf("audio_buffer.local_fp_enabled"), True),
+    # Enable buffer for Shazam (default: False - opt-in)
+    "shazam_enabled": _safe_bool(os.getenv("SHAZAM_BUFFER_ENABLED") or conf("audio_buffer.shazam_enabled"), False),
+    # Enable buffer for ACRCloud (default: False - opt-in)
+    "acrcloud_enabled": _safe_bool(os.getenv("ACRCLOUD_BUFFER_ENABLED") or conf("audio_buffer.acrcloud_enabled"), False),
+}
+
 # Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})

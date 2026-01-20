@@ -362,8 +362,25 @@ class LocalRecognizer:
             
             # Extract best match from multi-match response format
             # New format: {"matched": true, "bestMatch": {...}, "matches": [...]}
-            # Fallback to result itself for backward compatibility
-            best = result.get("bestMatch", result)
+            matches = result.get("matches", [])
+            
+            # Use multi-match position verification if we have multiple matches
+            if len(matches) > 1:
+                # Import select_best_match helper
+                from .audio_buffer import select_best_match, PositionTracker
+                
+                # Get expected position from position tracker (if available)
+                # The tracker is managed by the engine and passed via class attribute
+                expected_position = None
+                if hasattr(self, '_position_tracker') and self._position_tracker:
+                    expected_position = self._position_tracker.get_expected_position()
+                
+                best, selection_reason = select_best_match(matches, expected_position)
+                logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
+            else:
+                # Single match or backward compatibility
+                best = result.get("bestMatch", result)
+                selection_reason = "single match"
             
             # Log confidence for debugging (engine handles threshold for acceptance)
             confidence = best.get("confidence", 0)
@@ -382,13 +399,19 @@ class LocalRecognizer:
                 # for low confidence matches via Reaper validation or multi-match
             
             # Build RecognitionResult from best match
-            offset = best.get("trackMatchStartsAt", 0)
+            track_offset = best.get("trackMatchStartsAt", 0)
+            
+            # CRITICAL: Adjust capture_start_time for buffered audio
+            # queryMatchStartsAt tells us where in OUR QUERY the match was found
+            # This allows correct latency compensation when using rolling buffer
+            query_match_offset = best.get("queryMatchStartsAt", 0)
+            adjusted_capture_start = audio.capture_start_time + query_match_offset
             
             recognition = RecognitionResult(
                 title=best.get("title", "Unknown"),
                 artist=best.get("artist", "Unknown"),
-                offset=float(offset),
-                capture_start_time=audio.capture_start_time,
+                offset=float(track_offset),
+                capture_start_time=adjusted_capture_start,  # Adjusted for buffer
                 recognition_time=recognition_time,
                 confidence=confidence,
                 time_skew=0.0,
@@ -409,9 +432,13 @@ class LocalRecognizer:
             latency = recognition.get_latency()
             current_pos = recognition.get_current_position()
             
+            # Update position tracker for next recognition
+            if hasattr(self, '_position_tracker') and self._position_tracker:
+                self._position_tracker.update(current_pos, best.get("songId", ""))
+            
             logger.info(
                 f"Local: {recognition.artist} - {recognition.title} | "
-                f"Offset: {offset:.1f}s | Latency: {latency:.1f}s | "
+                f"Offset: {track_offset:.1f}s | QueryOffset: {query_match_offset:.1f}s | "
                 f"Current: {current_pos:.1f}s | Conf: {confidence:.2f}"
             )
             

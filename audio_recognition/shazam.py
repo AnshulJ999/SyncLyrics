@@ -12,7 +12,7 @@ import time
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import numpy as np
 
@@ -205,6 +205,16 @@ class ShazamRecognizer:
         """Check if ShazamIO is available."""
         return Shazam is not None
     
+    def set_position_tracker(self, tracker) -> None:
+        """
+        Set position tracker for multi-match verification.
+        
+        The tracker is passed to LocalRecognizer for selecting the best match
+        when multiple candidates are returned from SFP.
+        """
+        if self._local:
+            self._local._position_tracker = tracker
+    
     async def close(self):
         """Close the Shazam client and cleanup resources (aiohttp sessions)."""
         if self._shazam:
@@ -274,12 +284,17 @@ class ShazamRecognizer:
         except Exception as e:
             logger.debug(f"Failed to save debug match: {e}")
     
-    async def recognize(self, audio: AudioChunk) -> Optional[RecognitionResult]:
+    async def recognize(self, audio: AudioChunk, buffer_config: Optional[Dict[str, Any]] = None) -> Optional[RecognitionResult]:
         """
         Recognize a song from an audio chunk.
         
         Args:
-            audio: AudioChunk from capture
+            audio: AudioChunk from capture (may be combined buffer or single capture)
+            buffer_config: Optional buffer configuration dict with:
+                - local_fp: bool - whether to use buffered audio for Local FP
+                - shazam: bool - whether to use buffered audio for Shazam
+                - acrcloud: bool - whether to use buffered audio for ACRCloud
+                - single_audio: AudioChunk - original single capture for non-buffered services
             
         Returns:
             RecognitionResult with latency compensation, or None if no match

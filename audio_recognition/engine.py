@@ -19,6 +19,7 @@ from system_utils.helpers import _normalize_track_id
 from .capture import AudioCaptureManager
 from .shazam import ShazamRecognizer, RecognitionResult
 from .buffer import FrontendAudioQueue
+from .audio_buffer import AudioBuffer
 
 logger = get_logger(__name__)
 
@@ -135,6 +136,15 @@ class RecognitionEngine:
         self._pending_song: Optional[RecognitionResult] = None
         self._pending_match_count: int = 0
         self._pending_fail_count: int = 0  # For timeout (clear pending after N fails)
+        
+        # Rolling audio buffer for improved recognition accuracy
+        # Accumulates multiple capture cycles to provide longer audio samples
+        from config import AUDIO_BUFFER
+        self._audio_buffer = AudioBuffer(max_cycles=AUDIO_BUFFER["max_cycles"])
+        self._audio_buffer_config = AUDIO_BUFFER  # Store config for checking enable flags
+        
+        # Connect position tracker to recognizer for multi-match verification
+        self.recognizer.set_position_tracker(self._audio_buffer.position_tracker)
         
     @property
     def state(self) -> EngineState:
@@ -543,11 +553,43 @@ class RecognitionEngine:
         
         if audio.is_silent():
             logger.debug("Audio is silent, skipping recognition")
+            # Clear buffer on silence (non-continuous audio invalidates buffer)
+            silence_threshold = self._audio_buffer_config["silence_clear_cycles"]
+            self._audio_buffer.record_silence(silence_threshold)
             return None
         
-        # Recognize
+        # Add audio to rolling buffer for improved accuracy
+        self._audio_buffer.add(audio)
+        
+        # Determine which audio to use based on recognizer and buffer config
+        # Default to single capture; use buffer for enabled services
+        audio_for_recognition = audio
+        use_buffer_for_local = self._audio_buffer_config.get("local_fp_enabled", True)
+        use_buffer_for_shazam = self._audio_buffer_config.get("shazam_enabled", False)
+        use_buffer_for_acrcloud = self._audio_buffer_config.get("acrcloud_enabled", False)
+        
+        # If any buffering is enabled, get combined audio
+        if use_buffer_for_local or use_buffer_for_shazam or use_buffer_for_acrcloud:
+            combined = self._audio_buffer.get_combined()
+            if combined is not None:
+                audio_for_recognition = combined
+                logger.debug(
+                    f"Using buffered audio: {self._audio_buffer.cycle_count} cycles, "
+                    f"{audio_for_recognition.duration:.1f}s"
+                )
+        
+        # Recognize - pass both single and combined audio
+        # Recognizer decides which to use based on its own buffer config
         self._set_state(EngineState.RECOGNIZING)
-        result = await self.recognizer.recognize(audio)
+        result = await self.recognizer.recognize(
+            audio_for_recognition,
+            buffer_config={
+                "local_fp": use_buffer_for_local,
+                "shazam": use_buffer_for_shazam,
+                "acrcloud": use_buffer_for_acrcloud,
+                "single_audio": audio,  # Original single capture for services not using buffer
+            }
+        )
         
         # Check if we're stopping - don't process result if shutdown in progress
         if self._stop_requested:
@@ -860,6 +902,9 @@ class RecognitionEngine:
         # Clear previous enrichment (will re-enrich below)
         self._enriched_metadata = None
         self._enrichment_attempted = False  # Allow enrichment for new song
+        
+        # Clear audio buffer on song change (old audio is from wrong song)
+        self._audio_buffer.on_song_change(result.track_id or "")
         
         # Call song change callback
         if self.on_song_change:
