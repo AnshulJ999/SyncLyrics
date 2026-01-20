@@ -300,8 +300,9 @@ class ACRCloudRecognizer:
         }
     
     def _save_debug_match(self, result: dict) -> None:
-        """Save match to history for debugging (keeps last 6 matches)."""
-        from .debug_utils import save_match_to_history
+        """Save match to both history file and single match file."""
+        from .debug_utils import save_match_to_history, save_single_match
         
         save_match_to_history(provider="acrcloud", result=result)
+        save_single_match(provider="acrcloud", result=result)
 

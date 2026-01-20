@@ -502,12 +502,14 @@ class LocalRecognizer:
         return self._run_cli_command_sync("stats")
     
     def _save_debug_match(self, result: dict, selection_reason: str = "") -> None:
-        """Save match to history for debugging (keeps last 6 matches)."""
-        from .debug_utils import save_match_to_history
+        """Save match to both history file and single match file."""
+        from .debug_utils import save_match_to_history, save_single_match
         
-        save_match_to_history(
-            provider="local",
-            result=result,
-            extra_data={"selection_reason": selection_reason}
-        )
+        extra_data = {"selection_reason": selection_reason}
+        
+        # Save to history (keeps last 6 matches)
+        save_match_to_history(provider="local", result=result, extra_data=extra_data)
+        
+        # Also save to single match file (last_local_match.json)
+        save_single_match(provider="local", result=result, extra_data=extra_data)
 

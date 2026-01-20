@@ -274,10 +274,11 @@ class ShazamRecognizer:
             logger.debug(f"Failed to verify WAV header: {e}")
     
     def _save_debug_match(self, provider: str, result: dict) -> None:
-        """Save match to history for debugging (keeps last 6 matches)."""
-        from .debug_utils import save_match_to_history
+        """Save match to both history file and single match file."""
+        from .debug_utils import save_match_to_history, save_single_match
         
         save_match_to_history(provider=provider, result=result)
+        save_single_match(provider=provider, result=result)
     
     async def recognize(self, audio: AudioChunk, buffer_config: Optional[Dict[str, Any]] = None) -> Optional[RecognitionResult]:
         """
@@ -325,16 +326,16 @@ class ShazamRecognizer:
             return None
         
         # Save debug audio EARLY - before any recognition, so we always capture it
-        # Prefer buffered audio for longer duration if available
+        # Always save single capture, optionally also save buffered version
         try:
+            single_wav_bytes = self._convert_to_wav(audio)
+            self._save_debug_audio(single_wav_bytes, is_buffered=False)  # last_recognition_audio.wav
+            
             if buffered_audio:
                 buffered_wav_bytes = self._convert_to_wav(buffered_audio)
-                self._save_debug_audio(buffered_wav_bytes, is_buffered=True)
-            else:
-                single_wav_bytes = self._convert_to_wav(audio)
-                self._save_debug_audio(single_wav_bytes, is_buffered=False)
+                self._save_debug_audio(buffered_wav_bytes, is_buffered=True)  # last_recognition_audio_buffer.wav
         except Exception as e:
-            logger.debug(f"Failed to save debug audio early: {e}")
+            logger.debug(f"Failed to save debug audio: {e}")
         
         # 1. Try LOCAL FINGERPRINT FIRST (instant, offline, zero cost)
         if self._local and self._local.is_available():
