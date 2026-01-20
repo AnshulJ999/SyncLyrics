@@ -28,8 +28,8 @@ logger = get_logger(__name__)
 
 # Match quality thresholds for rejecting suspicious Shazam matches
 # If exceeded, the match is rejected and ACRCloud fallback is attempted
-TIMESKEW_REJECT_THRESHOLD = 0.01   # Reject if abs(timeskew) > 1%
-FREQSKEW_REJECT_THRESHOLD = 0.012   # Reject if abs(frequencyskew) > 1%
+TIMESKEW_REJECT_THRESHOLD = 0.019   # Reject if abs(timeskew) > 1%
+FREQSKEW_REJECT_THRESHOLD = 0.019   # Reject if abs(frequencyskew) > 1%
 
 # Audio resampling flag - ShazamIO handles sample rates internally (downsamples to 16kHz)
 # Set to True only if you experience recognition issues with 48kHz audio
