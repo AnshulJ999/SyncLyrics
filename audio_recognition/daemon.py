@@ -288,10 +288,16 @@ class DaemonManager:
         Returns:
             Response dict or None on error
         """
-        # Ensure daemon is running
+        # Fail fast if daemon not ready - let caller fall through to Shazam/ACRCloud
+        # Prewarm will complete in background, subsequent queries will use daemon
         if not self.is_ready:
-            if not await self._ensure_daemon():
-                return None
+            return None
+        
+        # NOTE: Previous blocking behavior commented out for reference
+        # This would wait for daemon startup, blocking recognition for ~23 seconds
+        # if not self.is_ready:
+        #     if not await self._ensure_daemon():
+        #         return None
         
         # Lock ensures only one command/response transaction at a time
         async with self._io_lock:
