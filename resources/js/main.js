@@ -414,10 +414,12 @@ async function updateLoop() {
         setLastCheckTime(Date.now());
 
         // Fix 4.1: Update audio source button with current track source
-        if (trackInfo && trackInfo.source) {
+        // NOTE: When audio_recognition is active, audioSource.js handles the source button
+        // via polling - it has fresher recognition_provider data than trackInfo
+        if (trackInfo && trackInfo.source && trackInfo.source !== 'audio_recognition') {
             const sourceBtn = document.getElementById('source-name');
             if (sourceBtn) {
-                // Special handling for audio_recognition - show actual provider (Shazam or ACRCloud)
+                // DEAD CODE (keep it for reference) - Special handling for audio_recognition - show actual provider (Shazam or ACRCloud)
                 if (trackInfo.source === 'audio_recognition') {
                     const provider = trackInfo.recognition_provider;
                     if (provider === 'acrcloud') {
