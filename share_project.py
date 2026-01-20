@@ -25,6 +25,8 @@ SKIP_FOLDERS = {
     'env',
     '.git',
     '.idea',
+    'resources/spotify-browser',
+    'spotify-browser',
     'AI Docs',
     '/AI Docs',
     '.vscode',
