@@ -459,8 +459,10 @@ LOCAL_FINGERPRINT = {
     "enabled": os.getenv("LOCAL_FP_ENABLED", "").lower() == "true" or _safe_bool(conf("local_fingerprint.enabled"), False),
     # Database path (fingerprints + metadata)
     "db_path": Path(os.getenv("SFP_DB_PATH", str(DATA_DIR / "local_fingerprint_database"))),
-    # Minimum confidence threshold (0.0-1.0)
+    # Minimum confidence for instant acceptance (high trust)
     "min_confidence": _safe_float(os.getenv("LOCAL_FP_MIN_CONFIDENCE") or conf("local_fingerprint.min_confidence"), 0.5),
+    # Absolute floor - matches below this are rejected outright (garbage/noise)
+    "reject_threshold": _safe_float(os.getenv("LOCAL_FP_REJECT_THRESHOLD") or conf("local_fingerprint.reject_threshold"), 0.26),
     # CLI path (relative to ROOT_DIR or absolute)
     "cli_path": Path(os.getenv("SFP_CLI_PATH", str(ROOT_DIR / "audio_recognition" / "sfp-cli"))),
 }

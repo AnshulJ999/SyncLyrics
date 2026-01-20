@@ -413,18 +413,33 @@ class LocalRecognizer:
                 best = result.get("bestMatch", result)
                 selection_reason = "single match"
             
-            # Log confidence for debugging (engine handles threshold for acceptance)
+            # Check confidence thresholds
             confidence = best.get("confidence", 0)
-            if confidence < self._min_confidence:
-                # Log with song details for easier debugging
-                artist = best.get("artist", "Unknown")
-                title = best.get("title", "Unknown")
-                offset = best.get("trackMatchStartsAt", 0)
+            artist = best.get("artist", "Unknown")
+            title = best.get("title", "Unknown")
+            offset = best.get("trackMatchStartsAt", 0)
+            
+            # Get reject threshold from config (absolute floor - garbage below this)
+            from config import LOCAL_FINGERPRINT
+            reject_threshold = LOCAL_FINGERPRINT.get("reject_threshold")
+            
+            # Outright reject matches below the absolute floor
+            if confidence < reject_threshold:
                 logger.debug(
-                    f"Local: Match below threshold | "
+                    f"Local: REJECTED (below floor) | "
                     f"{artist} - {title} | "
                     f"Offset: {offset:.1f}s | "
-                    f"Conf: {confidence:.2f} < {self._min_confidence}"
+                    f"Conf: {confidence:.2f} < {reject_threshold}"
+                )
+                return None  # Don't even send to engine
+            
+            # Log matches below high-confidence threshold (will go to verification)
+            if confidence < self._min_confidence:
+                logger.debug(
+                    f"Local: Below high-conf threshold | "
+                    f"{artist} - {title} | "
+                    f"Offset: {offset:.1f}s | "
+                    f"Conf: {confidence:.2f} < {self._min_confidence} (needs verification)"
                 )
                 # NOTE: We still return the match - engine handles validation/verification
                 # for low confidence matches via Reaper validation or multi-match
