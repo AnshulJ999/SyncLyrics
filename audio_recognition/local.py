@@ -252,9 +252,19 @@ class LocalRecognizer:
             daemon_result = await self._query_via_daemon(wav_path, duration, offset)
             if daemon_result is not None:
                 return daemon_result
-            # Daemon unavailable or failed, fall through to subprocess
+            
+            # Check if daemon exists but isn't ready yet (still loading)
+            # In this case, fail fast instead of blocking with subprocess
+            daemon = self._get_daemon()
+            if daemon and not daemon.in_fallback_mode:
+                # Daemon is loading, fail fast - let recognition fall through to Shazam/ACRCloud
+                return {"error": "Daemon loading, please wait", "matched": False}
+            
+            # Only fall through to subprocess if daemon is in fallback mode
+            # (i.e., daemon failed permanently and subprocess is our only option)
         
-        # Subprocess fallback (slow path) - run in thread to avoid blocking
+        # Subprocess fallback (slow path) - only used when daemon has failed permanently
+        # Run in thread to avoid blocking event loop
         return await asyncio.get_running_loop().run_in_executor(
             None, self._run_cli_command_sync, command, *args
         )
