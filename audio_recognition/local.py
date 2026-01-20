@@ -442,6 +442,9 @@ class LocalRecognizer:
                 f"Current: {current_pos:.1f}s | Conf: {confidence:.2f}"
             )
             
+            # Save debug match to cache
+            self._save_debug_match(result, selection_reason)
+            
             return recognition
             
         except Exception as e:
@@ -451,3 +454,22 @@ class LocalRecognizer:
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
         return self._run_cli_command_sync("stats")
+    
+    def _save_debug_match(self, result: dict, selection_reason: str = "") -> None:
+        """Save last match response to cache for debugging."""
+        try:
+            cache_dir = Path("cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            match_path = cache_dir / "last_local_match.json"
+            
+            # Include selection reason for multi-match debugging
+            debug_data = {
+                "selection_reason": selection_reason,
+                "result": result
+            }
+            
+            with open(match_path, 'w', encoding='utf-8') as f:
+                json.dump(debug_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"Failed to save debug match: {e}")
+

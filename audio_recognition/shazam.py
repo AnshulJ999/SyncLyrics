@@ -303,6 +303,19 @@ class ShazamRecognizer:
             logger.error("ShazamIO not available")
             return None
         
+        # Parse buffer config (with safe defaults)
+        buffer_config = buffer_config or {}
+        use_buffer_local = buffer_config.get("local_fp", False)
+        use_buffer_shazam = buffer_config.get("shazam", False)
+        use_buffer_acrcloud = buffer_config.get("acrcloud", False)
+        buffered_audio = buffer_config.get("buffered_audio")
+        
+        # Select audio for each service
+        # audio = single capture (latest 6s), buffered_audio = combined buffer (up to 18s)
+        local_audio = buffered_audio if use_buffer_local and buffered_audio else audio
+        shazam_audio = buffered_audio if use_buffer_shazam and buffered_audio else audio
+        acrcloud_audio = buffered_audio if use_buffer_acrcloud and buffered_audio else audio
+        
         # Get silence threshold from session config (allows runtime adjustment)
         try:
             from system_utils.session_config import get_effective_value
@@ -310,7 +323,7 @@ class ShazamRecognizer:
         except ImportError:
             silence_threshold = self.MIN_AUDIO_LEVEL
             
-        # Check for silence
+        # Check for silence (use single audio for silence check - most recent)
         max_amp = audio.get_max_amplitude()
         if max_amp < silence_threshold:
             logger.debug(f"Audio is silent (max amplitude: {max_amp}, threshold: {silence_threshold})")
@@ -319,7 +332,7 @@ class ShazamRecognizer:
         # 1. Try LOCAL FINGERPRINT FIRST (instant, offline, zero cost)
         if self._local and self._local.is_available():
             try:
-                local_result = await self._local.recognize(audio)
+                local_result = await self._local.recognize(local_audio)
                 if local_result:
                     logger.info(f"Local FP recognized match: {local_result.artist} - {local_result.title}")
                     self._no_match_count = 0
@@ -331,7 +344,7 @@ class ShazamRecognizer:
         # 2. Try ShazamIO (cloud)
         try:
             # Convert to WAV bytes
-            wav_bytes = self._convert_to_wav(audio)
+            wav_bytes = self._convert_to_wav(shazam_audio)
             
             # Save last recognition audio to cache for debugging
             self._save_debug_audio(wav_bytes)
@@ -354,7 +367,8 @@ class ShazamRecognizer:
                 # Try ACRCloud fallback if available
                 if self._acrcloud and self._acrcloud.is_available():
                     logger.info("Trying ACRCloud fallback...")
-                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    acrcloud_wav = self._convert_to_wav(acrcloud_audio)
+                    acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
                     if acrcloud_result:
                         self._no_match_count = 0  # Reset on ACRCloud success
                         return acrcloud_result
@@ -431,7 +445,8 @@ class ShazamRecognizer:
                 # Try ACRCloud fallback
                 if self._acrcloud and self._acrcloud.is_available():
                     logger.info("Trying ACRCloud fallback after skew rejection...")
-                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    acrcloud_wav = self._convert_to_wav(acrcloud_audio)
+                    acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
                     if acrcloud_result:
                         return acrcloud_result
                 return None
@@ -444,7 +459,8 @@ class ShazamRecognizer:
                 # Try ACRCloud fallback
                 if self._acrcloud and self._acrcloud.is_available():
                     logger.info("Trying ACRCloud fallback after skew rejection...")
-                    acrcloud_result = await self._acrcloud.recognize(audio, wav_bytes)
+                    acrcloud_wav = self._convert_to_wav(acrcloud_audio)
+                    acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
                     if acrcloud_result:
                         return acrcloud_result
                 return None

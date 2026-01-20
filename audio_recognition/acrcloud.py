@@ -206,6 +206,14 @@ class ACRCloudRecognizer:
             # Convert to seconds and adjust to capture START position
             offset = (offset_ms - sample_duration_ms) / 1000.0
             
+            # Position fix for buffered audio:
+            # sample_begin_time_offset_ms tells us WHERE in our query the match was found.
+            # This is critical for buffered audio (e.g., 18s) where the match might be
+            # in the middle of our query, not at the start.
+            # Adjust capture_start_time to reflect where the matched audio actually started.
+            sample_begin_seconds = sample_begin_ms / 1000.0
+            adjusted_capture_start = audio.capture_start_time + sample_begin_seconds
+            
             # External IDs
             external_ids = track.get('external_ids', {})
             isrc = external_ids.get('isrc')
@@ -236,7 +244,7 @@ class ACRCloudRecognizer:
                 title=title,
                 artist=artist,
                 offset=offset,
-                capture_start_time=audio.capture_start_time,
+                capture_start_time=adjusted_capture_start,  # Use adjusted time for buffered audio
                 recognition_time=recognition_time,
                 confidence=score / 100.0,
                 time_skew=0.0,

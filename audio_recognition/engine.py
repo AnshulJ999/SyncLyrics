@@ -561,33 +561,31 @@ class RecognitionEngine:
         # Add audio to rolling buffer for improved accuracy
         self._audio_buffer.add(audio)
         
-        # Determine which audio to use based on recognizer and buffer config
-        # Default to single capture; use buffer for enabled services
-        audio_for_recognition = audio
+        # Get buffer settings per service
         use_buffer_for_local = self._audio_buffer_config.get("local_fp_enabled", True)
         use_buffer_for_shazam = self._audio_buffer_config.get("shazam_enabled", False)
         use_buffer_for_acrcloud = self._audio_buffer_config.get("acrcloud_enabled", False)
         
-        # If any buffering is enabled, get combined audio
+        # Get combined buffer (if any service needs it)
+        buffered_audio = None
         if use_buffer_for_local or use_buffer_for_shazam or use_buffer_for_acrcloud:
-            combined = self._audio_buffer.get_combined()
-            if combined is not None:
-                audio_for_recognition = combined
+            buffered_audio = self._audio_buffer.get_combined()
+            if buffered_audio:
                 logger.debug(
-                    f"Using buffered audio: {self._audio_buffer.cycle_count} cycles, "
-                    f"{audio_for_recognition.duration:.1f}s"
+                    f"Buffer ready: {self._audio_buffer.cycle_count} cycles, "
+                    f"{buffered_audio.duration:.1f}s"
                 )
         
-        # Recognize - pass both single and combined audio
-        # Recognizer decides which to use based on its own buffer config
+        # Recognize - pass single audio as primary, buffered in config
+        # Each service decides which to use based on its buffer setting
         self._set_state(EngineState.RECOGNIZING)
         result = await self.recognizer.recognize(
-            audio_for_recognition,
+            audio,  # Always pass single capture (latest)
             buffer_config={
                 "local_fp": use_buffer_for_local,
                 "shazam": use_buffer_for_shazam,
                 "acrcloud": use_buffer_for_acrcloud,
-                "single_audio": audio,  # Original single capture for services not using buffer
+                "buffered_audio": buffered_audio,  # Combined buffer for services that need it
             }
         )
         
