@@ -482,6 +482,18 @@ AUDIO_BUFFER = {
     "acrcloud_enabled": _safe_bool(os.getenv("ACRCLOUD_BUFFER_ENABLED") or conf("audio_buffer.acrcloud_enabled"), False),
 }
 
+# Multi-Match Position Verification
+# When SFP returns multiple matches, use position tracking to select the correct one
+MULTI_MATCH = {
+    # Enable multi-match position verification (if False, just use highest confidence)
+    "enabled": _safe_bool(os.getenv("MULTI_MATCH_ENABLED") or conf("multi_match.enabled"), True),
+    # Position tolerance in seconds - matches within this range of expected position are accepted
+    "tolerance": _safe_float(os.getenv("MULTI_MATCH_TOLERANCE") or conf("multi_match.tolerance"), 20.0),
+    # Fall back to highest confidence if no position match found
+    # IMPORTANT: Must be True for song change detection to work!
+    "fallback_to_confidence": _safe_bool(os.getenv("MULTI_MATCH_FALLBACK") or conf("multi_match.fallback_to_confidence"), True),
+}
+
 # Helper functions
 def get_provider_config(name: str) -> dict:
     return PROVIDERS.get(name, {"enabled": False, "priority": 0})

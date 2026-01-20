@@ -29,12 +29,24 @@ logger = get_logger(__name__)
 # 0.26 is the minimum observed in testing - indicates confused/mixed audio
 BUFFER_CLEAR_MIN_CONFIDENCE = 0.26
 
-# Tolerance in seconds for multi-match position verification
-# If a match is within this range of expected position, prefer it
-MULTI_MATCH_POSITION_TOLERANCE = 20.0
+# Multi-match settings are now loaded from config.py (ENV-configurable)
+# Import here to avoid circular imports - config doesn't import audio_buffer
+def _get_multi_match_config():
+    """Lazy load multi-match config to avoid circular imports."""
+    from config import MULTI_MATCH
+    return MULTI_MATCH
 
-# If no match is within tolerance, fall back to highest confidence match
-MULTI_MATCH_FALLBACK_TO_CONFIDENCE = True
+def get_multi_match_enabled() -> bool:
+    """Check if multi-match position verification is enabled."""
+    return _get_multi_match_config().get("enabled", True)
+
+def get_multi_match_tolerance() -> float:
+    """Get position tolerance in seconds for multi-match verification."""
+    return _get_multi_match_config().get("tolerance", 20.0)
+
+def get_multi_match_fallback() -> bool:
+    """Check if confidence fallback is enabled when no position match found."""
+    return _get_multi_match_config().get("fallback_to_confidence", True)
 
 
 @dataclass
@@ -251,7 +263,7 @@ def select_best_match(
     expected_position: Optional[float],
     capture_start_time: float,
     recognition_time: float,
-    tolerance: float = MULTI_MATCH_POSITION_TOLERANCE
+    tolerance: Optional[float] = None  # Uses config if None
 ) -> Tuple[dict, str]:
     """
     Select the best match from multiple SFP results using position verification.
@@ -276,6 +288,10 @@ def select_best_match(
     
     if len(matches) == 1:
         return matches[0], "single match"
+    
+    # Use config values if not explicitly provided
+    if tolerance is None:
+        tolerance = get_multi_match_tolerance()
     
     # Sort by confidence (descending) as fallback
     sorted_by_confidence = sorted(matches, key=lambda m: m.get("confidence", 0), reverse=True)
@@ -307,7 +323,7 @@ def select_best_match(
         return best_match, f"position verified (deviation: {deviation:.1f}s)"
     
     # No matches within tolerance - calculate current positions for all matches for logging
-    if MULTI_MATCH_FALLBACK_TO_CONFIDENCE:
+    if get_multi_match_fallback():
         best = sorted_by_confidence[0]
         best_track_offset = best.get("trackMatchStartsAt", 0)
         best_query_offset = best.get("queryMatchStartsAt", 0)

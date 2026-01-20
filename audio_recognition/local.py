@@ -377,22 +377,30 @@ class LocalRecognizer:
             # Use multi-match position verification if we have multiple matches
             if len(matches) > 1:
                 # Import select_best_match helper
-                from .audio_buffer import select_best_match, PositionTracker
+                from .audio_buffer import select_best_match, PositionTracker, get_multi_match_enabled
                 
-                # Get expected position from position tracker (if available)
-                # The tracker is managed by the engine and passed via class attribute
-                expected_position = None
-                if hasattr(self, '_position_tracker') and self._position_tracker:
-                    expected_position = self._position_tracker.get_expected_position()
-                
-                # Pass timing info so we can calculate current_position for each match
-                best, selection_reason = select_best_match(
-                    matches, 
-                    expected_position,
-                    capture_start_time=audio.capture_start_time,
-                    recognition_time=recognition_time
-                )
-                logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
+                # Check if multi-match is enabled via config/ENV
+                if get_multi_match_enabled():
+                    # Get expected position from position tracker (if available)
+                    # The tracker is managed by the engine and passed via class attribute
+                    expected_position = None
+                    if hasattr(self, '_position_tracker') and self._position_tracker:
+                        expected_position = self._position_tracker.get_expected_position()
+                    
+                    # Pass timing info so we can calculate current_position for each match
+                    best, selection_reason = select_best_match(
+                        matches, 
+                        expected_position,
+                        capture_start_time=audio.capture_start_time,
+                        recognition_time=recognition_time
+                    )
+                    logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
+                else:
+                    # Multi-match disabled - just use highest confidence
+                    sorted_by_confidence = sorted(matches, key=lambda m: m.get("confidence", 0), reverse=True)
+                    best = sorted_by_confidence[0]
+                    selection_reason = "highest confidence (multi-match disabled)"
+                    logger.debug(f"Multi-match disabled: using highest confidence ({len(matches)} candidates)")
             else:
                 # Single match or backward compatibility
                 best = result.get("bestMatch", result)
