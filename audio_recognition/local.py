@@ -385,7 +385,13 @@ class LocalRecognizer:
                 if hasattr(self, '_position_tracker') and self._position_tracker:
                     expected_position = self._position_tracker.get_expected_position()
                 
-                best, selection_reason = select_best_match(matches, expected_position)
+                # Pass timing info so we can calculate current_position for each match
+                best, selection_reason = select_best_match(
+                    matches, 
+                    expected_position,
+                    capture_start_time=audio.capture_start_time,
+                    recognition_time=recognition_time
+                )
                 logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
             else:
                 # Single match or backward compatibility

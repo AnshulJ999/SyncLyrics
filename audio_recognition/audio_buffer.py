@@ -249,18 +249,27 @@ class AudioBuffer:
 def select_best_match(
     matches: List[dict],
     expected_position: Optional[float],
+    capture_start_time: float,
+    recognition_time: float,
     tolerance: float = MULTI_MATCH_POSITION_TOLERANCE
 ) -> Tuple[dict, str]:
     """
     Select the best match from multiple SFP results using position verification.
     
     Args:
-        matches: List of match dicts from SFP (each has trackMatchStartsAt, confidence)
+        matches: List of match dicts from SFP (each has trackMatchStartsAt, queryMatchStartsAt, confidence)
         expected_position: Expected song position based on tracking (or None if unknown)
+        capture_start_time: When the audio capture started (for calculating current position)
+        recognition_time: When recognition completed (for calculating current position)
         tolerance: Maximum acceptable deviation from expected position
         
     Returns:
         Tuple of (best_match_dict, selection_reason)
+        
+    Note:
+        We calculate CURRENT POSITION for each match, not just use raw trackMatchStartsAt.
+        Current position = trackMatchStartsAt + (recognition_time - adjusted_capture_start)
+        where adjusted_capture_start = capture_start_time + queryMatchStartsAt
     """
     if not matches:
         return {}, "no matches"
@@ -276,33 +285,52 @@ def select_best_match(
         return sorted_by_confidence[0], "highest confidence (no position tracking)"
     
     # Find matches within tolerance of expected position
+    # CRITICAL: Compare CURRENT POSITION (not raw offset) to expected position
     valid_matches = []
     for match in matches:
-        match_pos = match.get("trackMatchStartsAt", 0)
-        deviation = abs(match_pos - expected_position)
+        track_offset = match.get("trackMatchStartsAt", 0)
+        query_offset = match.get("queryMatchStartsAt", 0)
+        
+        # Calculate what current_position would be for THIS match
+        adjusted_capture_start = capture_start_time + query_offset
+        match_current_pos = track_offset + (recognition_time - adjusted_capture_start)
+        
+        deviation = abs(match_current_pos - expected_position)
         
         if deviation <= tolerance:
-            valid_matches.append((match, deviation))
+            valid_matches.append((match, deviation, match_current_pos))
     
     if valid_matches:
         # Sort by deviation (prefer closest to expected)
         valid_matches.sort(key=lambda x: x[1])
-        best_match, deviation = valid_matches[0]
+        best_match, deviation, match_pos = valid_matches[0]
         return best_match, f"position verified (deviation: {deviation:.1f}s)"
     
-    # No matches within tolerance
+    # No matches within tolerance - calculate current positions for all matches for logging
     if MULTI_MATCH_FALLBACK_TO_CONFIDENCE:
         best = sorted_by_confidence[0]
-        best_pos = best.get("trackMatchStartsAt", 0)
+        best_track_offset = best.get("trackMatchStartsAt", 0)
+        best_query_offset = best.get("queryMatchStartsAt", 0)
+        best_adjusted_start = capture_start_time + best_query_offset
+        best_current_pos = best_track_offset + (recognition_time - best_adjusted_start)
+        
         logger.warning(
             f"Multi-match: No position match within {tolerance}s | "
             f"Expected: {expected_position:.1f}s | "
-            f"Using confidence fallback: {best_pos:.1f}s"
+            f"Using confidence fallback: {best_current_pos:.1f}s (offset: {best_track_offset:.1f}s)"
         )
         return best, "confidence fallback (no position match)"
     
     # Return closest by position even if outside tolerance
-    all_by_deviation = [(m, abs(m.get("trackMatchStartsAt", 0) - expected_position)) for m in matches]
-    all_by_deviation.sort(key=lambda x: x[1])
-    best_match, deviation = all_by_deviation[0]
+    all_with_current_pos = []
+    for m in matches:
+        track_offset = m.get("trackMatchStartsAt", 0)
+        query_offset = m.get("queryMatchStartsAt", 0)
+        adjusted_start = capture_start_time + query_offset
+        current_pos = track_offset + (recognition_time - adjusted_start)
+        deviation = abs(current_pos - expected_position)
+        all_with_current_pos.append((m, deviation, current_pos))
+    
+    all_with_current_pos.sort(key=lambda x: x[1])
+    best_match, deviation, match_pos = all_with_current_pos[0]
     return best_match, f"closest position (deviation: {deviation:.1f}s, outside tolerance)"

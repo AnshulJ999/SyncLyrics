@@ -61,7 +61,7 @@ from version import VERSION
 # FIX: Only load .env if it exists (optimization)
 env_file = ROOT_DIR / '.env'
 if env_file.exists():
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
