@@ -324,6 +324,18 @@ class ShazamRecognizer:
             logger.debug(f"Audio is silent (max amplitude: {max_amp}, threshold: {silence_threshold})")
             return None
         
+        # Save debug audio EARLY - before any recognition, so we always capture it
+        # Prefer buffered audio for longer duration if available
+        try:
+            if buffered_audio:
+                buffered_wav_bytes = self._convert_to_wav(buffered_audio)
+                self._save_debug_audio(buffered_wav_bytes, is_buffered=True)
+            else:
+                single_wav_bytes = self._convert_to_wav(audio)
+                self._save_debug_audio(single_wav_bytes, is_buffered=False)
+        except Exception as e:
+            logger.debug(f"Failed to save debug audio early: {e}")
+        
         # 1. Try LOCAL FINGERPRINT FIRST (instant, offline, zero cost)
         if self._local and self._local.is_available():
             try:
@@ -341,12 +353,7 @@ class ShazamRecognizer:
             # Convert to WAV bytes
             wav_bytes = self._convert_to_wav(shazam_audio)
             
-            # Save debug audio - prefer buffered audio for longer duration if available
-            if buffered_audio:
-                buffered_wav_bytes = self._convert_to_wav(buffered_audio)
-                self._save_debug_audio(buffered_wav_bytes, is_buffered=True)
-            else:
-                self._save_debug_audio(wav_bytes, is_buffered=False)
+            # Note: Debug audio is saved earlier (before Local FP) so it always captures
             
             logger.debug(f"Sending to ShazamIO ({len(wav_bytes) / 1024:.1f} KB)...")
             

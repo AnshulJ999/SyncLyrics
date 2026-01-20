@@ -56,6 +56,7 @@ class PositionTracker:
     last_position: Optional[float] = None
     last_time: Optional[float] = None
     song_id: Optional[str] = None
+    needs_buffer_clear: bool = False  # Signal to engine to clear buffer
     
     def update(self, position: float, song_id: str) -> None:
         """Update tracker with new recognition result."""
@@ -81,6 +82,18 @@ class PositionTracker:
         self.last_position = None
         self.last_time = None
         self.song_id = None
+    
+    def signal_buffer_clear(self) -> None:
+        """Signal that the audio buffer should be cleared (used by local.py)."""
+        self.needs_buffer_clear = True
+        self.clear()  # Also clear position tracking
+    
+    def consume_buffer_clear_signal(self) -> bool:
+        """Check and consume the buffer clear signal (used by engine)."""
+        if self.needs_buffer_clear:
+            self.needs_buffer_clear = False
+            return True
+        return False
     
     def is_same_song(self, song_id: str) -> bool:
         """Check if we're still tracking the same song."""
@@ -284,45 +297,69 @@ def select_best_match(
         where adjusted_capture_start = capture_start_time + queryMatchStartsAt
     """
     if not matches:
-        return {}, "no matches"
+        return {}, "no matches", False
     
     if len(matches) == 1:
-        return matches[0], "single match"
+        return matches[0], "single match", False
     
     # Use config values if not explicitly provided
     if tolerance is None:
         tolerance = get_multi_match_tolerance()
     
-    # Sort by confidence (descending) as fallback
+    # Sort by confidence (descending) as fallback reference
     sorted_by_confidence = sorted(matches, key=lambda m: m.get("confidence", 0), reverse=True)
+    highest_conf_match = sorted_by_confidence[0]
+    highest_conf_song = f"{highest_conf_match.get('artist', '?')} - {highest_conf_match.get('title', '?')}"
+    highest_conf_offset = highest_conf_match.get("trackMatchStartsAt", 0)
     
     # If no expected position, use highest confidence
     if expected_position is None:
-        return sorted_by_confidence[0], "highest confidence (no position tracking)"
+        return sorted_by_confidence[0], "highest confidence (no position tracking)", False
     
     # Find matches within tolerance of expected position
     # CRITICAL: Compare CURRENT POSITION (not raw offset) to expected position
     valid_matches = []
+    all_matches_with_pos = []  # For detailed logging
+    
     for match in matches:
         track_offset = match.get("trackMatchStartsAt", 0)
         query_offset = match.get("queryMatchStartsAt", 0)
+        song_id = f"{match.get('artist', '?')} - {match.get('title', '?')}"
+        conf = match.get("confidence", 0)
         
         # Calculate what current_position would be for THIS match
         adjusted_capture_start = capture_start_time + query_offset
         match_current_pos = track_offset + (recognition_time - adjusted_capture_start)
         
         deviation = abs(match_current_pos - expected_position)
+        all_matches_with_pos.append((match, deviation, match_current_pos, song_id, conf))
         
         if deviation <= tolerance:
-            valid_matches.append((match, deviation, match_current_pos))
+            valid_matches.append((match, deviation, match_current_pos, song_id, conf))
     
     if valid_matches:
         # Sort by deviation (prefer closest to expected)
         valid_matches.sort(key=lambda x: x[1])
-        best_match, deviation, match_pos = valid_matches[0]
-        return best_match, f"position verified (deviation: {deviation:.1f}s)"
+        best_match, deviation, match_pos, song_id, conf = valid_matches[0]
+        
+        # Check if position-verified choice is SAME as confidence fallback would be
+        same_as_fallback = (best_match.get("songId") == highest_conf_match.get("songId") and 
+                           abs(best_match.get("trackMatchStartsAt", 0) - highest_conf_offset) < 1.0)
+        
+        if same_as_fallback:
+            reason = f"position verified (deviation: {deviation:.1f}s) [same as fallback]"
+        else:
+            # Log the difference for analysis
+            logger.debug(
+                f"Multi-match DIFFERENT from fallback | "
+                f"Position picked: {song_id} @ {match_pos:.1f}s (dev: {deviation:.1f}s) | "
+                f"Fallback would be: {highest_conf_song} @ {highest_conf_offset:.1f}s"
+            )
+            reason = f"position verified (deviation: {deviation:.1f}s) [DIFF from fallback]"
+        
+        return best_match, reason, False
     
-    # No matches within tolerance - calculate current positions for all matches for logging
+    # No matches within tolerance - use confidence fallback
     if get_multi_match_fallback():
         best = sorted_by_confidence[0]
         best_track_offset = best.get("trackMatchStartsAt", 0)
@@ -330,23 +367,23 @@ def select_best_match(
         best_adjusted_start = capture_start_time + best_query_offset
         best_current_pos = best_track_offset + (recognition_time - best_adjusted_start)
         
+        # Log detailed info about what we considered
+        all_matches_with_pos.sort(key=lambda x: x[1])  # Sort by deviation
+        closest = all_matches_with_pos[0]
+        closest_song, closest_dev = closest[3], closest[1]
+        
         logger.warning(
             f"Multi-match: No position match within {tolerance}s | "
             f"Expected: {expected_position:.1f}s | "
-            f"Using confidence fallback: {best_current_pos:.1f}s (offset: {best_track_offset:.1f}s)"
+            f"Closest was: {closest_song} (dev: {closest_dev:.1f}s) | "
+            f"Using confidence fallback: {highest_conf_song} @ {best_current_pos:.1f}s"
         )
-        return best, "confidence fallback (no position match)"
+        
+        # Signal to clear buffer on confidence fallback (likely song change or seek)
+        return best, "confidence fallback (no position match)", True
     
     # Return closest by position even if outside tolerance
-    all_with_current_pos = []
-    for m in matches:
-        track_offset = m.get("trackMatchStartsAt", 0)
-        query_offset = m.get("queryMatchStartsAt", 0)
-        adjusted_start = capture_start_time + query_offset
-        current_pos = track_offset + (recognition_time - adjusted_start)
-        deviation = abs(current_pos - expected_position)
-        all_with_current_pos.append((m, deviation, current_pos))
-    
-    all_with_current_pos.sort(key=lambda x: x[1])
-    best_match, deviation, match_pos = all_with_current_pos[0]
-    return best_match, f"closest position (deviation: {deviation:.1f}s, outside tolerance)"
+    all_matches_with_pos.sort(key=lambda x: x[1])
+    best_match, deviation, match_pos, song_id, conf = all_matches_with_pos[0]
+    return best_match, f"closest position (deviation: {deviation:.1f}s, outside tolerance)", False
+

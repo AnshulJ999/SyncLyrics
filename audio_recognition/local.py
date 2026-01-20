@@ -388,12 +388,19 @@ class LocalRecognizer:
                         expected_position = self._position_tracker.get_expected_position()
                     
                     # Pass timing info so we can calculate current_position for each match
-                    best, selection_reason = select_best_match(
+                    best, selection_reason, should_clear_buffer = select_best_match(
                         matches, 
                         expected_position,
                         capture_start_time=audio.capture_start_time,
                         recognition_time=recognition_time
                     )
+                    
+                    # Signal buffer clear if confidence fallback was used (likely song change)
+                    if should_clear_buffer and hasattr(self, '_position_tracker') and self._position_tracker:
+                        # Signal engine to clear buffer - likely song change or seek
+                        logger.debug("Multi-match: Signaling buffer clear due to confidence fallback")
+                        self._position_tracker.signal_buffer_clear()
+                    
                     logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
                 else:
                     # Multi-match disabled - just use highest confidence

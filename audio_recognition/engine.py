@@ -589,6 +589,10 @@ class RecognitionEngine:
             }
         )
         
+        # Check if multi-match signaled buffer clear (confidence fallback = likely song change)
+        if self._audio_buffer.position_tracker.consume_buffer_clear_signal():
+            self._audio_buffer.clear("multi-match confidence fallback")
+        
         # Check if we're stopping - don't process result if shutdown in progress
         if self._stop_requested:
             logger.debug("Stop requested, discarding recognition result")
