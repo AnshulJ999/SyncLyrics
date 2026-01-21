@@ -59,16 +59,18 @@ class Program
     
     /// <summary>
     /// Fingerprinting configuration - optimized for metal/rock music.
-    /// Stride 256 = ~46ms resolution (2× default of 512)
-    /// FrequencyRange 318-2700 Hz = captures high harmonics from distortion, cymbals
+    /// SampleRate 8000 = allows frequency up to 4000 Hz (Nyquist limit)
+    /// Stride 256 = ~32ms resolution at 8000 Hz
+    /// FrequencyRange 200-3500 Hz = captures bass + high harmonics from distortion, cymbals
     /// </summary>
     private static class FingerprintConfig
     {
+        public const int SampleRate = 8000;  // Default: 5512
         public const int FingerprintStride = 256;  // Default: 512
-        public const int QueryStrideMin = 128;
-        public const int QueryStrideMax = 256;
-        public const int FrequencyMin = 318;
-        public const int FrequencyMax = 2700;  // Default: 2000, max safe with 5512 Hz sample rate
+        public const int QueryStrideMin = 128;      // Default: 256
+        public const int QueryStrideMax = 256;      // Default: 512
+        public const int FrequencyMin = 318;   // Default: 318, lowered for bass
+        public const int FrequencyMax = 3500;  // Default: 2000, raised for harmonics
     }
 
     static async Task<int> Main(string[] args)
@@ -255,6 +257,7 @@ class Program
             .From(wavFile)
             .WithFingerprintConfig(config =>
             {
+                config.Audio.SampleRate = FingerprintConfig.SampleRate;
                 config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
                 config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                 return config;
@@ -351,6 +354,8 @@ class Program
             .From(wavFile, secondsToAnalyze, startAtSecond)
             .WithQueryConfig(config =>
             {
+                config.Audio.FingerprintConfiguration.SampleRate = FingerprintConfig.SampleRate;
+                config.Audio.FingerprintConfiguration.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                 config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
@@ -663,6 +668,8 @@ class Program
             .From(path, duration, offset)
             .WithQueryConfig(config =>
             {
+                config.Audio.FingerprintConfiguration.SampleRate = FingerprintConfig.SampleRate;
+                config.Audio.FingerprintConfiguration.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                 config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
@@ -757,6 +764,7 @@ class Program
                 .From(path)
                 .WithFingerprintConfig(config =>
                 {
+                    config.Audio.SampleRate = FingerprintConfig.SampleRate;
                     config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
                     config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                     return config;
@@ -1021,6 +1029,8 @@ class Program
             .From(path, duration, offset)
             .WithQueryConfig(config =>
             {
+                config.Audio.FingerprintConfiguration.SampleRate = FingerprintConfig.SampleRate;
+                config.Audio.FingerprintConfiguration.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                 config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
@@ -1219,6 +1229,7 @@ class Program
                 .From(path)
                 .WithFingerprintConfig(config =>
                 {
+                    config.Audio.SampleRate = FingerprintConfig.SampleRate;
                     config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
                     config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                     return config;
@@ -1388,6 +1399,7 @@ class Program
                 .From(path)
                 .WithFingerprintConfig(config =>
                 {
+                    config.Audio.SampleRate = FingerprintConfig.SampleRate;
                     config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
                     config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
                     return config;
