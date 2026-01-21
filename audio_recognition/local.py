@@ -358,7 +358,9 @@ class LocalRecognizer:
             # Query sfp-cli (async to not block event loop)
             # FFmpegAudioService handles the downsampling to 5512Hz mono internally
             duration = int(audio.duration)
+            query_start = time.time()
             result = await self._run_cli_command_async("query", str(wav_path), str(duration), "0")
+            query_time = time.time() - query_start
             
             # Clean up temp file
             wav_path.unlink()
@@ -367,7 +369,7 @@ class LocalRecognizer:
             recognition_time = time.time()
             
             if not result.get("matched"):
-                logger.debug(f"Local: No match")
+                logger.debug(f"Local: No match | Audio: {audio.duration:.1f}s | Query: {query_time:.2f}s")
                 return None
             
             # Extract best match from multi-match response format
@@ -412,6 +414,9 @@ class LocalRecognizer:
                 # Single match or backward compatibility
                 best = result.get("bestMatch", result)
                 selection_reason = "single match"
+            
+            # Debug log with query stats
+            logger.debug(f"Local query stats: Audio: {audio.duration:.1f}s | Query: {query_time:.2f}s | Matches: {len(matches)}")
             
             # Check confidence thresholds
             confidence = best.get("confidence", 0)
@@ -485,7 +490,7 @@ class LocalRecognizer:
             logger.info(
                 f"Local: {recognition.artist} - {recognition.title} | "
                 f"Offset: {track_offset:.1f}s | QueryOffset: {query_match_offset:.1f}s | "
-                f"Current: {current_pos:.1f}s | Conf: {confidence:.2f}"
+                f"Current: {current_pos:.1f}s | Latency: {latency:.1f}s | Conf: {confidence:.2f}"
             )
             
             # Save debug match to cache
