@@ -231,7 +231,8 @@ class IndexingDaemon:
             
             # Extract first line, preserve any remainder for future reads
             line_bytes, remainder = data.split(b'\n', 1)
-            line = line_bytes.decode('utf-8').strip()
+            # Use utf-8-sig to strip BOM that C# StreamWriter adds
+            line = line_bytes.decode('utf-8-sig').strip()
             print(f"   TCP handshake received: {line[:100]}...")
             response = json.loads(line)
             
