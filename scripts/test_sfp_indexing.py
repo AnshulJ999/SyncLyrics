@@ -214,7 +214,9 @@ class IndexingDaemon:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)  # Quick timeout for connection attempt
+            print(f"   Trying TCP connection to 127.0.0.1:{self.TCP_PORT}...")
             sock.connect(('127.0.0.1', self.TCP_PORT))
+            print(f"   TCP connected! Waiting for handshake...")
             sock.settimeout(30)  # Normal timeout for operations
             
             # Read ready/connected message with proper buffering
@@ -222,6 +224,7 @@ class IndexingDaemon:
             while b'\n' not in data:
                 chunk = sock.recv(4096)
                 if not chunk:
+                    print(f"   TCP: Server closed connection during handshake")
                     sock.close()
                     return False
                 data += chunk
@@ -229,6 +232,7 @@ class IndexingDaemon:
             # Extract first line, preserve any remainder for future reads
             line_bytes, remainder = data.split(b'\n', 1)
             line = line_bytes.decode('utf-8').strip()
+            print(f"   TCP handshake received: {line[:100]}...")
             response = json.loads(line)
             
             if response.get('status') == 'connected':
@@ -236,12 +240,25 @@ class IndexingDaemon:
                 self._tcp_buffer = remainder  # Initialize buffer with any leftover bytes
                 self._ready = True
                 self._song_count = response.get('songs', 0)
+                print(f"   ✅ TCP connected to daemon ({self._song_count} songs)")
                 return True
+            else:
+                print(f"   TCP: Unexpected status: {response.get('status')}")
             
             sock.close()
             return False
-            
-        except Exception:
+        
+        except ConnectionRefusedError:
+            print(f"   TCP: Connection refused (daemon not listening on port {self.TCP_PORT})")
+            return False
+        except socket.timeout:
+            print(f"   TCP: Connection timed out")
+            return False
+        except json.JSONDecodeError as e:
+            print(f"   TCP: Invalid JSON in handshake: {e}")
+            return False
+        except Exception as e:
+            print(f"   TCP: Failed with {type(e).__name__}: {e}")
             return False
     
     def _start_subprocess(self) -> bool:
