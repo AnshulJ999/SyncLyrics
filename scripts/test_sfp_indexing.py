@@ -1221,17 +1221,14 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
         
         # Re-fingerprint this song
         try:
-            # Delete existing fingerprints
-            daemon.delete(song_id)
-            
             # Re-extract metadata
             new_meta = extract_full_metadata(audio_path)
             new_meta['songId'] = song_id
             new_meta['originalFilepath'] = str(audio_path.absolute())
             new_meta['contentHash'] = compute_content_hash(audio_path)
             
-            # Re-fingerprint
-            result = daemon.fingerprint(audio_path, new_meta)
+            # Re-fingerprint with force=True (daemon will delete existing first)
+            result = daemon.fingerprint(audio_path, new_meta, force=True)
             
             if result.get('success'):
                 fp_count = result.get('fingerprints', 0)
@@ -3179,7 +3176,7 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
                     if daemon and Path(filepath).exists():
                         meta = extract_full_metadata(Path(filepath))
                         meta['songId'] = repair['songId']
-                        result = daemon.fingerprint(Path(filepath), meta)
+                        result = daemon.fingerprint(Path(filepath), meta, force=True)
                         if result.get('success'):
                             print(f"   ✅ Re-fingerprinted {repair['songId']}")
                             repaired += 1
