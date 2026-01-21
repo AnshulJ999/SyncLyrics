@@ -3165,7 +3165,8 @@ def main():
         reindex_folder(folder, db_path)
     
     else:
-        parser.print_help()
+        # Default to interactive CLI mode when no arguments provided
+        cli_mode(db_path)
 
 
 if __name__ == "__main__":
