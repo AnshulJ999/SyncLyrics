@@ -1271,10 +1271,18 @@ def print_cli_help():
         ("repair --auto", "Auto repair (no confirmation)"),
         ("index <folder>", "Index new files in folder"),
         ("reindex <folder>", "Force re-index all files in folder"),
-        ("search <query>", "Search songs by artist/title"),
+        ("search <query>", "Search songs by artist/title (shows 50)"),
         ("info <songId>", "Show details for a song"),
-        ("purge <songId>", "Delete song from all data sources"),
-        ("list [page]", "List all songs (paginated)"),
+        ("purge <id> [id2...]", "Delete song(s) from all data sources"),
+        ("purge --search <q>", "Delete songs matching search (interactive)"),
+        ("list [page]", "List songs (100/page)"),
+        ("list all", "List all songs"),
+        ("list --export", "Export all songs to file"),
+        ("exclude <id> [id2]", "Add song(s) to exclusion list"),
+        ("exclude --search <q>", "Exclude songs matching search"),
+        ("exclude --pattern <p>", "Add title/artist pattern to exclusion"),
+        ("exclude --list", "Show exclusion list"),
+        ("include <id> [id2]", "Remove song(s) from exclusion list"),
         ("stats", "Show database statistics"),
         ("reload", "Full reload (FP DB + metadata from disk)"),
         ("refresh", "Refresh metadata only (lighter)"),
@@ -1282,9 +1290,9 @@ def print_cli_help():
     ]
     
     print("\nAvailable Commands:")
-    print("-" * 50)
+    print("-" * 60)
     for cmd, desc in commands:
-        print(f"  {cmd:20} {desc}")
+        print(f"  {cmd:24} {desc}")
     print()
 
 
@@ -1441,6 +1449,259 @@ def show_song_info(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None)
     print()
 
 
+# ============================================================================
+# EXCLUSION SYSTEM
+# ============================================================================
+
+def load_exclusion_list(db_path: Path) -> Dict[str, Any]:
+    """Load exclusion list from exclude.json."""
+    exclude_path = db_path / "exclude.json"
+    if exclude_path.exists():
+        try:
+            with open(exclude_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        'songIds': [],      # List of explicitly excluded song IDs
+        'patterns': [],     # List of glob patterns for title/artist
+        'addedAt': {}       # songId -> timestamp when added
+    }
+
+
+def save_exclusion_list(db_path: Path, exclusions: Dict[str, Any]):
+    """Save exclusion list to exclude.json."""
+    exclude_path = db_path / "exclude.json"
+    with open(exclude_path, 'w', encoding='utf-8') as f:
+        json.dump(exclusions, f, indent=2, ensure_ascii=False)
+
+
+def is_excluded(song_id: str, artist: str, title: str, exclusions: Dict[str, Any]) -> bool:
+    """Check if a song is excluded by ID or pattern."""
+    import fnmatch
+    
+    # Check explicit ID exclusion
+    if song_id in exclusions.get('songIds', []):
+        return True
+    
+    # Check patterns
+    for pattern in exclusions.get('patterns', []):
+        pattern_lower = pattern.lower()
+        if fnmatch.fnmatch(artist.lower(), pattern_lower):
+            return True
+        if fnmatch.fnmatch(title.lower(), pattern_lower):
+            return True
+        # Also check combined "artist - title"
+        combined = f"{artist} - {title}".lower()
+        if fnmatch.fnmatch(combined, pattern_lower):
+            return True
+    
+    return False
+
+
+def add_to_exclusion_list(db_path: Path, song_ids: List[str] = None, patterns: List[str] = None) -> Dict[str, Any]:
+    """Add song IDs or patterns to exclusion list."""
+    exclusions = load_exclusion_list(db_path)
+    added_ids = []
+    added_patterns = []
+    
+    if song_ids:
+        for song_id in song_ids:
+            if song_id not in exclusions['songIds']:
+                exclusions['songIds'].append(song_id)
+                exclusions['addedAt'][song_id] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                added_ids.append(song_id)
+    
+    if patterns:
+        for pattern in patterns:
+            if pattern not in exclusions['patterns']:
+                exclusions['patterns'].append(pattern)
+                added_patterns.append(pattern)
+    
+    save_exclusion_list(db_path, exclusions)
+    return {'added_ids': added_ids, 'added_patterns': added_patterns}
+
+
+def remove_from_exclusion_list(db_path: Path, song_ids: List[str] = None, patterns: List[str] = None) -> Dict[str, Any]:
+    """Remove song IDs or patterns from exclusion list."""
+    exclusions = load_exclusion_list(db_path)
+    removed_ids = []
+    removed_patterns = []
+    
+    if song_ids:
+        for song_id in song_ids:
+            if song_id in exclusions['songIds']:
+                exclusions['songIds'].remove(song_id)
+                exclusions['addedAt'].pop(song_id, None)
+                removed_ids.append(song_id)
+    
+    if patterns:
+        for pattern in patterns:
+            if pattern in exclusions['patterns']:
+                exclusions['patterns'].remove(pattern)
+                removed_patterns.append(pattern)
+    
+    save_exclusion_list(db_path, exclusions)
+    return {'removed_ids': removed_ids, 'removed_patterns': removed_patterns}
+
+
+def show_exclusion_list(db_path: Path):
+    """Display the current exclusion list."""
+    exclusions = load_exclusion_list(db_path)
+    
+    print(f"\n{'=' * 60}")
+    print("EXCLUSION LIST")
+    print(f"{'=' * 60}")
+    
+    song_ids = exclusions.get('songIds', [])
+    patterns = exclusions.get('patterns', [])
+    
+    if not song_ids and not patterns:
+        print("\nNo exclusions configured.")
+        print("Use 'exclude <songId>' or 'exclude --pattern <pattern>' to add.")
+        return
+    
+    if song_ids:
+        print(f"\nExcluded Song IDs ({len(song_ids)}):")
+        for song_id in song_ids[:50]:
+            added = exclusions.get('addedAt', {}).get(song_id, '?')
+            print(f"  • {song_id}")
+        if len(song_ids) > 50:
+            print(f"  ... and {len(song_ids) - 50} more")
+    
+    if patterns:
+        print(f"\nExclusion Patterns ({len(patterns)}):")
+        for pattern in patterns:
+            print(f"  • {pattern}")
+    
+    print()
+
+
+def purge_multiple(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' = None, 
+                   mode: str = 'individual') -> Dict[str, Any]:
+    """
+    Purge multiple songs.
+    
+    Args:
+        song_ids: List of song IDs to delete
+        db_path: Database path
+        daemon: Daemon instance
+        mode: 'individual' (confirm each), 'all' (confirm once), 'auto' (no confirm)
+    """
+    if not song_ids:
+        print("No songs to purge.")
+        return {'deleted': 0, 'skipped': 0}
+    
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    metadata = load_json_file(metadata_path)
+    indexed_files = load_json_file(indexed_files_path)
+    
+    # Get FP IDs
+    fp_ids = set()
+    if daemon and daemon.is_running:
+        try:
+            result = daemon.list_fp()
+            fp_ids = set(result.get('songIds', []))
+        except:
+            pass
+    
+    # Preview what will be deleted
+    print(f"\n{'=' * 60}")
+    print(f"MULTI-PURGE: {len(song_ids)} songs")
+    print(f"{'=' * 60}\n")
+    
+    valid_songs = []
+    for song_id in song_ids:
+        in_fp = song_id in fp_ids
+        in_meta = song_id in metadata
+        in_index = any(e.get('songId') == song_id for e in indexed_files.values())
+        
+        if in_fp or in_meta or in_index:
+            meta = metadata.get(song_id, {})
+            valid_songs.append({
+                'id': song_id,
+                'artist': meta.get('artist', '?'),
+                'title': meta.get('title', '?'),
+                'in_fp': in_fp,
+                'in_meta': in_meta,
+                'in_index': in_index
+            })
+    
+    if not valid_songs:
+        print("None of the specified songs were found.")
+        return {'deleted': 0, 'skipped': len(song_ids)}
+    
+    print(f"Found {len(valid_songs)} songs to delete:\n")
+    for i, song in enumerate(valid_songs, 1):
+        sources = []
+        if song['in_fp']: sources.append('FP')
+        if song['in_meta']: sources.append('Meta')
+        if song['in_index']: sources.append('Index')
+        print(f"  {i}. {song['artist']} - {song['title']}")
+        print(f"     ID: {song['id']} | In: {', '.join(sources)}")
+    
+    # Get confirmation based on mode
+    if mode == 'all':
+        print()
+        response = input(f"Delete all {len(valid_songs)} songs? (y/n): ").strip().lower()
+        if response != 'y':
+            print("Cancelled.")
+            return {'deleted': 0, 'skipped': len(valid_songs)}
+        songs_to_delete = valid_songs
+    elif mode == 'auto':
+        songs_to_delete = valid_songs
+    else:  # individual
+        songs_to_delete = []
+        print("\nConfirm each deletion (y=yes, n=no, a=all remaining, q=quit):\n")
+        for song in valid_songs:
+            response = input(f"  Delete {song['artist']} - {song['title']}? ").strip().lower()
+            if response == 'q':
+                break
+            elif response == 'a':
+                songs_to_delete.extend(valid_songs[valid_songs.index(song):])
+                break
+            elif response == 'y':
+                songs_to_delete.append(song)
+    
+    if not songs_to_delete:
+        print("\nNo songs selected for deletion.")
+        return {'deleted': 0, 'skipped': len(valid_songs)}
+    
+    # Execute deletions
+    print(f"\nDeleting {len(songs_to_delete)} songs...")
+    deleted = 0
+    
+    for song in songs_to_delete:
+        song_id = song['id']
+        
+        # Delete from FP DB
+        if song['in_fp'] and daemon and daemon.is_running:
+            daemon.delete(song_id)
+        
+        # Delete from metadata
+        if song_id in metadata:
+            del metadata[song_id]
+        
+        # Delete from indexed_files
+        keys_to_remove = [k for k, v in indexed_files.items() if v.get('songId') == song_id]
+        for k in keys_to_remove:
+            del indexed_files[k]
+        
+        deleted += 1
+        print(f"  ✓ Deleted: {song['artist']} - {song['title']}")
+    
+    # Save changes
+    save_json_file(metadata_path, metadata)
+    save_json_file(indexed_files_path, indexed_files)
+    
+    if daemon and daemon.is_running:
+        daemon.refresh()
+    
+    print(f"\n✓ Purge complete: {deleted} deleted, {len(valid_songs) - deleted} skipped")
+    return {'deleted': deleted, 'skipped': len(valid_songs) - deleted}
+
+
 def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
     """
     Safely remove a song from all 3 data sources.
@@ -1540,33 +1801,71 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
     return {'success': True, 'deleted_from': deleted_from}
 
 
-def list_songs(db_path: Path, page: int = 1, page_size: int = 20):
-    """List all songs with pagination."""
+def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: bool = False, export_file: str = None):
+    """
+    List all songs with pagination.
+    
+    Args:
+        page: Page number (1-indexed)
+        page_size: Songs per page (default 100)
+        show_all: If True, show all songs without pagination
+        export_file: If provided, export to file instead of printing
+    """
     metadata_path = db_path / "metadata.json"
     metadata = load_json_file(metadata_path)
     
     songs = list(metadata.items())
     total = len(songs)
-    total_pages = (total + page_size - 1) // page_size
     
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_songs = songs[start:end]
+    # Build output lines
+    lines = []
     
-    print(f"\n{'=' * 70}")
-    print(f"Songs (Page {page}/{total_pages}, {total} total)")
-    print(f"{'=' * 70}\n")
+    if show_all or export_file:
+        # Show/export all songs
+        page_songs = songs
+        lines.append(f"{'=' * 70}")
+        lines.append(f"All Songs ({total} total)")
+        lines.append(f"{'=' * 70}")
+        lines.append("")
+    else:
+        # Paginated view
+        total_pages = (total + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_songs = songs[start:end]
+        
+        lines.append(f"{'=' * 70}")
+        lines.append(f"Songs (Page {page}/{total_pages}, {total} total)")
+        lines.append(f"{'=' * 70}")
+        lines.append("")
     
     for song_id, meta in page_songs:
         duration = meta.get('duration', 0)
         dur_str = f"[{duration:.0f}s]" if duration else ""
         fp_count = meta.get('fingerprintCount', '?')
-        print(f"  {meta.get('artist', '?')} - {meta.get('title', '?')} {dur_str}")
-        print(f"    ID: {song_id} | FPs: {fp_count}")
-        print()
+        lines.append(f"  {meta.get('artist', '?')} - {meta.get('title', '?')} {dur_str}")
+        lines.append(f"    ID: {song_id} | FPs: {fp_count}")
+        lines.append("")
     
-    if total_pages > 1:
-        print(f"Use 'list {page + 1}' for next page")
+    if not show_all and not export_file:
+        total_pages = (total + page_size - 1) // page_size
+        if total_pages > 1 and page < total_pages:
+            lines.append(f"Use 'list {page + 1}' for next page, or 'list all' to show all")
+    
+    # Output
+    if export_file:
+        # Generate default filename if not specified
+        if export_file == True or export_file == '':
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            export_file = db_path / f"songs_export_{timestamp}.txt"
+        else:
+            export_file = Path(export_file)
+        
+        with open(export_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+        print(f"✅ Exported {total} songs to: {export_file}")
+    else:
+        print('\n' + '\n'.join(lines))
 
 
 def cli_mode(db_path: Path):
@@ -1649,12 +1948,12 @@ def cli_mode(db_path: Path):
                 results = search_songs(args, db_path, daemon)
                 if results:
                     print(f"\nFound {len(results)} matches:\n")
-                    for r in results[:20]:
+                    for r in results[:50]:  # Show up to 50 results
                         dur = f"[{r['duration']:.0f}s]" if r.get('duration') else ""
                         print(f"  {r['artist']} - {r['title']} {dur}")
                         print(f"    ID: {r['songId']}")
-                    if len(results) > 20:
-                        print(f"\n  ... and {len(results) - 20} more")
+                    if len(results) > 50:
+                        print(f"\n  ... and {len(results) - 50} more")
                 else:
                     print(f"No matches found for '{args}'")
                 print()
@@ -1667,19 +1966,111 @@ def cli_mode(db_path: Path):
             
             elif cmd == 'purge':
                 if not args:
-                    print("Usage: purge <songId>")
+                    print("Usage: purge <songId> [songId2...] or purge --search <query>")
                     continue
-                purge_song(args, db_path, daemon)
+                
+                if args.startswith('--search '):
+                    # Search-based purge with individual confirmation
+                    query = args[9:].strip()
+                    results = search_songs(query, db_path, daemon)
+                    if not results:
+                        print(f"No matches found for '{query}'")
+                        continue
+                    song_ids = [r['songId'] for r in results]
+                    print(f"\nSearch matched {len(song_ids)} songs.")
+                    mode_response = input("Delete mode: (i)ndividual confirm, (a)ll at once, (c)ancel: ").strip().lower()
+                    if mode_response == 'c':
+                        print("Cancelled.")
+                        continue
+                    mode = 'individual' if mode_response == 'i' else 'all'
+                    purge_multiple(song_ids, db_path, daemon, mode=mode)
+                else:
+                    # Multiple song IDs (space-separated)
+                    song_ids = args.split()
+                    if len(song_ids) == 1:
+                        purge_song(song_ids[0], db_path, daemon)
+                    else:
+                        mode_response = input("Delete mode: (i)ndividual confirm, (a)ll at once, (c)ancel: ").strip().lower()
+                        if mode_response == 'c':
+                            print("Cancelled.")
+                            continue
+                        mode = 'individual' if mode_response == 'i' else 'all'
+                        purge_multiple(song_ids, db_path, daemon, mode=mode)
             
             elif cmd == 'list':
-                page = 1
-                if args:
+                if args == 'all':
+                    list_songs(db_path, show_all=True)
+                elif args.startswith('--export'):
+                    # Export to file
+                    export_arg = args[8:].strip() if len(args) > 8 else ''
+                    list_songs(db_path, export_file=export_arg if export_arg else True)
+                elif args:
                     try:
                         page = int(args)
+                        list_songs(db_path, page=page)
                     except ValueError:
-                        print("Usage: list [page_number]")
+                        print("Usage: list [page] | list all | list --export [filename]")
+                else:
+                    list_songs(db_path)
+            
+            elif cmd == 'exclude':
+                if not args:
+                    print("Usage: exclude <songId> [id2...] | exclude --search <q> | exclude --pattern <p> | exclude --list")
+                    continue
+                
+                if args == '--list':
+                    show_exclusion_list(db_path)
+                elif args.startswith('--search '):
+                    query = args[9:].strip()
+                    results = search_songs(query, db_path, daemon)
+                    if not results:
+                        print(f"No matches found for '{query}'")
                         continue
-                list_songs(db_path, page)
+                    print(f"\nFound {len(results)} matches to exclude:\n")
+                    for r in results[:20]:
+                        print(f"  • {r['artist']} - {r['title']} ({r['songId']})")
+                    if len(results) > 20:
+                        print(f"  ... and {len(results) - 20} more")
+                    response = input(f"\nExclude all {len(results)} songs? (y/n): ").strip().lower()
+                    if response == 'y':
+                        song_ids = [r['songId'] for r in results]
+                        result = add_to_exclusion_list(db_path, song_ids=song_ids)
+                        print(f"✅ Added {len(result['added_ids'])} songs to exclusion list")
+                elif args.startswith('--pattern '):
+                    pattern = args[10:].strip()
+                    result = add_to_exclusion_list(db_path, patterns=[pattern])
+                    if result['added_patterns']:
+                        print(f"✅ Added pattern: {pattern}")
+                    else:
+                        print(f"Pattern already exists: {pattern}")
+                else:
+                    # Multiple song IDs
+                    song_ids = args.split()
+                    result = add_to_exclusion_list(db_path, song_ids=song_ids)
+                    if result['added_ids']:
+                        print(f"✅ Added {len(result['added_ids'])} songs to exclusion list")
+                    else:
+                        print("All specified songs already in exclusion list")
+            
+            elif cmd == 'include':
+                if not args:
+                    print("Usage: include <songId> [id2...] | include --pattern <p>")
+                    continue
+                
+                if args.startswith('--pattern '):
+                    pattern = args[10:].strip()
+                    result = remove_from_exclusion_list(db_path, patterns=[pattern])
+                    if result['removed_patterns']:
+                        print(f"✅ Removed pattern: {pattern}")
+                    else:
+                        print(f"Pattern not found: {pattern}")
+                else:
+                    song_ids = args.split()
+                    result = remove_from_exclusion_list(db_path, song_ids=song_ids)
+                    if result['removed_ids']:
+                        print(f"✅ Removed {len(result['removed_ids'])} songs from exclusion list")
+                    else:
+                        print("None of the specified songs were in exclusion list")
             
             elif cmd == 'stats':
                 show_stats(db_path)
