@@ -617,9 +617,13 @@ def normalize_song_id(artist: str, title: str) -> str:
     return f"{norm_artist}_{norm_title}"
 
 
-def extract_full_metadata(file_path: Path) -> Dict[str, Any]:
+def extract_full_metadata(file_path: Path, filename_fallback: bool = False) -> Dict[str, Any]:
     """
     Extract all available metadata from audio file using mutagen.
+    
+    Args:
+        file_path: Path to audio file
+        filename_fallback: If True, parse filename when tags unavailable
     
     Returns dict with all fields needed by sfp-cli.
     """
@@ -640,10 +644,12 @@ def extract_full_metadata(file_path: Path) -> Dict[str, Any]:
     try:
         audio = MutagenFile(file_path)
         if audio is None:
-            # Fallback: parse filename
-            parsed = parse_filename(file_path)
-            metadata['title'] = parsed.get('title')
-            metadata['artist'] = parsed.get('artist')
+            # File format not recognized by mutagen
+            if filename_fallback:
+                parsed = parse_filename(file_path)
+                metadata['title'] = parsed.get('title')
+                metadata['artist'] = parsed.get('artist')
+            # If not filename_fallback, return with None title/artist - caller will skip
             return metadata
         
         # Get duration
@@ -751,7 +757,8 @@ def save_json_file(path: Path, data: Dict):
 
 
 def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None, 
-                 required_tags: List[str] = None, dry_run: bool = False) -> Dict[str, Any]:
+                 required_tags: List[str] = None, dry_run: bool = False,
+                 daemon: 'IndexingDaemon' = None, filename_fallback: bool = False) -> Dict[str, Any]:
     """
     Index all audio files in a folder.
     
@@ -762,6 +769,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         required_tags: Optional list of additional required metadata fields
                        (e.g., ['album', 'genre']). Artist and title are always required.
         dry_run: If True, only show what would be indexed without making changes
+        daemon: Optional existing IndexingDaemon to reuse (avoids creating duplicate)
+        filename_fallback: If True, use filename parsing when tags are missing
     
     Returns:
         Summary dict with results
@@ -808,11 +817,15 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         'errors': []
     }
     
-    # Start daemon for fast fingerprinting
-    daemon = IndexingDaemon(db_path)
-    if not daemon.start():
-        print("❌ Failed to start indexing daemon")
-        return {'error': 'Daemon startup failed', **results}
+    # Start daemon for fast fingerprinting (or reuse existing)
+    own_daemon = daemon is None
+    if own_daemon:
+        daemon = IndexingDaemon(db_path)
+        if not daemon.start():
+            print("❌ Failed to start indexing daemon")
+            return {'error': 'Daemon startup failed', **results}
+    else:
+        print("✅ Using active CLI daemon")
     
     BATCH_SIZE = 8
     total_files = len(audio_files)
@@ -842,8 +855,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         #     skipped_in_pass += 1
         #     continue
         
-        # Extract metadata
-        metadata = extract_full_metadata(audio_file)
+        # Extract metadata (with optional filename fallback)
+        metadata = extract_full_metadata(audio_file, filename_fallback=filename_fallback)
         
         # Skip if missing required tags
         if not metadata['title'] or not metadata['artist']:
@@ -1024,8 +1037,11 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         save_json_file(indexed_files_path, indexed_files)
         save_json_file(skip_log_path, skip_log)
     
-    # Shutdown daemon (auto-saves database)
-    daemon.stop()
+    # Shutdown daemon (auto-saves database) - only if we own it
+    if own_daemon:
+        daemon.stop()
+    else:
+        daemon.save()  # Just save, don't stop the CLI's daemon
     
     # Final save
     save_json_file(indexed_files_path, indexed_files)
@@ -1503,6 +1519,7 @@ def print_cli_help():
         ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
         ("index <folder>", "Index new files in folder (respects exclusions)"),
         ("index <folder> --dry-run", "Preview what would be indexed"),
+        ("index --filename-fallback", "Allow filename parsing when tags missing"),
         ("index --require-tags a,b", "Require additional tags (album,genre,year)"),
         ("reindex <folder>", "Re-index folder (respects exclusions)"),
         ("reindex <folder> --dry-run", "Preview what would be re-indexed"),
@@ -1511,7 +1528,8 @@ def print_cli_help():
         ("reindex <songId> --force", "Re-index song(s) ignoring exclusions"),
         ("search <query>", "Search songs by artist/title (shows 50)"),
         ("info <songId>", "Show details for a song"),
-        ("purge <id> [id2...]", "Delete song(s) from all data sources"),
+        ("delete <id> [id2...]", "Delete song(s) from all data sources"),
+        ("purge <id> [id2...]", "Alias for delete"),
         ("purge --search <q>", "Delete songs matching search (interactive)"),
         ("list [page]", "List songs (100/page)"),
         ("list all", "List all songs"),
@@ -2232,9 +2250,10 @@ def cli_mode(db_path: Path):
                 if not args:
                     print("Usage: index <folder> [--dry-run] [--require-tags tag1,tag2]")
                     continue
-                # Check for --dry-run flag
+                # Check for flags
                 dry_run = '--dry-run' in args
-                clean_args = args.replace('--dry-run', '')
+                filename_fallback = '--filename-fallback' in args
+                clean_args = args.replace('--dry-run', '').replace('--filename-fallback', '')
                 
                 # Check for --require-tags flag
                 required_tags = None
@@ -2260,8 +2279,9 @@ def cli_mode(db_path: Path):
                 if not folder.exists():
                     print(f"Error: Folder not found: {folder}")
                     continue
-                # Use the existing index_folder function
-                index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run)
+                # Use the existing index_folder function with CLI's daemon
+                index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run, 
+                             daemon=daemon, filename_fallback=filename_fallback)
 
             
             elif cmd == 'reindex':
@@ -2289,8 +2309,8 @@ def cli_mode(db_path: Path):
                 folder = Path(first_arg)
                 
                 if folder.exists() and folder.is_dir():
-                    # It's a folder - use reindex_folder
-                    reindex_folder(folder, db_path, force_include=force_include, dry_run=dry_run)
+                    # It's a folder - use reindex_folder with CLI's daemon
+                    reindex_folder(folder, db_path, force_include=force_include, dry_run=dry_run, daemon=daemon)
                 else:
                     # Treat as songId(s)
                     if dry_run:
@@ -2323,9 +2343,9 @@ def cli_mode(db_path: Path):
                     continue
                 show_song_info(args, db_path, daemon)
             
-            elif cmd == 'purge':
+            elif cmd in ('purge', 'delete'):
                 if not args:
-                    print("Usage: purge <songId> [songId2...] or purge --search <query>")
+                    print("Usage: delete <songId> [songId2...] or delete --search <query>")
                     continue
                 
                 if args.startswith('--search '):
@@ -2601,13 +2621,16 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
     fp_ids = set()
     own_daemon = daemon is None
     
+    fp_check_incomplete = False  # Track if we couldn't query FP DB
+    
     if own_daemon:
         print("Querying fingerprint database...")
         daemon = IndexingDaemon(db_path)
         if not daemon.start():
-            print("⚠️  Warning: Could not start daemon to query fingerprints")
-            print("   Using metadata songIds as proxy for fingerprint check")
-            fp_ids = metadata_ids.copy()
+            print("❌ ERROR: Could not start daemon to query fingerprints")
+            print("   Fingerprint DB verification INCOMPLETE")
+            fp_ids = set()  # Empty = will show all songs as missing from FP
+            fp_check_incomplete = True
             daemon = None
     
     if daemon and daemon.is_running:
@@ -2616,8 +2639,10 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
             result = daemon.list_fp()
             fp_ids = set(result.get('songIds', []))
         except Exception as e:
-            print(f"⚠️  Warning: Could not query fingerprint DB: {e}")
-            fp_ids = metadata_ids.copy()
+            print(f"❌ ERROR: Could not query fingerprint DB: {e}")
+            print("   Fingerprint DB verification INCOMPLETE")
+            fp_ids = set()  # Empty = will show all songs as missing from FP
+            fp_check_incomplete = True
     
     # Stop daemon only if we started it ourselves
     if own_daemon and daemon:
@@ -3024,6 +3049,11 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
                     if Path(filepath).exists():
                         new_meta = extract_full_metadata(Path(filepath))
                         new_meta['songId'] = repair['songId']
+                        # Preserve existing fields that extraction doesn't provide
+                        existing = metadata.get(repair['songId'], {})
+                        for keep_field in ['fingerprintCount', 'indexedAt', 'contentHash']:
+                            if keep_field in existing and keep_field not in new_meta:
+                                new_meta[keep_field] = existing[keep_field]
                         metadata[repair['songId']] = new_meta
                         print(f"   ✅ Re-extracted metadata for {repair['songId']}")
                         repaired += 1
@@ -3096,7 +3126,7 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
 
 
 def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False,
-                   dry_run: bool = False) -> Dict[str, Any]:
+                   dry_run: bool = False, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
     """
     Force re-index all files in folder, overwriting existing entries.
     
@@ -3109,6 +3139,7 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
         db_path: Path to database directory
         force_include: If True, bypasses exclusion list check (default: respects exclusions)
         dry_run: If True, only show what would be reindexed without making changes
+        daemon: Optional existing IndexingDaemon to reuse (avoids creating duplicate)
     """
     print(f"\n{'=' * 70}")
     if dry_run:
@@ -3224,11 +3255,15 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
     indexed_files_path = db_path / "indexed_files.json"
     indexed_files = load_json_file(indexed_files_path)
     
-    # Start daemon
-    daemon = IndexingDaemon(db_path)
-    if not daemon.start():
-        print("❌ Failed to start indexing daemon")
-        return {'error': 'Daemon startup failed'}
+    # Start daemon (or reuse existing)
+    own_daemon = daemon is None
+    if own_daemon:
+        daemon = IndexingDaemon(db_path)
+        if not daemon.start():
+            print("❌ Failed to start indexing daemon")
+            return {'error': 'Daemon startup failed'}
+    else:
+        print("✅ Using active CLI daemon")
     
     results = {
         'total': len(audio_files),
@@ -3282,8 +3317,11 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
                 save_json_file(indexed_files_path, indexed_files)
     
     finally:
-        daemon.save()
-        daemon.stop()
+        if own_daemon:
+            daemon.save()
+            daemon.stop()
+        else:
+            daemon.save()  # Just save, don't stop the CLI's daemon
         save_json_file(indexed_files_path, indexed_files)
     
     print(f"\n{'=' * 70}")
