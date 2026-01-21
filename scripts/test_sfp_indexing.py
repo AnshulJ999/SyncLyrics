@@ -390,13 +390,14 @@ class IndexingDaemon:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def fingerprint(self, audio_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def fingerprint(self, audio_path: Path, metadata: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         """
         Send fingerprint command to daemon.
         
         Args:
             audio_path: Path to audio file (FLAC/MP3/WAV)
             metadata: Dictionary with songId, title, artist, etc.
+            force: If True, overwrite existing entry (for re-indexing)
         
         Returns:
             Result dict with success/error info
@@ -407,7 +408,8 @@ class IndexingDaemon:
         cmd = {
             "cmd": "fingerprint",
             "path": str(audio_path.absolute()),
-            "metadata": metadata
+            "metadata": metadata,
+            "force": force
         }
         
         return self._send_command(cmd)
@@ -1628,7 +1630,7 @@ def print_cli_help():
         ("stats", "Show database statistics"),
         ("clear", "Clear entire database (with confirmation)"),
         ("test <folder>", "Test recognition accuracy on folder"),
-        ("test <folder> --positions 10,60,120", "Test at specific positions"),
+        ("test <folder> --positions", "Test at specific positions (default: 10,60,120)"),
         ("live [duration]", "Test live audio capture (default 10s)"),
         ("reload", "Full reload (FP DB + metadata from disk)"),
         ("refresh", "Refresh metadata only (lighter)"),
@@ -1636,9 +1638,9 @@ def print_cli_help():
     ]
     
     print("\nAvailable Commands:")
-    print("-" * 60)
+    print("-" * 90)
     for cmd, desc in commands:
-        print(f"  {cmd:24} {desc}")
+        print(f"  {cmd:28} {desc}")
     print()
 
 
@@ -3401,8 +3403,8 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
             content_hash = compute_content_hash(audio_file)
             metadata['contentHash'] = content_hash
             
-            # Fingerprint (will overwrite if exists)
-            result = daemon.fingerprint(Path(audio_file), metadata)
+            # Fingerprint with force=True to overwrite existing
+            result = daemon.fingerprint(Path(audio_file), metadata, force=True)
             
             if result.get('success'):
                 print(f"   ✅ {metadata['artist']} - {metadata['title']} ({result.get('fingerprints', 0)} FPs)")

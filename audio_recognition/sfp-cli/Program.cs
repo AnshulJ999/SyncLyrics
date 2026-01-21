@@ -744,9 +744,25 @@ class Program
                 return JsonSerializer.Serialize(new { success = false, error = "Missing required fields: songId, title, artist" });
             }
             
+            // Check for force flag (for re-indexing)
+            bool force = false;
+            if (root.TryGetProperty("force", out var forceElement))
+            {
+                force = forceElement.GetBoolean();
+            }
+            
             if (_metadata.ContainsKey(meta.SongId))
             {
-                return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Already indexed" });
+                if (force)
+                {
+                    // Force mode: delete existing entry before re-fingerprinting
+                    _modelService.DeleteTrack(meta.SongId);
+                    _metadata.TryRemove(meta.SongId, out _);
+                }
+                else
+                {
+                    return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Already indexed" });
+                }
             }
             
             if (!string.IsNullOrEmpty(meta.ContentHash))
@@ -754,7 +770,16 @@ class Program
                 var existingWithHash = _metadata.Values.FirstOrDefault(m => m.ContentHash == meta.ContentHash);
                 if (existingWithHash != null)
                 {
-                    return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Duplicate content hash" });
+                    if (force)
+                    {
+                        // Force mode: also delete entry with matching content hash
+                        _modelService.DeleteTrack(existingWithHash.SongId);
+                        _metadata.TryRemove(existingWithHash.SongId, out _);
+                    }
+                    else
+                    {
+                        return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Duplicate content hash" });
+                    }
                 }
             }
             
