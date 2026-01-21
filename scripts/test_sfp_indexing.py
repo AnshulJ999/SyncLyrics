@@ -1564,19 +1564,25 @@ def cli_mode(db_path: Path):
         print("Goodbye!")
 
 
-def verify_database(db_path: Path) -> Dict[str, Any]:
+def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool = False) -> Dict[str, Any]:
     """
     Verify database integrity by comparing all 3 data sources:
     - Fingerprint DB (via daemon list-fp command)
     - metadata.json
     - indexed_files.json
     
+    Args:
+        db_path: Path to database directory
+        daemon: Optional daemon instance to reuse (avoids starting new one)
+        brief: If True, only show sync table without detailed discrepancies
+    
     Reports ALL discrepancies with detailed logging.
     """
-    print(f"\n{'=' * 70}")
-    print("DATABASE VERIFICATION REPORT")
-    print(f"{'=' * 70}")
-    print(f"Database: {db_path}\n")
+    if not brief:
+        print(f"\n{'=' * 70}")
+        print("DATABASE VERIFICATION REPORT")
+        print(f"{'=' * 70}")
+        print(f"Database: {db_path}\n")
     
     # Load all data sources
     metadata_path = db_path / "metadata.json"
@@ -1599,11 +1605,19 @@ def verify_database(db_path: Path) -> Dict[str, Any]:
     index_ids = set(index_id_to_files.keys())
     
     # Get fingerprint IDs from daemon
-    print("Querying fingerprint database...")
-    daemon = IndexingDaemon(db_path)
     fp_ids = set()
+    own_daemon = daemon is None
     
-    if daemon.start():
+    if own_daemon:
+        print("Querying fingerprint database...")
+        daemon = IndexingDaemon(db_path)
+        if not daemon.start():
+            print("⚠️  Warning: Could not start daemon to query fingerprints")
+            print("   Using metadata songIds as proxy for fingerprint check")
+            fp_ids = metadata_ids.copy()
+            daemon = None
+    
+    if daemon and daemon.is_running:
         try:
             # Send list-fp command and get response
             daemon.process.stdin.write('{"cmd": "list-fp"}\n')
@@ -1614,19 +1628,14 @@ def verify_database(db_path: Path) -> Dict[str, Any]:
                 fp_ids = set(result.get('songIds', []))
         except Exception as e:
             print(f"⚠️  Warning: Could not query fingerprint DB: {e}")
-        finally:
-            daemon.stop()
-    else:
-        print("⚠️  Warning: Could not start daemon to query fingerprints")
-        # Fall back to assuming metadata IDs are in fingerprints (best effort)
-        print("   Using metadata songIds as proxy for fingerprint check")
-        fp_ids = metadata_ids.copy()
+            fp_ids = metadata_ids.copy()
     
-    # Print counts
-    print(f"\n📊 Data Source Counts:")
-    print(f"   Fingerprint DB: {len(fp_ids)} songs")
-    print(f"   Metadata:       {len(metadata_ids)} entries")
-    print(f"   Index:          {len(index_ids)} unique songIds ({len(indexed_files)} files)")
+    # Stop daemon only if we started it ourselves
+    if own_daemon and daemon:
+        daemon.stop()
+    
+    # Print sync table (always shown)
+    print_sync_table(fp_ids, metadata_ids, index_ids)
     
     # Find discrepancies
     discrepancies: Dict[str, List] = {
@@ -1679,75 +1688,84 @@ def verify_database(db_path: Path) -> Dict[str, Any]:
     total_issues = sum(len(v) for v in discrepancies.values())
     
     if total_issues == 0:
-        print(f"\n✅ All databases are in sync! No discrepancies found.")
+        print(f"✅ All databases are in sync! No discrepancies found.")
     else:
-        print(f"\n⚠️  DISCREPANCIES FOUND: {total_issues} total\n")
+        print(f"⚠️  DISCREPANCIES FOUND: {total_issues} total")
         
-        if discrepancies['FP_NO_META']:
-            print(f"[FP_NO_META] Fingerprint exists, NO metadata ({len(discrepancies['FP_NO_META'])} songs):")
-            for item in discrepancies['FP_NO_META'][:10]:  # Limit output
-                print(f"   - songId: \"{item['songId']}\"")
-            if len(discrepancies['FP_NO_META']) > 10:
-                print(f"   ... and {len(discrepancies['FP_NO_META']) - 10} more")
-            print()
+        # Show discrepancy table
+        print_discrepancy_table(discrepancies, fp_ids, metadata_ids, index_ids)
         
-        if discrepancies['FP_NO_INDEX']:
-            print(f"[FP_NO_INDEX] Fingerprint exists, NOT in index ({len(discrepancies['FP_NO_INDEX'])} songs):")
-            for item in discrepancies['FP_NO_INDEX'][:10]:
-                print(f"   - songId: \"{item['songId']}\"")
-            if len(discrepancies['FP_NO_INDEX']) > 10:
-                print(f"   ... and {len(discrepancies['FP_NO_INDEX']) - 10} more")
-            print()
-        
-        if discrepancies['META_NO_FP']:
-            print(f"[META_NO_FP] Metadata exists, NO fingerprint ({len(discrepancies['META_NO_FP'])} songs):")
-            for item in discrepancies['META_NO_FP'][:10]:
-                print(f"   - {item['artist']} - {item['title']}")
-                print(f"     File: {item['filepath']}")
-            if len(discrepancies['META_NO_FP']) > 10:
-                print(f"   ... and {len(discrepancies['META_NO_FP']) - 10} more")
-            print()
-        
-        if discrepancies['META_NO_INDEX']:
-            print(f"[META_NO_INDEX] Metadata exists, NOT in index ({len(discrepancies['META_NO_INDEX'])} songs):")
-            for item in discrepancies['META_NO_INDEX'][:10]:
-                print(f"   - songId: \"{item['songId']}\" | File: {Path(item['filepath']).name}")
-            if len(discrepancies['META_NO_INDEX']) > 10:
-                print(f"   ... and {len(discrepancies['META_NO_INDEX']) - 10} more")
-            print()
-        
-        if discrepancies['INDEX_NO_META']:
-            print(f"[INDEX_NO_META] Index entry exists, NO metadata ({len(discrepancies['INDEX_NO_META'])} songs):")
-            for item in discrepancies['INDEX_NO_META'][:10]:
-                print(f"   - songId: \"{item['songId']}\"")
-                for fp in item['filepaths'][:2]:
-                    print(f"     File: {Path(fp).name}")
-            if len(discrepancies['INDEX_NO_META']) > 10:
-                print(f"   ... and {len(discrepancies['INDEX_NO_META']) - 10} more")
-            print()
-        
-        if discrepancies['INDEX_NO_FP']:
-            print(f"[INDEX_NO_FP] Index entry exists, NO fingerprint ({len(discrepancies['INDEX_NO_FP'])} songs):")
-            for item in discrepancies['INDEX_NO_FP'][:10]:
-                print(f"   - songId: \"{item['songId']}\"")
-                for fp in item['filepaths'][:2]:
-                    print(f"     File: {Path(fp).name}")
-            if len(discrepancies['INDEX_NO_FP']) > 10:
-                print(f"   ... and {len(discrepancies['INDEX_NO_FP']) - 10} more")
-            print()
+        # Skip detailed output in brief mode
+        if not brief:
+            if discrepancies['FP_NO_META']:
+                print(f"[FP_NO_META] Fingerprint exists, NO metadata ({len(discrepancies['FP_NO_META'])} songs):")
+                for item in discrepancies['FP_NO_META'][:10]:  # Limit output
+                    print(f"   - songId: \"{item['songId']}\"")
+                if len(discrepancies['FP_NO_META']) > 10:
+                    print(f"   ... and {len(discrepancies['FP_NO_META']) - 10} more")
+                print()
+            
+            if discrepancies['FP_NO_INDEX']:
+                print(f"[FP_NO_INDEX] Fingerprint exists, NOT in index ({len(discrepancies['FP_NO_INDEX'])} songs):")
+                for item in discrepancies['FP_NO_INDEX'][:10]:
+                    print(f"   - songId: \"{item['songId']}\"")
+                if len(discrepancies['FP_NO_INDEX']) > 10:
+                    print(f"   ... and {len(discrepancies['FP_NO_INDEX']) - 10} more")
+                print()
+            
+            if discrepancies['META_NO_FP']:
+                print(f"[META_NO_FP] Metadata exists, NO fingerprint ({len(discrepancies['META_NO_FP'])} songs):")
+                for item in discrepancies['META_NO_FP'][:10]:
+                    print(f"   - {item['artist']} - {item['title']}")
+                    print(f"     File: {item['filepath']}")
+                if len(discrepancies['META_NO_FP']) > 10:
+                    print(f"   ... and {len(discrepancies['META_NO_FP']) - 10} more")
+                print()
+            
+            if discrepancies['META_NO_INDEX']:
+                print(f"[META_NO_INDEX] Metadata exists, NOT in index ({len(discrepancies['META_NO_INDEX'])} songs):")
+                for item in discrepancies['META_NO_INDEX'][:10]:
+                    print(f"   - songId: \"{item['songId']}\" | File: {Path(item['filepath']).name}")
+                if len(discrepancies['META_NO_INDEX']) > 10:
+                    print(f"   ... and {len(discrepancies['META_NO_INDEX']) - 10} more")
+                print()
+            
+            if discrepancies['INDEX_NO_META']:
+                print(f"[INDEX_NO_META] Index entry exists, NO metadata ({len(discrepancies['INDEX_NO_META'])} songs):")
+                for item in discrepancies['INDEX_NO_META'][:10]:
+                    print(f"   - songId: \"{item['songId']}\"")
+                    for fp in item['filepaths'][:2]:
+                        print(f"     File: {Path(fp).name}")
+                if len(discrepancies['INDEX_NO_META']) > 10:
+                    print(f"   ... and {len(discrepancies['INDEX_NO_META']) - 10} more")
+                print()
+            
+            if discrepancies['INDEX_NO_FP']:
+                print(f"[INDEX_NO_FP] Index entry exists, NO fingerprint ({len(discrepancies['INDEX_NO_FP'])} songs):")
+                for item in discrepancies['INDEX_NO_FP'][:10]:
+                    print(f"   - songId: \"{item['songId']}\"")
+                    for fp in item['filepaths'][:2]:
+                        print(f"     File: {Path(fp).name}")
+                if len(discrepancies['INDEX_NO_FP']) > 10:
+                    print(f"   ... and {len(discrepancies['INDEX_NO_FP']) - 10} more")
+                print()
     
-    print(f"{'=' * 70}")
+    if not brief:
+        print(f"{'=' * 70}")
     
     return {
         'fp_count': len(fp_ids),
         'metadata_count': len(metadata_ids),
         'index_count': len(index_ids),
         'discrepancies': discrepancies,
-        'total_issues': total_issues
+        'total_issues': total_issues,
+        'fp_ids': fp_ids,
+        'metadata_ids': metadata_ids,
+        'index_ids': index_ids
     }
 
 
-def repair_database(db_path: Path, batch: bool = False, auto: bool = False) -> Dict[str, Any]:
+def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
     """
     Repair database discrepancies.
     
@@ -1755,14 +1773,15 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False) -> D
         db_path: Database directory path
         batch: If True, ask once for all fixes
         auto: If True, no confirmation needed
+        daemon: Optional daemon instance to reuse
     """
     print(f"\n{'=' * 70}")
     print("DATABASE REPAIR")
     print(f"{'=' * 70}")
     
-    # First run verify to get discrepancies
+    # First run verify to get discrepancies (reuse daemon if provided)
     print("Running verification first...\n")
-    verify_result = verify_database(db_path)
+    verify_result = verify_database(db_path, daemon=daemon)
     
     discrepancies = verify_result['discrepancies']
     total_issues = verify_result['total_issues']
@@ -1926,10 +1945,11 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False) -> D
     repaired = 0
     skipped = 0
     
-    # Start daemon for fingerprinting operations
-    daemon = None
+    # Start daemon for fingerprinting operations (reuse if provided)
+    own_daemon = daemon is None
     needs_daemon = any(r['action'] in ['re-fingerprint file'] for r in repairable)
-    if needs_daemon:
+    
+    if needs_daemon and own_daemon:
         daemon = IndexingDaemon(db_path)
         if not daemon.start():
             print("❌ Could not start daemon for fingerprinting")
@@ -2010,9 +2030,11 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False) -> D
                 skipped += 1
     
     finally:
-        if daemon:
+        if daemon and own_daemon:
             daemon.save()
             daemon.stop()
+        elif daemon:
+            daemon.save()  # Save but don't stop if we're reusing
     
     # Save updated files
     if repaired > 0:
@@ -2129,7 +2151,13 @@ def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SoundFingerprinting Test Suite v2.0")
+    parser = argparse.ArgumentParser(description="SoundFingerprinting Database Manager v2.1")
+    
+    # Interactive CLI mode (recommended)
+    parser.add_argument("--cli", action="store_true",
+                        help="Interactive CLI mode with daemon reuse (recommended)")
+    
+    # One-shot commands
     parser.add_argument("--index", type=str, help="Index all songs in folder")
     parser.add_argument("--test", type=str, help="Test recognition accuracy on folder")
     parser.add_argument("--live", action="store_true", help="Test live audio capture")
@@ -2163,7 +2191,11 @@ def main():
     else:
         db_path = get_db_path()
     
-    if args.index:
+    # Interactive CLI mode
+    if args.cli:
+        cli_mode(db_path)
+    
+    elif args.index:
         # Strip trailing slashes/backslashes (Windows CMD escapes closing quote with trailing \)
         folder = Path(args.index.rstrip('/\\'))
         if not folder.exists():
