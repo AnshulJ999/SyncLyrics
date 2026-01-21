@@ -1487,13 +1487,23 @@ def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None):
     # Use daemon if available, otherwise subprocess
     if daemon and daemon.is_running:
         stats = daemon.stats()
+        # Daemon returns different field names than subprocess
+        # Daemon: songCount, fingerprintCount, status
+        # Subprocess: songCount, totalFingerprints, metadataExists, fingerprintDbExists
+        fp_count = stats.get('fingerprintCount', stats.get('totalFingerprints', 0))
+        # Daemon doesn't return these, so check files directly
+        metadata_exists = (db_path / "metadata.json").exists()
+        fp_dir_exists = (db_path / "fingerprints").exists()
     else:
         stats = run_sfp_command(db_path, "stats")
+        fp_count = stats.get('totalFingerprints', stats.get('fingerprintCount', 0))
+        metadata_exists = stats.get('metadataExists', False)
+        fp_dir_exists = stats.get('fingerprintDbExists', False)
     
     print(f"Songs indexed: {stats.get('songCount', 0)}")
-    print(f"Total fingerprints: {stats.get('totalFingerprints', 0)}")
-    print(f"Metadata exists: {stats.get('metadataExists', False)}")
-    print(f"Fingerprint DB exists: {stats.get('fingerprintDbExists', False)}")
+    print(f"Total fingerprints: {fp_count:,}")
+    print(f"Metadata exists: {metadata_exists}")
+    print(f"Fingerprint DB exists: {fp_dir_exists}")
     
     # Show indexed files count
     indexed_files_path = db_path / "indexed_files.json"
@@ -1510,7 +1520,7 @@ def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None):
     for song in songs.get('songs', []):
         duration = song.get('duration')
         dur_str = f" [{duration:.0f}s]" if duration else ""
-        print(f"  • {song.get('artist')} - {song.get('title')}{dur_str} ({song.get('fingerprints', 0)} fp)")
+        print(f"  • {song.get('artist')} - {song.get('title')}{dur_str} ({song.get('fingerprints', song.get('fingerprintCount', 0))} fp)")
     
     return stats
 
@@ -2395,15 +2405,14 @@ def cli_mode(db_path: Path):
                    (clean_args.startswith("'") and clean_args.endswith("'")):
                     clean_args = clean_args[1:-1]
                 
-                # Check if first arg is a folder or a songId
-                first_arg = clean_args.split()[0].rstrip('/\\')
-                folder = Path(first_arg)
+                # Check if the entire clean_args is a folder path (handles spaces in paths)
+                folder = Path(clean_args.rstrip('/\\'))
                 
                 if folder.exists() and folder.is_dir():
                     # It's a folder - use reindex_folder with CLI's daemon
                     reindex_folder(folder, db_path, force_include=force_include, dry_run=dry_run, daemon=daemon)
                 else:
-                    # Treat as songId(s)
+                    # Treat as songId(s) - now we can split on spaces
                     if dry_run:
                         print("Error: --dry-run is only supported for folder reindexing")
                         print("Use 'info <songId>' to preview song details instead")
