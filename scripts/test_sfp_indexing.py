@@ -2251,6 +2251,11 @@ def cli_mode(db_path: Path):
                     print("Error: No folder specified")
                     continue
                 
+                # Strip surrounding quotes (single or double)
+                if (clean_args.startswith('"') and clean_args.endswith('"')) or \
+                   (clean_args.startswith("'") and clean_args.endswith("'")):
+                    clean_args = clean_args[1:-1]
+                
                 folder = Path(clean_args.rstrip('/\\'))
                 if not folder.exists():
                     print(f"Error: Folder not found: {folder}")
@@ -2273,6 +2278,11 @@ def cli_mode(db_path: Path):
                 if not clean_args:
                     print("Error: No folder or songId specified")
                     continue
+                
+                # Strip surrounding quotes (single or double)
+                if (clean_args.startswith('"') and clean_args.endswith('"')) or \
+                   (clean_args.startswith("'") and clean_args.endswith("'")):
+                    clean_args = clean_args[1:-1]
                 
                 # Check if first arg is a folder or a songId
                 first_arg = clean_args.split()[0].rstrip('/\\')
@@ -2508,6 +2518,11 @@ def cli_mode(db_path: Path):
                 if not clean_args:
                     print("Error: No folder specified")
                     continue
+                
+                # Strip surrounding quotes (single or double)
+                if (clean_args.startswith('"') and clean_args.endswith('"')) or \
+                   (clean_args.startswith("'") and clean_args.endswith("'")):
+                    clean_args = clean_args[1:-1]
                 
                 folder = Path(clean_args.rstrip('/\\'))
                 if not folder.exists():
