@@ -811,6 +811,9 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     indexed_files = load_json_file(indexed_files_path)
     skip_log = load_json_file(skip_log_path)  # Dict keyed by filepath
     
+    # Track excluded files for dry-run display
+    excluded_files = []  # List of {songId, artist, title, filepath, reason}
+    
     # Find all audio files
     audio_files = []
     for ext in extensions:
@@ -925,6 +928,13 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         
         # Check exclusion list (both explicit IDs and patterns)
         if is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
+            excluded_files.append({
+                'songId': song_id,
+                'artist': metadata['artist'],
+                'title': metadata['title'],
+                'filepath': file_key,
+                'reason': 'Excluded by ID or pattern'
+            })
             results['excluded'] += 1
             continue
         
@@ -965,9 +975,30 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         print(f"{'=' * 40}")
         print(f"  Total files found: {results['total']}")
         print(f"  Would index: {len(prepared_files)}")
-        print(f"  Already indexed (skip): {results['skipped']}")
+        print(f"  Skipped: {results['skipped']}")
         if results['excluded'] > 0:
             print(f"  Excluded: {results['excluded']}")
+        
+        # Show skipped files with reasons (from skip_log entries created this run)
+        if results['skipped'] > 0:
+            print(f"\n{'=' * 40}")
+            print(f"Skipped Files ({results['skipped']})")
+            print(f"{'=' * 40}")
+            # Show entries that were added/modified in this run
+            for filepath, entry in skip_log.items():
+                reason = entry.get('reason', 'Unknown')
+                filename = Path(filepath).name
+                print(f"  ❌ {filename}")
+                print(f"     Reason: {reason}")
+        
+        # Show excluded files with details
+        if excluded_files:
+            print(f"\n{'=' * 40}")
+            print(f"Excluded Files ({len(excluded_files)})")
+            print(f"{'=' * 40}")
+            for exc in excluded_files:
+                print(f"  🚫 {exc['artist']} - {exc['title']}")
+                print(f"     ID: {exc['songId']}")
         
         # Add preview data to results for export
         results['dry_run'] = True
@@ -981,6 +1012,11 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             }
             for f in prepared_files
         ]
+        # Include skipped and excluded in export
+        results['skipped_files'] = [
+            {'filepath': fp, **entry} for fp, entry in skip_log.items()
+        ]
+        results['excluded_files'] = excluded_files
         return results
     
     print(f"\nPhase 2: Batch fingerprinting ({BATCH_SIZE} parallel)...")
@@ -2327,11 +2363,13 @@ def cli_mode(db_path: Path):
                 if dry_run and result and not result.get('error'):
                     export_response = input("\nExport dry-run results to JSON? (y/N): ").strip().lower()
                     if export_response == 'y':
-                        export_path = input("Enter filename (default: dry_run_index.json): ").strip()
-                        if not export_path:
-                            export_path = "dry_run_index.json"
+                        export_filename = input("Enter filename (default: dry_run_index.json): ").strip()
+                        if not export_filename:
+                            export_filename = "dry_run_index.json"
+                        # Save to db_path folder (same as other JSON files)
+                        export_path = db_path / export_filename
                         try:
-                            save_json_file(Path(export_path), result)
+                            save_json_file(export_path, result)
                             print(f"✅ Exported to {export_path}")
                         except Exception as e:
                             print(f"❌ Export failed: {e}")
