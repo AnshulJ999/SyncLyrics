@@ -1,18 +1,23 @@
 """
-SoundFingerprinting Test Suite v2.0
+SoundFingerprinting Database Manager v2.1
 
-Comprehensive test script for local audio fingerprinting using sfp-cli.
+Comprehensive tool for local audio fingerprinting using sfp-cli.
 Now with:
+- Interactive CLI mode with daemon reuse
 - Full metadata extraction (all tags)
 - Content hash deduplication (90-sec audio hash)
+- Database verification and repair
 - indexed_files.json tracking
 - skip_log.json for skipped files
 - Configurable database path
 
 Usage:
+    python scripts/test_sfp_indexing.py --cli              Interactive CLI mode (recommended)
     python scripts/test_sfp_indexing.py --index <folder>   Index all songs in folder
     python scripts/test_sfp_indexing.py --test <folder>    Test recognition accuracy
     python scripts/test_sfp_indexing.py --live             Test live audio capture
+    python scripts/test_sfp_indexing.py --verify           Verify database integrity
+    python scripts/test_sfp_indexing.py --repair           Repair database discrepancies
     python scripts/test_sfp_indexing.py --stats            Show database stats
     python scripts/test_sfp_indexing.py --clear            Clear database
 """
@@ -1089,6 +1094,474 @@ def clear_database(db_path: Path, force: bool = False):
         print(f"❌ Failed: {result.get('error', 'Unknown error')}")
     
     return result
+
+
+# ============================================================================
+# CLI MODE - Interactive Database Manager
+# ============================================================================
+
+def print_cli_header(db_path: Path, daemon: 'IndexingDaemon' = None):
+    """Print the CLI header with current status."""
+    print()
+    print("=" * 70)
+    print("  SyncLyrics Database Manager v1.0")
+    print(f"  DB: {db_path}")
+    if daemon and daemon.is_running:
+        print(f"  Daemon: Running | Songs: {daemon.song_count}")
+    else:
+        print("  Daemon: Not running")
+    print("=" * 70)
+    print()
+
+
+def print_cli_help():
+    """Print available CLI commands."""
+    commands = [
+        ("help", "Show this help message"),
+        ("status", "Quick sync status table"),
+        ("verify", "Full verification with detailed discrepancies"),
+        ("repair", "Interactive repair wizard"),
+        ("repair --batch", "Batch repair (confirm once for all)"),
+        ("repair --auto", "Auto repair (no confirmation)"),
+        ("index <folder>", "Index new files in folder"),
+        ("reindex <folder>", "Force re-index all files in folder"),
+        ("search <query>", "Search songs by artist/title"),
+        ("info <songId>", "Show details for a song"),
+        ("purge <songId>", "Delete song from all data sources"),
+        ("list [page]", "List all songs (paginated)"),
+        ("stats", "Show database statistics"),
+        ("exit / quit", "Exit the CLI"),
+    ]
+    
+    print("\nAvailable Commands:")
+    print("-" * 50)
+    for cmd, desc in commands:
+        print(f"  {cmd:20} {desc}")
+    print()
+
+
+def print_sync_table(fp_ids: set, metadata_ids: set, index_ids: set):
+    """Print a visual sync status table."""
+    # Calculate "in sync" counts (IDs present in ALL sources)
+    all_synced = fp_ids & metadata_ids & index_ids
+    synced_count = len(all_synced)
+    
+    fp_orphans = len(fp_ids - metadata_ids) + len(fp_ids - index_ids)
+    meta_orphans = len(metadata_ids - fp_ids) + len(metadata_ids - index_ids)
+    index_orphans = len(index_ids - fp_ids) + len(index_ids - metadata_ids)
+    
+    # Simplify: count IDs NOT in all 3
+    fp_not_synced = len(fp_ids - all_synced)
+    meta_not_synced = len(metadata_ids - all_synced)
+    index_not_synced = len(index_ids - all_synced)
+    
+    print()
+    print("+" + "-" * 26 + "+" + "-" * 8 + "+" + "-" * 12 + "+" + "-" * 10 + "+")
+    print(f"| {'Data Source':<24} | {'Count':>6} | {'In Sync':>10} | {'Issues':>8} |")
+    print("+" + "-" * 26 + "+" + "-" * 8 + "+" + "-" * 12 + "+" + "-" * 10 + "+")
+    
+    # Fingerprint DB row
+    fp_status = "✓" if fp_not_synced == 0 else ""
+    fp_issues = f"{fp_not_synced} ⚠" if fp_not_synced > 0 else "0"
+    print(f"| {'Fingerprint DB':<24} | {len(fp_ids):>6} | {synced_count:>8} {fp_status:<1} | {fp_issues:>8} |")
+    
+    # Metadata row
+    meta_status = "✓" if meta_not_synced == 0 else ""
+    meta_issues = f"{meta_not_synced} ⚠" if meta_not_synced > 0 else "0"
+    print(f"| {'metadata.json':<24} | {len(metadata_ids):>6} | {synced_count:>8} {meta_status:<1} | {meta_issues:>8} |")
+    
+    # Index row
+    index_status = "✓" if index_not_synced == 0 else ""
+    index_issues = f"{index_not_synced} ⚠" if index_not_synced > 0 else "0"
+    print(f"| {'indexed_files.json':<24} | {len(index_ids):>6} | {synced_count:>8} {index_status:<1} | {index_issues:>8} |")
+    
+    print("+" + "-" * 26 + "+" + "-" * 8 + "+" + "-" * 12 + "+" + "-" * 10 + "+")
+    print()
+
+
+def print_discrepancy_table(discrepancies: Dict[str, List], fp_ids: set, metadata_ids: set, index_ids: set):
+    """Print a table showing which songIds have issues."""
+    # Collect all problematic songIds
+    problem_ids = set()
+    for items in discrepancies.values():
+        for item in items:
+            problem_ids.add(item.get('songId', ''))
+    
+    if not problem_ids:
+        return
+    
+    print("\nDiscrepancy Details:")
+    print("+" + "-" * 42 + "+" + "-" * 6 + "+" + "-" * 6 + "+" + "-" * 7 + "+")
+    print(f"| {'Song ID':<40} | {'FP':^4} | {'Meta':^4} | {'Index':^5} |")
+    print("+" + "-" * 42 + "+" + "-" * 6 + "+" + "-" * 6 + "+" + "-" * 7 + "+")
+    
+    for song_id in sorted(problem_ids)[:20]:  # Limit to 20 rows
+        fp_mark = "✓" if song_id in fp_ids else "❌"
+        meta_mark = "✓" if song_id in metadata_ids else "❌"
+        index_mark = "✓" if song_id in index_ids else "❌"
+        
+        # Truncate long song IDs
+        display_id = song_id[:40] if len(song_id) <= 40 else song_id[:37] + "..."
+        print(f"| {display_id:<40} | {fp_mark:^4} | {meta_mark:^4} | {index_mark:^5} |")
+    
+    print("+" + "-" * 42 + "+" + "-" * 6 + "+" + "-" * 6 + "+" + "-" * 7 + "+")
+    
+    if len(problem_ids) > 20:
+        print(f"  ... and {len(problem_ids) - 20} more")
+    print()
+
+
+def search_songs(query: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> List[Dict]:
+    """Search for songs by artist or title."""
+    metadata_path = db_path / "metadata.json"
+    metadata = load_json_file(metadata_path)
+    
+    query_lower = query.lower()
+    results = []
+    
+    for song_id, meta in metadata.items():
+        artist = (meta.get('artist') or '').lower()
+        title = (meta.get('title') or '').lower()
+        album = (meta.get('album') or '').lower()
+        
+        if query_lower in artist or query_lower in title or query_lower in album or query_lower in song_id.lower():
+            results.append({
+                'songId': song_id,
+                'artist': meta.get('artist', '?'),
+                'title': meta.get('title', '?'),
+                'album': meta.get('album'),
+                'duration': meta.get('duration'),
+                'filepath': meta.get('originalFilepath')
+            })
+    
+    return results
+
+
+def show_song_info(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None):
+    """Show detailed info for a specific song."""
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    
+    metadata = load_json_file(metadata_path)
+    indexed_files = load_json_file(indexed_files_path)
+    
+    print(f"\n{'=' * 60}")
+    print(f"Song Info: {song_id}")
+    print(f"{'=' * 60}")
+    
+    # Check metadata
+    meta = metadata.get(song_id)
+    if meta:
+        print("\n[metadata.json] ✓ FOUND")
+        print(f"  Artist:    {meta.get('artist', '?')}")
+        print(f"  Title:     {meta.get('title', '?')}")
+        print(f"  Album:     {meta.get('album', '-')}")
+        print(f"  Duration:  {meta.get('duration', 0):.1f}s")
+        print(f"  Year:      {meta.get('year', '-')}")
+        print(f"  Genre:     {meta.get('genre', '-')}")
+        print(f"  ISRC:      {meta.get('isrc', '-')}")
+        print(f"  FP Count:  {meta.get('fingerprintCount', '?')}")
+        print(f"  Indexed:   {meta.get('indexedAt', '-')}")
+        print(f"  File:      {meta.get('originalFilepath', '-')}")
+    else:
+        print("\n[metadata.json] ❌ NOT FOUND")
+    
+    # Check indexed_files
+    index_entries = [(fp, entry) for fp, entry in indexed_files.items() if entry.get('songId') == song_id]
+    if index_entries:
+        print(f"\n[indexed_files.json] ✓ FOUND ({len(index_entries)} entries)")
+        for fp, entry in index_entries[:5]:
+            print(f"  • {Path(fp).name}")
+            print(f"    Hash: {entry.get('contentHash', '-')}")
+    else:
+        print("\n[indexed_files.json] ❌ NOT FOUND")
+    
+    # Check fingerprint DB (via daemon)
+    if daemon and daemon.is_running:
+        try:
+            daemon.process.stdin.write('{\"cmd\": \"list-fp\"}\n')
+            daemon.process.stdin.flush()
+            response = daemon.process.stdout.readline()
+            if response:
+                result = json.loads(response.strip())
+                fp_ids = set(result.get('songIds', []))
+                if song_id in fp_ids:
+                    print(f"\n[Fingerprint DB] ✓ FOUND")
+                else:
+                    print(f"\n[Fingerprint DB] ❌ NOT FOUND")
+        except:
+            print(f"\n[Fingerprint DB] ⚠ Could not check (daemon error)")
+    else:
+        print(f"\n[Fingerprint DB] ⚠ Could not check (daemon not running)")
+    
+    print()
+
+
+def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
+    """
+    Safely remove a song from all 3 data sources.
+    Shows what will be deleted and asks for confirmation.
+    """
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    
+    metadata = load_json_file(metadata_path)
+    indexed_files = load_json_file(indexed_files_path)
+    
+    # Check what exists
+    in_metadata = song_id in metadata
+    index_entries = [(fp, entry) for fp, entry in indexed_files.items() if entry.get('songId') == song_id]
+    in_index = len(index_entries) > 0
+    
+    # Check fingerprint DB
+    in_fp = False
+    if daemon and daemon.is_running:
+        try:
+            daemon.process.stdin.write('{\"cmd\": \"list-fp\"}\n')
+            daemon.process.stdin.flush()
+            response = daemon.process.stdout.readline()
+            if response:
+                result = json.loads(response.strip())
+                fp_ids = set(result.get('songIds', []))
+                in_fp = song_id in fp_ids
+        except:
+            pass
+    
+    if not in_metadata and not in_index and not in_fp:
+        print(f"\n❌ Song '{song_id}' not found in any data source.")
+        return {'success': False, 'error': 'not found'}
+    
+    # Show what will be deleted
+    print(f"\n{'=' * 60}")
+    print(f"PURGE: {song_id}")
+    print(f"{'=' * 60}")
+    print("\nWill delete from:")
+    
+    if in_fp:
+        print(f"  [✓] Fingerprint DB")
+    else:
+        print(f"  [ ] Fingerprint DB - NOT FOUND (already missing)")
+    
+    if in_metadata:
+        meta = metadata[song_id]
+        print(f"  [✓] metadata.json: {meta.get('artist', '?')} - {meta.get('title', '?')}")
+    else:
+        print(f"  [ ] metadata.json - NOT FOUND (already missing)")
+    
+    if in_index:
+        print(f"  [✓] indexed_files.json: {len(index_entries)} file(s)")
+        for fp, _ in index_entries[:3]:
+            print(f"      • {Path(fp).name}")
+        if len(index_entries) > 3:
+            print(f"      ... and {len(index_entries) - 3} more")
+    else:
+        print(f"  [ ] indexed_files.json - NOT FOUND (already missing)")
+    
+    print()
+    response = input("Proceed with deletion? (y/n): ").strip().lower()
+    if response != 'y':
+        print("Cancelled.")
+        return {'success': False, 'cancelled': True}
+    
+    deleted_from = []
+    
+    # Delete from fingerprint DB
+    if in_fp and daemon and daemon.is_running:
+        try:
+            cmd = json.dumps({"cmd": "delete", "songId": song_id})
+            daemon.process.stdin.write(cmd + "\n")
+            daemon.process.stdin.flush()
+            response = daemon.process.stdout.readline()
+            if response:
+                result = json.loads(response.strip())
+                if result.get('success'):
+                    deleted_from.append('fingerprint_db')
+                    print(f"  ✓ Deleted from Fingerprint DB")
+                else:
+                    print(f"  ⚠ Could not delete from Fingerprint DB: {result.get('error')}")
+        except Exception as e:
+            print(f"  ⚠ Error deleting from Fingerprint DB: {e}")
+    
+    # Delete from metadata
+    if in_metadata:
+        del metadata[song_id]
+        deleted_from.append('metadata')
+        print(f"  ✓ Deleted from metadata.json")
+    
+    # Delete from indexed_files
+    if in_index:
+        for fp, _ in index_entries:
+            del indexed_files[fp]
+        deleted_from.append('indexed_files')
+        print(f"  ✓ Deleted {len(index_entries)} entries from indexed_files.json")
+    
+    # Save changes
+    if 'metadata' in deleted_from:
+        save_json_file(metadata_path, metadata)
+    if 'indexed_files' in deleted_from:
+        save_json_file(indexed_files_path, indexed_files)
+    
+    if daemon and daemon.is_running:
+        daemon.save()
+    
+    print(f"\n✓ Purge complete. Deleted from: {', '.join(deleted_from)}")
+    return {'success': True, 'deleted_from': deleted_from}
+
+
+def list_songs(db_path: Path, page: int = 1, page_size: int = 20):
+    """List all songs with pagination."""
+    metadata_path = db_path / "metadata.json"
+    metadata = load_json_file(metadata_path)
+    
+    songs = list(metadata.items())
+    total = len(songs)
+    total_pages = (total + page_size - 1) // page_size
+    
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_songs = songs[start:end]
+    
+    print(f"\n{'=' * 70}")
+    print(f"Songs (Page {page}/{total_pages}, {total} total)")
+    print(f"{'=' * 70}\n")
+    
+    for song_id, meta in page_songs:
+        duration = meta.get('duration', 0)
+        dur_str = f"[{duration:.0f}s]" if duration else ""
+        fp_count = meta.get('fingerprintCount', '?')
+        print(f"  {meta.get('artist', '?')} - {meta.get('title', '?')} {dur_str}")
+        print(f"    ID: {song_id} | FPs: {fp_count}")
+        print()
+    
+    if total_pages > 1:
+        print(f"Use 'list {page + 1}' for next page")
+
+
+def cli_mode(db_path: Path):
+    """
+    Interactive CLI mode - stays running until user exits.
+    Reuses a single daemon instance throughout the session.
+    """
+    print_cli_header(db_path)
+    print("Starting daemon...")
+    
+    # Start daemon once for the entire session
+    daemon = IndexingDaemon(db_path)
+    if not daemon.start():
+        print("⚠ Could not start daemon. Some commands may not work.")
+        daemon = None
+    
+    print_cli_header(db_path, daemon)
+    print("Type 'help' for available commands.\n")
+    
+    try:
+        while True:
+            try:
+                cmd_input = input("> ").strip()
+            except EOFError:
+                break
+            
+            if not cmd_input:
+                continue
+            
+            # Parse command and arguments
+            parts = cmd_input.split(maxsplit=1)
+            cmd = parts[0].lower()
+            args = parts[1] if len(parts) > 1 else ""
+            
+            # Handle commands
+            if cmd in ('exit', 'quit', 'q'):
+                print("\nShutting down...")
+                break
+            
+            elif cmd == 'help':
+                print_cli_help()
+            
+            elif cmd == 'status':
+                # Quick status check
+                result = verify_database(db_path, daemon=daemon, brief=True)
+            
+            elif cmd == 'verify':
+                verify_database(db_path, daemon=daemon, brief=False)
+            
+            elif cmd == 'repair':
+                batch = '--batch' in args
+                auto = '--auto' in args
+                repair_database(db_path, batch=batch, auto=auto, daemon=daemon)
+            
+            elif cmd == 'index':
+                if not args:
+                    print("Usage: index <folder>")
+                    continue
+                folder = Path(args.rstrip('/\\'))
+                if not folder.exists():
+                    print(f"Error: Folder not found: {folder}")
+                    continue
+                # Use the existing index_folder function but pass daemon
+                index_folder(folder, db_path)
+            
+            elif cmd == 'reindex':
+                if not args:
+                    print("Usage: reindex <folder>")
+                    continue
+                folder = Path(args.rstrip('/\\'))
+                if not folder.exists():
+                    print(f"Error: Folder not found: {folder}")
+                    continue
+                reindex_folder(folder, db_path)
+            
+            elif cmd == 'search':
+                if not args:
+                    print("Usage: search <query>")
+                    continue
+                results = search_songs(args, db_path, daemon)
+                if results:
+                    print(f"\nFound {len(results)} matches:\n")
+                    for r in results[:20]:
+                        dur = f"[{r['duration']:.0f}s]" if r.get('duration') else ""
+                        print(f"  {r['artist']} - {r['title']} {dur}")
+                        print(f"    ID: {r['songId']}")
+                    if len(results) > 20:
+                        print(f"\n  ... and {len(results) - 20} more")
+                else:
+                    print(f"No matches found for '{args}'")
+                print()
+            
+            elif cmd == 'info':
+                if not args:
+                    print("Usage: info <songId>")
+                    continue
+                show_song_info(args, db_path, daemon)
+            
+            elif cmd == 'purge':
+                if not args:
+                    print("Usage: purge <songId>")
+                    continue
+                purge_song(args, db_path, daemon)
+            
+            elif cmd == 'list':
+                page = 1
+                if args:
+                    try:
+                        page = int(args)
+                    except ValueError:
+                        print("Usage: list [page_number]")
+                        continue
+                list_songs(db_path, page)
+            
+            elif cmd == 'stats':
+                show_stats(db_path)
+            
+            else:
+                print(f"Unknown command: {cmd}. Type 'help' for available commands.")
+    
+    except KeyboardInterrupt:
+        print("\n\nInterrupted.")
+    
+    finally:
+        if daemon:
+            daemon.stop()
+        print("Goodbye!")
 
 
 def verify_database(db_path: Path) -> Dict[str, Any]:
