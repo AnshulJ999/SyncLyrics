@@ -1116,7 +1116,7 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
             result = daemon.fingerprint(audio_path, new_meta)
             
             if result.get('success'):
-                fp_count = result.get('fingerprintCount', 0)
+                fp_count = result.get('fingerprints', 0)
                 print(f"  ✓ {artist} - {title}: {fp_count} fingerprints")
                 results['reindexed'] += 1
                 results['songs'].append({
