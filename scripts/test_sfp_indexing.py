@@ -144,17 +144,19 @@ class IndexingDaemon:
     """
     Daemon-based indexing for 8x faster fingerprinting.
     
-    Connects to sfp-cli daemon via stdin/stdout. The daemon loads FFmpeg
-    and database once, then processes fingerprint commands without reloading.
+    Supports two connection modes:
+    1. TCP: Connect to existing daemon (started by SyncLyrics) on port 9123
+    2. Subprocess: Start own daemon via stdin/stdout
     
     Features:
+    - Auto-detect existing daemon via TCP
     - Retry logic (max 3 attempts)
     - Auto-restart on crash
     - Save every N files
     
     Usage:
         daemon = IndexingDaemon(db_path)
-        daemon.start()
+        daemon.start()  # Will connect via TCP if SyncLyrics daemon running
         for file in audio_files:
             result = daemon.fingerprint(file, metadata)
             if i % 5 == 0:  # Save every 5 files
@@ -165,6 +167,7 @@ class IndexingDaemon:
     MAX_RESTART_ATTEMPTS = 3
     STARTUP_TIMEOUT = 120  # seconds
     COMMAND_TIMEOUT = 60   # seconds per file
+    TCP_PORT = 9123        # Port to connect to existing daemon
     
     def __init__(self, db_path: Path):
         self.db_path = db_path.absolute()
@@ -173,14 +176,73 @@ class IndexingDaemon:
         self._ready = False
         self._song_count = 0
         self._restart_count = 0
+        
+        # TCP connection (when connecting to existing daemon)
+        self._tcp_socket: Optional['socket.socket'] = None
+        self._using_tcp = False
     
     @property
     def is_running(self) -> bool:
-        """Check if daemon process is still running."""
+        """Check if daemon is available (via TCP or subprocess)."""
+        if self._using_tcp and self._tcp_socket:
+            return True
         return self.process is not None and self.process.poll() is None
     
     def start(self) -> bool:
-        """Start the daemon process with retry logic. Returns True if successful."""
+        """
+        Start daemon connection with TCP-first strategy.
+        
+        1. First, try to connect to existing daemon via TCP (port 9123)
+        2. If no daemon running, start our own via subprocess
+        
+        Returns True if successful.
+        """
+        # First, try TCP connection to existing daemon
+        if self._try_tcp_connect():
+            self._using_tcp = True
+            print(f"✅ Connected to existing daemon via TCP (port {self.TCP_PORT})")
+            return True
+        
+        # No existing daemon, start our own via subprocess
+        self._using_tcp = False
+        return self._start_subprocess()
+    
+    def _try_tcp_connect(self) -> bool:
+        """Try to connect to existing daemon via TCP. Returns True if successful."""
+        import socket
+        
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)  # Quick timeout for connection attempt
+            sock.connect(('127.0.0.1', self.TCP_PORT))
+            sock.settimeout(30)  # Normal timeout for operations
+            
+            # Read ready/connected message
+            data = b''
+            while b'\n' not in data:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    sock.close()
+                    return False
+                data += chunk
+            
+            line = data.decode('utf-8').strip()
+            response = json.loads(line)
+            
+            if response.get('status') == 'connected':
+                self._tcp_socket = sock
+                self._ready = True
+                self._song_count = response.get('songs', 0)
+                return True
+            
+            sock.close()
+            return False
+            
+        except Exception:
+            return False
+    
+    def _start_subprocess(self) -> bool:
+        """Start own daemon via subprocess."""
         if self.exe_path is None:
             print("❌ sfp-cli executable not available")
             return False
@@ -205,7 +267,7 @@ class IndexingDaemon:
         return False
     
     def _try_start(self) -> bool:
-        """Single attempt to start daemon. Returns True if successful."""
+        """Single attempt to start daemon subprocess. Returns True if successful."""
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             
@@ -248,7 +310,7 @@ class IndexingDaemon:
             return False
     
     def _kill_process(self):
-        """Kill daemon process if running."""
+        """Kill daemon subprocess if running."""
         if self.process is not None:
             try:
                 self.process.kill()
@@ -257,25 +319,37 @@ class IndexingDaemon:
             self.process = None
             self._ready = False
     
-    def fingerprint(self, audio_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send fingerprint command to daemon.
-        
-        Args:
-            audio_path: Path to audio file (FLAC/MP3/WAV)
-            metadata: Dictionary with songId, title, artist, etc.
-        
-        Returns:
-            Result dict with success/error info
-        """
+    def _send_command(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        """Send command via TCP or subprocess, return response."""
+        if self._using_tcp and self._tcp_socket:
+            return self._send_tcp_command(cmd)
+        else:
+            return self._send_subprocess_command(cmd)
+    
+    def _send_tcp_command(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        """Send command via TCP socket."""
+        try:
+            cmd_json = json.dumps(cmd) + '\n'
+            self._tcp_socket.sendall(cmd_json.encode('utf-8'))
+            
+            # Read response
+            data = b''
+            while b'\n' not in data:
+                chunk = self._tcp_socket.recv(65536)
+                if not chunk:
+                    return {"success": False, "error": "Connection closed"}
+                data += chunk
+            
+            line = data.decode('utf-8').strip()
+            return json.loads(line)
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _send_subprocess_command(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        """Send command via subprocess stdin/stdout."""
         if not self._ready or self.process is None:
             return {"success": False, "error": "Daemon not ready"}
-        
-        cmd = {
-            "cmd": "fingerprint",
-            "path": str(audio_path.absolute()),
-            "metadata": metadata
-        }
         
         try:
             self.process.stdin.write(json.dumps(cmd) + "\n")
@@ -289,6 +363,28 @@ class IndexingDaemon:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
+    def fingerprint(self, audio_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send fingerprint command to daemon.
+        
+        Args:
+            audio_path: Path to audio file (FLAC/MP3/WAV)
+            metadata: Dictionary with songId, title, artist, etc.
+        
+        Returns:
+            Result dict with success/error info
+        """
+        if not self._ready:
+            return {"success": False, "error": "Daemon not ready"}
+        
+        cmd = {
+            "cmd": "fingerprint",
+            "path": str(audio_path.absolute()),
+            "metadata": metadata
+        }
+        
+        return self._send_command(cmd)
+    
     def fingerprint_batch(self, files: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Send batch fingerprint command for parallel processing (8 concurrent in C#).
@@ -299,7 +395,7 @@ class IndexingDaemon:
         Returns:
             Result dict with processed count and individual results
         """
-        if not self._ready or self.process is None:
+        if not self._ready:
             return {"success": False, "error": "Daemon not ready"}
         
         # Convert paths to strings
@@ -315,40 +411,40 @@ class IndexingDaemon:
             "files": files_json
         }
         
-        try:
-            self.process.stdin.write(json.dumps(cmd) + "\n")
-            self.process.stdin.flush()
-            
-            response = self.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                self._song_count = result.get("successCount", 0) + self._song_count
-                return result
-            else:
-                return {"success": False, "error": "No response from daemon"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        result = self._send_command(cmd)
+        if result.get("success"):
+            self._song_count = result.get("successCount", 0) + self._song_count
+        return result
     
     def save(self) -> Dict[str, Any]:
         """Tell daemon to save database to disk."""
-        if not self._ready or self.process is None:
+        if not self._ready:
             return {"status": "error", "error": "Daemon not ready"}
         
-        try:
-            self.process.stdin.write('{"cmd": "save"}\n')
-            self.process.stdin.flush()
-            
-            response = self.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                self._song_count = result.get("songCount", self._song_count)
-                return result
-            return {"status": "error", "error": "No response"}
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+        result = self._send_command({"cmd": "save"})
+        if result.get("success"):
+            self._song_count = result.get("songCount", self._song_count)
+        return result
     
     def stop(self):
-        """Shutdown daemon gracefully (saves database automatically)."""
+        """
+        Shutdown/disconnect from daemon.
+        
+        - TCP mode: Just close socket (doesn't shutdown daemon)
+        - Subprocess mode: Send shutdown command
+        """
+        if self._using_tcp and self._tcp_socket:
+            # TCP mode: just disconnect (don't shutdown SyncLyrics' daemon!)
+            try:
+                self._tcp_socket.close()
+            except:
+                pass
+            self._tcp_socket = None
+            self._ready = False
+            print(f"✅ Disconnected from shared daemon")
+            return
+        
+        # Subprocess mode: send shutdown
         if self.process is None:
             return
         

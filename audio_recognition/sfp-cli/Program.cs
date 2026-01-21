@@ -1,9 +1,14 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using SoundFingerprinting;
 using SoundFingerprinting.Audio;
@@ -42,8 +47,13 @@ class Program
     private static InMemoryModelService _modelService = null!;
     private static readonly IAudioService _audioService = new FFmpegAudioService();
     
-    // Metadata storage - maps songId to full metadata
-    private static Dictionary<string, SongMetadata> _metadata = new();
+    // Metadata storage - maps songId to full metadata (ConcurrentDictionary for thread-safe multi-client TCP access)
+    private static ConcurrentDictionary<string, SongMetadata> _metadata = new();
+    
+    // TCP listener for external clients (CLI script, etc.) - port 9123
+    private const int TcpPort = 9123;
+    private static TcpListener? _tcpListener;
+    private static CancellationTokenSource? _shutdownToken;
 
     static async Task<int> Main(string[] args)
     {
@@ -389,15 +399,24 @@ class Program
     ///   {"matched": true, "matchCount": 3, "bestMatch": {...}, "matches": [...]}
     ///   {"success": true, "fingerprints": 2500}
     ///   {"status": "shutdown"}
+    /// 
+    /// Also listens on TCP port 9123 for external clients (CLI script, etc.)
+    /// TCP clients can send the same JSON commands and receive JSON responses.
     /// </summary>
     static async Task<int> Serve()
     {
-        // Output ready signal with database stats
+        _shutdownToken = new CancellationTokenSource();
+        
+        // Start TCP listener for external clients (CLI script, etc.)
+        _ = StartTcpListener(_shutdownToken.Token);
+        
+        // Output ready signal with database stats (to stdout for process owner)
         Output(new
         {
             status = "ready",
             songs = _metadata.Count,
-            fingerprints = _metadata.Values.Sum(m => m.FingerprintCount)
+            fingerprints = _metadata.Values.Sum(m => m.FingerprintCount),
+            tcpPort = TcpPort
         });
         Console.Out.Flush();
 
@@ -408,75 +427,467 @@ class Program
             line = line.Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
-            try
-            {
-                // Parse JSON command
-                using var doc = JsonDocument.Parse(line);
-                var root = doc.RootElement;
-                
-                var cmd = root.GetProperty("cmd").GetString()?.ToLower() ?? "";
-
-                switch (cmd)
-                {
-                    case "query":
-                        await HandleQueryCommand(root);
-                        break;
-                    
-                    case "fingerprint":
-                        await HandleFingerprintCommand(root);
-                        break;
-                    
-                    case "fingerprint-batch":
-                        await HandleFingerprintBatchCommand(root);
-                        break;
-                    
-                    case "save":
-                        HandleSaveCommand();
-                        break;
-                    
-                    case "stats":
-                        HandleStatsCommand();
-                        break;
-                    
-                    case "list-fp":
-                        HandleListFingerprintsCommand();
-                        break;
-                    
-                    case "reload":
-                        HandleReloadCommand();
-                        break;
-                    
-                    case "shutdown":
-                        // Save before shutdown
-                        SaveDatabase();
-                        SaveMetadata();
-                        Output(new { status = "shutdown" });
-                        Console.Out.Flush();
-                        return 0;
-                    
-                    default:
-                        OutputError($"Unknown command: {cmd}");
-                        break;
-                }
-            }
-            catch (JsonException ex)
-            {
-                OutputError($"Invalid JSON: {ex.Message}");
-            }
-            catch (KeyNotFoundException ex)
-            {
-                OutputError($"Missing field: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                OutputError($"Command error: {ex.Message}");
-            }
-
+            var (response, shouldShutdown) = await ProcessCommand(line);
+            Console.WriteLine(response);
             Console.Out.Flush();
+            
+            if (shouldShutdown)
+            {
+                break;
+            }
         }
 
-        // EOF reached (stdin closed)
+        // Clean shutdown
+        _shutdownToken.Cancel();
+        _tcpListener?.Stop();
+        
         return 0;
+    }
+    
+    /// <summary>
+    /// Start TCP listener for external clients. Runs in background.
+    /// </summary>
+    static async Task StartTcpListener(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _tcpListener = new TcpListener(IPAddress.Loopback, TcpPort);
+            _tcpListener.Start();
+            
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    // Accept client connection
+                    var client = await _tcpListener.AcceptTcpClientAsync(cancellationToken);
+                    
+                    // Handle client in background (fire and forget)
+                    _ = HandleTcpClient(client, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+            }
+        }
+        catch (SocketException ex)
+        {
+            // Port already in use - log but continue (stdin still works)
+            Console.Error.WriteLine($"TCP listener failed to start on port {TcpPort}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"TCP listener error: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Handle a single TCP client connection.
+    /// </summary>
+    static async Task HandleTcpClient(TcpClient client, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using (client)
+            using (var stream = client.GetStream())
+            using (var reader = new StreamReader(stream, Encoding.UTF8))
+            using (var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true })
+            {
+                // Send ready signal to TCP client
+                var readyJson = JsonSerializer.Serialize(new
+                {
+                    status = "connected",
+                    songs = _metadata.Count,
+                    fingerprints = _metadata.Values.Sum(m => m.FingerprintCount)
+                });
+                await writer.WriteLineAsync(readyJson);
+                
+                string? line;
+                while (!cancellationToken.IsCancellationRequested && 
+                       (line = await reader.ReadLineAsync()) != null)
+                {
+                    line = line.Trim();
+                    if (string.IsNullOrEmpty(line)) continue;
+                    
+                    var (response, shouldShutdown) = await ProcessCommand(line);
+                    await writer.WriteLineAsync(response);
+                    
+                    // TCP clients shouldn't be able to shutdown the daemon
+                    // (only stdin owner can do that)
+                    if (shouldShutdown)
+                    {
+                        // Ignore shutdown from TCP, just disconnect this client
+                        await writer.WriteLineAsync(JsonSerializer.Serialize(new { 
+                            error = "Shutdown not allowed from TCP client" 
+                        }));
+                        break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Client disconnected or error - just log and continue
+            Console.Error.WriteLine($"TCP client error: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Process a single JSON command and return the response.
+    /// Used by both stdin and TCP handlers.
+    /// </summary>
+    static async Task<(string response, bool shouldShutdown)> ProcessCommand(string line)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            
+            var cmd = root.GetProperty("cmd").GetString()?.ToLower() ?? "";
+
+            switch (cmd)
+            {
+                case "query":
+                    return (await HandleQueryCommandJson(root), false);
+                
+                case "fingerprint":
+                    return (await HandleFingerprintCommandJson(root), false);
+                
+                case "fingerprint-batch":
+                    return (await HandleFingerprintBatchCommandJson(root), false);
+                
+                case "save":
+                    return (HandleSaveCommandJson(), false);
+                
+                case "stats":
+                    return (HandleStatsCommandJson(), false);
+                
+                case "list":
+                    return (HandleListCommandJson(), false);
+                
+                case "list-fp":
+                    return (HandleListFingerprintsCommandJson(), false);
+                
+                case "delete":
+                    return (HandleDeleteCommandJson(root), false);
+                
+                case "reload":
+                    return (HandleReloadCommandJson(), false);
+                
+                case "shutdown":
+                    SaveDatabase();
+                    SaveMetadata();
+                    return (JsonSerializer.Serialize(new { status = "shutdown" }), true);
+                
+                default:
+                    return (JsonSerializer.Serialize(new { error = $"Unknown command: {cmd}" }), false);
+            }
+        }
+        catch (JsonException ex)
+        {
+            return (JsonSerializer.Serialize(new { error = $"Invalid JSON: {ex.Message}" }), false);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return (JsonSerializer.Serialize(new { error = $"Missing field: {ex.Message}" }), false);
+        }
+        catch (Exception ex)
+        {
+            return (JsonSerializer.Serialize(new { error = $"Command error: {ex.Message}" }), false);
+        }
+    }
+    
+    // ============================================================================
+    // JSON-returning command handlers (used by ProcessCommand for stdin + TCP)
+    // ============================================================================
+    
+    static async Task<string> HandleQueryCommandJson(JsonElement root)
+    {
+        var path = root.GetProperty("path").GetString() ?? "";
+        var duration = root.TryGetProperty("duration", out var durProp) ? durProp.GetInt32() : 10;
+        var offset = root.TryGetProperty("offset", out var offProp) ? offProp.GetInt32() : 0;
+
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return JsonSerializer.Serialize(new { matched = false, matchCount = 0, message = $"File not found: {path}" });
+        }
+
+        if (_metadata.Count == 0)
+        {
+            return JsonSerializer.Serialize(new { matched = false, matchCount = 0, message = "No songs indexed yet" });
+        }
+
+        var result = await QueryCommandBuilder.Instance
+            .BuildQueryCommand()
+            .From(path, duration, offset)
+            .WithQueryConfig(config =>
+            {
+                config.Audio.MaxTracksToReturn = 6;
+                return config;
+            })
+            .UsingServices(_modelService, _audioService)
+            .Query();
+
+        var matches = new List<object>();
+        foreach (var entry in result.ResultEntries.Take(6))
+        {
+            var audioResult = entry.Audio;
+            if (audioResult == null) continue;
+            
+            var track = audioResult.Track;
+            _metadata.TryGetValue(track.Id, out var meta);
+            
+            matches.Add(new
+            {
+                songId = track.Id,
+                title = meta?.Title ?? track.Title,
+                artist = meta?.Artist ?? track.Artist,
+                album = meta?.Album,
+                albumArtist = meta?.AlbumArtist,
+                duration = meta?.Duration,
+                trackNumber = meta?.TrackNumber,
+                discNumber = meta?.DiscNumber,
+                genre = meta?.Genre,
+                year = meta?.Year,
+                isrc = meta?.Isrc,
+                confidence = audioResult.Confidence,
+                trackMatchStartsAt = audioResult.TrackMatchStartsAt,
+                queryMatchStartsAt = audioResult.QueryMatchStartsAt,
+                originalFilepath = meta?.OriginalFilepath
+            });
+        }
+
+        if (matches.Count > 0)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                matched = true,
+                matchCount = matches.Count,
+                bestMatch = matches[0],
+                matches = matches
+            });
+        }
+        else
+        {
+            return JsonSerializer.Serialize(new { matched = false, matchCount = 0, message = "No match found" });
+        }
+    }
+    
+    static async Task<string> HandleFingerprintCommandJson(JsonElement root)
+    {
+        try
+        {
+            var path = root.GetProperty("path").GetString() ?? "";
+            var metaElement = root.GetProperty("metadata");
+            
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                return JsonSerializer.Serialize(new { success = false, error = $"File not found: {path}" });
+            }
+            
+            var meta = JsonSerializer.Deserialize<SongMetadata>(metaElement.GetRawText(), new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? new SongMetadata();
+            
+            if (string.IsNullOrEmpty(meta.SongId) || string.IsNullOrEmpty(meta.Title) || string.IsNullOrEmpty(meta.Artist))
+            {
+                return JsonSerializer.Serialize(new { success = false, error = "Missing required fields: songId, title, artist" });
+            }
+            
+            if (_metadata.ContainsKey(meta.SongId))
+            {
+                return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Already indexed" });
+            }
+            
+            if (!string.IsNullOrEmpty(meta.ContentHash))
+            {
+                var existingWithHash = _metadata.Values.FirstOrDefault(m => m.ContentHash == meta.ContentHash);
+                if (existingWithHash != null)
+                {
+                    return JsonSerializer.Serialize(new { success = false, skipped = true, songId = meta.SongId, reason = "Duplicate content hash" });
+                }
+            }
+            
+            var track = new TrackInfo(meta.SongId, meta.Title, meta.Artist);
+            var hashes = await FingerprintCommandBuilder.Instance
+                .BuildFingerprintCommand()
+                .From(path)
+                .UsingServices(_audioService)
+                .Hash();
+            
+            _modelService.Insert(track, hashes);
+            
+            meta.FingerprintCount = hashes.Count;
+            meta.IndexedAt = DateTime.UtcNow.ToString("o");
+            _metadata[meta.SongId] = meta;
+            
+            return JsonSerializer.Serialize(new { success = true, songId = meta.SongId, fingerprints = hashes.Count });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+    
+    static async Task<string> HandleFingerprintBatchCommandJson(JsonElement root)
+    {
+        try
+        {
+            var filesElement = root.GetProperty("files");
+            var files = filesElement.EnumerateArray().ToList();
+            
+            var tasks = files.Select(async fileElement =>
+            {
+                return await FingerprintSingleFile(fileElement);
+            });
+            
+            var results = await Task.WhenAll(tasks);
+            
+            return JsonSerializer.Serialize(new
+            {
+                success = true,
+                processed = results.Length,
+                results = results
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+    
+    static string HandleSaveCommandJson()
+    {
+        try
+        {
+            SaveDatabase();
+            SaveMetadata();
+            return JsonSerializer.Serialize(new
+            {
+                success = true,
+                songCount = _metadata.Count,
+                fingerprintCount = _metadata.Values.Sum(m => m.FingerprintCount)
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+    
+    static string HandleStatsCommandJson()
+    {
+        return JsonSerializer.Serialize(new
+        {
+            songCount = _metadata.Count,
+            fingerprintCount = _metadata.Values.Sum(m => m.FingerprintCount),
+            status = "ok"
+        });
+    }
+    
+    static string HandleListCommandJson()
+    {
+        var songs = _metadata.Values.Select(m => new
+        {
+            songId = m.SongId,
+            title = m.Title,
+            artist = m.Artist,
+            album = m.Album,
+            duration = m.Duration,
+            fingerprintCount = m.FingerprintCount
+        }).ToList();
+        
+        return JsonSerializer.Serialize(new
+        {
+            status = "ok",
+            songCount = _metadata.Count,
+            totalFingerprints = _metadata.Values.Sum(m => m.FingerprintCount),
+            songs = songs
+        });
+    }
+    
+    static string HandleListFingerprintsCommandJson()
+    {
+        try
+        {
+            var fpSongIds = new List<string>();
+            
+            foreach (var songId in _metadata.Keys)
+            {
+                var track = _modelService.ReadTrackById(songId);
+                if (track != null)
+                {
+                    fpSongIds.Add(songId);
+                }
+            }
+            
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                count = fpSongIds.Count,
+                songIds = fpSongIds,
+                note = "Only returns IDs that exist in both fingerprint DB and were checked."
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = $"List fingerprints failed: {ex.Message}" });
+        }
+    }
+    
+    static string HandleDeleteCommandJson(JsonElement root)
+    {
+        try
+        {
+            var songId = root.GetProperty("songId").GetString() ?? "";
+            
+            if (string.IsNullOrEmpty(songId))
+            {
+                return JsonSerializer.Serialize(new { success = false, error = "Missing songId" });
+            }
+            
+            if (!_metadata.ContainsKey(songId))
+            {
+                return JsonSerializer.Serialize(new { success = false, error = "Song not found in metadata" });
+            }
+            
+            // Remove from fingerprint database
+            _modelService.DeleteTrack(songId);
+            
+            // Remove from metadata
+            _metadata.TryRemove(songId, out _);
+            
+            return JsonSerializer.Serialize(new { success = true, deleted = songId });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+    
+    static string HandleReloadCommandJson()
+    {
+        try
+        {
+            var oldCount = _metadata.Count;
+            LoadDatabase();
+            LoadMetadata();
+            return JsonSerializer.Serialize(new
+            {
+                status = "reloaded",
+                previousSongs = oldCount,
+                currentSongs = _metadata.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = $"Reload failed: {ex.Message}" });
+        }
     }
 
     /// <summary>
@@ -707,7 +1118,7 @@ class Program
             // Store in database
             _modelService.Insert(track, hashes);
             
-            // Update metadata
+            // Update metadata (ConcurrentDictionary is thread-safe)
             meta.FingerprintCount = hashes.Count;
             meta.IndexedAt = DateTime.UtcNow.ToString("o");
             _metadata[meta.SongId] = meta;
@@ -849,7 +1260,7 @@ class Program
                 return new { success = false, skipped = true, songId = meta.SongId, reason = "Already indexed" };
             }
             
-            // Check for duplicate content hash
+            // Check for duplicate content hash (ConcurrentDictionary is thread-safe for reads)
             if (!string.IsNullOrEmpty(meta.ContentHash))
             {
                 var existingWithHash = _metadata.Values.FirstOrDefault(m => m.ContentHash == meta.ContentHash);
@@ -870,7 +1281,7 @@ class Program
             // Thread-safe insert (InMemoryModelService handles locking internally)
             _modelService.Insert(track, hashes);
             
-            // Update metadata (thread-safe via ConcurrentDictionary)
+            // Update metadata (ConcurrentDictionary is thread-safe)
             meta.FingerprintCount = hashes.Count;
             meta.IndexedAt = DateTime.UtcNow.ToString("o");
             _metadata[meta.SongId] = meta;
@@ -954,8 +1365,8 @@ class Program
         // Remove from SoundFingerprinting
         _modelService.DeleteTrack(songId);
         
-        // Remove from metadata
-        _metadata.Remove(songId);
+        // Remove from metadata (ConcurrentDictionary uses TryRemove)
+        _metadata.TryRemove(songId, out _);
         
         // Save changes
         SaveMetadata();
@@ -1104,21 +1515,24 @@ Output: JSON on stdout, progress on stderr
             try
             {
                 var json = File.ReadAllText(MetadataPath);
-                _metadata = JsonSerializer.Deserialize<Dictionary<string, SongMetadata>>(json, new JsonSerializerOptions
+                var dict = JsonSerializer.Deserialize<Dictionary<string, SongMetadata>>(json, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 }) ?? new();
+                _metadata = new ConcurrentDictionary<string, SongMetadata>(dict);
             }
             catch
             {
-                _metadata = new();
+                _metadata = new ConcurrentDictionary<string, SongMetadata>();
             }
         }
     }
 
     static void SaveMetadata()
     {
-        var json = JsonSerializer.Serialize(_metadata, new JsonSerializerOptions 
+        // Create snapshot for serialization (ConcurrentDictionary iteration is thread-safe)
+        var snapshot = _metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions 
         { 
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
