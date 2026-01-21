@@ -2056,6 +2056,10 @@ def cli_mode(db_path: Path):
                         print(f"✅ Added {len(result['added_ids'])} songs to exclusion list")
                 elif args.startswith('--pattern '):
                     pattern = args[10:].strip()
+                    # Strip surrounding quotes if present
+                    if (pattern.startswith('"') and pattern.endswith('"')) or \
+                       (pattern.startswith("'") and pattern.endswith("'")):
+                        pattern = pattern[1:-1]
                     result = add_to_exclusion_list(db_path, patterns=[pattern])
                     if result['added_patterns']:
                         print(f"✅ Added pattern: {pattern}")
@@ -2077,6 +2081,10 @@ def cli_mode(db_path: Path):
                 
                 if args.startswith('--pattern '):
                     pattern = args[10:].strip()
+                    # Strip surrounding quotes if present
+                    if (pattern.startswith('"') and pattern.endswith('"')) or \
+                       (pattern.startswith("'") and pattern.endswith("'")):
+                        pattern = pattern[1:-1]
                     result = remove_from_exclusion_list(db_path, patterns=[pattern])
                     if result['removed_patterns']:
                         print(f"✅ Removed pattern: {pattern}")
