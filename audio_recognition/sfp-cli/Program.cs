@@ -513,19 +513,30 @@ class Program
                     line = line.Trim();
                     if (string.IsNullOrEmpty(line)) continue;
                     
-                    var (response, shouldShutdown) = await ProcessCommand(line);
-                    await writer.WriteLineAsync(response);
-                    
-                    // TCP clients shouldn't be able to shutdown the daemon
-                    // (only stdin owner can do that)
-                    if (shouldShutdown)
+                    // Block shutdown command from TCP clients BEFORE processing
+                    // (prevents side effects like SaveDatabase/SaveMetadata from executing)
+                    try
                     {
-                        // Ignore shutdown from TCP, just disconnect this client
-                        await writer.WriteLineAsync(JsonSerializer.Serialize(new { 
-                            error = "Shutdown not allowed from TCP client" 
-                        }));
-                        break;
+                        using var doc = JsonDocument.Parse(line);
+                        var cmd = doc.RootElement.TryGetProperty("cmd", out var cmdProp) 
+                            ? cmdProp.GetString()?.ToLower() ?? "" 
+                            : "";
+                        
+                        if (cmd == "shutdown")
+                        {
+                            await writer.WriteLineAsync(JsonSerializer.Serialize(new { 
+                                error = "Shutdown not allowed from TCP client. Only stdin owner can shutdown." 
+                            }));
+                            continue;  // Reject but stay connected
+                        }
                     }
+                    catch (JsonException)
+                    {
+                        // Let ProcessCommand handle the JSON error
+                    }
+                    
+                    var (response, _) = await ProcessCommand(line);
+                    await writer.WriteLineAsync(response);
                 }
             }
         }
@@ -736,22 +747,58 @@ class Program
     
     static async Task<string> HandleFingerprintBatchCommandJson(JsonElement root)
     {
+        const int MAX_PARALLEL = 8;  // Throttle to prevent resource exhaustion
+        
         try
         {
             var filesElement = root.GetProperty("files");
             var files = filesElement.EnumerateArray().ToList();
             
-            var tasks = files.Select(async fileElement =>
+            if (files.Count == 0)
             {
-                return await FingerprintSingleFile(fileElement);
-            });
+                return JsonSerializer.Serialize(new { success = true, processed = 0, successCount = 0, results = new List<object>() });
+            }
+            
+            // Use semaphore to limit concurrency
+            var semaphore = new SemaphoreSlim(MAX_PARALLEL);
+            var tasks = new List<Task<object>>();
+            
+            foreach (var fileElement in files)
+            {
+                await semaphore.WaitAsync();
+                
+                tasks.Add(Task.Run(async () =>
+                {
+                    try
+                    {
+                        return await FingerprintSingleFile(fileElement);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+            }
             
             var results = await Task.WhenAll(tasks);
+            
+            // Count successes for Python client
+            int successCount = 0;
+            foreach (var r in results)
+            {
+                // Check if result has success=true
+                var json = JsonSerializer.Serialize(r);
+                if (json.Contains("\"success\":true"))
+                {
+                    successCount++;
+                }
+            }
             
             return JsonSerializer.Serialize(new
             {
                 success = true,
                 processed = results.Length,
+                successCount = successCount,
                 results = results
             });
         }

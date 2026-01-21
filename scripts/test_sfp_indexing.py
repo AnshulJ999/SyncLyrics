@@ -217,7 +217,7 @@ class IndexingDaemon:
             sock.connect(('127.0.0.1', self.TCP_PORT))
             sock.settimeout(30)  # Normal timeout for operations
             
-            # Read ready/connected message
+            # Read ready/connected message with proper buffering
             data = b''
             while b'\n' not in data:
                 chunk = sock.recv(4096)
@@ -226,11 +226,14 @@ class IndexingDaemon:
                     return False
                 data += chunk
             
-            line = data.decode('utf-8').strip()
+            # Extract first line, preserve any remainder for future reads
+            line_bytes, remainder = data.split(b'\n', 1)
+            line = line_bytes.decode('utf-8').strip()
             response = json.loads(line)
             
             if response.get('status') == 'connected':
                 self._tcp_socket = sock
+                self._tcp_buffer = remainder  # Initialize buffer with any leftover bytes
                 self._ready = True
                 self._song_count = response.get('songs', 0)
                 return True
@@ -327,20 +330,26 @@ class IndexingDaemon:
             return self._send_subprocess_command(cmd)
     
     def _send_tcp_command(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
-        """Send command via TCP socket."""
+        """Send command via TCP socket with proper buffering."""
         try:
             cmd_json = json.dumps(cmd) + '\n'
             self._tcp_socket.sendall(cmd_json.encode('utf-8'))
             
-            # Read response
-            data = b''
-            while b'\n' not in data:
+            # Read response with persistent buffer (preserves extra bytes)
+            # Initialize buffer if not exists
+            if not hasattr(self, '_tcp_buffer'):
+                self._tcp_buffer = b''
+            
+            # Read until we have at least one complete line
+            while b'\n' not in self._tcp_buffer:
                 chunk = self._tcp_socket.recv(65536)
                 if not chunk:
                     return {"success": False, "error": "Connection closed"}
-                data += chunk
+                self._tcp_buffer += chunk
             
-            line = data.decode('utf-8').strip()
+            # Extract first line, keep remainder in buffer
+            line_bytes, self._tcp_buffer = self._tcp_buffer.split(b'\n', 1)
+            line = line_bytes.decode('utf-8').strip()
             return json.loads(line)
             
         except Exception as e:
