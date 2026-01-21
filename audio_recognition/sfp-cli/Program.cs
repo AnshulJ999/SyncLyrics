@@ -69,7 +69,7 @@ class Program
         public const int FingerprintStride = 256;  // Default: 512
         public const int QueryStrideMin = 128;      // Default: 256
         public const int QueryStrideMax = 256;      // Default: 512
-        public const int FrequencyMin = 318;   // Default: 318, lowered for bass
+        public const int FrequencyMin = 318;   // Default: 318, can be lowered for bass
         public const int FrequencyMax = 3500;  // Default: 2000, raised for harmonics
     }
 

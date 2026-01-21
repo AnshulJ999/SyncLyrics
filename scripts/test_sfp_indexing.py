@@ -52,7 +52,7 @@ DEFAULT_DB_PATH = Path(__file__).parent.parent / "local_fingerprint_database"
 
 # FFmpeg conversion settings for SoundFingerprinting
 # Uses 5512 Hz mono (fingerprinting doesn't need full quality)
-FFMPEG_ARGS = ["-ac", "1", "-ar", "5512"]
+# FFMPEG_ARGS = ["-ac", "1", "-ar", "5512"]
 
 # File filtering
 MAX_DURATION_MINUTES = 20  # Skip files longer than this

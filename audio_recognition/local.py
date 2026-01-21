@@ -41,7 +41,7 @@ class LocalRecognizer:
     """
     
     # FFmpeg args for converting to SFP format (5512Hz mono)
-    FFMPEG_ARGS = ["-ac", "1", "-ar", "5512", "-loglevel", "error"]
+    # FFMPEG_ARGS = ["-ac", "1", "-ar", "5512", "-loglevel", "error"]
     
     def __init__(self, db_path: Optional[Path] = None, cli_path: Optional[Path] = None, min_confidence: Optional[float] = None):
         """
