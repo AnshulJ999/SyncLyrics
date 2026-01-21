@@ -483,6 +483,27 @@ class IndexingDaemon:
             return {"error": "Daemon not ready"}
         return self._send_command({"cmd": "stats"})
     
+    def query(self, audio_path: Path, duration: int = 10, offset: int = 0) -> Dict[str, Any]:
+        """
+        Query audio file for recognition.
+        
+        Args:
+            audio_path: Path to audio file (WAV)
+            duration: Duration of clip in seconds
+            offset: Start offset in seconds
+        
+        Returns:
+            Recognition result from daemon
+        """
+        if not self._ready:
+            return {"error": "Daemon not ready"}
+        return self._send_command({
+            "cmd": "query",
+            "path": str(audio_path),
+            "duration": str(duration),
+            "offset": str(offset)
+        })
+    
     @property
     def connection_mode(self) -> str:
         """Return current connection mode: 'TCP', 'Subprocess', or 'Disconnected'."""
@@ -817,8 +838,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         'errors': []
     }
     
-    # Start daemon for fast fingerprinting (or reuse existing)
-    own_daemon = daemon is None
+    # Start daemon for fast fingerprinting (or reuse existing if running)
+    own_daemon = daemon is None or not daemon.is_running
     if own_daemon:
         daemon = IndexingDaemon(db_path)
         if not daemon.start():
@@ -1214,9 +1235,17 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
     return results
 
 
-def test_recognition(folder_path: Path, db_path: Path, clip_duration: int = 10, positions: List[int] = None) -> Dict[str, Any]:
+def test_recognition(folder_path: Path, db_path: Path, clip_duration: int = 10, 
+                     positions: List[int] = None, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
     """
     Test recognition accuracy on indexed songs.
+    
+    Args:
+        folder_path: Path to folder with audio files
+        db_path: Path to database directory
+        clip_duration: Duration of test clips in seconds
+        positions: List of positions (in seconds) to test from
+        daemon: Optional daemon for faster queries
     """
     if positions is None:
         positions = [10, 60, 120]
@@ -1228,7 +1257,10 @@ def test_recognition(folder_path: Path, db_path: Path, clip_duration: int = 10, 
         return {'error': 'No songs indexed'}
     
     indexed_songs = {s['songId']: s for s in stats['songs']}
-    print(f"\n=== Testing {len(indexed_songs)} indexed songs ===\n")
+    print(f"\n=== Testing {len(indexed_songs)} indexed songs ===")
+    if daemon and daemon.is_running:
+        print("Using active CLI daemon for queries")
+    print()
     
     results = {
         'total_tests': 0,
@@ -1270,9 +1302,12 @@ def test_recognition(folder_path: Path, db_path: Path, clip_duration: int = 10, 
                 print(f"  ⚠️  Could not extract clip at {pos}s")
                 continue
             
-            # Query
+            # Query - use daemon if available
             start_time = time.time()
-            result = run_sfp_command(db_path, "query", str(clip_path), str(clip_duration), "0")
+            if daemon and daemon.is_running:
+                result = daemon.query(clip_path, clip_duration, 0)
+            else:
+                result = run_sfp_command(db_path, "query", str(clip_path), str(clip_duration), "0")
             query_time = time.time() - start_time
             
             # Clean up clip
@@ -1408,12 +1443,17 @@ def test_live_capture(db_path: Path, duration: int = 10) -> Dict[str, Any]:
         return {'error': str(e)}
 
 
-def show_stats(db_path: Path):
+def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None):
     """Show database statistics."""
     print(f"\n=== Database Statistics ===")
     print(f"DB Path: {db_path}\n")
     
-    stats = run_sfp_command(db_path, "stats")
+    # Use daemon if available, otherwise subprocess
+    if daemon and daemon.is_running:
+        stats = daemon.stats()
+    else:
+        stats = run_sfp_command(db_path, "stats")
+    
     print(f"Songs indexed: {stats.get('songCount', 0)}")
     print(f"Total fingerprints: {stats.get('totalFingerprints', 0)}")
     print(f"Metadata exists: {stats.get('metadataExists', False)}")
@@ -2280,8 +2320,21 @@ def cli_mode(db_path: Path):
                     print(f"Error: Folder not found: {folder}")
                     continue
                 # Use the existing index_folder function with CLI's daemon
-                index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run, 
+                result = index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run, 
                              daemon=daemon, filename_fallback=filename_fallback)
+                
+                # Offer export for dry-run results
+                if dry_run and result and not result.get('error'):
+                    export_response = input("\nExport dry-run results to JSON? (y/N): ").strip().lower()
+                    if export_response == 'y':
+                        export_path = input("Enter filename (default: dry_run_index.json): ").strip()
+                        if not export_path:
+                            export_path = "dry_run_index.json"
+                        try:
+                            save_json_file(Path(export_path), result)
+                            print(f"✅ Exported to {export_path}")
+                        except Exception as e:
+                            print(f"❌ Export failed: {e}")
 
             
             elif cmd == 'reindex':
@@ -2460,7 +2513,7 @@ def cli_mode(db_path: Path):
                         print("None of the specified songs were in exclusion list")
             
             elif cmd == 'stats':
-                show_stats(db_path)
+                show_stats(db_path, daemon=daemon)
             
             elif cmd == 'reload':
                 if daemon and daemon.is_running:
@@ -2549,7 +2602,7 @@ def cli_mode(db_path: Path):
                     print(f"Error: Folder not found: {folder}")
                     continue
                 
-                test_recognition(folder, db_path, clip_duration=duration, positions=positions)
+                test_recognition(folder, db_path, clip_duration=duration, positions=positions, daemon=daemon)
             
             elif cmd == 'live':
                 # Parse optional duration
@@ -2650,6 +2703,16 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
     
     # Print sync table (always shown)
     print_sync_table(fp_ids, metadata_ids, index_ids)
+    
+    # Show prominent warning if FP check was incomplete
+    if fp_check_incomplete:
+        print()
+        print("⚠️ " + "=" * 60)
+        print("⚠️  WARNING: Fingerprint DB verification INCOMPLETE")
+        print("⚠️  The daemon could not be queried. META_NO_FP and INDEX_NO_FP")
+        print("⚠️  discrepancies below may be FALSE - FP DB status unknown.")
+        print("⚠️ " + "=" * 60)
+        print()
     
     # Find discrepancies
     discrepancies: Dict[str, List] = {
@@ -3052,7 +3115,8 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
                         # Preserve existing fields that extraction doesn't provide
                         existing = metadata.get(repair['songId'], {})
                         for keep_field in ['fingerprintCount', 'indexedAt', 'contentHash']:
-                            if keep_field in existing and keep_field not in new_meta:
+                            # Preserve if existing has value and new_meta doesn't (or is None)
+                            if existing.get(keep_field) and not new_meta.get(keep_field):
                                 new_meta[keep_field] = existing[keep_field]
                         metadata[repair['songId']] = new_meta
                         print(f"   ✅ Re-extracted metadata for {repair['songId']}")
@@ -3255,8 +3319,8 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
     indexed_files_path = db_path / "indexed_files.json"
     indexed_files = load_json_file(indexed_files_path)
     
-    # Start daemon (or reuse existing)
-    own_daemon = daemon is None
+    # Start daemon (or reuse existing if running)
+    own_daemon = daemon is None or not daemon.is_running
     if own_daemon:
         daemon = IndexingDaemon(db_path)
         if not daemon.start():
