@@ -790,10 +790,18 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     print(f"Already indexed: {len(indexed_files)} files")
     print(f"Using batch mode (8 files parallel) for maximum speed...\n")
     
+    # Load exclusion list for checking
+    exclusions = load_exclusion_list(db_path)
+    excluded_ids = set(exclusions.get('songIds', []))
+    excluded_patterns = exclusions.get('patterns', [])
+    if excluded_ids or excluded_patterns:
+        print(f"📋 Exclusion list: {len(excluded_ids)} IDs, {len(excluded_patterns)} patterns")
+    
     results = {
         'total': len(audio_files),
         'indexed': 0,
         'skipped': 0,
+        'excluded': 0,
         'failed': 0,
         'songs': [],
         'errors': []
@@ -880,6 +888,11 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         song_id = normalize_song_id(metadata['artist'], metadata['title'])
         metadata['songId'] = song_id
         
+        # Check exclusion list (both explicit IDs and patterns)
+        if is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
+            results['excluded'] += 1
+            continue
+        
         content_hash = compute_content_hash(audio_file)
         metadata['contentHash'] = content_hash
         metadata['originalFilepath'] = file_key
@@ -891,7 +904,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
             'content_hash': content_hash
         })
     
-    print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']})")
+    excluded_msg = f", excluded {results['excluded']}" if results['excluded'] > 0 else ""
+    print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']}{excluded_msg})")
     print(f"\nPhase 2: Batch fingerprinting ({BATCH_SIZE} parallel)...")
     
     # Second pass: process in batches of 8
@@ -984,6 +998,147 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     if results['songs']:
         total_fps = sum(s.get('fingerprints', 0) for s in results['songs'])
         print(f"Total fingerprints: {total_fps:,}")
+    
+    return results
+
+def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
+    """
+    Re-index specific songs by their songId.
+    
+    Useful for fixing songs with zero or low fingerprint counts.
+    
+    Args:
+        song_ids: List of song IDs to re-index
+        db_path: Path to database directory
+        daemon: Optional daemon instance to reuse
+    
+    Returns:
+        Summary of re-indexed songs
+    """
+    print(f"\n=== Re-indexing {len(song_ids)} songs ===\n")
+    
+    # Load metadata and indexed_files to find file paths
+    metadata_path = db_path / "metadata.json"
+    indexed_files_path = db_path / "indexed_files.json"
+    
+    metadata = load_json_file(metadata_path)
+    indexed_files = load_json_file(indexed_files_path)
+    
+    # NOTE: reindex does NOT load exclusion list - it forces re-add regardless
+    
+    # Build songId -> filepath mapping from indexed_files
+    song_to_files: Dict[str, List[str]] = {}
+    for filepath, entry in indexed_files.items():
+        sid = entry.get('songId')
+        if sid:
+            if sid not in song_to_files:
+                song_to_files[sid] = []
+            song_to_files[sid].append(filepath)
+    
+    results = {
+        'total': len(song_ids),
+        'reindexed': 0,
+        'not_found': 0,
+        'failed': 0,
+        'songs': []
+    }
+    
+    # Start daemon if needed
+    own_daemon = daemon is None
+    if own_daemon:
+        daemon = IndexingDaemon(db_path)
+        if not daemon.start():
+            print("❌ Failed to start daemon")
+            return results
+    
+    for song_id in song_ids:
+        meta = metadata.get(song_id)
+        
+        if not meta:
+            print(f"  ⚠ {song_id}: Not found in metadata")
+            results['not_found'] += 1
+            continue
+        
+        artist = meta.get('artist', '')
+        title = meta.get('title', '')
+        
+        # NOTE: reindex does NOT check exclusions - user explicitly wants to re-add this song
+        
+        # Find file path
+        files = song_to_files.get(song_id, [])
+        if not files:
+            # Try originalFilepath from metadata
+            orig = meta.get('originalFilepath')
+            if orig and Path(orig).exists():
+                files = [orig]
+        
+        if not files:
+            print(f"  ⚠ {artist} - {title}: No file found")
+            results['not_found'] += 1
+            continue
+        
+        # Use first available file
+        audio_path = None
+        for f in files:
+            if Path(f).exists():
+                audio_path = Path(f)
+                break
+        
+        if not audio_path:
+            print(f"  ⚠ {artist} - {title}: File(s) not found on disk")
+            results['not_found'] += 1
+            continue
+        
+        # Re-fingerprint this song
+        try:
+            # Delete existing fingerprints
+            daemon.delete(song_id)
+            
+            # Re-extract metadata
+            new_meta = extract_full_metadata(audio_path)
+            new_meta['songId'] = song_id
+            new_meta['originalFilepath'] = str(audio_path.absolute())
+            new_meta['contentHash'] = compute_content_hash(audio_path)
+            
+            # Re-fingerprint
+            result = daemon.fingerprint(audio_path, new_meta)
+            
+            if result.get('success'):
+                fp_count = result.get('fingerprintCount', 0)
+                print(f"  ✓ {artist} - {title}: {fp_count} fingerprints")
+                results['reindexed'] += 1
+                results['songs'].append({
+                    'songId': song_id,
+                    'artist': artist,
+                    'title': title,
+                    'fingerprints': fp_count
+                })
+                
+                # Update metadata
+                metadata[song_id] = new_meta
+                metadata[song_id]['fingerprintCount'] = fp_count
+            else:
+                print(f"  ✗ {artist} - {title}: {result.get('error', 'Unknown error')}")
+                results['failed'] += 1
+                
+        except Exception as e:
+            print(f"  ✗ {artist} - {title}: {e}")
+            results['failed'] += 1
+    
+    # Save updated metadata
+    if results['reindexed'] > 0:
+        save_json_file(metadata_path, metadata)
+        daemon.save()
+        print(f"\n✓ Saved changes to database")
+    
+    if own_daemon:
+        daemon.stop()
+    
+    print(f"\n=== Re-index complete ===")
+    print(f"Re-indexed: {results['reindexed']}")
+    print(f"Excluded: {results['excluded']}")
+    print(f"Not found: {results['not_found']}")
+    print(f"Failed: {results['failed']}")
     
     return results
 
@@ -1288,8 +1443,10 @@ def print_cli_help():
         ("repair", "Interactive repair wizard"),
         ("repair --batch", "Batch repair (confirm once for all)"),
         ("repair --auto", "Auto repair (no confirmation)"),
+        ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
         ("index <folder>", "Index new files in folder"),
         ("reindex <folder>", "Force re-index all files in folder"),
+        ("reindex <songId> [id2]", "Force re-index specific song(s)"),
         ("search <query>", "Search songs by artist/title (shows 50)"),
         ("info <songId>", "Show details for a song"),
         ("purge <id> [id2...]", "Delete song(s) from all data sources"),
@@ -1970,7 +2127,40 @@ def cli_mode(db_path: Path):
             elif cmd == 'repair':
                 batch = '--batch' in args
                 auto = '--auto' in args
-                repair_database(db_path, batch=batch, auto=auto, daemon=daemon)
+                
+                # Check for --low-fp [N] flag
+                if '--low-fp' in args:
+                    # Extract optional threshold
+                    parts = args.split()
+                    try:
+                        idx = parts.index('--low-fp')
+                        if idx + 1 < len(parts) and parts[idx + 1].isdigit():
+                            threshold = int(parts[idx + 1])
+                        else:
+                            threshold = 100  # Default
+                    except:
+                        threshold = 100
+                    
+                    # Find low-FP songs from metadata
+                    metadata = load_json_file(db_path / "metadata.json")
+                    low_fp_ids = []
+                    for song_id, meta in metadata.items():
+                        fp_count = meta.get('fingerprintCount', 0)
+                        if fp_count < threshold:
+                            low_fp_ids.append(song_id)
+                    
+                    if not low_fp_ids:
+                        print(f"✅ No songs with < {threshold} fingerprints found.")
+                    else:
+                        print(f"\nFound {len(low_fp_ids)} songs with < {threshold} fingerprints.")
+                        if not auto:
+                            response = input(f"Re-fingerprint all {len(low_fp_ids)} songs? (y/n): ").strip().lower()
+                            if response != 'y':
+                                print("Cancelled.")
+                                continue
+                        reindex_songs(low_fp_ids, db_path, daemon=daemon)
+                else:
+                    repair_database(db_path, batch=batch, auto=auto, daemon=daemon)
             
             elif cmd == 'index':
                 if not args:
@@ -1985,13 +2175,20 @@ def cli_mode(db_path: Path):
             
             elif cmd == 'reindex':
                 if not args:
-                    print("Usage: reindex <folder>")
+                    print("Usage: reindex <folder> | reindex <songId> [songId2...]")
                     continue
-                folder = Path(args.rstrip('/\\'))
-                if not folder.exists():
-                    print(f"Error: Folder not found: {folder}")
-                    continue
-                reindex_folder(folder, db_path)
+                
+                # Check if first arg is a folder or a songId
+                first_arg = args.split()[0].rstrip('/\\')
+                folder = Path(first_arg)
+                
+                if folder.exists() and folder.is_dir():
+                    # It's a folder - use reindex_folder
+                    reindex_folder(folder, db_path)
+                else:
+                    # Treat as songId(s)
+                    song_ids = args.split()
+                    reindex_songs(song_ids, db_path, daemon=daemon)
             
             elif cmd == 'search':
                 if not args:
