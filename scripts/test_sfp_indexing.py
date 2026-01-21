@@ -781,7 +781,8 @@ def save_json_file(path: Path, data: Dict):
 
 def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None, 
                  required_tags: List[str] = None, dry_run: bool = False,
-                 daemon: 'IndexingDaemon' = None, filename_fallback: bool = False) -> Dict[str, Any]:
+                 daemon: 'IndexingDaemon' = None, filename_fallback: bool = False,
+                 force_include: bool = False) -> Dict[str, Any]:
     """
     Index all audio files in a folder.
     
@@ -794,6 +795,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         dry_run: If True, only show what would be indexed without making changes
         daemon: Optional existing IndexingDaemon to reuse (avoids creating duplicate)
         filename_fallback: If True, use filename parsing when tags are missing
+        force_include: If True, ignore exclusion list (index all matching files)
     
     Returns:
         Summary dict with results
@@ -928,8 +930,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         song_id = normalize_song_id(metadata['artist'], metadata['title'])
         metadata['songId'] = song_id
         
-        # Check exclusion list (both explicit IDs and patterns)
-        if is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
+        # Check exclusion list (both explicit IDs and patterns) - skip if force_include
+        if not force_include and is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
             excluded_files.append({
                 'songId': song_id,
                 'artist': metadata['artist'],
@@ -1604,6 +1606,7 @@ def print_cli_help():
         ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
         ("index <folder>", "Index new files in folder (respects exclusions)"),
         ("index <folder> --dry-run", "Preview what would be indexed"),
+        ("index <folder> --force", "Index all files (ignores exclusions)"),
         ("index --filename-fallback", "Allow filename parsing when tags missing"),
         ("index --require-tags a,b", "Require additional tags (album,genre,year)"),
         ("reindex <folder>", "Re-index folder (respects exclusions)"),
@@ -2338,7 +2341,8 @@ def cli_mode(db_path: Path):
                 # Check for flags
                 dry_run = '--dry-run' in args
                 filename_fallback = '--filename-fallback' in args
-                clean_args = args.replace('--dry-run', '').replace('--filename-fallback', '')
+                force_include = '--force' in args
+                clean_args = args.replace('--dry-run', '').replace('--filename-fallback', '').replace('--force', '')
                 
                 # Check for --require-tags flag
                 required_tags = None
@@ -2365,8 +2369,10 @@ def cli_mode(db_path: Path):
                     print(f"Error: Folder not found: {folder}")
                     continue
                 # Use the existing index_folder function with CLI's daemon
+                if force_include:
+                    print("🔓 Force mode: ignoring exclusion list")
                 result = index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run, 
-                             daemon=daemon, filename_fallback=filename_fallback)
+                             daemon=daemon, filename_fallback=filename_fallback, force_include=force_include)
                 
                 # Offer export for dry-run results
                 if dry_run and result and not result.get('error'):
