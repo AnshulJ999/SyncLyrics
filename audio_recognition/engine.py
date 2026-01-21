@@ -56,7 +56,7 @@ class RecognitionEngine:
     DEFAULT_STALE_THRESHOLD = 15.0   # Seconds before result is stale
     MAX_CONSECUTIVE_FAILURES = 5     # Failures before pausing
     ACRCLOUD_MIN_SCORE = 80          # Minimum ACRCloud score (0-100) to accept
-    ACRCLOUD_HIGH_SCORE = 100        # Score at which to bypass all validation
+    ACRCLOUD_HIGH_SCORE = 101        # Score at which to bypass all validation
     
     def __init__(
         self,
