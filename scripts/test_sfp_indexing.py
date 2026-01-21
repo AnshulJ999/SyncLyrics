@@ -1284,6 +1284,7 @@ def print_cli_help():
         ("help", "Show this help message"),
         ("status", "Quick sync status table"),
         ("verify", "Full verification with detailed discrepancies"),
+        ("verify --low-fp [N]", "Find songs with < N fingerprints (default 100)"),
         ("repair", "Interactive repair wizard"),
         ("repair --batch", "Batch repair (confirm once for all)"),
         ("repair --auto", "Auto repair (no confirmation)"),
@@ -1717,6 +1718,15 @@ def purge_multiple(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' 
         daemon.refresh()
     
     print(f"\n✓ Purge complete: {deleted} deleted, {len(valid_songs) - deleted} skipped")
+    
+    # Offer to add to exclusion list
+    if deleted > 0:
+        deleted_ids = [s['id'] for s in songs_to_delete]
+        exclude_response = input(f"\nAdd {deleted} song(s) to exclusion list? (y/n): ").strip().lower()
+        if exclude_response == 'y':
+            result = add_to_exclusion_list(db_path, song_ids=deleted_ids)
+            print(f"✅ Added {len(result['added_ids'])} songs to exclusion list")
+    
     return {'deleted': deleted, 'skipped': len(valid_songs) - deleted}
 
 
@@ -1816,6 +1826,17 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
         daemon.refresh()
     
     print(f"\n✓ Purge complete. Deleted from: {', '.join(deleted_from)}")
+    
+    # Offer to add to exclusion list
+    if deleted_from:
+        exclude_response = input(f"\nAdd to exclusion list? (y/n): ").strip().lower()
+        if exclude_response == 'y':
+            result = add_to_exclusion_list(db_path, song_ids=[song_id])
+            if result['added_ids']:
+                print(f"✅ Added to exclusion list")
+            else:
+                print(f"Already in exclusion list")
+    
     return {'success': True, 'deleted_from': deleted_from}
 
 
@@ -1931,7 +1952,20 @@ def cli_mode(db_path: Path):
                 result = verify_database(db_path, daemon=daemon, brief=True)
             
             elif cmd == 'verify':
-                verify_database(db_path, daemon=daemon, brief=False)
+                # Parse --low-fp [N] flag
+                low_fp_threshold = None
+                if '--low-fp' in args:
+                    # Extract optional number after --low-fp
+                    parts = args.split()
+                    try:
+                        idx = parts.index('--low-fp')
+                        if idx + 1 < len(parts) and parts[idx + 1].isdigit():
+                            low_fp_threshold = int(parts[idx + 1])
+                        else:
+                            low_fp_threshold = 100  # Default threshold
+                    except:
+                        low_fp_threshold = 100
+                verify_database(db_path, daemon=daemon, brief=False, low_fp_threshold=low_fp_threshold)
             
             elif cmd == 'repair':
                 batch = '--batch' in args
@@ -2135,7 +2169,8 @@ def cli_mode(db_path: Path):
         print("Goodbye!")
 
 
-def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool = False) -> Dict[str, Any]:
+def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool = False, 
+                    low_fp_threshold: int = None) -> Dict[str, Any]:
     """
     Verify database integrity by comparing all 3 data sources:
     - Fingerprint DB (via daemon list-fp command)
@@ -2146,6 +2181,7 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
         db_path: Path to database directory
         daemon: Optional daemon instance to reuse (avoids starting new one)
         brief: If True, only show sync table without detailed discrepancies
+        low_fp_threshold: If set, report songs with fingerprint count below this threshold
     
     Reports ALL discrepancies with detailed logging.
     """
@@ -2320,6 +2356,62 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
     if not brief:
         print(f"{'=' * 70}")
     
+    # Low fingerprint count audit
+    low_fp_songs = []
+    if low_fp_threshold is not None:
+        print(f"\n{'=' * 70}")
+        print(f"LOW FINGERPRINT AUDIT (threshold: < {low_fp_threshold})")
+        print(f"{'=' * 70}\n")
+        
+        for song_id, meta in metadata.items():
+            fp_count = meta.get('fingerprintCount', 0)
+            duration = meta.get('duration', 0)
+            if fp_count < low_fp_threshold:
+                low_fp_songs.append({
+                    'songId': song_id,
+                    'artist': meta.get('artist', '?'),
+                    'title': meta.get('title', '?'),
+                    'fpCount': fp_count,
+                    'duration': duration
+                })
+        
+        # Sort by fingerprint count (0 first, then ascending)
+        low_fp_songs.sort(key=lambda x: x['fpCount'])
+        
+        if not low_fp_songs:
+            print(f"✅ No songs with < {low_fp_threshold} fingerprints found.")
+        else:
+            # Separate zero FPs (broken) from low FPs
+            zero_fp = [s for s in low_fp_songs if s['fpCount'] == 0]
+            low_fp = [s for s in low_fp_songs if 0 < s['fpCount'] < low_fp_threshold]
+            
+            if zero_fp:
+                print(f"❌ 0 fingerprints (BROKEN, need re-index): {len(zero_fp)} songs\n")
+                for s in zero_fp[:20]:
+                    print(f"  • {s['artist']} - {s['title']} [FPs: 0]")
+                    print(f"    ID: {s['songId']}")
+                if len(zero_fp) > 20:
+                    print(f"  ... and {len(zero_fp) - 20} more\n")
+                print()
+            
+            if low_fp:
+                print(f"⚠️  < {low_fp_threshold} fingerprints: {len(low_fp)} songs\n")
+                for s in low_fp[:20]:
+                    dur_str = f" ({s['duration']:.0f}s)" if s['duration'] else ""
+                    # Check if low FP might be OK (short song)
+                    expected_fps = int(s['duration'] * 10.7) if s['duration'] else 0  # ~10.7 FPs per second
+                    status = "✓ short" if expected_fps < low_fp_threshold else "⚠"
+                    print(f"  • {s['artist']} - {s['title']} [FPs: {s['fpCount']}{dur_str}] {status}")
+                    print(f"    ID: {s['songId']}")
+                if len(low_fp) > 20:
+                    print(f"  ... and {len(low_fp) - 20} more\n")
+                print()
+            
+            print(f"Total: {len(low_fp_songs)} songs with low fingerprint counts")
+            print(f"\nTip: Use 'reindex <folder>' to re-fingerprint problem songs")
+        
+        print(f"{'=' * 70}")
+    
     return {
         'fp_count': len(fp_ids),
         'metadata_count': len(metadata_ids),
@@ -2328,7 +2420,8 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
         'total_issues': total_issues,
         'fp_ids': fp_ids,
         'metadata_ids': metadata_ids,
-        'index_ids': index_ids
+        'index_ids': index_ids,
+        'low_fp_songs': low_fp_songs
     }
 
 
