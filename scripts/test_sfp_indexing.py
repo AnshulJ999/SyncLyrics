@@ -2263,9 +2263,11 @@ def cli_mode(db_path: Path):
                     # It's a folder - use reindex_folder
                     reindex_folder(folder, db_path, force_include=force_include, dry_run=dry_run)
                 else:
-                    # Treat as songId(s) - dry_run not supported for reindex_songs
+                    # Treat as songId(s)
                     if dry_run:
-                        print("Note: --dry-run is only supported for folder reindexing")
+                        print("Error: --dry-run is only supported for folder reindexing")
+                        print("Use 'info <songId>' to preview song details instead")
+                        continue
                     song_ids = clean_args.split()
                     reindex_songs(song_ids, db_path, daemon=daemon, force_include=force_include)
             
@@ -3053,11 +3055,10 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
             continue
         
         would_reindex.append({
-            'songId': song_id,
-            'artist': metadata['artist'],
-            'title': metadata['title'],
-            'duration': metadata.get('duration', 0),
-            'filepath': file_key
+            'audio_file': audio_file,
+            'file_key': file_key,
+            'song_id': song_id,
+            'metadata': metadata  # Store full metadata dict
         })
     
     # --- DRY-RUN: Exit with detailed summary ---
@@ -3069,11 +3070,12 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
         if would_reindex:
             print(f"Would re-index {len(would_reindex)} files:\n")
             for item in would_reindex:
-                dur = item['duration']
+                m = item['metadata']
+                dur = m.get('duration', 0)
                 dur_str = f" ({dur:.0f}s)" if dur else ""
-                print(f"  • {item['artist']} - {item['title']}{dur_str}")
-                print(f"    ID: {item['songId']}")
-                print(f"    File: {item['filepath']}")
+                print(f"  • {m['artist']} - {m['title']}{dur_str}")
+                print(f"    ID: {item['song_id']}")
+                print(f"    File: {item['file_key']}")
         else:
             print("No files to re-index.")
         
@@ -3087,10 +3089,22 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
         if excluded_count > 0:
             print(f"  Excluded: {excluded_count}")
         
+        # Build export-friendly list (without Path objects)
+        would_reindex_export = [
+            {
+                'songId': item['song_id'],
+                'artist': item['metadata']['artist'],
+                'title': item['metadata']['title'],
+                'duration': item['metadata'].get('duration', 0),
+                'filepath': item['file_key']
+            }
+            for item in would_reindex
+        ]
+        
         return {
             'dry_run': True,
             'total': len(audio_files),
-            'would_reindex': would_reindex,
+            'would_reindex': would_reindex_export,
             'excluded': excluded_count,
             'skipped': skipped_count
         }
@@ -3111,33 +3125,25 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
     results = {
         'total': len(audio_files),
         'reindexed': 0,
-        'excluded': 0,
+        'excluded': excluded_count,  # Already counted in pre-scan
         'failed': 0,
         'files': []
     }
     
     try:
-        for i, audio_file in enumerate(audio_files, 1):
-            file_key = str(audio_file.absolute())
-            print(f"[{i}/{len(audio_files)}] {audio_file.name}...")
+        for i, item in enumerate(would_reindex, 1):
+            audio_file = item['audio_file']
+            file_key = item['file_key']
+            song_id = item['song_id']
+            metadata = item['metadata']
             
-            # Extract metadata
-            metadata = extract_full_metadata(audio_file)
-            if not metadata['title'] or not metadata['artist']:
-                print(f"   ⏭️  Skipped (missing tags)")
-                continue
-            
-            song_id = normalize_song_id(metadata['artist'], metadata['title'])
+            # Add required fields to metadata
             metadata['songId'] = song_id
             metadata['originalFilepath'] = file_key
             
-            # Check exclusion list (unless force_include)
-            if exclusions and is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
-                print(f"   ⊘ Excluded (use --force to override)")
-                results['excluded'] += 1
-                continue
+            print(f"[{i}/{len(would_reindex)}] {audio_file.name}...")
             
-            # Compute content hash
+            # Compute content hash (this is the only expensive operation we can't pre-scan)
             content_hash = compute_content_hash(audio_file)
             metadata['contentHash'] = content_hash
             
