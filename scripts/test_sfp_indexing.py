@@ -956,6 +956,20 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     excluded_msg = f", excluded {results['excluded']}" if results['excluded'] > 0 else ""
     print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']}{excluded_msg})")
     
+    # Show skipped files with reasons (always, not just dry-run)
+    if results['skipped'] > 0:
+        print(f"\n--- Skipped Files ({results['skipped']}) ---")
+        for filepath, entry in skip_log.items():
+            reason = entry.get('reason', 'Unknown')
+            filename = Path(filepath).name
+            print(f"  ❌ {filename}: {reason}")
+    
+    # Show excluded files with details (always, not just dry-run)
+    if excluded_files:
+        print(f"\n--- Excluded Files ({len(excluded_files)}) ---")
+        for exc in excluded_files:
+            print(f"  🚫 {exc['artist']} - {exc['title']} (ID: {exc['songId']})")
+    
     # --- DRY-RUN: Exit after Phase 1 with detailed summary ---
     if dry_run:
         print(f"\n{'=' * 70}")
