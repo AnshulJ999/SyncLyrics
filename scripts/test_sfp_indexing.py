@@ -1001,7 +1001,8 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     
     return results
 
-def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' = None) -> Dict[str, Any]:
+def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' = None,
+                  force_include: bool = False) -> Dict[str, Any]:
     """
     Re-index specific songs by their songId.
     
@@ -1011,11 +1012,16 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
         song_ids: List of song IDs to re-index
         db_path: Path to database directory
         daemon: Optional daemon instance to reuse
+        force_include: If True, bypasses exclusion list check (default: respects exclusions)
     
     Returns:
         Summary of re-indexed songs
     """
-    print(f"\n=== Re-indexing {len(song_ids)} songs ===\n")
+    print(f"\n=== Re-indexing {len(song_ids)} songs ===")
+    if force_include:
+        print("(--force: ignoring exclusion list)\n")
+    else:
+        print("(use --force to include excluded songs)\n")
     
     # Load metadata and indexed_files to find file paths
     metadata_path = db_path / "metadata.json"
@@ -1024,7 +1030,8 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
     metadata = load_json_file(metadata_path)
     indexed_files = load_json_file(indexed_files_path)
     
-    # NOTE: reindex does NOT load exclusion list - it forces re-add regardless
+    # Load exclusion list (unless force_include)
+    exclusions = {} if force_include else load_exclusion_list(db_path)
     
     # Build songId -> filepath mapping from indexed_files
     song_to_files: Dict[str, List[str]] = {}
@@ -1038,6 +1045,7 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
     results = {
         'total': len(song_ids),
         'reindexed': 0,
+        'excluded': 0,
         'not_found': 0,
         'failed': 0,
         'songs': []
@@ -1062,7 +1070,11 @@ def reindex_songs(song_ids: List[str], db_path: Path, daemon: 'IndexingDaemon' =
         artist = meta.get('artist', '')
         title = meta.get('title', '')
         
-        # NOTE: reindex does NOT check exclusions - user explicitly wants to re-add this song
+        # Check exclusion list (unless force_include)
+        if exclusions and is_excluded(song_id, artist, title, exclusions):
+            print(f"  ⊘ {artist} - {title}: Excluded (use --force to override)")
+            results['excluded'] += 1
+            continue
         
         # Find file path
         files = song_to_files.get(song_id, [])
@@ -1444,9 +1456,11 @@ def print_cli_help():
         ("repair --batch", "Batch repair (confirm once for all)"),
         ("repair --auto", "Auto repair (no confirmation)"),
         ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
-        ("index <folder>", "Index new files in folder"),
-        ("reindex <folder>", "Force re-index all files in folder"),
-        ("reindex <songId> [id2]", "Force re-index specific song(s)"),
+        ("index <folder>", "Index new files in folder (respects exclusions)"),
+        ("reindex <folder>", "Re-index folder (respects exclusions)"),
+        ("reindex <folder> --force", "Re-index folder (ignores exclusions)"),
+        ("reindex <songId> [id2]", "Re-index specific song(s)"),
+        ("reindex <songId> --force", "Re-index song(s) ignoring exclusions"),
         ("search <query>", "Search songs by artist/title (shows 50)"),
         ("info <songId>", "Show details for a song"),
         ("purge <id> [id2...]", "Delete song(s) from all data sources"),
@@ -2175,20 +2189,29 @@ def cli_mode(db_path: Path):
             
             elif cmd == 'reindex':
                 if not args:
-                    print("Usage: reindex <folder> | reindex <songId> [songId2...]")
+                    print("Usage: reindex <folder> [--force] | reindex <songId> [id2...] [--force]")
+                    continue
+                
+                # Check for --force flag
+                force_include = '--force' in args
+                # Remove --force from args for further parsing
+                clean_args = args.replace('--force', '').strip()
+                
+                if not clean_args:
+                    print("Error: No folder or songId specified")
                     continue
                 
                 # Check if first arg is a folder or a songId
-                first_arg = args.split()[0].rstrip('/\\')
+                first_arg = clean_args.split()[0].rstrip('/\\')
                 folder = Path(first_arg)
                 
                 if folder.exists() and folder.is_dir():
                     # It's a folder - use reindex_folder
-                    reindex_folder(folder, db_path)
+                    reindex_folder(folder, db_path, force_include=force_include)
                 else:
                     # Treat as songId(s)
-                    song_ids = args.split()
-                    reindex_songs(song_ids, db_path, daemon=daemon)
+                    song_ids = clean_args.split()
+                    reindex_songs(song_ids, db_path, daemon=daemon, force_include=force_include)
             
             elif cmd == 'search':
                 if not args:
@@ -2906,19 +2929,28 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
     return {'repaired': repaired, 'skipped': skipped}
 
 
-def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
+def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False) -> Dict[str, Any]:
     """
     Force re-index all files in folder, overwriting existing entries.
     
     Unlike normal indexing, this:
     - Ignores indexed_files.json check (processes all files)
     - Overwrites existing fingerprints and metadata
+    
+    Args:
+        folder_path: Path to folder containing audio files
+        db_path: Path to database directory
+        force_include: If True, bypasses exclusion list check (default: respects exclusions)
     """
     print(f"\n{'=' * 70}")
     print("FORCE RE-INDEX")
     print(f"{'=' * 70}")
     print(f"Folder: {folder_path}")
     print(f"Database: {db_path}")
+    if force_include:
+        print("Mode: --force (ignoring exclusion list)")
+    else:
+        print("Mode: normal (respecting exclusion list)")
     print(f"\n⚠️  This will overwrite existing fingerprints and metadata for files in this folder.")
     
     response = input("Continue? (y/N): ").strip().lower()
@@ -2937,6 +2969,9 @@ def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
     indexed_files_path = db_path / "indexed_files.json"
     indexed_files = load_json_file(indexed_files_path)
     
+    # Load exclusion list (unless force_include)
+    exclusions = {} if force_include else load_exclusion_list(db_path)
+    
     # Start daemon
     daemon = IndexingDaemon(db_path)
     if not daemon.start():
@@ -2946,6 +2981,7 @@ def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
     results = {
         'total': len(audio_files),
         'reindexed': 0,
+        'excluded': 0,
         'failed': 0,
         'files': []
     }
@@ -2964,6 +3000,12 @@ def reindex_folder(folder_path: Path, db_path: Path) -> Dict[str, Any]:
             song_id = normalize_song_id(metadata['artist'], metadata['title'])
             metadata['songId'] = song_id
             metadata['originalFilepath'] = file_key
+            
+            # Check exclusion list (unless force_include)
+            if exclusions and is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
+                print(f"   ⊘ Excluded (use --force to override)")
+                results['excluded'] += 1
+                continue
             
             # Compute content hash
             content_hash = compute_content_hash(audio_file)
