@@ -1547,12 +1547,15 @@ Output: JSON on stdout, progress on stderr
     {
         var fingerprintPath = Path.Combine(DbDir, "fingerprints");
         
+        // Store reference to old service for cleanup
+        var oldService = _modelService;
+        
         // Load fingerprint database from directory if it exists
         if (Directory.Exists(fingerprintPath))
         {
             try
             {
-                            _modelService = new InMemoryModelService(fingerprintPath);
+                _modelService = new InMemoryModelService(fingerprintPath);
                 Console.Error.WriteLine($"Loaded fingerprint database from {fingerprintPath}");
             }
             catch (Exception ex)
@@ -1564,6 +1567,22 @@ Output: JSON on stdout, progress on stderr
         else
         {
             _modelService = new InMemoryModelService();
+        }
+        
+        // Cleanup old service if this was a reload (not initial load)
+        if (oldService != null)
+        {
+            // Grace period: let any in-flight queries on old service complete
+            Thread.Sleep(500);
+            
+            // Dispose old service if it implements IDisposable
+            (oldService as IDisposable)?.Dispose();
+            
+            // Force garbage collection to free the ~3GB memory
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            
+            Console.Error.WriteLine("Cleaned up old fingerprint database from memory");
         }
     }
 
