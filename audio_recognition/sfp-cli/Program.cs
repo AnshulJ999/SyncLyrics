@@ -16,6 +16,8 @@ using SoundFingerprinting.Builder;
 using SoundFingerprinting.Data;
 using SoundFingerprinting.Emy;
 using SoundFingerprinting.InMemory;
+using SoundFingerprinting.Strides;
+using SoundFingerprinting.Configuration;
 using FFmpeg.AutoGen.Bindings.DynamicallyLoaded;
 
 namespace SfpCli;
@@ -54,6 +56,20 @@ class Program
     private const int TcpPort = 9123;
     private static TcpListener? _tcpListener;
     private static CancellationTokenSource? _shutdownToken;
+    
+    /// <summary>
+    /// Fingerprinting configuration - optimized for metal/rock music.
+    /// Stride 256 = ~46ms resolution (2× default of 512)
+    /// FrequencyRange 318-2700 Hz = captures high harmonics from distortion, cymbals
+    /// </summary>
+    private static class FingerprintConfig
+    {
+        public const int FingerprintStride = 256;  // Default: 512
+        public const int QueryStrideMin = 128;
+        public const int QueryStrideMax = 256;
+        public const int FrequencyMin = 318;
+        public const int FrequencyMax = 2700;  // Default: 2000, max safe with 5512 Hz sample rate
+    }
 
     static async Task<int> Main(string[] args)
     {
@@ -237,6 +253,12 @@ class Program
         var hashes = await FingerprintCommandBuilder.Instance
             .BuildFingerprintCommand()
             .From(wavFile)
+            .WithFingerprintConfig(config =>
+            {
+                config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
+                config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
+                return config;
+            })
             .UsingServices(_audioService)
             .Hash();
 
@@ -329,6 +351,7 @@ class Program
             .From(wavFile, secondsToAnalyze, startAtSecond)
             .WithQueryConfig(config =>
             {
+                config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
             })
@@ -640,6 +663,7 @@ class Program
             .From(path, duration, offset)
             .WithQueryConfig(config =>
             {
+                config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
             })
@@ -731,6 +755,12 @@ class Program
             var hashes = await FingerprintCommandBuilder.Instance
                 .BuildFingerprintCommand()
                 .From(path)
+                .WithFingerprintConfig(config =>
+                {
+                    config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
+                    config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
+                    return config;
+                })
                 .UsingServices(_audioService)
                 .Hash();
             
@@ -991,6 +1021,7 @@ class Program
             .From(path, duration, offset)
             .WithQueryConfig(config =>
             {
+                config.Audio.Stride = new IncrementalRandomStride(FingerprintConfig.QueryStrideMin, FingerprintConfig.QueryStrideMax);
                 config.Audio.MaxTracksToReturn = 6;
                 return config;
             })
@@ -1186,6 +1217,12 @@ class Program
             var hashes = await FingerprintCommandBuilder.Instance
                 .BuildFingerprintCommand()
                 .From(path)
+                .WithFingerprintConfig(config =>
+                {
+                    config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
+                    config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
+                    return config;
+                })
                 .UsingServices(_audioService)
                 .Hash();
             
@@ -1349,6 +1386,12 @@ class Program
             var hashes = await FingerprintCommandBuilder.Instance
                 .BuildFingerprintCommand()
                 .From(path)
+                .WithFingerprintConfig(config =>
+                {
+                    config.Audio.Stride = new IncrementalStaticStride(FingerprintConfig.FingerprintStride);
+                    config.Audio.FrequencyRange = new FrequencyRange(FingerprintConfig.FrequencyMin, FingerprintConfig.FrequencyMax);
+                    return config;
+                })
                 .UsingServices(_audioService)
                 .Hash();
             
@@ -1491,8 +1534,8 @@ sfp-cli - SoundFingerprinting CLI v2.0
 
 Database: {DbDir}
 
-IMPORTANT: Only WAV files are supported!
-Convert FLAC/MP3 to WAV before using this tool.
+Supports: WAV, FLAC, MP3, OGG, and other formats via FFmpeg.
+Config: Stride={FingerprintConfig.FingerprintStride}, FreqRange={FingerprintConfig.FrequencyMin}-{FingerprintConfig.FrequencyMax}Hz
 
 Global Options:
   --db-path <path>    Override database directory (or set $SFP_DB_PATH)
