@@ -51,8 +51,8 @@ SFP_PUBLISH_DIR = SFP_CLI_DIR / "bin" / "publish"
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "local_fingerprint_database"
 
 # FFmpeg conversion settings for SoundFingerprinting
-# Uses 5512 Hz mono (fingerprinting doesn't need full quality)
-# FFMPEG_ARGS = ["-ac", "1", "-ar", "5512"]
+# Uses 8000 Hz mono to match sfp-cli's FingerprintConfig.SampleRate
+FFMPEG_ARGS = ["-ac", "1", "-ar", "8000", "-loglevel", "warning"]
 
 # File filtering
 MAX_DURATION_MINUTES = 20  # Skip files longer than this
@@ -1356,8 +1356,10 @@ def test_live_capture(db_path: Path, duration: int = 10) -> Dict[str, Any]:
             with open(temp_wav, 'wb') as f:
                 f.write(buffer.getvalue())
             
-            # Convert to 5512Hz mono
+            
+            # Convert to 8000Hz mono (matches sfp-cli's SampleRate config)
             wav_path = temp_dir / "live_capture.wav"
+
             if not convert_to_wav(temp_wav, wav_path):
                 return {'error': 'FFmpeg conversion failed'}
             
@@ -1501,6 +1503,7 @@ def print_cli_help():
         ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
         ("index <folder>", "Index new files in folder (respects exclusions)"),
         ("index <folder> --dry-run", "Preview what would be indexed"),
+        ("index --require-tags a,b", "Require additional tags (album,genre,year)"),
         ("reindex <folder>", "Re-index folder (respects exclusions)"),
         ("reindex <folder> --dry-run", "Preview what would be re-indexed"),
         ("reindex <folder> --force", "Re-index folder (ignores exclusions)"),
@@ -1519,6 +1522,10 @@ def print_cli_help():
         ("exclude --list", "Show exclusion list"),
         ("include <id> [id2]", "Remove song(s) from exclusion list"),
         ("stats", "Show database statistics"),
+        ("clear", "Clear entire database (with confirmation)"),
+        ("test <folder>", "Test recognition accuracy on folder"),
+        ("test <folder> --positions 10,60,120", "Test at specific positions"),
+        ("live [duration]", "Test live audio capture (default 10s)"),
         ("reload", "Full reload (FP DB + metadata from disk)"),
         ("refresh", "Refresh metadata only (lighter)"),
         ("exit / quit", "Exit the CLI"),
@@ -2223,12 +2230,23 @@ def cli_mode(db_path: Path):
             
             elif cmd == 'index':
                 if not args:
-                    print("Usage: index <folder> [--dry-run]")
+                    print("Usage: index <folder> [--dry-run] [--require-tags tag1,tag2]")
                     continue
                 # Check for --dry-run flag
                 dry_run = '--dry-run' in args
-                clean_args = args.replace('--dry-run', '').strip()
+                clean_args = args.replace('--dry-run', '')
                 
+                # Check for --require-tags flag
+                required_tags = None
+                if '--require-tags' in clean_args:
+                    import re
+                    match = re.search(r'--require-tags\s+([^\s]+)', clean_args)
+                    if match:
+                        required_tags = [t.strip() for t in match.group(1).split(',') if t.strip()]
+                        clean_args = re.sub(r'--require-tags\s+[^\s]+', '', clean_args)
+                        print(f"Requiring additional tags: {', '.join(required_tags)}")
+                
+                clean_args = clean_args.strip()
                 if not clean_args:
                     print("Error: No folder specified")
                     continue
@@ -2238,7 +2256,8 @@ def cli_mode(db_path: Path):
                     print(f"Error: Folder not found: {folder}")
                     continue
                 # Use the existing index_folder function
-                index_folder(folder, db_path, dry_run=dry_run)
+                index_folder(folder, db_path, required_tags=required_tags, dry_run=dry_run)
+
             
             elif cmd == 'reindex':
                 if not args:
@@ -2435,8 +2454,82 @@ def cli_mode(db_path: Path):
                 else:
                     print("❌ Daemon not running")
             
+            elif cmd == 'clear':
+                # CLI mode: daemon needs to be stopped before clearing, then restarted
+                print("⚠️  Warning: This will clear the entire database!")
+                print("   The daemon will be stopped, database cleared, then restarted.\n")
+                response = input("Type 'yes' to confirm: ").strip().lower()
+                if response != 'yes':
+                    print("❌ Cancelled.")
+                    continue
+                
+                # Stop daemon before clearing
+                if daemon and daemon.is_running:
+                    print("Stopping daemon...")
+                    daemon.stop()
+                
+                # Clear the database
+                result = clear_database(db_path, force=True)
+                
+                # Restart daemon
+                print("\nRestarting daemon...")
+                daemon = IndexingDaemon(db_path)
+                if daemon.start():
+                    print(f"✅ Daemon restarted")
+                else:
+                    print("⚠️  Could not restart daemon")
+                    daemon = None
+            
+            elif cmd == 'test':
+                if not args:
+                    print("Usage: test <folder> [--positions 10,60,120] [--duration 10]")
+                    continue
+                
+                # Parse arguments
+                positions = [10, 60, 120]
+                duration = 10
+                clean_args = args
+                
+                if '--positions' in args:
+                    import re
+                    match = re.search(r'--positions\s+([0-9,]+)', args)
+                    if match:
+                        positions = [int(p) for p in match.group(1).split(',')]
+                        clean_args = re.sub(r'--positions\s+[0-9,]+', '', clean_args)
+                
+                if '--duration' in args:
+                    import re
+                    match = re.search(r'--duration\s+(\d+)', args)
+                    if match:
+                        duration = int(match.group(1))
+                        clean_args = re.sub(r'--duration\s+\d+', '', clean_args)
+                
+                clean_args = clean_args.strip()
+                if not clean_args:
+                    print("Error: No folder specified")
+                    continue
+                
+                folder = Path(clean_args.rstrip('/\\'))
+                if not folder.exists():
+                    print(f"Error: Folder not found: {folder}")
+                    continue
+                
+                test_recognition(folder, db_path, clip_duration=duration, positions=positions)
+            
+            elif cmd == 'live':
+                # Parse optional duration
+                duration = 10
+                if args:
+                    try:
+                        duration = int(args.strip())
+                    except ValueError:
+                        print(f"Invalid duration: {args}. Using default 10s.")
+                
+                test_live_capture(db_path, duration=duration)
+            
             else:
                 print(f"Unknown command: {cmd}. Type 'help' for available commands.")
+
     
     except KeyboardInterrupt:
         print("\n\nInterrupted.")
