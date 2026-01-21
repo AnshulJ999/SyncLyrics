@@ -589,6 +589,9 @@ class Program
                 case "reload":
                     return (HandleReloadCommandJson(), false);
                 
+                case "refresh":
+                    return (HandleRefreshCommandJson(), false);
+                
                 case "shutdown":
                     SaveDatabase();
                     SaveMetadata();
@@ -934,6 +937,30 @@ class Program
         catch (Exception ex)
         {
             return JsonSerializer.Serialize(new { error = $"Reload failed: {ex.Message}" });
+        }
+    }
+    
+    /// <summary>
+    /// Refresh only reloads metadata.json (lighter than full reload).
+    /// Use when metadata file was modified externally.
+    /// </summary>
+    static string HandleRefreshCommandJson()
+    {
+        try
+        {
+            var oldCount = _metadata.Count;
+            LoadMetadata();
+            return JsonSerializer.Serialize(new
+            {
+                status = "refreshed",
+                previousSongs = oldCount,
+                currentSongs = _metadata.Count,
+                note = "Metadata reloaded from disk (fingerprint DB unchanged)"
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = $"Refresh failed: {ex.Message}" });
         }
     }
 

@@ -435,6 +435,46 @@ class IndexingDaemon:
             self._song_count = result.get("songCount", self._song_count)
         return result
     
+    def list_fp(self) -> Dict[str, Any]:
+        """Get list of song IDs from fingerprint database."""
+        if not self._ready:
+            return {"error": "Daemon not ready"}
+        return self._send_command({"cmd": "list-fp"})
+    
+    def delete(self, song_id: str) -> Dict[str, Any]:
+        """Delete a song from fingerprint DB and daemon's metadata."""
+        if not self._ready:
+            return {"success": False, "error": "Daemon not ready"}
+        return self._send_command({"cmd": "delete", "songId": song_id})
+    
+    def reload(self) -> Dict[str, Any]:
+        """Full reload: fingerprint DB + metadata from disk."""
+        if not self._ready:
+            return {"error": "Daemon not ready"}
+        return self._send_command({"cmd": "reload"})
+    
+    def refresh(self) -> Dict[str, Any]:
+        """Refresh metadata only (lighter than full reload)."""
+        if not self._ready:
+            return {"error": "Daemon not ready"}
+        return self._send_command({"cmd": "refresh"})
+    
+    def stats(self) -> Dict[str, Any]:
+        """Get database statistics from daemon."""
+        if not self._ready:
+            return {"error": "Daemon not ready"}
+        return self._send_command({"cmd": "stats"})
+    
+    @property
+    def connection_mode(self) -> str:
+        """Return current connection mode: 'TCP', 'Subprocess', or 'Disconnected'."""
+        if self._using_tcp and self._tcp_socket:
+            return "TCP"
+        elif self.process is not None and self.process.poll() is None:
+            return "Subprocess"
+        else:
+            return "Disconnected"
+    
     def stop(self):
         """
         Shutdown/disconnect from daemon.
@@ -1212,7 +1252,8 @@ def print_cli_header(db_path: Path, daemon: 'IndexingDaemon' = None):
     print("  SyncLyrics Database Manager v1.0")
     print(f"  DB: {db_path}")
     if daemon and daemon.is_running:
-        print(f"  Daemon: Running | Songs: {daemon.song_count}")
+        mode = daemon.connection_mode
+        print(f"  Daemon: Running ({mode}) | Songs: {daemon.song_count}")
     else:
         print("  Daemon: Not running")
     print("=" * 70)
@@ -1235,6 +1276,8 @@ def print_cli_help():
         ("purge <songId>", "Delete song from all data sources"),
         ("list [page]", "List all songs (paginated)"),
         ("stats", "Show database statistics"),
+        ("reload", "Full reload (FP DB + metadata from disk)"),
+        ("refresh", "Refresh metadata only (lighter)"),
         ("exit / quit", "Exit the CLI"),
     ]
     
@@ -1381,19 +1424,15 @@ def show_song_info(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None)
     else:
         print("\n[indexed_files.json] ❌ NOT FOUND")
     
-    # Check fingerprint DB (via daemon)
+    # Check fingerprint DB (via daemon using list_fp method)
     if daemon and daemon.is_running:
         try:
-            daemon.process.stdin.write('{\"cmd\": \"list-fp\"}\n')
-            daemon.process.stdin.flush()
-            response = daemon.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                fp_ids = set(result.get('songIds', []))
-                if song_id in fp_ids:
-                    print(f"\n[Fingerprint DB] ✓ FOUND")
-                else:
-                    print(f"\n[Fingerprint DB] ❌ NOT FOUND")
+            result = daemon.list_fp()
+            fp_ids = set(result.get('songIds', []))
+            if song_id in fp_ids:
+                print(f"\n[Fingerprint DB] ✓ FOUND")
+            else:
+                print(f"\n[Fingerprint DB] ❌ NOT FOUND")
         except:
             print(f"\n[Fingerprint DB] ⚠ Could not check (daemon error)")
     else:
@@ -1418,17 +1457,13 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
     index_entries = [(fp, entry) for fp, entry in indexed_files.items() if entry.get('songId') == song_id]
     in_index = len(index_entries) > 0
     
-    # Check fingerprint DB
+    # Check fingerprint DB using daemon's list_fp method
     in_fp = False
     if daemon and daemon.is_running:
         try:
-            daemon.process.stdin.write('{\"cmd\": \"list-fp\"}\n')
-            daemon.process.stdin.flush()
-            response = daemon.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                fp_ids = set(result.get('songIds', []))
-                in_fp = song_id in fp_ids
+            result = daemon.list_fp()
+            fp_ids = set(result.get('songIds', []))
+            in_fp = song_id in fp_ids
         except:
             pass
     
@@ -1470,26 +1505,22 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
     
     deleted_from = []
     
-    # Delete from fingerprint DB
+    # Delete from fingerprint DB and daemon's in-memory metadata using daemon.delete()
     if in_fp and daemon and daemon.is_running:
         try:
-            cmd = json.dumps({"cmd": "delete", "songId": song_id})
-            daemon.process.stdin.write(cmd + "\n")
-            daemon.process.stdin.flush()
-            response = daemon.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                if result.get('success'):
-                    deleted_from.append('fingerprint_db')
-                    print(f"  ✓ Deleted from Fingerprint DB")
-                else:
-                    print(f"  ⚠ Could not delete from Fingerprint DB: {result.get('error')}")
+            result = daemon.delete(song_id)
+            if result.get('success'):
+                deleted_from.append('fingerprint_db')
+                print(f"  ✓ Deleted from Fingerprint DB (and daemon memory)")
+            else:
+                print(f"  ⚠ Could not delete from Fingerprint DB: {result.get('error')}")
         except Exception as e:
             print(f"  ⚠ Error deleting from Fingerprint DB: {e}")
     
-    # Delete from metadata
+    # Delete from metadata file
     if in_metadata:
         del metadata[song_id]
+        save_json_file(metadata_path, metadata)
         deleted_from.append('metadata')
         print(f"  ✓ Deleted from metadata.json")
     
@@ -1497,17 +1528,13 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
     if in_index:
         for fp, _ in index_entries:
             del indexed_files[fp]
+        save_json_file(indexed_files_path, indexed_files)
         deleted_from.append('indexed_files')
         print(f"  ✓ Deleted {len(index_entries)} entries from indexed_files.json")
     
-    # Save changes
-    if 'metadata' in deleted_from:
-        save_json_file(metadata_path, metadata)
-    if 'indexed_files' in deleted_from:
-        save_json_file(indexed_files_path, indexed_files)
-    
-    if daemon and daemon.is_running:
-        daemon.save()
+    # Refresh daemon's metadata from disk (so it picks up our file changes)
+    if daemon and daemon.is_running and ('metadata' in deleted_from):
+        daemon.refresh()
     
     print(f"\n✓ Purge complete. Deleted from: {', '.join(deleted_from)}")
     return {'success': True, 'deleted_from': deleted_from}
@@ -1657,6 +1684,28 @@ def cli_mode(db_path: Path):
             elif cmd == 'stats':
                 show_stats(db_path)
             
+            elif cmd == 'reload':
+                if daemon and daemon.is_running:
+                    print("Reloading FP database and metadata from disk...")
+                    result = daemon.reload()
+                    if result.get('status') == 'reloaded':
+                        print(f"✅ Reloaded: {result.get('previousSongs')} → {result.get('currentSongs')} songs")
+                    else:
+                        print(f"❌ Reload failed: {result.get('error', 'Unknown')}")
+                else:
+                    print("❌ Daemon not running")
+            
+            elif cmd == 'refresh':
+                if daemon and daemon.is_running:
+                    print("Refreshing metadata from disk...")
+                    result = daemon.refresh()
+                    if result.get('status') == 'refreshed':
+                        print(f"✅ Refreshed: {result.get('previousSongs')} → {result.get('currentSongs')} songs")
+                    else:
+                        print(f"❌ Refresh failed: {result.get('error', 'Unknown')}")
+                else:
+                    print("❌ Daemon not running")
+            
             else:
                 print(f"Unknown command: {cmd}. Type 'help' for available commands.")
     
@@ -1724,13 +1773,9 @@ def verify_database(db_path: Path, daemon: 'IndexingDaemon' = None, brief: bool 
     
     if daemon and daemon.is_running:
         try:
-            # Send list-fp command and get response
-            daemon.process.stdin.write('{"cmd": "list-fp"}\n')
-            daemon.process.stdin.flush()
-            response = daemon.process.stdout.readline()
-            if response:
-                result = json.loads(response.strip())
-                fp_ids = set(result.get('songIds', []))
+            # Use list_fp method (works with both TCP and subprocess)
+            result = daemon.list_fp()
+            fp_ids = set(result.get('songIds', []))
         except Exception as e:
             print(f"⚠️  Warning: Could not query fingerprint DB: {e}")
             fp_ids = metadata_ids.copy()
