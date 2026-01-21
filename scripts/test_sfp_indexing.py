@@ -751,7 +751,7 @@ def save_json_file(path: Path, data: Dict):
 
 
 def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None, 
-                 required_tags: List[str] = None) -> Dict[str, Any]:
+                 required_tags: List[str] = None, dry_run: bool = False) -> Dict[str, Any]:
     """
     Index all audio files in a folder.
     
@@ -761,6 +761,7 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         extensions: List of extensions to include
         required_tags: Optional list of additional required metadata fields
                        (e.g., ['album', 'genre']). Artist and title are always required.
+        dry_run: If True, only show what would be indexed without making changes
     
     Returns:
         Summary dict with results
@@ -906,6 +907,48 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     
     excluded_msg = f", excluded {results['excluded']}" if results['excluded'] > 0 else ""
     print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']}{excluded_msg})")
+    
+    # --- DRY-RUN: Exit after Phase 1 with detailed summary ---
+    if dry_run:
+        print(f"\n{'=' * 70}")
+        print("DRY-RUN MODE - No changes will be made")
+        print(f"{'=' * 70}\n")
+        
+        if prepared_files:
+            print(f"Would index {len(prepared_files)} files:\n")
+            for f in prepared_files:
+                m = f['metadata']
+                dur = m.get('duration', 0)
+                dur_str = f" ({dur:.0f}s)" if dur else ""
+                print(f"  • {m['artist']} - {m['title']}{dur_str}")
+                print(f"    ID: {m['songId']}")
+                print(f"    File: {f['file_key']}")
+        else:
+            print("No new files to index.")
+        
+        print(f"\n{'=' * 40}")
+        print("Summary")
+        print(f"{'=' * 40}")
+        print(f"  Total files found: {results['total']}")
+        print(f"  Would index: {len(prepared_files)}")
+        print(f"  Already indexed (skip): {results['skipped']}")
+        if results['excluded'] > 0:
+            print(f"  Excluded: {results['excluded']}")
+        
+        # Add preview data to results for export
+        results['dry_run'] = True
+        results['would_index'] = [
+            {
+                'songId': f['metadata']['songId'],
+                'artist': f['metadata']['artist'],
+                'title': f['metadata']['title'],
+                'duration': f['metadata'].get('duration', 0),
+                'filepath': f['file_key']
+            }
+            for f in prepared_files
+        ]
+        return results
+    
     print(f"\nPhase 2: Batch fingerprinting ({BATCH_SIZE} parallel)...")
     
     # Second pass: process in batches of 8
@@ -1457,7 +1500,9 @@ def print_cli_help():
         ("repair --auto", "Auto repair (no confirmation)"),
         ("repair --low-fp [N]", "Re-fingerprint songs with < N FPs (default 100)"),
         ("index <folder>", "Index new files in folder (respects exclusions)"),
+        ("index <folder> --dry-run", "Preview what would be indexed"),
         ("reindex <folder>", "Re-index folder (respects exclusions)"),
+        ("reindex <folder> --dry-run", "Preview what would be re-indexed"),
         ("reindex <folder> --force", "Re-index folder (ignores exclusions)"),
         ("reindex <songId> [id2]", "Re-index specific song(s)"),
         ("reindex <songId> --force", "Re-index song(s) ignoring exclusions"),
@@ -2178,24 +2223,33 @@ def cli_mode(db_path: Path):
             
             elif cmd == 'index':
                 if not args:
-                    print("Usage: index <folder>")
+                    print("Usage: index <folder> [--dry-run]")
                     continue
-                folder = Path(args.rstrip('/\\'))
+                # Check for --dry-run flag
+                dry_run = '--dry-run' in args
+                clean_args = args.replace('--dry-run', '').strip()
+                
+                if not clean_args:
+                    print("Error: No folder specified")
+                    continue
+                
+                folder = Path(clean_args.rstrip('/\\'))
                 if not folder.exists():
                     print(f"Error: Folder not found: {folder}")
                     continue
-                # Use the existing index_folder function but pass daemon
-                index_folder(folder, db_path)
+                # Use the existing index_folder function
+                index_folder(folder, db_path, dry_run=dry_run)
             
             elif cmd == 'reindex':
                 if not args:
-                    print("Usage: reindex <folder> [--force] | reindex <songId> [id2...] [--force]")
+                    print("Usage: reindex <folder> [--force] [--dry-run] | reindex <songId> [id2...] [--force]")
                     continue
                 
-                # Check for --force flag
+                # Check for flags
                 force_include = '--force' in args
-                # Remove --force from args for further parsing
-                clean_args = args.replace('--force', '').strip()
+                dry_run = '--dry-run' in args
+                # Remove flags from args for further parsing
+                clean_args = args.replace('--force', '').replace('--dry-run', '').strip()
                 
                 if not clean_args:
                     print("Error: No folder or songId specified")
@@ -2207,9 +2261,11 @@ def cli_mode(db_path: Path):
                 
                 if folder.exists() and folder.is_dir():
                     # It's a folder - use reindex_folder
-                    reindex_folder(folder, db_path, force_include=force_include)
+                    reindex_folder(folder, db_path, force_include=force_include, dry_run=dry_run)
                 else:
-                    # Treat as songId(s)
+                    # Treat as songId(s) - dry_run not supported for reindex_songs
+                    if dry_run:
+                        print("Note: --dry-run is only supported for folder reindexing")
                     song_ids = clean_args.split()
                     reindex_songs(song_ids, db_path, daemon=daemon, force_include=force_include)
             
@@ -2929,7 +2985,8 @@ def repair_database(db_path: Path, batch: bool = False, auto: bool = False, daem
     return {'repaired': repaired, 'skipped': skipped}
 
 
-def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False) -> Dict[str, Any]:
+def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False,
+                   dry_run: bool = False) -> Dict[str, Any]:
     """
     Force re-index all files in folder, overwriting existing entries.
     
@@ -2941,9 +2998,13 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
         folder_path: Path to folder containing audio files
         db_path: Path to database directory
         force_include: If True, bypasses exclusion list check (default: respects exclusions)
+        dry_run: If True, only show what would be reindexed without making changes
     """
     print(f"\n{'=' * 70}")
-    print("FORCE RE-INDEX")
+    if dry_run:
+        print("FORCE RE-INDEX (DRY-RUN PREVIEW)")
+    else:
+        print("FORCE RE-INDEX")
     print(f"{'=' * 70}")
     print(f"Folder: {folder_path}")
     print(f"Database: {db_path}")
@@ -2951,26 +3012,95 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
         print("Mode: --force (ignoring exclusion list)")
     else:
         print("Mode: normal (respecting exclusion list)")
-    print(f"\n⚠️  This will overwrite existing fingerprints and metadata for files in this folder.")
     
-    response = input("Continue? (y/N): ").strip().lower()
-    if response != 'y':
-        print("Re-index cancelled.")
-        return {'cancelled': True}
+    # Skip confirmation prompt in dry-run mode
+    if not dry_run:
+        print(f"\n⚠️  This will overwrite existing fingerprints and metadata for files in this folder.")
+        response = input("Continue? (y/N): ").strip().lower()
+        if response != 'y':
+            print("Re-index cancelled.")
+            return {'cancelled': True}
     
     # Find all audio files
     audio_files = []
     for ext in SUPPORTED_EXTENSIONS:
         audio_files.extend(folder_path.rglob(f"*{ext}"))
     
-    print(f"\nFound {len(audio_files)} audio files to re-index.\n")
+    print(f"\nFound {len(audio_files)} audio files.")
+    
+    # Load exclusion list (unless force_include)
+    exclusions = {} if force_include else load_exclusion_list(db_path)
+    
+    # Pre-scan files to filter and collect metadata
+    would_reindex = []
+    excluded_count = 0
+    skipped_count = 0
+    
+    for audio_file in audio_files:
+        file_key = str(audio_file.absolute())
+        
+        # Extract metadata
+        metadata = extract_full_metadata(audio_file)
+        if not metadata['title'] or not metadata['artist']:
+            skipped_count += 1
+            continue
+        
+        song_id = normalize_song_id(metadata['artist'], metadata['title'])
+        
+        # Check exclusion list (unless force_include)
+        if exclusions and is_excluded(song_id, metadata['artist'], metadata['title'], exclusions):
+            excluded_count += 1
+            continue
+        
+        would_reindex.append({
+            'songId': song_id,
+            'artist': metadata['artist'],
+            'title': metadata['title'],
+            'duration': metadata.get('duration', 0),
+            'filepath': file_key
+        })
+    
+    # --- DRY-RUN: Exit with detailed summary ---
+    if dry_run:
+        print(f"\n{'=' * 70}")
+        print("DRY-RUN MODE - No changes will be made")
+        print(f"{'=' * 70}\n")
+        
+        if would_reindex:
+            print(f"Would re-index {len(would_reindex)} files:\n")
+            for item in would_reindex:
+                dur = item['duration']
+                dur_str = f" ({dur:.0f}s)" if dur else ""
+                print(f"  • {item['artist']} - {item['title']}{dur_str}")
+                print(f"    ID: {item['songId']}")
+                print(f"    File: {item['filepath']}")
+        else:
+            print("No files to re-index.")
+        
+        print(f"\n{'=' * 40}")
+        print("Summary")
+        print(f"{'=' * 40}")
+        print(f"  Total files found: {len(audio_files)}")
+        print(f"  Would re-index: {len(would_reindex)}")
+        if skipped_count > 0:
+            print(f"  Skipped (missing tags): {skipped_count}")
+        if excluded_count > 0:
+            print(f"  Excluded: {excluded_count}")
+        
+        return {
+            'dry_run': True,
+            'total': len(audio_files),
+            'would_reindex': would_reindex,
+            'excluded': excluded_count,
+            'skipped': skipped_count
+        }
+    
+    # --- Normal mode: proceed with reindexing ---
+    print(f"\n{len(would_reindex)} files to re-index.\n")
     
     # Load tracking files
     indexed_files_path = db_path / "indexed_files.json"
     indexed_files = load_json_file(indexed_files_path)
-    
-    # Load exclusion list (unless force_include)
-    exclusions = {} if force_include else load_exclusion_list(db_path)
     
     # Start daemon
     daemon = IndexingDaemon(db_path)
@@ -3082,6 +3212,12 @@ def main():
     parser.add_argument("--reindex", type=str, metavar="FOLDER",
                         help="Force re-index all files in folder (overwrites existing)")
     
+    # Preview mode
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview what would be indexed/reindexed without making changes")
+    parser.add_argument("--export", type=str, metavar="FILE",
+                        help="Export dry-run results to JSON file")
+    
     args = parser.parse_args()
     
     # Determine database path
@@ -3107,7 +3243,13 @@ def main():
             required_tags = [t.strip() for t in args.require_tags.split(',') if t.strip()]
             print(f"Requiring additional tags: {', '.join(required_tags)}")
         
-        index_folder(folder, db_path, required_tags=required_tags)
+        result = index_folder(folder, db_path, required_tags=required_tags, dry_run=args.dry_run)
+        
+        # Handle export if dry-run
+        if args.export and result.get('dry_run'):
+            export_path = Path(args.export)
+            save_json_file(export_path, result)
+            print(f"\n✓ Dry-run results exported to: {export_path}")
     
     elif args.test:
         # Strip trailing slashes/backslashes (Windows CMD escapes closing quote with trailing \)
@@ -3162,7 +3304,13 @@ def main():
         if not folder.exists():
             print(f"Error: Folder not found: {folder}")
             return
-        reindex_folder(folder, db_path)
+        result = reindex_folder(folder, db_path, dry_run=args.dry_run)
+        
+        # Handle export if dry-run
+        if args.export and result.get('dry_run'):
+            export_path = Path(args.export)
+            save_json_file(export_path, result)
+            print(f"\n✓ Dry-run results exported to: {export_path}")
     
     else:
         # Default to interactive CLI mode when no arguments provided
