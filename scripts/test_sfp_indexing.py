@@ -1829,6 +1829,7 @@ def print_cli_help():
         ("undo", "Undo last index/reindex action"),
         ("undo --list", "Show history of recent actions"),
         ("undo <session_id>", "Undo a specific session"),
+        ("cleanup", "Remove orphan entries from indexed_files.json"),
         ("clear", "Clear entire database (with confirmation)"),
         ("test <folder>", "Test recognition accuracy on folder"),
         ("test <folder> --positions", "Test at specific positions (default: 10,60,120)"),
@@ -2969,6 +2970,100 @@ def cli_mode(db_path: Path):
                                     print(f"   ... and {len(result['errors']) - 20} more errors")
                         else:
                             print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
+            
+            elif cmd == 'cleanup':
+                # Cleanup orphan entries from indexed_files.json
+                indexed_files_path = db_path / "indexed_files.json"
+                indexed_files = load_json_file(indexed_files_path)
+                metadata_path = db_path / "metadata.json"
+                metadata = load_json_file(metadata_path)
+                
+                # Get set of valid songIds from metadata
+                valid_song_ids = set(metadata.keys())
+                
+                # Analyze entries
+                skipped_entries = []
+                orphan_entries = []
+                valid_entries = {}
+                
+                for filepath, entry in indexed_files.items():
+                    song_id = entry.get('songId')
+                    if entry.get('skipped'):
+                        skipped_entries.append((filepath, entry))
+                    elif song_id not in valid_song_ids:
+                        orphan_entries.append((filepath, entry))
+                    else:
+                        valid_entries[filepath] = entry
+                
+                print(f"\n=== Indexed Files Cleanup ===\n")
+                print(f"Total tracked files: {len(indexed_files)}")
+                print(f"Valid entries: {len(valid_entries)}")
+                print(f"Skipped entries (duplicates): {len(skipped_entries)}")
+                print(f"Orphan entries (no metadata): {len(orphan_entries)}")
+                
+                to_remove = len(skipped_entries) + len(orphan_entries)
+                if to_remove == 0:
+                    print("\n✅ No cleanup needed!")
+                    continue
+                
+                print(f"\n{to_remove} entries can be removed.")
+                print("Options:")
+                print("  1. Remove skipped entries only")
+                print("  2. Remove orphan entries only")
+                print("  3. Remove all (skipped + orphan)")
+                print("  4. Show details first")
+                print("  5. Cancel")
+                
+                choice = input("\nChoice (1-5): ").strip()
+                
+                if choice == '4':
+                    # Show details
+                    if skipped_entries:
+                        print(f"\n--- Skipped Entries ({len(skipped_entries)}) ---")
+                        for fp, entry in skipped_entries[:20]:
+                            print(f"  {Path(fp).name}: {entry.get('skipped', '?')}")
+                        if len(skipped_entries) > 20:
+                            print(f"  ... and {len(skipped_entries) - 20} more")
+                    
+                    if orphan_entries:
+                        print(f"\n--- Orphan Entries ({len(orphan_entries)}) ---")
+                        for fp, entry in orphan_entries[:20]:
+                            print(f"  {Path(fp).name}: songId={entry.get('songId', '?')}")
+                        if len(orphan_entries) > 20:
+                            print(f"  ... and {len(orphan_entries) - 20} more")
+                    
+                    confirm = input("\nRemove all these entries? (y/N): ").strip().lower()
+                    if confirm != 'y':
+                        print("Cancelled.")
+                        continue
+                    choice = '3'  # Remove all
+                
+                if choice == '5' or not choice:
+                    print("Cancelled.")
+                    continue
+                
+                # Determine what to keep
+                if choice == '1':
+                    # Remove skipped only, keep orphans
+                    for fp, entry in orphan_entries:
+                        valid_entries[fp] = entry
+                    removed = len(skipped_entries)
+                elif choice == '2':
+                    # Remove orphans only, keep skipped
+                    for fp, entry in skipped_entries:
+                        valid_entries[fp] = entry
+                    removed = len(orphan_entries)
+                elif choice == '3':
+                    # Remove all
+                    removed = to_remove
+                else:
+                    print("Invalid choice.")
+                    continue
+                
+                # Save cleaned file
+                save_json_file(indexed_files_path, valid_entries)
+                print(f"\n✅ Cleanup complete: removed {removed} entries")
+                print(f"   Tracked files: {len(indexed_files)} → {len(valid_entries)}")
             
             elif cmd == 'clear':
                 # CLI mode: daemon needs to be stopped before clearing, then restarted
