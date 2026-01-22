@@ -1002,26 +1002,31 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
         if results['excluded'] > 0:
             print(f"  Excluded: {results['excluded']}")
         
-        # Show skipped files with reasons (from skip_log entries created this run)
+        # Show skipped files with reasons (from skip_log entries created this run) - limit to 50
         if results['skipped'] > 0:
             print(f"\n{'=' * 40}")
             print(f"Skipped Files ({results['skipped']})")
             print(f"{'=' * 40}")
             # Show entries that were added/modified in this run
-            for filepath, entry in skip_log.items():
+            skip_items = list(skip_log.items())
+            for filepath, entry in skip_items[:50]:
                 reason = entry.get('reason', 'Unknown')
                 filename = Path(filepath).name
                 print(f"  ❌ {filename}")
                 print(f"     Reason: {reason}")
+            if len(skip_items) > 50:
+                print(f"  ... and {len(skip_items) - 50} more")
         
-        # Show excluded files with details
+        # Show excluded files with details - limit to 50
         if excluded_files:
             print(f"\n{'=' * 40}")
             print(f"Excluded Files ({len(excluded_files)})")
             print(f"{'=' * 40}")
-            for exc in excluded_files:
+            for exc in excluded_files[:50]:
                 print(f"  🚫 {exc['artist']} - {exc['title']}")
                 print(f"     ID: {exc['songId']}")
+            if len(excluded_files) > 50:
+                print(f"  ... and {len(excluded_files) - 50} more")
         
         # Add preview data to results for export
         results['dry_run'] = True
