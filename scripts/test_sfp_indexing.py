@@ -2852,32 +2852,117 @@ def cli_mode(db_path: Path):
                     else:
                         print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
                 else:
-                    # Undo last session
-                    sessions = load_session_logs(db_path, limit=1)
-                    active_sessions = [s for s in sessions if not s.get('undone')]
+                    # Undo last session (or specific session if provided without --list)
+                    session_id = args.strip() if args and not args.startswith('--') else None
                     
-                    if not active_sessions:
-                        print("No undoable sessions found. Use 'undo --list' to see history.")
+                    if session_id:
+                        # Load specific session
+                        sessions_dir = db_path / "sessions"
+                        session_path = sessions_dir / f"session_{session_id}.json"
+                        if not session_path.exists():
+                            print(f"❌ Session not found: {session_id}")
+                            continue
+                        session = load_json_file(session_path)
+                    else:
+                        # Load last undoable session
+                        sessions = load_session_logs(db_path, limit=10)
+                        active_sessions = [s for s in sessions if not s.get('undone')]
+                        
+                        if not active_sessions:
+                            print("No undoable sessions found. Use 'undo --list' to see history.")
+                            continue
+                        
+                        session = active_sessions[0]
+                    
+                    if session.get('undone'):
+                        print(f"❌ Session already undone")
                         continue
                     
-                    last = active_sessions[0]
-                    timestamp = last.get('timestamp', '')[:19].replace('T', ' ')
-                    action = last.get('action', '?')
-                    folder = Path(last.get('folder', '')).name
-                    count = last.get('count', 0)
+                    # Show session details
+                    timestamp = session.get('timestamp', '')[:19].replace('T', ' ')
+                    action = session.get('action', '?')
+                    folder = Path(session.get('folder', '')).name
+                    songs = session.get('added_songs', [])
                     
-                    print(f"\nLast action: {action} {folder} ({count} songs) at {timestamp}")
-                    response = input("Undo this action? (y/N): ").strip().lower()
+                    print(f"\n{'=' * 60}")
+                    print(f"Session: {session.get('id')}")
+                    print(f"Action: {action} {folder}")
+                    print(f"When: {timestamp}")
+                    print(f"Songs: {len(songs)}")
+                    print(f"{'=' * 60}")
                     
-                    if response != 'y':
+                    # Show song list (limit to 20 for display)
+                    print("\nSongs that will be DELETED:\n")
+                    for i, song in enumerate(songs[:20], 1):
+                        print(f"  {i}. {song.get('songId', '?')}")
+                    if len(songs) > 20:
+                        print(f"  ... and {len(songs) - 20} more")
+                    
+                    print(f"\n⚠️  This will DELETE {len(songs)} songs from the database!")
+                    print("   Options:")
+                    print("     y = Delete all songs")
+                    print("     n = Cancel")
+                    print("     s = Select specific songs to keep")
+                    
+                    response = input("\nYour choice (y/n/s): ").strip().lower()
+                    
+                    if response == 'n' or response == '':
                         print("Cancelled.")
                         continue
-                    
-                    result = undo_session(db_path, last['id'], daemon)
-                    if result.get('success'):
-                        print(f"✅ Undo complete: deleted {result['deleted']}/{result['total']} songs")
-                    else:
-                        print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
+                    elif response == 's':
+                        # Selective mode: let user pick songs to KEEP
+                        print("\nEnter song numbers to KEEP (comma-separated, e.g., 1,3,5):")
+                        print("Or press Enter to delete all.\n")
+                        
+                        for i, song in enumerate(songs, 1):
+                            print(f"  {i}. {song.get('songId', '?')}")
+                        
+                        keep_input = input("\nSongs to keep: ").strip()
+                        if keep_input:
+                            try:
+                                keep_indices = set(int(x.strip()) - 1 for x in keep_input.split(',') if x.strip())
+                                songs_to_delete = [s for i, s in enumerate(songs) if i not in keep_indices]
+                                songs_to_keep = [s for i, s in enumerate(songs) if i in keep_indices]
+                                
+                                print(f"\nWill DELETE {len(songs_to_delete)} songs, KEEP {len(songs_to_keep)} songs.")
+                                confirm = input("Proceed? (y/N): ").strip().lower()
+                                if confirm != 'y':
+                                    print("Cancelled.")
+                                    continue
+                                
+                                # Partial delete using purge
+                                for song in songs_to_delete:
+                                    song_id = song.get('songId')
+                                    if daemon and daemon.is_running:
+                                        daemon.delete(song_id)
+                                    filepath = song.get('filepath')
+                                    if filepath:
+                                        indexed_files_path = db_path / "indexed_files.json"
+                                        indexed_files = load_json_file(indexed_files_path)
+                                        if filepath in indexed_files:
+                                            del indexed_files[filepath]
+                                        save_json_file(indexed_files_path, indexed_files)
+                                
+                                if daemon and daemon.is_running:
+                                    daemon.save()
+                                
+                                # Update session to mark partial undo
+                                session['partial_undo'] = True
+                                session['kept_songs'] = songs_to_keep
+                                session['deleted_songs'] = songs_to_delete
+                                save_json_file(Path(session.get('_path', db_path / "sessions" / f"session_{session['id']}.json")), session)
+                                
+                                print(f"✅ Partial undo complete: deleted {len(songs_to_delete)} songs")
+                                continue
+                            except ValueError:
+                                print("Invalid input. Cancelled.")
+                                continue
+                    elif response == 'y':
+                        result = undo_session(db_path, session['id'], daemon)
+                        if result.get('success'):
+                            print(f"✅ Undo complete: deleted {result['deleted']}/{result['total']} songs")
+                        else:
+                            print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
             
             elif cmd == 'clear':
                 # CLI mode: daemon needs to be stopped before clearing, then restarted
