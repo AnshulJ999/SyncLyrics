@@ -2891,12 +2891,12 @@ def cli_mode(db_path: Path):
                     print(f"Songs: {len(songs)}")
                     print(f"{'=' * 60}")
                     
-                    # Show song list (limit to 20 for display)
+                    # Show song list (limit to 100 for display)
                     print("\nSongs that will be DELETED:\n")
-                    for i, song in enumerate(songs[:20], 1):
+                    for i, song in enumerate(songs[:100], 1):
                         print(f"  {i}. {song.get('songId', '?')}")
-                    if len(songs) > 20:
-                        print(f"  ... and {len(songs) - 20} more")
+                    if len(songs) > 100:
+                        print(f"  ... and {len(songs) - 100} more")
                     
                     print(f"\n⚠️  This will DELETE {len(songs)} songs from the database!")
                     print("   Options:")
@@ -2961,6 +2961,12 @@ def cli_mode(db_path: Path):
                         result = undo_session(db_path, session['id'], daemon)
                         if result.get('success'):
                             print(f"✅ Undo complete: deleted {result['deleted']}/{result['total']} songs")
+                            if result.get('errors'):
+                                print(f"\n⚠️  {len(result['errors'])} songs failed to delete:")
+                                for err in result['errors'][:20]:
+                                    print(f"   - {err}")
+                                if len(result['errors']) > 20:
+                                    print(f"   ... and {len(result['errors']) - 20} more errors")
                         else:
                             print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
             
