@@ -956,19 +956,24 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     excluded_msg = f", excluded {results['excluded']}" if results['excluded'] > 0 else ""
     print(f"\nPhase 1 complete: {len(prepared_files)} files to index (skipped {results['skipped']}{excluded_msg})")
     
-    # Show skipped files with reasons (always, not just dry-run)
+    # Show skipped files with reasons (always, not just dry-run) - limit to 50
     if results['skipped'] > 0:
         print(f"\n--- Skipped Files ({results['skipped']}) ---")
-        for filepath, entry in skip_log.items():
+        skip_items = list(skip_log.items())
+        for filepath, entry in skip_items[:50]:
             reason = entry.get('reason', 'Unknown')
             filename = Path(filepath).name
             print(f"  ❌ {filename}: {reason}")
+        if len(skip_items) > 50:
+            print(f"  ... and {len(skip_items) - 50} more")
     
-    # Show excluded files with details (always, not just dry-run)
+    # Show excluded files with details (always, not just dry-run) - limit to 50
     if excluded_files:
         print(f"\n--- Excluded Files ({len(excluded_files)}) ---")
-        for exc in excluded_files:
+        for exc in excluded_files[:50]:
             print(f"  🚫 {exc['artist']} - {exc['title']} (ID: {exc['songId']})")
+        if len(excluded_files) > 50:
+            print(f"  ... and {len(excluded_files) - 50} more")
     
     # --- DRY-RUN: Exit after Phase 1 with detailed summary ---
     if dry_run:
