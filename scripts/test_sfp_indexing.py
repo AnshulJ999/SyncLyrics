@@ -779,6 +779,153 @@ def save_json_file(path: Path, data: Dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+# ============================================================================
+# SESSION LOGGING - Track index/reindex operations for undo
+# ============================================================================
+
+def save_session_log(db_path: Path, action: str, folder: Path, 
+                     added_songs: List[Dict], flags: List[str] = None) -> Path:
+    """
+    Save a session log after index/reindex operation.
+    
+    Args:
+        db_path: Database path
+        action: 'index' or 'reindex'
+        folder: Folder that was indexed
+        added_songs: List of dicts with 'songId' and 'filepath'
+        flags: Optional list of flags used (e.g., ['--force'])
+    
+    Returns:
+        Path to the saved session log
+    """
+    sessions_dir = db_path / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now()
+    session_id = timestamp.strftime("%Y%m%d_%H%M%S")
+    
+    session = {
+        'id': session_id,
+        'action': action,
+        'folder': str(folder),
+        'timestamp': timestamp.isoformat(),
+        'flags': flags or [],
+        'added_songs': added_songs,
+        'count': len(added_songs),
+        'undone': False
+    }
+    
+    session_path = sessions_dir / f"session_{session_id}.json"
+    save_json_file(session_path, session)
+    return session_path
+
+
+def load_session_logs(db_path: Path, limit: int = 20) -> List[Dict]:
+    """
+    Load recent session logs, most recent first.
+    
+    Args:
+        db_path: Database path
+        limit: Maximum number of sessions to return
+    
+    Returns:
+        List of session dicts, sorted by timestamp descending
+    """
+    sessions_dir = db_path / "sessions"
+    if not sessions_dir.exists():
+        return []
+    
+    sessions = []
+    for session_file in sessions_dir.glob("session_*.json"):
+        try:
+            session = load_json_file(session_file)
+            session['_path'] = str(session_file)
+            sessions.append(session)
+        except:
+            pass
+    
+    # Sort by timestamp descending (most recent first)
+    sessions.sort(key=lambda s: s.get('timestamp', ''), reverse=True)
+    return sessions[:limit]
+
+
+def undo_session(db_path: Path, session_id: str, daemon) -> Dict:
+    """
+    Undo a session by purging all songs added in that session.
+    
+    Args:
+        db_path: Database path
+        session_id: Session ID to undo
+        daemon: Active IndexingDaemon for deleting songs
+    
+    Returns:
+        Dict with 'success', 'deleted', 'errors'
+    """
+    sessions_dir = db_path / "sessions"
+    session_path = sessions_dir / f"session_{session_id}.json"
+    
+    if not session_path.exists():
+        return {'success': False, 'error': f"Session not found: {session_id}"}
+    
+    session = load_json_file(session_path)
+    
+    if session.get('undone'):
+        return {'success': False, 'error': "Session already undone"}
+    
+    added_songs = session.get('added_songs', [])
+    if not added_songs:
+        return {'success': False, 'error': "No songs to undo in this session"}
+    
+    # Delete each song
+    deleted = 0
+    errors = []
+    indexed_files_path = db_path / "indexed_files.json"
+    indexed_files = load_json_file(indexed_files_path)
+    
+    for song in added_songs:
+        song_id = song.get('songId')
+        filepath = song.get('filepath')
+        
+        if not song_id:
+            continue
+        
+        try:
+            # Delete from daemon (handles FP DB and metadata)
+            if daemon and daemon.is_running:
+                result = daemon.delete(song_id)
+                if result.get('success'):
+                    deleted += 1
+                else:
+                    errors.append(f"{song_id}: {result.get('error', 'Unknown')}")
+            else:
+                errors.append(f"{song_id}: Daemon not running")
+            
+            # Remove from indexed_files
+            if filepath and filepath in indexed_files:
+                del indexed_files[filepath]
+        except Exception as e:
+            errors.append(f"{song_id}: {str(e)}")
+    
+    # Save updated indexed_files
+    save_json_file(indexed_files_path, indexed_files)
+    
+    # Mark session as undone
+    session['undone'] = True
+    session['undone_at'] = datetime.now(timezone.utc).isoformat()
+    save_json_file(session_path, session)
+    
+    # Save daemon changes
+    if daemon and daemon.is_running:
+        daemon.save()
+    
+    return {
+        'success': True,
+        'deleted': deleted,
+        'total': len(added_songs),
+        'errors': errors
+    }
+
+
 def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None, 
                  required_tags: List[str] = None, dry_run: bool = False,
                  daemon: 'IndexingDaemon' = None, filename_fallback: bool = False,
@@ -1142,6 +1289,24 @@ def index_folder(folder_path: Path, db_path: Path, extensions: List[str] = None,
     if results['songs']:
         total_fps = sum(s.get('fingerprints', 0) for s in results['songs'])
         print(f"Total fingerprints: {total_fps:,}")
+    
+    # Save session log for undo
+    if results['indexed'] > 0:
+        added_songs = [
+            {'songId': s['song_id'], 'filepath': s['source']}
+            for s in results['songs']
+        ]
+        flags = []
+        if force_include:
+            flags.append('--force')
+        if filename_fallback:
+            flags.append('--filename-fallback')
+        if required_tags:
+            flags.append(f"--require-tags {','.join(required_tags)}")
+        
+        session_path = save_session_log(db_path, 'index', folder_path, added_songs, flags)
+        print(f"\n📝 Session logged: {session_path.name}")
+        print("   Use 'undo' to reverse this action if needed.")
     
     return results
 
@@ -1661,6 +1826,9 @@ def print_cli_help():
         ("include <id> [id2]", "Remove song(s) from exclusion list"),
         ("stats", "Show database statistics"),
         ("stats --songs", "Show stats with full song list"),
+        ("undo", "Undo last index/reindex action"),
+        ("undo --list", "Show history of recent actions"),
+        ("undo <session_id>", "Undo a specific session"),
         ("clear", "Clear entire database (with confirmation)"),
         ("test <folder>", "Test recognition accuracy on folder"),
         ("test <folder> --positions", "Test at specific positions (default: 10,60,120)"),
@@ -2651,6 +2819,66 @@ def cli_mode(db_path: Path):
                 else:
                     print("❌ Daemon not running")
             
+            elif cmd == 'undo':
+                if args == '--list':
+                    # Show session history
+                    sessions = load_session_logs(db_path)
+                    if not sessions:
+                        print("No undo history found.")
+                        continue
+                    
+                    print(f"\n=== Recent Sessions ({len(sessions)}) ===\n")
+                    for i, session in enumerate(sessions, 1):
+                        timestamp = session.get('timestamp', '')[:19].replace('T', ' ')
+                        action = session.get('action', '?')
+                        folder = Path(session.get('folder', '')).name
+                        count = session.get('count', 0)
+                        undone = " [UNDONE]" if session.get('undone') else ""
+                        session_id = session.get('id', '?')
+                        print(f"  {i}. [{timestamp}] {action} {folder} ({count} songs){undone}")
+                        print(f"     ID: {session_id}")
+                    print()
+                    
+                elif args:
+                    # Undo specific session
+                    session_id = args.strip()
+                    result = undo_session(db_path, session_id, daemon)
+                    if result.get('success'):
+                        print(f"✅ Undo complete: deleted {result['deleted']}/{result['total']} songs")
+                        if result.get('errors'):
+                            print(f"   ⚠️  {len(result['errors'])} errors:")
+                            for err in result['errors'][:5]:
+                                print(f"      - {err}")
+                    else:
+                        print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
+                else:
+                    # Undo last session
+                    sessions = load_session_logs(db_path, limit=1)
+                    active_sessions = [s for s in sessions if not s.get('undone')]
+                    
+                    if not active_sessions:
+                        print("No undoable sessions found. Use 'undo --list' to see history.")
+                        continue
+                    
+                    last = active_sessions[0]
+                    timestamp = last.get('timestamp', '')[:19].replace('T', ' ')
+                    action = last.get('action', '?')
+                    folder = Path(last.get('folder', '')).name
+                    count = last.get('count', 0)
+                    
+                    print(f"\nLast action: {action} {folder} ({count} songs) at {timestamp}")
+                    response = input("Undo this action? (y/N): ").strip().lower()
+                    
+                    if response != 'y':
+                        print("Cancelled.")
+                        continue
+                    
+                    result = undo_session(db_path, last['id'], daemon)
+                    if result.get('success'):
+                        print(f"✅ Undo complete: deleted {result['deleted']}/{result['total']} songs")
+                    else:
+                        print(f"❌ Undo failed: {result.get('error', 'Unknown')}")
+            
             elif cmd == 'clear':
                 # CLI mode: daemon needs to be stopped before clearing, then restarted
                 print("⚠️  Warning: This will clear the entire database!")
@@ -3474,6 +3702,11 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
             if result.get('success'):
                 print(f"   ✅ {metadata['artist']} - {metadata['title']} ({result.get('fingerprints', 0)} FPs)")
                 results['reindexed'] += 1
+                results['files'].append({
+                    'songId': song_id,
+                    'filepath': file_key,
+                    'fingerprints': result.get('fingerprints', 0)
+                })
                 
                 # Update indexed_files
                 indexed_files[file_key] = {
@@ -3505,6 +3738,20 @@ def reindex_folder(folder_path: Path, db_path: Path, force_include: bool = False
     print(f"\n{'=' * 70}")
     print(f"RE-INDEX COMPLETE: {results['reindexed']} re-indexed, {results['failed']} failed")
     print(f"{'=' * 70}")
+    
+    # Save session log for undo
+    if results['reindexed'] > 0:
+        added_songs = [
+            {'songId': f['songId'], 'filepath': f['filepath']}
+            for f in results['files']
+        ]
+        flags = []
+        if force_include:
+            flags.append('--force')
+        
+        session_path = save_session_log(db_path, 'reindex', folder_path, added_songs, flags)
+        print(f"\n📝 Session logged: {session_path.name}")
+        print("   Use 'undo' to reverse this action if needed.")
     
     return results
 
