@@ -1494,7 +1494,7 @@ def test_live_capture(db_path: Path, duration: int = 10) -> Dict[str, Any]:
         return {'error': str(e)}
 
 
-def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None):
+def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None, show_songs: bool = False):
     """Show database statistics."""
     print(f"\n=== Database Statistics ===")
     print(f"DB Path: {db_path}\n")
@@ -1530,12 +1530,19 @@ def show_stats(db_path: Path, daemon: 'IndexingDaemon' = None):
     skip_log = load_json_file(skip_log_path)
     print(f"Skipped files: {len(skip_log)}")
     
-    print("\n=== Indexed Songs ===\n")
-    songs = run_sfp_command(db_path, "list")
-    for song in songs.get('songs', []):
-        duration = song.get('duration')
-        dur_str = f" [{duration:.0f}s]" if duration else ""
-        print(f"  • {song.get('artist')} - {song.get('title')}{dur_str} ({song.get('fingerprints', song.get('fingerprintCount', 0))} fp)")
+    # Only show song list if requested
+    if show_songs:
+        print("\n=== Indexed Songs (sorted by artist) ===\n")
+        songs_data = run_sfp_command(db_path, "list")
+        songs = songs_data.get('songs', [])
+        # Sort by artist, then title
+        songs_sorted = sorted(songs, key=lambda s: (s.get('artist', '').lower(), s.get('title', '').lower()))
+        for song in songs_sorted:
+            duration = song.get('duration')
+            dur_str = f" [{duration:.0f}s]" if duration else ""
+            print(f"  • {song.get('artist')} - {song.get('title')}{dur_str} ({song.get('fingerprints', song.get('fingerprintCount', 0))} fp)")
+    else:
+        print("\nUse 'stats --songs' to list all indexed songs.")
     
     return stats
 
@@ -1633,8 +1640,9 @@ def print_cli_help():
         ("delete <id> [id2...]", "Delete song(s) from all data sources"),
         ("purge <id> [id2...]", "Alias for delete"),
         ("purge --search <q>", "Delete songs matching search (interactive)"),
-        ("list [page]", "List songs (100/page)"),
+        ("list [page]", "List songs (100/page, sorted by artist)"),
         ("list all", "List all songs"),
+        ("list --sort <type>", "Sort by: artist, title, path, original"),
         ("list --export", "Export all songs to file"),
         ("exclude <id> [id2]", "Add song(s) to exclusion list"),
         ("exclude --search <q>", "Exclude songs matching search"),
@@ -1642,6 +1650,7 @@ def print_cli_help():
         ("exclude --list", "Show exclusion list"),
         ("include <id> [id2]", "Remove song(s) from exclusion list"),
         ("stats", "Show database statistics"),
+        ("stats --songs", "Show stats with full song list"),
         ("clear", "Clear entire database (with confirmation)"),
         ("test <folder>", "Test recognition accuracy on folder"),
         ("test <folder> --positions", "Test at specific positions (default: 10,60,120)"),
@@ -2183,21 +2192,36 @@ def purge_song(song_id: str, db_path: Path, daemon: 'IndexingDaemon' = None) -> 
     return {'success': True, 'deleted_from': deleted_from}
 
 
-def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: bool = False, export_file: str = None):
+def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: bool = False, 
+               export_file: str = None, sort_by: str = 'artist'):
     """
-    List all songs with pagination.
+    List all songs with pagination and sorting.
     
     Args:
         page: Page number (1-indexed)
         page_size: Songs per page (default 100)
         show_all: If True, show all songs without pagination
         export_file: If provided, export to file instead of printing
+        sort_by: Sort order - 'artist' (default), 'title', 'original', 'path'
     """
     metadata_path = db_path / "metadata.json"
     metadata = load_json_file(metadata_path)
     
     songs = list(metadata.items())
     total = len(songs)
+    
+    # Apply sorting
+    if sort_by == 'artist':
+        songs = sorted(songs, key=lambda x: (x[1].get('artist', '').lower(), x[1].get('title', '').lower()))
+        sort_label = "sorted by artist"
+    elif sort_by == 'title':
+        songs = sorted(songs, key=lambda x: x[1].get('title', '').lower())
+        sort_label = "sorted by title"
+    elif sort_by == 'path':
+        songs = sorted(songs, key=lambda x: x[1].get('originalFilepath', '').lower())
+        sort_label = "sorted by path"
+    else:  # 'original' or any other value - keep dict order
+        sort_label = "original order"
     
     # Build output lines
     lines = []
@@ -2206,7 +2230,7 @@ def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: boo
         # Show/export all songs
         page_songs = songs
         lines.append(f"{'=' * 70}")
-        lines.append(f"All Songs ({total} total)")
+        lines.append(f"All Songs ({total} total, {sort_label})")
         lines.append(f"{'=' * 70}")
         lines.append("")
     else:
@@ -2217,7 +2241,7 @@ def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: boo
         page_songs = songs[start:end]
         
         lines.append(f"{'=' * 70}")
-        lines.append(f"Songs (Page {page}/{total_pages}, {total} total)")
+        lines.append(f"Songs (Page {page}/{total_pages}, {total} total, {sort_label})")
         lines.append(f"{'=' * 70}")
         lines.append("")
     
@@ -2233,6 +2257,7 @@ def list_songs(db_path: Path, page: int = 1, page_size: int = 100, show_all: boo
         total_pages = (total + page_size - 1) // page_size
         if total_pages > 1 and page < total_pages:
             lines.append(f"Use 'list {page + 1}' for next page, or 'list all' to show all")
+        lines.append("Sort options: --sort artist | --sort title | --sort path | --sort original")
     
     # Output
     if export_file:
@@ -2496,20 +2521,32 @@ def cli_mode(db_path: Path):
                         purge_multiple(song_ids, db_path, daemon, mode=mode)
             
             elif cmd == 'list':
+                # Parse --sort option
+                sort_by = 'artist'  # Default
+                if '--sort' in args:
+                    import re
+                    match = re.search(r'--sort\s+(\w+)', args)
+                    if match:
+                        sort_by = match.group(1).lower()
+                        if sort_by not in ('artist', 'title', 'path', 'original'):
+                            print(f"Unknown sort option: {sort_by}. Using 'artist'.")
+                            sort_by = 'artist'
+                    args = re.sub(r'--sort\s+\w+', '', args).strip()
+                
                 if args == 'all':
-                    list_songs(db_path, show_all=True)
+                    list_songs(db_path, show_all=True, sort_by=sort_by)
                 elif args.startswith('--export'):
                     # Export to file
                     export_arg = args[8:].strip() if len(args) > 8 else ''
-                    list_songs(db_path, export_file=export_arg if export_arg else True)
+                    list_songs(db_path, export_file=export_arg if export_arg else True, sort_by=sort_by)
                 elif args:
                     try:
                         page = int(args)
-                        list_songs(db_path, page=page)
+                        list_songs(db_path, page=page, sort_by=sort_by)
                     except ValueError:
-                        print("Usage: list [page] | list all | list --export [filename]")
+                        print("Usage: list [page] [--sort artist|title|path|original] | list all | list --export [filename]")
                 else:
-                    list_songs(db_path)
+                    list_songs(db_path, sort_by=sort_by)
             
             elif cmd == 'exclude':
                 if not args:
@@ -2579,7 +2616,8 @@ def cli_mode(db_path: Path):
                         print("None of the specified songs were in exclusion list")
             
             elif cmd == 'stats':
-                show_stats(db_path, daemon=daemon)
+                show_songs = '--songs' in args
+                show_stats(db_path, daemon=daemon, show_songs=show_songs)
             
             elif cmd == 'reload':
                 if daemon and daemon.is_running:
