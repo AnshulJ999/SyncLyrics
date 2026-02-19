@@ -62,6 +62,7 @@ class LocalRecognizer:
         self._available = None  # Lazy check
         self._exe_path = None  # Path to built executable
         self._daemon: Optional[DaemonManager] = None  # Lazy initialized
+        self._no_match_count = 0  # Throttled INFO logging counter
         
         logger.info(f"LocalRecognizer initialized: db={self._db_path}, min_conf={self._min_confidence}")
     
@@ -369,7 +370,12 @@ class LocalRecognizer:
             recognition_time = time.time()
             
             if not result.get("matched"):
-                logger.debug(f"Local: No match | Audio: {audio.duration:.1f}s | Query: {query_time:.2f}s")
+                self._no_match_count += 1
+                # Throttled INFO logging: 1st and every 4th (mirrors Shazam pattern)
+                if self._no_match_count == 1 or self._no_match_count % 4 == 0:
+                    logger.info(f"Local FP: No match (attempt #{self._no_match_count}) | Audio: {audio.duration:.1f}s | Query: {query_time:.2f}s")
+                else:
+                    logger.debug(f"Local FP: No match (attempt #{self._no_match_count}) | Audio: {audio.duration:.1f}s | Query: {query_time:.2f}s")
                 return None
             
             # Extract best match from multi-match response format
@@ -403,7 +409,7 @@ class LocalRecognizer:
                         logger.debug("Multi-match: Signaling buffer clear due to confidence fallback")
                         self._position_tracker.signal_buffer_clear()
                     
-                    logger.debug(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
+                    logger.info(f"Multi-match selection: {selection_reason} ({len(matches)} candidates)")
                 else:
                     # Multi-match disabled - just use highest confidence
                     sorted_by_confidence = sorted(matches, key=lambda m: m.get("confidence", 0), reverse=True)
@@ -430,7 +436,7 @@ class LocalRecognizer:
             
             # Outright reject matches below the absolute floor
             if confidence < reject_threshold:
-                logger.debug(
+                logger.info(
                     f"Local: REJECTED (below floor) | "
                     f"{artist} - {title} | "
                     f"Offset: {offset:.1f}s | "
@@ -440,7 +446,7 @@ class LocalRecognizer:
             
             # Log matches below high-confidence threshold (will go to verification)
             if confidence < self._min_confidence:
-                logger.debug(
+                logger.info(
                     f"Local: Below high-conf threshold | "
                     f"{artist} - {title} | "
                     f"Offset: {offset:.1f}s | "
@@ -486,6 +492,9 @@ class LocalRecognizer:
             # Update position tracker for next recognition
             if hasattr(self, '_position_tracker') and self._position_tracker:
                 self._position_tracker.update(current_pos, best.get("songId", ""))
+            
+            # Reset no-match counter on successful match
+            self._no_match_count = 0
             
             logger.info(
                 f"Local: {recognition.artist} - {recognition.title} | "

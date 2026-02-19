@@ -373,7 +373,7 @@ class ShazamRecognizer:
                 
                 # Try ACRCloud fallback if available
                 if self._acrcloud and self._acrcloud.is_available():
-                    logger.info("Trying ACRCloud fallback...")
+                    logger.debug("Trying ACRCloud fallback...")
                     acrcloud_wav = self._convert_to_wav(acrcloud_audio)
                     acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
                     if acrcloud_result:

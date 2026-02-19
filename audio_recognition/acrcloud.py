@@ -165,7 +165,7 @@ class ACRCloudRecognizer:
             self._requests_today += 1
             self._last_request_time = recognition_time
 
-            logger.debug(f"Sending to ACRCloud ({len(wav_bytes) / 1024:.1f} KB)...")
+            logger.info(f"Sending to ACRCloud ({len(wav_bytes) / 1024:.1f} KB)...")
 
             # Non-blocking HTTP request — runs in a worker thread, does not block the event loop
             response = await asyncio.to_thread(requests.post, url, files=files, data=data, timeout=8)
@@ -175,7 +175,7 @@ class ACRCloudRecognizer:
             # Check status
             status = result.get('status', {})
             if status.get('code') != 0:
-                logger.debug(f"ACRCloud no match: {status.get('msg', 'Unknown')}")
+                logger.info(f"ACRCloud no match: {status.get('msg', 'Unknown')}")
                 return None
             
             # Extract metadata
@@ -183,7 +183,7 @@ class ACRCloudRecognizer:
             music = metadata.get('music', [])
             
             if not music:
-                logger.debug("ACRCloud: No music in response")
+                logger.info("ACRCloud: No music in response")
                 return None
             
             # Use first (best) match
