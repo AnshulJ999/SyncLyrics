@@ -5,6 +5,7 @@ Fallback audio recognition via ACRCloud when Shazamio fails.
 Credentials loaded from environment variables.
 """
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -159,15 +160,15 @@ class ACRCloudRecognizer:
             
             url = f"https://{self._host}/v1/identify"
             
-            logger.debug(f"Sending to ACRCloud ({len(wav_bytes) / 1024:.1f} KB)...")
-            
-            # Make request (synchronous, but wrapped in async context)
-            response = requests.post(url, files=files, data=data, timeout=8)
+            # Update usage tracking BEFORE the request so cooldown applies even on failure
             recognition_time = time.time()
-            
-            # Update usage tracking
             self._requests_today += 1
             self._last_request_time = recognition_time
+
+            logger.debug(f"Sending to ACRCloud ({len(wav_bytes) / 1024:.1f} KB)...")
+
+            # Non-blocking HTTP request — runs in a worker thread, does not block the event loop
+            response = await asyncio.to_thread(requests.post, url, files=files, data=data, timeout=8)
             
             result = response.json()
             
@@ -281,11 +282,17 @@ class ACRCloudRecognizer:
             
             return recognition
             
-        except requests.exceptions.Timeout:
-            logger.warning("ACRCloud request timed out")
+        except requests.exceptions.Timeout as e:
+            elapsed = time.time() - recognition_time
+            logger.warning(f"ACRCloud request timed out after {elapsed:.1f}s: {type(e).__name__}: {e}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            elapsed = time.time() - recognition_time
+            logger.warning(f"ACRCloud connection error after {elapsed:.1f}s: {type(e).__name__}: {e}")
             return None
         except Exception as e:
-            logger.error(f"ACRCloud recognition failed: {e}")
+            elapsed = time.time() - recognition_time
+            logger.error(f"ACRCloud recognition failed after {elapsed:.1f}s: {type(e).__name__}: {e}")
             return None
     
     def get_usage_stats(self) -> dict:
