@@ -162,7 +162,7 @@ class ACRCloudRecognizer:
             logger.debug(f"Sending to ACRCloud ({len(wav_bytes) / 1024:.1f} KB)...")
             
             # Make request (synchronous, but wrapped in async context)
-            response = requests.post(url, files=files, data=data, timeout=30)
+            response = requests.post(url, files=files, data=data, timeout=8)
             recognition_time = time.time()
             
             # Update usage tracking
