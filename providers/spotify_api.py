@@ -1260,7 +1260,7 @@ class SpotifyAPI:
             logger.error(f"Failed to generate auth URL: {e}")
             return None
     
-    async def complete_auth(self, code: str) -> bool:
+    async def complete_auth(self, code: str) -> tuple[bool, str | None]:
         """
         Complete the OAuth flow by exchanging the authorization code for access tokens.
         This is called from the /callback route after the user authorizes the app.
@@ -1269,11 +1269,13 @@ class SpotifyAPI:
             code: The authorization code from Spotify's callback
             
         Returns:
-            True if authentication was successful, False otherwise
+            (True, None) if authentication was successful.
+            (False, error_message) if it failed, where error_message is a human-readable
+            description of the failure reason from Spotify or spotipy.
         """
         if not hasattr(self, 'auth_manager') or not self.auth_manager:
             logger.debug("Auth manager not initialized - cannot complete auth")
-            return False
+            return False, "Auth manager not initialized"
         
         try:
             logger.info("Completing Spotify authentication...")
@@ -1286,8 +1288,9 @@ class SpotifyAPI:
             )
             
             if not token_info:
-                logger.error("Failed to get access token from Spotify")
-                return False
+                error_msg = "Token exchange returned empty response from Spotify"
+                logger.error(error_msg)
+                return False, error_msg
             
             # Re-initialize the Spotify client with the new auth manager (which now has tokens)
             self.sp = spotipy.Spotify(
@@ -1303,14 +1306,27 @@ class SpotifyAPI:
             if self.initialized:
                 logger.info("Spotify authentication completed successfully")
             else:
-                logger.error("Authentication succeeded but connection test failed")
+                error_msg = "Token exchange succeeded but subsequent connection test failed"
+                logger.error(error_msg)
+                return False, error_msg
             
-            return self.initialized
-            
-        except Exception as e:
-            logger.error(f"Failed to complete authentication: {e}")
+            return self.initialized, None
+
+        except spotipy.oauth2.SpotifyOauthError as e:
+            # SpotifyOauthError carries the OAuth error code and description from Spotify's
+            # response (e.g. 'invalid_client', 'INVALID_CLIENT: Invalid redirect URI').
+            # Log it clearly so it appears in container logs.
+            error_msg = str(e)
+            logger.error(f"Spotify OAuth error during token exchange: {error_msg}")
             self.initialized = False
-            return False
+            return False, error_msg
+
+        except Exception as e:
+            # Unexpected error - log with full traceback for easier debugging
+            error_msg = f"{type(e).__name__}: {e}"
+            logger.error(f"Unexpected error completing Spotify authentication: {error_msg}", exc_info=True)
+            self.initialized = False
+            return False, error_msg
 
     async def get_queue(self) -> Optional[Dict[str, Any]]:
         """Fetch the user's current playback queue with caching.

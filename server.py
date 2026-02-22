@@ -3422,7 +3422,7 @@ async def spotify_callback():
     client = get_shared_spotify_client()
     
     # Complete the authentication flow
-    success = await client.complete_auth(code)
+    success, auth_error = await client.complete_auth(code)
     
     if success:
         # No need to update globals - the singleton pattern handles this automatically
@@ -3444,13 +3444,15 @@ async def spotify_callback():
         </html>
         """
     else:
-        logger.error("Failed to complete Spotify authentication")
-        return """
+        logger.error(f"Failed to complete Spotify authentication: {auth_error}")
+        error_detail = f"<p><code>{auth_error}</code></p>" if auth_error else ""
+        return f"""
         <html>
         <head><title>Spotify Login Failed</title></head>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>❌ Login Failed</h1>
             <p>Failed to complete Spotify authentication. Please try again.</p>
+            {error_detail}
             <p><a href="/">Return to Home</a></p>
         </body>
         </html>
