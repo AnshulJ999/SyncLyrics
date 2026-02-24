@@ -19,6 +19,7 @@ spicetify_database
 homeassistant-addons/
 .claude
 backups/
+.agent/
 
 # share_project.py
 .cursor
