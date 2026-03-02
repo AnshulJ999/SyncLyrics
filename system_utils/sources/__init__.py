@@ -26,12 +26,15 @@ from logging_config import get_logger
 # =============================================================================
 # EXPLICIT IMPORTS FOR PYINSTALLER
 # =============================================================================
-# PyInstaller's pkgutil.iter_modules() cannot discover modules at runtime in
-# frozen apps. These imports ensure the modules are bundled AND discoverable.
-# When adding a new source, add an import here.
+# pkgutil.iter_modules() works fine in PyInstaller (modules are discovered
+# at runtime). These pre-imports ensure each module is in sys.modules BEFORE
+# the importlib.import_module() call in _discover_sources(), so that call
+# always hits the sys.modules cache rather than doing a cold import which can
+# fail in frozen EXEs. Belt-and-suspenders: add an import here for any new
+# plugin source you create.
 # =============================================================================
-from . import linux      # noqa: F401
-from . import macos      # noqa: F401
+from . import linux            # noqa: F401
+from . import macos            # noqa: F401
 from . import music_assistant  # noqa: F401
 
 logger = get_logger(__name__)
@@ -73,7 +76,10 @@ def _discover_sources():
             continue
         
         try:
-            module = importlib.import_module(f'.{name}', __package__)
+            # Absolute import required for PyInstaller frozen EXE compatibility.
+            # importlib.import_module with relative syntax (f'.{name}', __package__)
+            # can fail to resolve in frozen contexts. Absolute form is unambiguous.
+            module = importlib.import_module(f'{__name__}.{name}')
             
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
