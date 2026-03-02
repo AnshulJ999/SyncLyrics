@@ -12,6 +12,13 @@ internal_packages = (
     collect_submodules('audio_recognition')
 )
 
+# PyInstaller can miss lazily-imported audio_recognition modules in some builds.
+# Keep these explicit to ensure RecognitionEngine always exists at runtime.
+audio_recognition_explicit = [
+    'audio_recognition.engine',
+    'audio_recognition.buffer',
+]
+
 # === External packages that need explicit hints ===
 external_hints = [
     # Web Framework (Quart/Hypercorn)
@@ -96,7 +103,7 @@ a = Analysis(
         ('resources', 'resources'),
         ('.env.example', '.'),
     ],
-    hiddenimports=internal_packages + external_hints,
+    hiddenimports=internal_packages + audio_recognition_explicit + external_hints,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

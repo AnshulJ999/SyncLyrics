@@ -39,9 +39,9 @@ def _check_audio_rec_available() -> bool:
         try:
             from audio_recognition import RecognitionEngine
             _audio_rec_available = True
-        except ImportError:
+        except ImportError as e:
             _audio_rec_available = False
-            logger.warning("Audio recognition not available")
+            logger.warning(f"Audio recognition not available: {e}", exc_info=True)
     return _audio_rec_available
 
 # Shutdown guard - prevents auto-restart during app cleanup

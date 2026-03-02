@@ -13,6 +13,13 @@ internal_packages = (
     collect_submodules('audio_recognition')
 )
 
+# PyInstaller can miss lazily-imported audio_recognition modules in some builds.
+# Keep these explicit to ensure RecognitionEngine always exists at runtime.
+audio_recognition_explicit = [
+    'audio_recognition.engine',
+    'audio_recognition.buffer',
+]
+
 # === Collect all encodings (required for macOS) ===
 encodings_imports = collect_submodules('encodings')
 
@@ -100,7 +107,7 @@ a = Analysis(
         ('resources', 'resources'),
         ('.env.example', '.'),
     ],
-    hiddenimports=internal_packages + external_hints + encodings_imports,
+    hiddenimports=internal_packages + audio_recognition_explicit + external_hints + encodings_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -156,4 +163,3 @@ coll = COLLECT(
 )
 
 # NOTE: No BUNDLE - shipping as folder (like Linux) to avoid PyInstaller BUNDLE bugs
-

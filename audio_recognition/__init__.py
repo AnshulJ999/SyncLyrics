@@ -24,15 +24,23 @@ _lazy_imports = {
 def __getattr__(name):
     """Lazy import handler for shazam and engine modules."""
     if name in _lazy_imports:
-        module_name = _lazy_imports[name]
-        import importlib
-        # Use absolute module name (__name__ + '.submodule') instead of relative
-        # import to ensure compatibility with PyInstaller's frozen import system,
-        # where __package__ inside __getattr__ may not resolve correctly.
-        # e.g. __name__='audio_recognition', module_name='.engine'
-        #   -> 'audio_recognition.engine' (absolute, unambiguous)
-        module = importlib.import_module(__name__ + module_name)
-        return getattr(module, name)
+        # Use explicit standard import statements instead of importlib.import_module.
+        # PyInstaller's frozen importer is specifically designed to handle `import X.Y`
+        # statements. importlib.import_module can fail to set __package__ correctly on
+        # loaded modules in frozen EXEs, breaking relative imports inside engine.py
+        # (e.g. `from .shazam import ...`). Standard import statements avoid this.
+        #
+        # Results are cached in globals() so __getattr__ is only called once per name;
+        # subsequent accesses find the attribute directly in the module __dict__.
+        if name in ('RecognitionEngine', 'EngineState'):
+            import audio_recognition.engine as _mod
+            globals()['RecognitionEngine'] = _mod.RecognitionEngine
+            globals()['EngineState'] = _mod.EngineState
+        elif name in ('ShazamRecognizer', 'RecognitionResult'):
+            import audio_recognition.shazam as _mod
+            globals()['ShazamRecognizer'] = _mod.ShazamRecognizer
+            globals()['RecognitionResult'] = _mod.RecognitionResult
+        return globals()[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
