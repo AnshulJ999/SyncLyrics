@@ -34,7 +34,7 @@ sync_lyrics.py          ← Entry point, main loop
 ├── resources/
 │   ├── js/
 │   │   ├── main.js     ← Frontend entry point
-│   │   └── modules/    ← 17 JS modules
+│   │   └── modules/    ← 19 JS modules
 │   ├── css/
 │   └── templates/
 │
@@ -70,46 +70,107 @@ All providers inherit from `LyricsProvider` base class:
 
 ## REST API Endpoints
 
-### Lyrics & Metadata
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/lyrics` | GET | Current lyrics + metadata |
-| `/current-track` | GET | Track info + position |
-| `/api/providers` | GET | Available providers for song |
-| `/api/provider/preference` | POST | Set preferred provider |
+> See [`API Reference.md`](API%20Reference.md) for full documentation with request/response details.
 
-### Playback Control
+### Pages (return HTML)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/play-pause` | GET | Toggle playback |
-| `/next` | GET | Skip to next track |
-| `/previous` | GET | Skip to previous |
-| `/seek/{position}` | GET | Seek to position (ms) |
+| `/` | GET | Main lyrics UI |
+| `/settings` | GET/POST | Settings management page |
+| `/callback` | GET | Spotify OAuth callback |
+| `/media-browser/` | GET | Embedded Spotify/Music Assistant browser |
+
+### Lyrics & Track Data
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/lyrics` | GET | Current lyrics, colors, provider, word-sync data |
+| `/current-track` | GET | Full track metadata, progress, source, latency info |
+| `/config` | GET | All frontend display config (update interval, fonts, etc.) |
+| `/cover-art` | GET | Current album art image file (`?type=background` for background variant) |
+| `/health` | GET | Server health check (uptime, Spotify status) |
+
+### Settings
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/settings` | GET | All current settings as JSON |
+| `/api/settings/<key>` | POST | Update a single setting |
+| `/api/settings` | POST | Bulk-update multiple settings |
+| `/api/settings/reload` | POST | Hot-reload settings from disk |
+
+### Provider Management
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/providers/current` | GET | Active lyrics provider for current song |
+| `/api/providers/available` | GET | All providers with cached lyrics for current song |
+| `/api/providers/preference` | POST/DELETE | Set or clear preferred lyrics provider |
+| `/api/providers/word-sync-preference` | POST/DELETE | Set or clear preferred word-sync provider |
+| `/api/instrumental/mark` | POST | Manually mark/unmark song as instrumental |
+| `/api/lyrics/delete` | DELETE | Delete cached lyrics (force re-fetch) |
+| `/api/backfill/lyrics` | POST | Trigger re-fetch from all providers |
+| `/api/backfill/art` | POST | Trigger re-fetch of album art + artist images |
+| `/api/word-sync-offset` | POST | Save per-song word-sync timing offset |
 
 ### Album Art
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/cover-art` | GET | Current album art image |
-| `/api/album-art/options` | GET | All album art options |
-| `/api/album-art/preference` | POST | Set preferred image |
+| `/cover-art` | GET | Current album art image file |
+| `/api/album-art/options` | GET | All art + artist image options for current song |
+| `/api/album-art/preference` | POST/DELETE | Set or clear preferred art/artist image |
+| `/api/album-art/background-style` | POST | Set per-album background style (sharp/soft/blur/none) |
+| `/api/album-art/image/<folder>/<file>` | GET | Serve image file from art database |
+
+### Playback Control
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/playback/play-pause` | POST | Toggle play/pause |
+| `/api/playback/next` | POST | Skip to next track |
+| `/api/playback/previous` | POST | Skip to previous track |
+| `/api/playback/seek` | POST | Seek to position `{position_ms}` |
+| `/api/playback/volume` | GET/POST | Get or set volume |
+| `/api/playback/shuffle` | POST | Toggle or set shuffle |
+| `/api/playback/repeat` | POST | Cycle or set repeat mode |
+| `/api/playback/queue` | GET | Get playback queue |
+| `/api/playback/liked` | GET/POST | Get or toggle track like status |
+| `/api/playback/devices` | GET | List available playback devices |
+| `/api/playback/transfer` | POST | Transfer playback to device |
+| `/api/playback/audio-analysis` | GET | Waveform, spectrum, and beat data |
+
+### Artist Images & Slideshow
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/artist/images` | GET | Artist images for current song |
+| `/api/artist/images/preferences` | POST | Save slideshow preferences (excludes, favorites) |
+| `/api/slideshow/random-images` | GET | Random images from art DB for idle screen |
+
+### Spotify-Specific
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/spotify/devices` | GET | List Spotify Connect devices |
+| `/api/spotify/transfer` | POST | Transfer Spotify playback to device |
+| `/api/spotify/browser-token` | GET | Get fresh Spotify access token for media browser |
 
 ### Audio Recognition
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/audio-recognition/status` | GET | Recognition status |
-| `/api/audio-recognition/start` | POST | Start recognition |
+| `/api/audio-recognition/status` | GET | Current recognition state and song info |
+| `/api/audio-recognition/start` | POST | Start recognition manually |
 | `/api/audio-recognition/stop` | POST | Stop recognition |
+| `/api/audio-recognition/devices` | GET | List available audio capture devices |
+| `/api/audio-recognition/config` | GET | Current recognition config with session overrides |
+| `/api/audio-recognition/configure` | POST | Set session-level config overrides |
 
 ## WebSocket Endpoints
 
 ### `/ws/spicetify`
-Spicetify bridge for real-time updates:
-- `position`: Position updates every ~100ms
-- `track_data`: Full metadata + audio analysis
-- Commands: `play`, `pause`, `seek`, `get_queue`, etc.
+Spicetify bridge for real-time updates from Spotify Desktop:
+- Receives position updates every ~100ms
+- Receives track metadata, audio analysis, and color data on song change
+- Supports commands: `play`, `pause`, `seek`, `get_queue`, etc.
 
 ### `/ws/audio-stream`
-Frontend microphone audio streaming for recognition.
+Frontend microphone audio streaming for audio recognition.
+- Client sends binary Int16 PCM chunks (44100 Hz, mono)
+- Server responds with JSON: `connected`, `recognition`, `no_match`, `error`
 
 ## Data Storage
 
