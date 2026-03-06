@@ -296,7 +296,7 @@ async def save_song_word_sync_offset(artist: str, title: str, offset: float) -> 
         return False
     
     # Clamp offset to reasonable range before file I/O
-    clamped_offset = max(-5.0, min(5.0, offset))
+    clamped_offset = max(-10.0, min(10.0, offset))
     
     def _do_file_io():
         """Blocking file I/O - runs in thread pool."""

@@ -47,9 +47,9 @@ export function adjustLatency(delta) {
     // Mark as manual adjustment (prevents polling from overwriting)
     lastManualAdjustMs = performance.now();
     
-    // Calculate new offset (clamped to ±1.0 second)
+    // Calculate new offset (clamped to ±10.0 seconds)
     const currentOffset = songWordSyncOffset;
-    const newOffset = Math.max(-1.0, Math.min(1.0, currentOffset + delta));
+    const newOffset = Math.max(-10.0, Math.min(10.0, currentOffset + delta));
     
     // Apply immediately (frontend state)
     setSongWordSyncOffset(newOffset);
