@@ -262,7 +262,7 @@ class LocalRecognizer:
                     # Daemon process is dead (crashed), not just loading — trigger background restart.
                     # This cycle falls through to Shazam/ACRCloud immediately (non-blocking).
                     logger.warning("Local FP daemon is dead, triggering background restart")
-                    asyncio.create_task(daemon.start())
+                    asyncio.create_task(daemon._ensure_daemon())
                 # Daemon is loading or restarting — fail fast, let recognition fall through
                 return {"error": "Daemon loading/restarting, please wait", "matched": False}
             
