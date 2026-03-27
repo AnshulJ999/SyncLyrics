@@ -254,12 +254,17 @@ class LocalRecognizer:
             if daemon_result is not None:
                 return daemon_result
             
-            # Check if daemon exists but isn't ready yet (still loading)
+            # Check if daemon exists but isn't ready yet (still loading or crashed)
             # In this case, fail fast instead of blocking with subprocess
             daemon = self._get_daemon()
             if daemon and not daemon.in_fallback_mode:
-                # Daemon is loading, fail fast - let recognition fall through to Shazam/ACRCloud
-                return {"error": "Daemon loading, please wait", "matched": False}
+                if not daemon.is_running:
+                    # Daemon process is dead (crashed), not just loading — trigger background restart.
+                    # This cycle falls through to Shazam/ACRCloud immediately (non-blocking).
+                    logger.warning("Local FP daemon is dead, triggering background restart")
+                    asyncio.create_task(daemon.start())
+                # Daemon is loading or restarting — fail fast, let recognition fall through
+                return {"error": "Daemon loading/restarting, please wait", "matched": False}
             
             # Only fall through to subprocess if daemon is in fallback mode
             # (i.e., daemon failed permanently and subprocess is our only option)
