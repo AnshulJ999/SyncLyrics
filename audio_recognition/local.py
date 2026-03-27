@@ -23,6 +23,13 @@ from .daemon import DaemonManager
 
 logger = get_logger(__name__)
 
+# Subprocess fallback is intentionally disabled.
+# In fallback mode the full fingerprint DB would be loaded fresh on every query
+# call (~every 2s) — extremely heavy (full DB load + .NET process spawn per cycle).
+# When the daemon fails permanently, defer gracefully to Shazam/ACRCloud instead.
+# Flip to True only for debugging/testing purposes.
+_SUBPROCESS_FALLBACK_ENABLED = False
+
 
 class LocalRecognizer:
     """
@@ -268,8 +275,14 @@ class LocalRecognizer:
             
             # Only fall through to subprocess if daemon is in fallback mode
             # (i.e., daemon failed permanently and subprocess is our only option)
-        
-        # Subprocess fallback (slow path) - only used when daemon has failed permanently
+
+        # Subprocess fallback (slow path) - disabled by default, see _SUBPROCESS_FALLBACK_ENABLED
+        if not _SUBPROCESS_FALLBACK_ENABLED:
+            # Log at debug to avoid spam (daemon.py already logs a warning when fallback mode activates)
+            logger.debug("Local FP in permanent fallback mode — deferring to Shazam/ACRCloud")
+            return {"matched": False}
+
+        # Subprocess fallback (slow path) - only reached if _SUBPROCESS_FALLBACK_ENABLED = True
         # Run in thread to avoid blocking event loop
         return await asyncio.get_running_loop().run_in_executor(
             None, self._run_cli_command_sync, command, *args
