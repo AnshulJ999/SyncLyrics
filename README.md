@@ -18,7 +18,7 @@ _Main UI_
 
 _Minimal Mode can be accessed by adding ?minimal=true to the URL_
 
-https://github.com/user-attachments/assets/ddb9fd10-f082-44c3-ab36-563fca2cc75e
+https://github.com/user-attachments/assets/7a2f5456-1618-4532-9d77-46dfd9bfbafa
 
 _Video demo showcasing the app's main features_
 
