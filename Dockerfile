@@ -1,5 +1,5 @@
-# SyncLyrics Standalone Docker Image
-# https://github.com/AnshulJ999/SyncLyrics
+# SyncLyrics (UDP) - Home Assistant Addon Dockerfile
+# Based on docker/Dockerfile with UDP audio port exposed
 
 FROM python:3.12-slim-bookworm AS builder
 

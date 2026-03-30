@@ -484,6 +484,15 @@ AUDIO_BUFFER = {
     "acrcloud_enabled": _safe_bool(os.getenv("ACRCLOUD_BUFFER_ENABLED") or conf("audio_buffer.acrcloud_enabled"), False),
 }
 
+# UDP Audio Input
+# Receives raw PCM audio over UDP for fingerprinting (e.g., from Home Assistant audio pipeline)
+# Expected format: 16kHz, 16-bit signed little-endian, mono
+UDP_AUDIO = {
+    "enabled": _safe_bool(os.getenv("UDP_AUDIO_ENABLED") or conf("udp_audio.enabled"), False),
+    "port": _safe_int(os.getenv("UDP_AUDIO_PORT") or conf("udp_audio.port"), 6056),
+    "sample_rate": _safe_int(os.getenv("UDP_AUDIO_SAMPLE_RATE") or conf("udp_audio.sample_rate"), 16000),
+}
+
 # Multi-Match Position Verification
 # When SFP returns multiple matches, use position tracking to select the correct one
 MULTI_MATCH = {

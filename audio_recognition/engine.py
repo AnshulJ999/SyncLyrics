@@ -20,6 +20,7 @@ from .capture import AudioCaptureManager
 from .shazam import ShazamRecognizer, RecognitionResult
 from .buffer import FrontendAudioQueue
 from .audio_buffer import AudioBuffer
+from .udp_capture import UdpAudioCapture
 
 logger = get_logger(__name__)
 
@@ -122,6 +123,9 @@ class RecognitionEngine:
         # Frontend audio queue (R11: queue-based ingestion for frontend mode)
         self._frontend_queue: Optional[FrontendAudioQueue] = None
         self._frontend_mode = False
+
+        # UDP audio capture (receives PCM audio over UDP for HA integration)
+        self._udp_capture: Optional[UdpAudioCapture] = None
         
         # Audio level tracking for UI meter (0.0 - 1.0)
         self._last_audio_level: float = 0.0
@@ -346,6 +350,7 @@ class RecognitionEngine:
             "device_id": self.capture.device_id,
             "interval": self.interval,
             "frontend_mode": self._frontend_mode,
+            "udp_mode": self._udp_capture is not None and self._udp_capture.is_running,
             "audio_level": self._last_audio_level,
         }
     
@@ -359,33 +364,49 @@ class RecognitionEngine:
             logger.warning("Engine already running")
             return
             
-        # Check prerequisites
-        if not AudioCaptureManager.is_available():
+        # Start UDP listener if configured
+        from config import UDP_AUDIO
+        udp_enabled = UDP_AUDIO["enabled"]
+
+        if udp_enabled:
+            self._udp_capture = UdpAudioCapture(
+                port=UDP_AUDIO["port"],
+                sample_rate=UDP_AUDIO["sample_rate"],
+            )
+            try:
+                await self._udp_capture.start()
+            except Exception as e:
+                logger.error(f"Failed to start UDP audio listener: {e}")
+                self._set_state(EngineState.ERROR)
+                return
+
+        # Check prerequisites (sounddevice not needed when using UDP audio)
+        if not udp_enabled and not AudioCaptureManager.is_available():
             logger.error("Audio capture not available (sounddevice not installed)")
             self._set_state(EngineState.ERROR)
             return
-            
+
         if not ShazamRecognizer.is_available():
             logger.error("ShazamIO not available")
             self._set_state(EngineState.ERROR)
             return
-        
+
         logger.info("Starting recognition engine...")
         self._stop_requested = False
         self._consecutive_failures = 0
         self._frozen_position = None
         self._first_detection = False
         self._verified_detection = False
-        
+
         self._set_state(EngineState.STARTING)
-        
+
         # NOTE: Device resolution is done LAZILY in capture() when backend mode needs it.
         # We intentionally do NOT call resolve_device_async() here because:
         # 1. In Frontend Mode, backend capture is never used
         # 2. Calling sd.query_devices() initializes PortAudio driver
         # 3. If PortAudio is initialized but no stream is opened/closed, it hangs on exit
         # This lazy approach prevents the shutdown hang when using frontend mic.
-        
+
         # Start the background loop
         self._task = asyncio.create_task(self._run_loop())
         
@@ -425,13 +446,21 @@ class RecognitionEngine:
             finally:
                 self._task = None
         
+        # Stop UDP listener if running
+        if self._udp_capture:
+            try:
+                await self._udp_capture.stop()
+            except Exception:
+                pass
+            self._udp_capture = None
+
         # Cleanup ShazamIO aiohttp sessions
         if self.recognizer:
             try:
                 await self.recognizer.close()
             except Exception:
                 pass
-        
+
         self._set_state(EngineState.IDLE)
         logger.info("Recognition engine stopped")
     
@@ -509,17 +538,17 @@ class RecognitionEngine:
         # Update state
         self._set_state(EngineState.LISTENING)
         
-        # Get audio - either from frontend queue or backend capture
+        # Get audio - from frontend queue, UDP stream, or backend capture
         if self._frontend_mode and self._frontend_queue and self._frontend_queue.enabled:
             # Frontend mode: get audio from queue
             audio_data = await self._frontend_queue.get_recognition_audio(self.capture_duration)
-            
+
             if audio_data is None or len(audio_data) == 0:
                 logger.debug("Not enough frontend audio data yet")
                 # Don't count as failure - just waiting for buffer to fill
                 # Return early without calling _handle_failed_recognition
                 return "BUFFERING"  # Special sentinel
-            
+
             # Create AudioChunk from frontend data
             import time
             from .capture import AudioChunk
@@ -530,6 +559,12 @@ class RecognitionEngine:
                 duration=self.capture_duration,
                 capture_start_time=time.time() - self.capture_duration
             )
+        elif self._udp_capture and self._udp_capture.is_running:
+            # UDP mode: get audio from UDP buffer
+            audio = self._udp_capture.get_audio(self.capture_duration)
+            if audio is None:
+                logger.debug(f"UDP buffer insufficient ({self._udp_capture.buffer_seconds:.1f}s available)")
+                return "BUFFERING"
         else:
             # Backend mode: capture from audio device
             audio = await self.capture.capture(self.capture_duration)
