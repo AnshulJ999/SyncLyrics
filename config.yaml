@@ -1,0 +1,45 @@
+name: "SyncLyrics (UDP)"
+version: "1.0.0"
+slug: synclyrics_udp
+description: "Real-time synced lyrics display with UDP audio input for fingerprinting"
+url: "https://github.com/baileyboy0304/SyncLyrics"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+boot: auto
+ports:
+  9012/tcp: 9012
+  9013/tcp: 9013
+  6056/udp: 6056
+ports_description:
+  9012/tcp: "HTTP web interface"
+  9013/tcp: "HTTPS web interface"
+  6056/udp: "UDP audio input (16kHz 16-bit mono PCM)"
+map:
+  - config:rw
+options:
+  SPOTIFY_CLIENT_ID: ""
+  SPOTIFY_CLIENT_SECRET: ""
+  SPOTIFY_REDIRECT_URI: "http://homeassistant.local:9012/callback"
+  UDP_AUDIO_ENABLED: true
+  UDP_AUDIO_PORT: 6056
+  UDP_AUDIO_SAMPLE_RATE: 16000
+  AUDIO_RECOGNITION_ENABLED: true
+schema:
+  SPOTIFY_CLIENT_ID: str
+  SPOTIFY_CLIENT_SECRET: str
+  SPOTIFY_REDIRECT_URI: url
+  UDP_AUDIO_ENABLED: bool
+  UDP_AUDIO_PORT: port
+  UDP_AUDIO_SAMPLE_RATE: "int(8000,48000)"
+  AUDIO_RECOGNITION_ENABLED: bool
+environment:
+  SPOTIFY_CLIENT_ID: "{SPOTIFY_CLIENT_ID}"
+  SPOTIFY_CLIENT_SECRET: "{SPOTIFY_CLIENT_SECRET}"
+  SPOTIFY_REDIRECT_URI: "{SPOTIFY_REDIRECT_URI}"
+  UDP_AUDIO_ENABLED: "{UDP_AUDIO_ENABLED}"
+  UDP_AUDIO_PORT: "{UDP_AUDIO_PORT}"
+  UDP_AUDIO_SAMPLE_RATE: "{UDP_AUDIO_SAMPLE_RATE}"
+  AUDIO_RECOGNITION_ENABLED: "{AUDIO_RECOGNITION_ENABLED}"
