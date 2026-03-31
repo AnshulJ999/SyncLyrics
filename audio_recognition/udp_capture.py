@@ -60,6 +60,7 @@ class UdpAudioCapture:
         self._transport: Optional[asyncio.DatagramTransport] = None
         self._running = False
         self._last_data_time: float = 0.0
+        self._last_read_time: float = 0.0  # Tracks when get_audio() last returned data
 
     @property
     def is_running(self) -> bool:
@@ -112,18 +113,25 @@ class UdpAudioCapture:
         """
         Get an AudioChunk of the requested duration from the buffer.
 
-        Takes the most recent audio without consuming it (the rolling buffer
-        evicts old data on its own).
+        Returns None if the buffer has insufficient data or if no new audio
+        has been received since the last read (prevents re-recognizing stale data
+        when the stream stops).
 
         Args:
             duration: Desired audio duration in seconds.
 
         Returns:
-            AudioChunk or None if insufficient data is available.
+            AudioChunk or None if insufficient or stale data.
         """
+        # No new data since last read — stream has stopped
+        if self._last_data_time <= self._last_read_time:
+            return None
+
         needed_bytes = int(duration * self._sample_rate * self._frame_size)
         if len(self._buffer) < needed_bytes:
             return None
+
+        self._last_read_time = time.time()
 
         audio_bytes = bytes(self._buffer[-needed_bytes:])
         audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
