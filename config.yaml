@@ -1,7 +1,7 @@
 name: "SyncLyrics (UDP)"
-version: "1.0.1"
+version: "1.0.2"
 slug: synclyrics_udp
-description: "Real-time synced lyrics display with UDP audio input for fingerprinting"
+description: "Real-time synchronized lyrics. UDP audio input variant."
 url: "https://github.com/baileyboy0304/SyncLyrics"
 arch:
   - amd64
@@ -20,15 +20,21 @@ options:
   lastfm_api_key: ""
   fanart_tv_api_key: ""
   audiodb_api_key: ""
-  server_port: 9014
+  server_port: 9012
   spotify_token_cache: "/config/.spotify_cache"
   debug_mode: false
   log_level: "INFO"
   spotify_polling_fast: 2
-  spotify_polling_slow: 6
   https_enabled: true
-  https_port: 9015
+  https_port: 9013
+  save_lyrics_to_db: true
+  album_art_db: true
+  spotify_polling_slow: 6
   music_assistant_url: ""
+  music_assistant_token: ""
+  music_assistant_player_id: ""
+  cpu_compat_mode: false
+  openblas_cpu_type: ""
   udp_audio_enabled: true
   udp_audio_port: 6056
   udp_audio_sample_rate: 16000
@@ -45,10 +51,16 @@ schema:
   debug_mode: bool
   log_level: list(DEBUG|INFO|WARNING|ERROR)
   spotify_polling_fast: "int(1,60)"
-  spotify_polling_slow: "int(1,60)"
   https_enabled: bool
   https_port: port
+  save_lyrics_to_db: bool
+  album_art_db: bool
+  spotify_polling_slow: "int(1,60)"
   music_assistant_url: str?
+  music_assistant_token: str?
+  music_assistant_player_id: str?
+  cpu_compat_mode: bool
+  openblas_cpu_type: str?
   udp_audio_enabled: bool
   udp_audio_port: port
   udp_audio_sample_rate: "int(8000,48000)"

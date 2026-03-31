@@ -1,0 +1,76 @@
+configuration:
+  spotify_client_id:
+    name: Spotify Client ID
+    description: Your Spotify Developer App Client ID
+  spotify_client_secret:
+    name: Spotify Client Secret
+    description: Your Spotify Developer App Client Secret
+  spotify_redirect_uri:
+    name: Spotify Redirect URI
+    description: "OAuth callback URL (must match Spotify Dashboard)"
+  spotify_lyrics_api_url:
+    name: Spotify Lyrics API URL
+    description: "Spotify Lyrics API endpoint - if you self-host"
+  lastfm_api_key:
+    name: Last.fm API Key
+    description: "Optional - Gets Album Art from LastFM"
+  fanart_tv_api_key:
+    name: FanArt.tv API Key
+    description: "Optional - Gets Artist Images from FanArt.tv"
+  audiodb_api_key:
+    name: TheAudioDB API Key
+    description: "Optional - Backup source for artist images"
+  server_port:
+    name: Server Port (HTTP)
+    description: "Web UI port for HTTP access. No need to change unless port conflicts."
+  spotify_token_cache:
+    name: Spotify Token Cache Path
+    description: "Path for persistent Spotify authentication token"
+  debug_mode:
+    name: Debug Mode
+    description: "Enable verbose logging for troubleshooting"
+  log_level:
+    name: Log Level
+    description: "Logging verbosity: DEBUG, INFO, WARNING, ERROR"
+  spotify_polling_fast:
+    name: Spotify Polling (Fast)
+    description: "Seconds between API polls during active playback"
+  https_enabled:
+    name: Enable HTTPS
+    description: "Enable HTTPS server (required for browser mic)"
+  https_port:
+    name: HTTPS Port
+    description: "Port for HTTPS access (e.g., https://your-ip:9013)"
+  save_lyrics_to_db:
+    name: Save Lyrics to Database
+    description: "Cache fetched lyrics locally for offline access"
+  album_art_db:
+    name: Album Art & Artist Image Database
+    description: "Cache high-quality album art and artist images"
+  spotify_polling_slow:
+    name: Spotify Polling (Slow)
+    description: "Seconds between API polls when paused/idle"
+  music_assistant_url:
+    name: Music Assistant Server URL
+    description: "Music Assistant server URL (e.g., http://192.168.1.x:8095)"
+  music_assistant_token:
+    name: Music Assistant API Token
+    description: "API token from Music Assistant (Settings > Security)"
+  music_assistant_player_id:
+    name: Music Assistant Player ID
+    description: "Specific player ID (leave empty to auto-detect)"
+  cpu_compat_mode:
+    name: CPU Compatibility Mode
+    description: "Enable if experiencing crashes on Intel server CPUs (Xeon)"
+  openblas_cpu_type:
+    name: OpenBLAS CPU Type
+    description: "CPU instruction set (only when compatibility mode enabled)"
+  udp_audio_enabled:
+    name: UDP Audio Input
+    description: "Receive audio for fingerprinting over UDP"
+  udp_audio_port:
+    name: UDP Audio Port
+    description: "UDP port to listen for audio (16kHz 16-bit mono PCM)"
+  udp_audio_sample_rate:
+    name: UDP Audio Sample Rate
+    description: "Sample rate of incoming UDP audio in Hz"
