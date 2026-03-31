@@ -6,40 +6,49 @@ url: "https://github.com/baileyboy0304/SyncLyrics"
 arch:
   - amd64
   - aarch64
-  - armv7
 startup: application
 boot: auto
-ports:
-  9012/tcp: 9012
-  9013/tcp: 9013
-  6056/udp: 6056
-ports_description:
-  9012/tcp: "HTTP web interface"
-  9013/tcp: "HTTPS web interface"
-  6056/udp: "UDP audio input (16kHz 16-bit mono PCM)"
+host_network: true
 map:
-  - config:rw
+  - addon_config:rw
+init: false
 options:
-  SPOTIFY_CLIENT_ID: ""
-  SPOTIFY_CLIENT_SECRET: ""
-  SPOTIFY_REDIRECT_URI: "http://homeassistant.local:9012/callback"
-  UDP_AUDIO_ENABLED: true
-  UDP_AUDIO_PORT: 6056
-  UDP_AUDIO_SAMPLE_RATE: 16000
-  AUDIO_RECOGNITION_ENABLED: true
+  spotify_client_id: ""
+  spotify_client_secret: ""
+  spotify_redirect_uri: ""
+  spotify_lyrics_api_url: ""
+  lastfm_api_key: ""
+  fanart_tv_api_key: ""
+  audiodb_api_key: ""
+  server_port: 9014
+  spotify_token_cache: "/config/.spotify_cache"
+  debug_mode: false
+  log_level: "INFO"
+  spotify_polling_fast: 2
+  spotify_polling_slow: 6
+  https_enabled: true
+  https_port: 9015
+  music_assistant_url: ""
+  udp_audio_enabled: true
+  udp_audio_port: 6056
+  udp_audio_sample_rate: 16000
 schema:
-  SPOTIFY_CLIENT_ID: str
-  SPOTIFY_CLIENT_SECRET: str
-  SPOTIFY_REDIRECT_URI: url
-  UDP_AUDIO_ENABLED: bool
-  UDP_AUDIO_PORT: port
-  UDP_AUDIO_SAMPLE_RATE: "int(8000,48000)"
-  AUDIO_RECOGNITION_ENABLED: bool
-environment:
-  SPOTIFY_CLIENT_ID: "{SPOTIFY_CLIENT_ID}"
-  SPOTIFY_CLIENT_SECRET: "{SPOTIFY_CLIENT_SECRET}"
-  SPOTIFY_REDIRECT_URI: "{SPOTIFY_REDIRECT_URI}"
-  UDP_AUDIO_ENABLED: "{UDP_AUDIO_ENABLED}"
-  UDP_AUDIO_PORT: "{UDP_AUDIO_PORT}"
-  UDP_AUDIO_SAMPLE_RATE: "{UDP_AUDIO_SAMPLE_RATE}"
-  AUDIO_RECOGNITION_ENABLED: "{AUDIO_RECOGNITION_ENABLED}"
+  spotify_client_id: str
+  spotify_client_secret: str
+  spotify_redirect_uri: str?
+  spotify_lyrics_api_url: str?
+  lastfm_api_key: str?
+  fanart_tv_api_key: str?
+  audiodb_api_key: str?
+  server_port: port
+  spotify_token_cache: str
+  debug_mode: bool
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
+  spotify_polling_fast: "int(1,60)"
+  spotify_polling_slow: "int(1,60)"
+  https_enabled: bool
+  https_port: port
+  music_assistant_url: str?
+  udp_audio_enabled: bool
+  udp_audio_port: port
+  udp_audio_sample_rate: "int(8000,48000)"
