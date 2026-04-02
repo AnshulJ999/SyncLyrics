@@ -160,6 +160,8 @@ class SettingsManager:
             "lyrics.glow_intensity": Setting("Glow Intensity", float, 1.0, False, "Lyrics", "Text glow strength (0=off, 2=max)", "slider", min_val=0.0, max_val=2.0),
             "lyrics.text_color": Setting("Lyrics Color", str, "#ffffff", False, "Lyrics", "Lyrics text color", "color"),
             "lyrics.font_weight": Setting("Font Weight", str, "Normal", False, "Lyrics", "Lyrics font weight", "select", options=["Light", "Normal", "Medium", "Semi-Bold", "Bold"]),
+            "lyrics.fade_on_recogniser_fail": Setting("Fade on Recogniser Fail", bool, True, False, "Lyrics", "Fade artwork to grey and show 'interval' after consecutive recognition failures", "switch"),
+            "lyrics.fade_on_recogniser_fail_count": Setting("Recogniser Fail Count", int, 2, False, "Lyrics", "Number of consecutive recognition failures before fading", "number", min_val=1, max_val=10),
 
             # UI Appearance
             "ui.font_family": Setting("UI Font", str, "System Default", False, "UI", "Font for menus and controls", "select", options=["System Default", "Inter", "Outfit", "Poppins", "Open Sans", "Nunito", "Roboto", "Montserrat", "Work Sans", "Oswald", "Raleway", "Bebas Neue", "Space Grotesk", "Playfair Display", "Lora", "Fraunces"]),

@@ -2597,3 +2597,23 @@ body.art-only-mode .main-latency-controls {
     color: rgba(255, 255, 255, 0.5);
 }
 
+/* ========== INTERVAL MODE (Recogniser Fail) ========== */
+/* Fade artwork to greyscale when recognition fails consecutively */
+body.interval-mode .background-layer,
+body.interval-mode #art-zoom-img-a,
+body.interval-mode #art-zoom-img-b,
+body.interval-mode .slideshow-layer {
+    filter: grayscale(100%) brightness(0.5) !important;
+    transition: filter 1.5s ease;
+}
+
+/* In soft mode, preserve slight blur while adding greyscale */
+body.interval-mode.soft-mode .background-layer {
+    filter: blur(2px) grayscale(100%) brightness(0.5) !important;
+}
+
+body.interval-mode #current {
+    opacity: 0.6;
+    font-style: italic;
+}
+
