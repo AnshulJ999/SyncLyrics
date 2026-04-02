@@ -46,13 +46,6 @@ class UdpAudioCapture:
     for the recognition engine.
     """
 
-    # Minimum fraction of fresh (unconsumed) audio required before get_audio()
-    # will return a chunk.  0.5 means at least half the requested duration must
-    # consist of audio that was NOT part of the previous chunk.  This prevents
-    # near-duplicate recognition requests when the engine polls faster than
-    # audio arrives (e.g. during verification at 0.75 s intervals).
-    MIN_FRESH_RATIO = 0.5
-
     def __init__(self, port: int = 6056, sample_rate: int = 16000, channels: int = 1):
         self._port = port
         self._sample_rate = sample_rate
@@ -67,7 +60,6 @@ class UdpAudioCapture:
         self._transport: Optional[asyncio.DatagramTransport] = None
         self._running = False
         self._last_data_time: float = 0.0
-        self._last_read_time: float = 0.0  # Tracks when get_audio() last returned data
 
         # Track how many bytes have been received in total (monotonically
         # increasing even as the rolling buffer is trimmed).  Used together
@@ -75,6 +67,10 @@ class UdpAudioCapture:
         # since the previous get_audio() call.
         self._total_bytes_received: int = 0
         self._last_read_total: int = 0
+
+        # Event signalled whenever new data arrives, so get_audio() can
+        # async-wait instead of polling.
+        self._data_event: asyncio.Event = asyncio.Event()
 
     @property
     def is_running(self) -> bool:
@@ -113,6 +109,7 @@ class UdpAudioCapture:
         self._buffer.clear()
         self._total_bytes_received = 0
         self._last_read_total = 0
+        self._data_event.set()  # Unblock any waiting get_audio() call
         logger.info("UDP audio listener stopped")
 
     def receive_data(self, data: bytes) -> None:
@@ -126,46 +123,51 @@ class UdpAudioCapture:
             excess = len(self._buffer) - self._max_bytes
             del self._buffer[:excess]
 
-    def get_audio(self, duration: float) -> Optional[AudioChunk]:
-        """
-        Get an AudioChunk of the requested duration from the buffer.
+        # Wake up any waiting get_audio() call
+        self._data_event.set()
 
-        Returns None if:
-        - The buffer has insufficient data.
-        - No new audio has been received since the last read (stream stopped).
-        - Not enough *fresh* audio has arrived since the last read.  This
-          prevents the recogniser from being fed near-duplicate overlapping
-          chunks when the engine polls faster than audio arrives (e.g. during
-          the 0.75 s verification interval).
+    async def get_audio(self, duration: float) -> Optional[AudioChunk]:
+        """
+        Wait for a full ``duration`` of *fresh* audio, then return it.
+
+        Behaves like the blocking mic/loopback capture: the caller is
+        suspended until enough new real-time audio has been received via
+        UDP.  This prevents the recogniser from being fed overlapping
+        near-duplicate chunks when the engine polls faster than audio
+        arrives.
+
+        Returns None if the listener is stopped while waiting.
 
         Args:
             duration: Desired audio duration in seconds.
 
         Returns:
-            AudioChunk or None if insufficient, stale, or not-fresh-enough data.
+            AudioChunk, or None if the stream stopped.
         """
-        # No new data since last read — stream has stopped
-        if self._last_data_time <= self._last_read_time:
-            return None
-
         needed_bytes = int(duration * self._sample_rate * self._frame_size)
-        if len(self._buffer) < needed_bytes:
+
+        # Wait until a full duration of *new* audio has arrived since the
+        # last chunk was returned — just like the mic blocks on hardware.
+        while self._running:
+            new_bytes = self._total_bytes_received - self._last_read_total
+            if new_bytes >= needed_bytes and len(self._buffer) >= needed_bytes:
+                break
+
+            # Wait for more data to arrive
+            self._data_event.clear()
+            try:
+                await asyncio.wait_for(self._data_event.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                # Check if stream is still alive
+                if not self._running:
+                    return None
+                if self._last_data_time > 0 and (time.time() - self._last_data_time) > 10.0:
+                    logger.debug("UDP stream appears dead (no data for 10s)")
+                    return None
+
+        if not self._running:
             return None
 
-        # Require a minimum amount of *new* audio before returning a chunk.
-        # Without this gate, rapid polling returns nearly identical audio and
-        # Shazam produces duplicate offsets that confuse lyric synchronisation.
-        new_bytes = self._total_bytes_received - self._last_read_total
-        min_fresh_bytes = int(needed_bytes * self.MIN_FRESH_RATIO)
-        if new_bytes < min_fresh_bytes:
-            logger.debug(
-                f"UDP get_audio: not enough fresh audio "
-                f"({new_bytes}/{min_fresh_bytes} bytes), skipping"
-            )
-            return None
-
-        now = time.time()
-        self._last_read_time = now
         self._last_read_total = self._total_bytes_received
 
         audio_bytes = bytes(self._buffer[-needed_bytes:])
@@ -174,11 +176,9 @@ class UdpAudioCapture:
         if self._channels > 1:
             audio_data = audio_data.reshape(-1, self._channels)
 
-        # Derive capture_start_time from when the *latest* byte in the
-        # buffer was received, not from the current wall-clock time.
-        # Using _last_data_time anchors the timestamp to actual audio
-        # arrival, making it resilient to scheduling jitter and the
-        # variable delay between packet arrival and this read call.
+        # Anchor capture_start_time to when the audio actually arrived,
+        # matching mic behaviour where capture_start = time.time() before
+        # the blocking read.
         capture_start = self._last_data_time - duration
 
         return AudioChunk(
