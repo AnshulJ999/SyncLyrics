@@ -485,12 +485,14 @@ AUDIO_BUFFER = {
 }
 
 # UDP Audio Input
-# Receives raw PCM audio over UDP for fingerprinting (e.g., from Home Assistant audio pipeline)
-# Expected format: 16kHz, 16-bit signed little-endian, mono
+# Receives PCM audio over UDP for fingerprinting (e.g., from Home Assistant audio pipeline)
+# Supports raw PCM (16-bit LE mono) and RTP-encapsulated PCM (auto-detected)
 UDP_AUDIO = {
     "enabled": _safe_bool(os.getenv("UDP_AUDIO_ENABLED") or conf("udp_audio.enabled"), False),
     "port": _safe_int(os.getenv("UDP_AUDIO_PORT") or conf("udp_audio.port"), 6056),
     "sample_rate": _safe_int(os.getenv("UDP_AUDIO_SAMPLE_RATE") or conf("udp_audio.sample_rate"), 16000),
+    # Jitter buffer size in milliseconds for RTP packet reordering (0 = minimal buffering)
+    "jitter_buffer_ms": _safe_int(os.getenv("UDP_JITTER_BUFFER_MS") or conf("udp_audio.jitter_buffer_ms"), 60),
 }
 
 # Multi-Match Position Verification
