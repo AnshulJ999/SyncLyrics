@@ -372,6 +372,7 @@ class RecognitionEngine:
             self._udp_capture = UdpAudioCapture(
                 port=UDP_AUDIO["port"],
                 sample_rate=UDP_AUDIO["sample_rate"],
+                jitter_buffer_ms=UDP_AUDIO.get("jitter_buffer_ms", 60),
             )
             try:
                 await self._udp_capture.start()
