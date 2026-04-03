@@ -372,6 +372,7 @@ class RecognitionEngine:
             self._udp_capture = UdpAudioCapture(
                 port=UDP_AUDIO["port"],
                 sample_rate=UDP_AUDIO["sample_rate"],
+                jitter_buffer_ms=UDP_AUDIO.get("jitter_buffer_ms", 60),
             )
             try:
                 await self._udp_capture.start()
@@ -560,8 +561,9 @@ class RecognitionEngine:
                 capture_start_time=time.time() - self.capture_duration
             )
         elif self._udp_capture and self._udp_capture.is_running:
-            # UDP mode: get audio from UDP buffer
-            audio = self._udp_capture.get_audio(self.capture_duration)
+            # UDP mode: block until a full chunk of fresh audio arrives
+            # (mirrors mic capture which blocks on hardware)
+            audio = await self._udp_capture.get_audio(self.capture_duration)
             if audio is None:
                 logger.debug(f"UDP buffer insufficient ({self._udp_capture.buffer_seconds:.1f}s available)")
                 return "BUFFERING"
