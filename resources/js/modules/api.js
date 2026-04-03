@@ -14,6 +14,8 @@ import {
     currentColors,
     setUpdateInterval,
     setCurrentColors,
+    setFadeOnRecogniserFail,
+    setFadeOnRecogniserFailCount,
     setWordSyncedLyrics,
     setHasWordSync,
     setWordSyncProvider,
@@ -227,6 +229,14 @@ export async function getConfig() {
         // Apply word-sync transition timing (0 = instant, >0 = fade delay in ms)
         if (config.wordSyncTransitionMs !== undefined) {
             setWordSyncTransitionMs(config.wordSyncTransitionMs);
+        }
+
+        // Fade on recogniser fail settings
+        if (config.fadeOnRecogniserFail !== undefined) {
+            setFadeOnRecogniserFail(config.fadeOnRecogniserFail);
+        }
+        if (config.fadeOnRecogniserFailCount !== undefined) {
+            setFadeOnRecogniserFailCount(config.fadeOnRecogniserFailCount);
         }
 
         console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);

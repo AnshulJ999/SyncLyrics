@@ -27,6 +27,10 @@ import {
     debugTimingEnabled,
     slideshowImagePool,
     slideshowInterval,
+    fadeOnRecogniserFail,
+    fadeOnRecogniserFailCount,
+    recogniserFailCounter,
+    intervalModeActive,
     setLastTrackInfo,
     setLastCheckTime,
     setCurrentArtistImages,
@@ -34,7 +38,9 @@ import {
     setManualStyleOverride,
     setManualVisualModeOverride,
     setWordSyncEnabled,
-    setDebugTimingEnabled
+    setDebugTimingEnabled,
+    setRecogniserFailCounter,
+    setIntervalModeActive
 } from './modules/state.js';
 
 // Utils (Level 1)
@@ -376,6 +382,40 @@ async function retryImageFetch(artistId, artistName) {
     }
 }
 
+// ========== INTERVAL MODE (RECOGNISER FAIL) ==========
+
+/**
+ * Enter interval mode - show "interval" text and fade artwork to grey.
+ * Triggered after consecutive recognition failures while a track was playing.
+ */
+function enterIntervalMode() {
+    if (intervalModeActive) return;
+    console.log('[Main] Entering interval mode (recogniser fail)');
+    setIntervalModeActive(true);
+
+    document.body.classList.add('interval-mode');
+
+    // Show "interval" in the current lyric line
+    const lyricsContainer = document.querySelector('.lyrics-container') || document.getElementById('lyrics');
+    if (lyricsContainer) {
+        lyricsContainer.classList.remove('visual-mode-hidden');
+    }
+    setLyricsInDom({ msg: '~ interval ~' });
+}
+
+/**
+ * Exit interval mode - restore normal display.
+ * Called when recognition succeeds again.
+ */
+function exitIntervalMode() {
+    if (!intervalModeActive) return;
+    console.log('[Main] Exiting interval mode (recognition restored)');
+    setIntervalModeActive(false);
+    setRecogniserFailCounter(0);
+
+    document.body.classList.remove('interval-mode');
+}
+
 // ========== MAIN UPDATE LOOP ==========
 
 /**
@@ -457,6 +497,17 @@ async function updateLoop() {
                 idleStartTime = Date.now();
             }
 
+            // Recogniser fail detection: if we had a track playing (lastTrackId set),
+            // count consecutive failures. After threshold, enter interval mode.
+            if (fadeOnRecogniserFail && lastTrackId) {
+                const newCount = recogniserFailCounter + 1;
+                setRecogniserFailCounter(newCount);
+                console.log(`[Main] Recogniser fail ${newCount}/${fadeOnRecogniserFailCount}`);
+                if (newCount >= fadeOnRecogniserFailCount && !intervalModeActive) {
+                    enterIntervalMode();
+                }
+            }
+
             if (isIdleState && idleStartTime && (Date.now() - idleStartTime > IDLE_THRESHOLD)) {
                 currentPollInterval = IDLE_POLL_INTERVAL;
             }
@@ -471,6 +522,13 @@ async function updateLoop() {
             idleStartTime = null;
             currentPollInterval = updateInterval;
         }
+
+        // Exit interval mode if recognition succeeds
+        if (intervalModeActive) {
+            exitIntervalMode();
+        }
+        // Reset fail counter on successful recognition
+        setRecogniserFailCounter(0);
 
         // Get track ID
         let trackId;
