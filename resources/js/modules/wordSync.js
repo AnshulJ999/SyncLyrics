@@ -815,34 +815,37 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         // Update surrounding lines (single authority - only when line changes)
         updateSurroundingLines(activeLineIndex);
 
-        // Pixel scroll animation for word-sync mode
+        // Pixel scroll animation for word-sync mode (Web Animations API)
         if (pixelScrollEnabled && !_wsPixelScrollAnimating) {
             const inner = document.querySelector('.pixel-scroll-inner');
             if (inner) {
                 const currentLine = document.getElementById('current');
                 if (currentLine) {
-                    const lineHeight = currentLine.offsetHeight;
                     const container = document.getElementById('lyrics');
+
+                    // Ensure pixel-scroll class is on container (CSS rules depend on it)
+                    if (container && !container.classList.contains('pixel-scroll')) {
+                        container.classList.add('pixel-scroll');
+                    }
+
                     const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
-                    const scrollDist = lineHeight + gap;
+                    const scrollDist = currentLine.offsetHeight + gap;
 
                     _wsPixelScrollAnimating = true;
-                    inner.style.transition = 'none';
-                    inner.style.transform = `translateY(${scrollDist}px)`;
-                    inner.offsetHeight; // Force reflow
-                    inner.style.transition = ''; // Clear inline transition so .scrolling class takes effect
-                    inner.classList.add('scrolling');
-                    inner.style.transform = 'translateY(0)';
 
-                    const cleanup = () => {
-                        inner.classList.remove('scrolling');
-                        inner.style.transition = '';
-                        inner.style.transform = '';
+                    const animation = inner.animate([
+                        { transform: `translateY(${scrollDist}px)` },
+                        { transform: 'translateY(0)' }
+                    ], {
+                        duration: pixelScrollSpeed,
+                        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
+                    });
+
+                    animation.finished.then(() => {
                         _wsPixelScrollAnimating = false;
-                        inner.removeEventListener('transitionend', cleanup);
-                    };
-                    inner.addEventListener('transitionend', cleanup, { once: true });
-                    setTimeout(() => { if (_wsPixelScrollAnimating) cleanup(); }, pixelScrollSpeed + 100);
+                    }).catch(() => {
+                        _wsPixelScrollAnimating = false;
+                    });
                 }
             }
         }

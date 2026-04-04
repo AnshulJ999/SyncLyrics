@@ -110,60 +110,46 @@ export function destroyPixelScroll() {
 }
 
 /**
- * Perform a pixel scroll animation for line-sync mode.
+ * Perform a pixel scroll animation for line-sync mode using Web Animations API.
  * 1. Set content to NEW state
- * 2. Instantly offset inner wrapper DOWN by one line height (looks like old state)
- * 3. Animate back to translateY(0) (smooth scroll up to new position)
+ * 2. Animate inner wrapper from offset DOWN to translateY(0) (smooth scroll up)
  */
 function pixelScrollAnimate(lyrics) {
     if (!_pixelScrollInner || _pixelScrollAnimating) {
-        // Fallback: update content directly
         updateAllLyricElements(lyrics);
         return;
     }
 
-    // Measure the height of the current line (all 3 visible lines are same size now)
     const currentEl = document.getElementById('current');
     if (!currentEl) {
         updateAllLyricElements(lyrics);
         return;
     }
 
-    const lineHeight = currentEl.offsetHeight;
-    // Include the gap between lines
     const container = document.getElementById('lyrics');
     const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
-    const scrollDistance = lineHeight + gap;
+    const scrollDistance = currentEl.offsetHeight + gap;
 
     _pixelScrollAnimating = true;
 
     // 1. Update content to new state
     updateAllLyricElements(lyrics);
 
-    // 2. Instantly offset DOWN (no transition) - visually shows "old" positions
-    _pixelScrollInner.style.transition = 'none';
-    _pixelScrollInner.style.transform = `translateY(${scrollDistance}px)`;
+    // 2. Animate using Web Animations API (no reflow hacks or CSS class juggling)
+    const animation = _pixelScrollInner.animate([
+        { transform: `translateY(${scrollDistance}px)` },
+        { transform: 'translateY(0)' }
+    ], {
+        duration: pixelScrollSpeed,
+        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
+    });
 
-    // 3. Force reflow, then animate to translateY(0)
-    _pixelScrollInner.offsetHeight; // Force reflow
-    _pixelScrollInner.style.transition = ''; // Clear inline transition so .scrolling class takes effect
-    _pixelScrollInner.classList.add('scrolling');
-    _pixelScrollInner.style.transform = 'translateY(0)';
-
-    // 4. Clean up after animation
-    const onEnd = () => {
-        _pixelScrollInner.classList.remove('scrolling');
-        _pixelScrollInner.style.transition = '';
-        _pixelScrollInner.style.transform = '';
+    // 3. Clean up via native Promise (reliable even when tab is backgrounded)
+    animation.finished.then(() => {
         _pixelScrollAnimating = false;
-        _pixelScrollInner.removeEventListener('transitionend', onEnd);
-    };
-    _pixelScrollInner.addEventListener('transitionend', onEnd, { once: true });
-
-    // Safety timeout in case transitionend doesn't fire
-    setTimeout(() => {
-        if (_pixelScrollAnimating) onEnd();
-    }, pixelScrollSpeed + 100);
+    }).catch(() => {
+        _pixelScrollAnimating = false;
+    });
 }
 
 /**
