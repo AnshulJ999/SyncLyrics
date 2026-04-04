@@ -28,6 +28,7 @@ import {
     setAnyProviderHasWordSync,
     setInstrumentalMarkers,
     setWordSyncTransitionMs,
+    setPixelScrollEnabled,
     setDebugRtt,
     setDebugRttSmoothed,
     setDebugRttJitter,
@@ -43,6 +44,7 @@ import {
     debugBadSamples
 } from './state.js';
 import { isLatencyBeingAdjusted } from './latency.js';
+import { initPixelScroll, destroyPixelScroll } from './dom.js';
 
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
@@ -227,6 +229,20 @@ export async function getConfig() {
         // Apply word-sync transition timing (0 = instant, >0 = fade delay in ms)
         if (config.wordSyncTransitionMs !== undefined) {
             setWordSyncTransitionMs(config.wordSyncTransitionMs);
+        }
+
+        // Apply pixel scroll setting
+        if (config.pixelScroll !== undefined) {
+            setPixelScrollEnabled(config.pixelScroll);
+            const lyricsEl = document.getElementById('lyrics');
+            if (lyricsEl) {
+                lyricsEl.classList.toggle('pixel-scroll', config.pixelScroll);
+                if (config.pixelScroll) {
+                    initPixelScroll();
+                } else {
+                    destroyPixelScroll();
+                }
+            }
         }
 
         console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);

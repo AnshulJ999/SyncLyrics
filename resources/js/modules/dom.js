@@ -13,11 +13,17 @@ import {
     visualModeActive,
     hasWordSync,
     wordSyncEnabled,
+    pixelScrollEnabled,
     setLastLyrics,
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
 // Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
+
+// ========== PIXEL SCROLL STATE ==========
+let _pixelScrollInner = null;  // Cached inner wrapper element
+let _pixelScrollInitialized = false;
+let _pixelScrollAnimating = false;
 
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
@@ -58,8 +64,115 @@ export function updateLyricElement(element, text) {
 }
 
 /**
+ * Initialize pixel scroll wrapper.
+ * Wraps all lyric-line elements inside a .pixel-scroll-inner div.
+ */
+export function initPixelScroll() {
+    if (_pixelScrollInitialized) return;
+    const container = document.getElementById('lyrics');
+    if (!container) return;
+
+    // Create inner wrapper
+    const inner = document.createElement('div');
+    inner.className = 'pixel-scroll-inner';
+
+    // Move all lyric lines into the wrapper
+    const lines = container.querySelectorAll('.lyric-line');
+    lines.forEach(line => inner.appendChild(line));
+    container.appendChild(inner);
+
+    _pixelScrollInner = inner;
+    _pixelScrollInitialized = true;
+}
+
+/**
+ * Remove pixel scroll wrapper, restoring original DOM structure.
+ */
+export function destroyPixelScroll() {
+    if (!_pixelScrollInitialized || !_pixelScrollInner) return;
+    const container = document.getElementById('lyrics');
+    if (!container) return;
+
+    // Move lines back out of wrapper
+    while (_pixelScrollInner.firstChild) {
+        container.appendChild(_pixelScrollInner.firstChild);
+    }
+    _pixelScrollInner.remove();
+    _pixelScrollInner = null;
+    _pixelScrollInitialized = false;
+}
+
+/**
+ * Perform a pixel scroll animation for line-sync mode.
+ * 1. Set content to NEW state
+ * 2. Instantly offset inner wrapper DOWN by one line height (looks like old state)
+ * 3. Animate back to translateY(0) (smooth scroll up to new position)
+ */
+function pixelScrollAnimate(lyrics) {
+    if (!_pixelScrollInner || _pixelScrollAnimating) {
+        // Fallback: update content directly
+        updateAllLyricElements(lyrics);
+        return;
+    }
+
+    // Measure the height of the current line (all 3 visible lines are same size now)
+    const currentEl = document.getElementById('current');
+    if (!currentEl) {
+        updateAllLyricElements(lyrics);
+        return;
+    }
+
+    const lineHeight = currentEl.offsetHeight;
+    // Include the gap between lines
+    const container = document.getElementById('lyrics');
+    const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
+    const scrollDistance = lineHeight + gap;
+
+    _pixelScrollAnimating = true;
+
+    // 1. Update content to new state
+    updateAllLyricElements(lyrics);
+
+    // 2. Instantly offset DOWN (no transition) - visually shows "old" positions
+    _pixelScrollInner.style.transition = 'none';
+    _pixelScrollInner.style.transform = `translateY(${scrollDistance}px)`;
+
+    // 3. Force reflow, then animate to translateY(0)
+    _pixelScrollInner.offsetHeight; // Force reflow
+    _pixelScrollInner.classList.add('scrolling');
+    _pixelScrollInner.style.transform = 'translateY(0)';
+
+    // 4. Clean up after animation
+    const onEnd = () => {
+        _pixelScrollInner.classList.remove('scrolling');
+        _pixelScrollInner.style.transition = '';
+        _pixelScrollInner.style.transform = '';
+        _pixelScrollAnimating = false;
+        _pixelScrollInner.removeEventListener('transitionend', onEnd);
+    };
+    _pixelScrollInner.addEventListener('transitionend', onEnd, { once: true });
+
+    // Safety timeout in case transitionend doesn't fire
+    setTimeout(() => {
+        if (_pixelScrollAnimating) onEnd();
+    }, 400);
+}
+
+/**
+ * Update all 6 lyric line elements with new text.
+ */
+function updateAllLyricElements(lyrics) {
+    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
+    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+    updateLyricElement(document.getElementById('current'), lyrics[2]);
+    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
+    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
+    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+}
+
+/**
  * Set lyrics in the DOM
- * 
+ *
  * @param {Array|Object} lyrics - Lyrics array or object with msg property
  */
 export function setLyricsInDom(lyrics) {
@@ -84,15 +197,18 @@ export function setLyricsInDom(lyrics) {
     }
 
     setUpdateInProgress(true);
+
+    // Check if the active line (index 2) changed - that's a line transition
+    const activeLineChanged = lastLyrics && lyrics[2] !== lastLyrics[2];
+
     setLastLyrics([...lyrics]);
 
-    // Update all elements simultaneously (line-sync only)
-    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
-    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
-    updateLyricElement(document.getElementById('current'), lyrics[2]);
-    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
-    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
-    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
+    // Pixel scroll: animate if enabled and active line changed
+    if (pixelScrollEnabled && _pixelScrollInitialized && activeLineChanged) {
+        pixelScrollAnimate(lyrics);
+    } else {
+        updateAllLyricElements(lyrics);
+    }
 
     // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
     if (!visualModeActive) {

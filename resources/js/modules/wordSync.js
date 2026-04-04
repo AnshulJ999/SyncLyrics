@@ -39,7 +39,8 @@ import {
     debugSource,
     debugBadSamples,
     instrumentalMarkers,
-    wordSyncTransitionMs
+    wordSyncTransitionMs,
+    pixelScrollEnabled
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -47,6 +48,9 @@ import {
 // DOM recycling: Cache line ID and word element references
 let cachedLineId = null;
 let wordElements = [];
+
+// Pixel scroll state for word-sync mode
+let _wsPixelScrollAnimating = false;
 
 // FLYWHEEL CLOCK: Monotonic time that never goes backwards
 let visualPosition = 0;        // Our smooth, monotonic position (seconds)
@@ -809,7 +813,38 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
         
         // Update surrounding lines (single authority - only when line changes)
         updateSurroundingLines(activeLineIndex);
-        
+
+        // Pixel scroll animation for word-sync mode
+        if (pixelScrollEnabled && !_wsPixelScrollAnimating) {
+            const inner = document.querySelector('.pixel-scroll-inner');
+            if (inner) {
+                const currentLine = document.getElementById('current');
+                if (currentLine) {
+                    const lineHeight = currentLine.offsetHeight;
+                    const container = document.getElementById('lyrics');
+                    const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
+                    const scrollDist = lineHeight + gap;
+
+                    _wsPixelScrollAnimating = true;
+                    inner.style.transition = 'none';
+                    inner.style.transform = `translateY(${scrollDist}px)`;
+                    inner.offsetHeight; // Force reflow
+                    inner.classList.add('scrolling');
+                    inner.style.transform = 'translateY(0)';
+
+                    const cleanup = () => {
+                        inner.classList.remove('scrolling');
+                        inner.style.transition = '';
+                        inner.style.transform = '';
+                        _wsPixelScrollAnimating = false;
+                        inner.removeEventListener('transitionend', cleanup);
+                    };
+                    inner.addEventListener('transitionend', cleanup, { once: true });
+                    setTimeout(() => { if (_wsPixelScrollAnimating) cleanup(); }, 400);
+                }
+            }
+        }
+
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         

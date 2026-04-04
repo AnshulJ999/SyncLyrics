@@ -317,6 +317,62 @@ input[type="range"] {
     .far-previous, .far-next { font-size: calc(clamp(0.8rem, 2vw, 1.4rem) * var(--lyrics-font-scale-far, 1) * var(--lyrics-font-scale-mobile, 1)); }
 }
 
+/* ========== PIXEL SCROLL MODE ========== */
+/* Smooth pixel scrolling between lyric lines */
+
+/* Container: clip overflow and use inner wrapper for scroll animation */
+#lyrics.pixel-scroll {
+    overflow: hidden;
+    position: relative;
+}
+
+/* Inner wrapper for translateY animation (injected by JS) */
+#lyrics.pixel-scroll .pixel-scroll-inner {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: inherit;
+    width: 100%;
+    min-height: 100%;
+    will-change: transform;
+}
+
+/* Scrolling animation (applied via JS then removed) */
+#lyrics.pixel-scroll .pixel-scroll-inner.scrolling {
+    transition: transform 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Make previous and next lines the same size as current */
+#lyrics.pixel-scroll .previous,
+#lyrics.pixel-scroll .next {
+    font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1));
+    opacity: 0.7;
+    transform: none;
+    filter: none;
+    font-weight: var(--lyrics-font-weight-current, 500);
+}
+
+/* Current line: remove scale and wave in pixel scroll mode */
+#lyrics.pixel-scroll .current {
+    transform: none;
+    animation: none;
+}
+
+/* Far lines: hide in pixel scroll mode (only show 3 lines) */
+#lyrics.pixel-scroll .far-previous,
+#lyrics.pixel-scroll .far-next {
+    display: none;
+}
+
+/* Mobile responsive override for pixel scroll */
+@media (max-height: 600px), (max-width: 600px) {
+    #lyrics.pixel-scroll .previous,
+    #lyrics.pixel-scroll .next {
+        font-size: calc(clamp(1.6rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1) * var(--lyrics-font-scale-mobile, 1));
+    }
+}
+
 /* ========== HOME ASSISTANT MODE ========== */
 /* Hide elements in minimal mode */
 body[data-minimal="true"] .bottom-nav,
