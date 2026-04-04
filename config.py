@@ -493,6 +493,10 @@ UDP_AUDIO = {
     "sample_rate": _safe_int(os.getenv("UDP_AUDIO_SAMPLE_RATE") or conf("udp_audio.sample_rate"), 16000),
     # Jitter buffer size in milliseconds for RTP packet reordering (0 = minimal buffering)
     "jitter_buffer_ms": _safe_int(os.getenv("UDP_JITTER_BUFFER_MS") or conf("udp_audio.jitter_buffer_ms"), 60),
+    # Position locking: lock to the first recognition's offset to prevent chorus-confusion drift
+    "lock_position": _safe_bool(os.getenv("UDP_LOCK_POSITION") or conf("udp_audio.lock_position"), True),
+    # Number of recognition events before position is locked (allows initial settling)
+    "lock_position_after": _safe_int(os.getenv("UDP_LOCK_POSITION_AFTER") or conf("udp_audio.lock_position_after"), 2),
 }
 
 # Multi-Match Position Verification

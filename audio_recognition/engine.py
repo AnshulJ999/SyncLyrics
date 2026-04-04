@@ -141,10 +141,10 @@ class RecognitionEngine:
         self._pending_match_count: int = 0
         self._pending_fail_count: int = 0  # For timeout (clear pending after N fails)
 
-        # Position locking: once a song is accepted, lock position from first recognition
-        # Subsequent recognitions of the same song confirm it's still playing but
-        # do NOT update position (prevents chorus-confusion offset jumps)
-        self._position_locked: bool = False
+        # Position locking: after N recognitions of a new song, lock position
+        # Subsequent recognitions confirm it's still playing but do NOT update
+        # position (prevents chorus-confusion offset jumps)
+        self._position_lock_count: int = 0  # How many same-song recognitions so far
         
         # Rolling audio buffer for improved recognition accuracy
         # Accumulates multiple capture cycles to provide longer audio samples
@@ -679,11 +679,13 @@ class RecognitionEngine:
     async def _handle_successful_recognition(self, result: RecognitionResult):
         """
         Handle a successful recognition result.
-        
+
         Includes multi-match verification for Shazam results to reduce false positives.
         ACRCloud results bypass verification (high confidence).
         Enriches metadata with Spotify if enricher is available.
         """
+        from system_utils.session_config import get_effective_value
+
         self._consecutive_failures = 0
         self._consecutive_no_match = 0  # Reset no-match counter on success
         self._last_attempt_result = "matched"
@@ -706,10 +708,25 @@ class RecognitionEngine:
         song_changed = not result.is_same_song(self._last_result)
         
         if not song_changed:
-            # Same song - position is locked, do NOT update _last_result
-            # This prevents chorus-confusion where Shazam returns wrong offsets
-            # for repeating sections. Position interpolates from the original lock point.
-            self._log_recognition(result, "POSITION IGNORED")
+            # Check position lock settings
+            lock_enabled = get_effective_value("udp_audio.lock_position", True)
+            lock_after = get_effective_value("udp_audio.lock_position_after", 2)
+
+            self._position_lock_count += 1
+
+            if lock_enabled and self._position_lock_count > lock_after:
+                # Position is locked - do NOT update _last_result
+                # This prevents chorus-confusion where Shazam returns wrong offsets
+                # for repeating sections. Position interpolates from the lock point.
+                self._log_recognition(result, "POSITION IGNORED")
+            else:
+                # Still within the settling window or lock disabled - update position
+                self._last_result = result
+                if lock_enabled:
+                    self._log_recognition(result, f"POSITION UPDATE ({self._position_lock_count}/{lock_after})")
+                else:
+                    self._log_recognition(result, "POSITION UPDATE")
+
             self._set_state(EngineState.ACTIVE)
 
             # Clear pending if current song confirmed - prevents interleaved false positives
@@ -957,8 +974,8 @@ class RecognitionEngine:
         """
         logger.info(f"Song changed to: {result}")
 
-        # Lock position from this accepted recognition
-        self._position_locked = True
+        # Reset position lock counter for the new song
+        self._position_lock_count = 0
         self._log_recognition(result, "POSITION LOCKED")
 
         # Reset to verification state for new song
