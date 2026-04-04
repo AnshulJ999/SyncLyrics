@@ -14,6 +14,7 @@ import {
     hasWordSync,
     wordSyncEnabled,
     pixelScrollEnabled,
+    pixelScrollSpeed,
     setLastLyrics,
     setUpdateInProgress
 } from './state.js';
@@ -139,6 +140,7 @@ function pixelScrollAnimate(lyrics) {
 
     // 3. Force reflow, then animate to translateY(0)
     _pixelScrollInner.offsetHeight; // Force reflow
+    _pixelScrollInner.style.transition = ''; // Clear inline transition so .scrolling class takes effect
     _pixelScrollInner.classList.add('scrolling');
     _pixelScrollInner.style.transform = 'translateY(0)';
 
@@ -155,7 +157,7 @@ function pixelScrollAnimate(lyrics) {
     // Safety timeout in case transitionend doesn't fire
     setTimeout(() => {
         if (_pixelScrollAnimating) onEnd();
-    }, 400);
+    }, pixelScrollSpeed + 100);
 }
 
 /**

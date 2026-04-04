@@ -3379,7 +3379,8 @@ async def get_client_config():
         # Custom fonts for dropdown
         "customFonts": custom_fonts,
         # Pixel scroll (smooth line transitions)
-        "pixelScroll": settings.get("udp_audio.pixel_scroll", False),
+        "pixelScroll": settings.get("udp_audio.pixel_scroll", True),
+        "pixelScrollSpeed": settings.get("udp_audio.pixel_scroll_speed", 300),
     }
 
 @app.route("/callback")

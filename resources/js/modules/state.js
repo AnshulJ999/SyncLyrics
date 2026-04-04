@@ -75,6 +75,7 @@ export let displayConfig = {
 
 // ========== PIXEL SCROLL STATE ==========
 export let pixelScrollEnabled = false;  // Smooth pixel scrolling between lyric lines
+export let pixelScrollSpeed = 300;      // Scroll duration in milliseconds
 
 // ========== VISUAL MODE STATE ==========
 export let visualModeActive = false;
@@ -195,6 +196,7 @@ export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = valu
 export function setInstrumentalMarkers(value) { instrumentalMarkers = value || []; }
 export function setWordSyncTransitionMs(value) { wordSyncTransitionMs = value; }
 export function setPixelScrollEnabled(value) { pixelScrollEnabled = value; }
+export function setPixelScrollSpeed(value) { pixelScrollSpeed = value; }
 
 // Debug overlay setters
 export function setDebugTimingEnabled(value) { debugTimingEnabled = value; }

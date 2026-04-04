@@ -29,6 +29,7 @@ import {
     setInstrumentalMarkers,
     setWordSyncTransitionMs,
     setPixelScrollEnabled,
+    setPixelScrollSpeed,
     setDebugRtt,
     setDebugRttSmoothed,
     setDebugRttJitter,
@@ -231,7 +232,7 @@ export async function getConfig() {
             setWordSyncTransitionMs(config.wordSyncTransitionMs);
         }
 
-        // Apply pixel scroll setting
+        // Apply pixel scroll settings
         if (config.pixelScroll !== undefined) {
             setPixelScrollEnabled(config.pixelScroll);
             const lyricsEl = document.getElementById('lyrics');
@@ -243,6 +244,10 @@ export async function getConfig() {
                     destroyPixelScroll();
                 }
             }
+        }
+        if (config.pixelScrollSpeed !== undefined) {
+            setPixelScrollSpeed(config.pixelScrollSpeed);
+            document.documentElement.style.setProperty('--pixel-scroll-speed', config.pixelScrollSpeed + 'ms');
         }
 
         console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);

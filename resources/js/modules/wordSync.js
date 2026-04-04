@@ -40,7 +40,8 @@ import {
     debugBadSamples,
     instrumentalMarkers,
     wordSyncTransitionMs,
-    pixelScrollEnabled
+    pixelScrollEnabled,
+    pixelScrollSpeed
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -829,6 +830,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                     inner.style.transition = 'none';
                     inner.style.transform = `translateY(${scrollDist}px)`;
                     inner.offsetHeight; // Force reflow
+                    inner.style.transition = ''; // Clear inline transition so .scrolling class takes effect
                     inner.classList.add('scrolling');
                     inner.style.transform = 'translateY(0)';
 
@@ -840,7 +842,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                         inner.removeEventListener('transitionend', cleanup);
                     };
                     inner.addEventListener('transitionend', cleanup, { once: true });
-                    setTimeout(() => { if (_wsPixelScrollAnimating) cleanup(); }, 400);
+                    setTimeout(() => { if (_wsPixelScrollAnimating) cleanup(); }, pixelScrollSpeed + 100);
                 }
             }
         }
