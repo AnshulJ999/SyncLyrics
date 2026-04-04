@@ -73,6 +73,9 @@ export function initPixelScroll() {
     const container = document.getElementById('lyrics');
     if (!container) return;
 
+    // Ensure the pixel-scroll class is on the container (CSS rules depend on it)
+    container.classList.add('pixel-scroll');
+
     // Create inner wrapper
     const inner = document.createElement('div');
     inner.className = 'pixel-scroll-inner';
@@ -93,6 +96,9 @@ export function destroyPixelScroll() {
     if (!_pixelScrollInitialized || !_pixelScrollInner) return;
     const container = document.getElementById('lyrics');
     if (!container) return;
+
+    // Remove the pixel-scroll class
+    container.classList.remove('pixel-scroll');
 
     // Move lines back out of wrapper
     while (_pixelScrollInner.firstChild) {
