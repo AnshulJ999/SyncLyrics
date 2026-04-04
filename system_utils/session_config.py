@@ -166,14 +166,23 @@ _CONFIG_CACHE_TTL: float = 3.0  # Re-read config every 3 seconds
 def _get_cached_config_value(key: str, default: Any = None) -> Any:
     """Get config value with 3-second cache to avoid frequent file reads."""
     global _config_cache, _config_cache_time
-    
+
     import time
     now = time.time()
-    
+
     # Refresh cache if expired
     if now - _config_cache_time > _CONFIG_CACHE_TTL:
         from config import AUDIO_RECOGNITION
         _config_cache = dict(AUDIO_RECOGNITION)  # Copy to avoid reference issues
+        # Also load settings from settings manager for keys not in AUDIO_RECOGNITION
+        # (e.g. udp_audio.* settings that live outside the AUDIO_RECOGNITION dict)
+        try:
+            from settings import settings as _settings_mgr
+            for skey in _settings_mgr._definitions:
+                if skey not in _config_cache:
+                    _config_cache[skey] = _settings_mgr.get(skey)
+        except Exception:
+            pass
         _config_cache_time = now
-    
+
     return _config_cache.get(key, default)
