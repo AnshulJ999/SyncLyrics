@@ -716,14 +716,15 @@ class RecognitionEngine:
 
             if lock_enabled and self._position_lock_count > lock_after:
                 # Position is locked - do NOT update _last_result
-                # This prevents chorus-confusion where Shazam returns wrong offsets
-                # for repeating sections. Position interpolates from the lock point.
                 self._log_recognition(result, "POSITION IGNORED")
             else:
                 # Still within the settling window or lock disabled - update position
                 self._last_result = result
                 if lock_enabled:
-                    self._log_recognition(result, f"POSITION UPDATE ({self._position_lock_count}/{lock_after})")
+                    if self._position_lock_count == lock_after:
+                        self._log_recognition(result, f"POSITION LOCKING ({self._position_lock_count} of {lock_after}) - LOCKED")
+                    else:
+                        self._log_recognition(result, f"POSITION LOCKING ({self._position_lock_count} of {lock_after})")
                 else:
                     self._log_recognition(result, "POSITION UPDATE")
 
