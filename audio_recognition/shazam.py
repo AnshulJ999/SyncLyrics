@@ -501,7 +501,7 @@ class ShazamRecognizer:
             time_skew = match.get('timeskew', 0.0)
             freq_skew = match.get('frequencyskew', 0.0)
             
-            logger.info(
+            logger.debug(
                 f"Shazam Recognized: {artist} - {title} | "
                 f"Offset: {offset:.1f}s | "
                 f"Latency: {latency:.1f}s | "
