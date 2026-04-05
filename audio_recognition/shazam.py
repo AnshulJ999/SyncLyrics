@@ -377,7 +377,7 @@ class ShazamRecognizer:
                     logger.debug(f"Shazamio: No matches found (attempt #{self._no_match_count})")
                 
                 # Try ACRCloud fallback if available
-                if self._acrcloud and self._acrcloud.is_available():
+                if self._acrcloud and self._acrcloud.is_available() and self._acrcloud.can_make_request():
                     logger.debug("Trying ACRCloud fallback...")
                     acrcloud_wav = self._convert_to_wav(acrcloud_audio)
                     acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
@@ -466,7 +466,7 @@ class ShazamRecognizer:
                     f"({TIMESKEW_REJECT_THRESHOLD}) for '{artist} - {title}'"
                 )
                 # Try ACRCloud fallback
-                if self._acrcloud and self._acrcloud.is_available():
+                if self._acrcloud and self._acrcloud.is_available() and self._acrcloud.can_make_request():
                     logger.info("Trying ACRCloud fallback after skew rejection...")
                     acrcloud_wav = self._convert_to_wav(acrcloud_audio)
                     acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
@@ -480,7 +480,7 @@ class ShazamRecognizer:
                     f"({FREQSKEW_REJECT_THRESHOLD}) for '{artist} - {title}'"
                 )
                 # Try ACRCloud fallback
-                if self._acrcloud and self._acrcloud.is_available():
+                if self._acrcloud and self._acrcloud.is_available() and self._acrcloud.can_make_request():
                     logger.info("Trying ACRCloud fallback after skew rejection...")
                     acrcloud_wav = self._convert_to_wav(acrcloud_audio)
                     acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)

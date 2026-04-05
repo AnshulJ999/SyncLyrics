@@ -189,8 +189,9 @@ class ACRCloudRecognizer:
                 # If the server reports quota exhausted, exhaust our local counter too.
                 # This prevents further wasteful HTTP calls until midnight resets the counter.
                 if 'limit' in msg.lower() and 'exceeded' in msg.lower():
+                    # Log BEFORE exhausting the counter so we show real usage (e.g. 3/200, not 200/200)
+                    logger.warning(f"ACRCloud: Server quota exceeded - disabling until midnight reset (used {self._requests_today}/{self._daily_limit} today)")
                     self._requests_today = self._daily_limit
-                    logger.warning(f"ACRCloud: Server quota exceeded - disabling until midnight reset ({self._requests_today}/{self._daily_limit})")
                 else:
                     logger.info(f"ACRCloud no match: {msg}")
                 return None
