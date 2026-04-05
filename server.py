@@ -3384,6 +3384,9 @@ async def get_client_config():
         "lyricsTextColor": settings.get("lyrics.text_color"),
         "lyricsFontWeight": settings.get("lyrics.font_weight"),
         "uiFontFamily": settings.get("ui.font_family"),
+        # Fade on recogniser fail
+        "fadeOnRecogniserFail": settings.get("lyrics.fade_on_recogniser_fail", True),
+        "fadeOnRecogniserFailCount": settings.get("lyrics.fade_on_recogniser_fail_count", 2),
         # Custom fonts for dropdown
         "customFonts": custom_fonts,
         # Pixel scroll (smooth line transitions)

@@ -118,6 +118,12 @@ export let slideshowSessionOverride = null;  // null = use auto-preference, true
 // Feature flag for zoom-out capability in art mode (uses <img> instead of background-image)
 export let artModeZoomOutEnabled = true;  // ON by default - set to false to disable
 
+// ========== RECOGNISER FAIL / INTERVAL MODE STATE ==========
+export let fadeOnRecogniserFail = true;      // Feature enabled
+export let fadeOnRecogniserFailCount = 2;    // Consecutive failures before fading
+export let recogniserFailCounter = 0;        // Current consecutive fail count
+export let intervalModeActive = false;       // Whether interval mode is showing
+
 // ========== BACKGROUND STATE ==========
 export let savedBackgroundState = null;
 export let manualStyleOverride = false; // Phase 2: Track if user manually overrode style
@@ -191,6 +197,12 @@ export function setSongWordSyncOffset(value) { songWordSyncOffset = value; }
 export function setAnyProviderHasWordSync(value) { anyProviderHasWordSync = value; }
 export function setInstrumentalMarkers(value) { instrumentalMarkers = value || []; }
 export function setWordSyncTransitionMs(value) { wordSyncTransitionMs = value; }
+
+// Recogniser fail / interval mode setters
+export function setFadeOnRecogniserFail(value) { fadeOnRecogniserFail = value; }
+export function setFadeOnRecogniserFailCount(value) { fadeOnRecogniserFailCount = value; }
+export function setRecogniserFailCounter(value) { recogniserFailCounter = value; }
+export function setIntervalModeActive(value) { intervalModeActive = value; }
 
 // Debug overlay setters
 export function setDebugTimingEnabled(value) { debugTimingEnabled = value; }

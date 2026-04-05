@@ -313,7 +313,7 @@ class UdpAudioCapture:
 
     @property
     def packet_loss_rate(self) -> float:
-        """Fraction of packets lost (0.0-1.0), or 0 if no packets yet."""
+        """Fraction of packets lost (0.0–1.0), or 0 if no packets yet."""
         total = self._packets_received + self._packets_lost
         if total == 0:
             return 0.0
