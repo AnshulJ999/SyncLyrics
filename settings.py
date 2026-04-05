@@ -326,7 +326,7 @@ class SettingsManager:
             "udp_audio.lock_position": Setting("Lock Position", bool, True, False, "UDP Recognition", "Lock to the position from the first recognition of a new track. Prevents repeating choruses from confusing the offset.", "switch"),
             "udp_audio.lock_position_after": Setting("Lock Position After N Events", int, 2, False, "UDP Recognition", "Number of recognition events at the start of a track before position is locked", "number", min_val=1, max_val=10),
             "udp_audio.pixel_scroll": Setting("Smooth Pixel Scroll", bool, True, False, "UDP Recognition", "Smoothly scroll between lyric lines instead of jumping. Active, previous and next lines are displayed at the same size.", "switch"),
-            "udp_audio.pixel_scroll_speed": Setting("Scroll Speed", int, 300, False, "UDP Recognition", "Pixel scroll duration in milliseconds (lower = faster)", "slider", min_val=50, max_val=1000),
+            "udp_audio.pixel_scroll_speed": Setting("Scroll Speed", int, 300, False, "UDP Recognition", "Pixel scroll duration in milliseconds (lower = faster)", "slider", min_val=50, max_val=3000),
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, True, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),
