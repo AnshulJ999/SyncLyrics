@@ -33,6 +33,7 @@ let _originalDisplay = '';       // Original display style of 6-slot elements
 // Position tracking (anchor-based interpolation between polls)
 let _anchorPosition = 0;         // Position in seconds at last poll
 let _anchorTimestamp = 0;        // performance.now() at last poll
+let _anchorSet = false;          // Whether we've received at least one position update
 let _isPlaying = true;           // Whether playback is active
 
 // Word-sync integration
@@ -60,10 +61,12 @@ export function disablePixelScroll() {
 }
 
 /**
- * Check if pixel scroll is currently enabled and active.
+ * Check if pixel scroll is currently enabled and has rendered lyrics.
+ * Returns false until lyrics are actually rendered, so the 6-slot
+ * system remains active during initial load.
  */
 export function isPixelScrollActive() {
-    return _enabled && _content !== null;
+    return _enabled && _content !== null && _displayLines.length > 0;
 }
 
 /**
@@ -180,6 +183,7 @@ export function updatePosition(position) {
 export function setPositionAnchor(position, isPlaying) {
     _anchorPosition = position;
     _anchorTimestamp = performance.now();
+    _anchorSet = true;
     _isPlaying = isPlaying;
 }
 
@@ -221,14 +225,17 @@ function _startLoop() {
             return;
         }
 
-        // Interpolate position: anchor + elapsed since last poll
-        let position = _anchorPosition;
-        if (_isPlaying) {
-            const elapsed = (performance.now() - _anchorTimestamp) / 1000;
-            position += elapsed;
+        // Only update once we have a valid position anchor and lyrics data
+        if (_anchorSet && _displayLines.length > 0) {
+            // Interpolate position: anchor + elapsed since last poll
+            let position = _anchorPosition;
+            if (_isPlaying) {
+                const elapsed = (performance.now() - _anchorTimestamp) / 1000;
+                position += elapsed;
+            }
+            updatePosition(position);
         }
 
-        updatePosition(position);
         _rafId = requestAnimationFrame(tick);
     }
 
@@ -238,11 +245,25 @@ function _startLoop() {
 // ========== PRIVATE HELPERS ==========
 
 /**
- * Create the .pixel-scroll-content div inside #lyrics and hide the 6-slot elements.
+ * Create the .pixel-scroll-content div inside #lyrics.
+ * Does NOT hide 6-slot elements yet - that happens in _renderLines()
+ * once we have actual lyrics to display.
  */
 function _ensureContentDiv() {
     if (_content) return;
 
+    // Create scrolling content strip (initially empty, 6-slot still visible)
+    _content = document.createElement('div');
+    _content.className = 'pixel-scroll-content';
+    _content.style.display = 'none'; // Hidden until lyrics render
+    _container.appendChild(_content);
+}
+
+/**
+ * Hide the 6-slot elements and show the pixel scroll content.
+ * Called when lyrics are first rendered.
+ */
+function _activatePixelScroll() {
     _container.classList.add('pixel-scroll');
 
     // Hide the 6 fixed lyric-line elements
@@ -252,10 +273,10 @@ function _ensureContentDiv() {
         el.style.display = 'none';
     });
 
-    // Create scrolling content strip
-    _content = document.createElement('div');
-    _content.className = 'pixel-scroll-content';
-    _container.appendChild(_content);
+    // Show the pixel scroll content strip
+    if (_content) {
+        _content.style.display = '';
+    }
 }
 
 /**
@@ -289,6 +310,7 @@ function _destroy() {
     _targetTranslateY = 0;
     _lastSongKey = null;
     _displayLines = [];
+    _anchorSet = false;
     _cachedWordLineId = null;
     _wordElements = [];
 }
@@ -301,6 +323,9 @@ function _renderLines() {
         _ensureContentDiv();
         if (!_content) return;
     }
+
+    // Hide 6-slot elements and show pixel scroll content
+    _activatePixelScroll();
 
     let html = '';
     for (let i = 0; i < _displayLines.length; i++) {
@@ -321,6 +346,8 @@ function _renderLines() {
         _targetTranslateY = _contentTranslateY;
         _content.style.transform = `translateY(${_contentTranslateY}px)`;
     }
+
+    console.log(`[PixelScroll] Rendered ${_displayLines.length} lines`);
 }
 
 /**
