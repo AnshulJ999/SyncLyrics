@@ -23,6 +23,7 @@ except ImportError:
 
 from logging_config import get_logger
 from .capture import AudioChunk
+from .recognition_blacklist import RecognitionBlacklist
 
 logger = get_logger(__name__)
 
@@ -199,6 +200,10 @@ class ShazamRecognizer:
         except ImportError:
             self._acrcloud = None
             logger.debug("ACRCloud module not available")
+        
+        # Load recognition blacklist (fail-open: missing file = no filtering)
+        from config import DATA_DIR
+        self.blacklist = RecognitionBlacklist(DATA_DIR / "blacklist.json")
             
     @staticmethod
     def is_available() -> bool:
@@ -394,6 +399,17 @@ class ShazamRecognizer:
             title = track.get('title', 'Unknown')
             artist = track.get('subtitle', 'Unknown')
             offset = match.get('offset', 0)
+            
+            # Blacklist check: reject known bad results early, fallback to ACRCloud
+            if self.blacklist.is_blacklisted(artist, title):
+                logger.info(f"Shazam: REJECTED by blacklist - '{artist} - {title}'")
+                if self._acrcloud and self._acrcloud.is_available():
+                    logger.info("Trying ACRCloud fallback after blacklist rejection...")
+                    acrcloud_wav = self._convert_to_wav(acrcloud_audio)
+                    acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
+                    if acrcloud_result:
+                        return acrcloud_result
+                return None
             
             # Extract ISRC (International Standard Recording Code)
             isrc = track.get('isrc')

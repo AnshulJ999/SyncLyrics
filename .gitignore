@@ -20,6 +20,7 @@ homeassistant-addons/
 .claude
 backups/
 .agent/
+blacklist.json
 
 # share_project.py
 .cursor

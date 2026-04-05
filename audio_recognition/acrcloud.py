@@ -21,6 +21,7 @@ import requests
 from logging_config import get_logger
 from .shazam import RecognitionResult
 from .capture import AudioChunk
+from .recognition_blacklist import RecognitionBlacklist
 
 logger = get_logger(__name__)
 
@@ -70,6 +71,10 @@ class ACRCloudRecognizer:
             _active_instance = self
         else:
             logger.debug("ACRCloud not configured (missing credentials in .env)")
+        
+        # Load recognition blacklist (fail-open: missing file = no filtering)
+        from config import DATA_DIR
+        self.blacklist = RecognitionBlacklist(DATA_DIR / "blacklist.json")
     
     def is_available(self) -> bool:
         """Check if ACRCloud is configured and available."""
@@ -195,6 +200,11 @@ class ACRCloudRecognizer:
             artist = artists[0].get('name', 'Unknown') if artists else 'Unknown'
             album_info = track.get('album', {})
             album = album_info.get('name')
+            
+            # Blacklist check: reject known bad results early
+            if self.blacklist.is_blacklisted(artist, title):
+                logger.info(f"ACRCloud: REJECTED by blacklist - '{artist} - {title}'")
+                return None
             
             # Offset calculation: ACRCloud's play_offset_ms is the position at END of sample,
             # but our system (like Shazamio) expects position at START of capture.

@@ -20,6 +20,7 @@ from logging_config import get_logger
 from .shazam import RecognitionResult
 from .capture import AudioChunk
 from .daemon import DaemonManager
+from .recognition_blacklist import RecognitionBlacklist
 
 logger = get_logger(__name__)
 
@@ -70,6 +71,10 @@ class LocalRecognizer:
         self._exe_path = None  # Path to built executable
         self._daemon: Optional[DaemonManager] = None  # Lazy initialized
         self._no_match_count = 0  # Throttled INFO logging counter
+        
+        # Load recognition blacklist (fail-open: missing file = no filtering)
+        from config import DATA_DIR
+        self.blacklist = RecognitionBlacklist(DATA_DIR / "blacklist.json")
         
         logger.info(f"LocalRecognizer initialized: db={self._db_path}, min_conf={self._min_confidence}")
     
@@ -447,6 +452,11 @@ class LocalRecognizer:
             artist = best.get("artist", "Unknown")
             title = best.get("title", "Unknown")
             offset = best.get("trackMatchStartsAt", 0)
+            
+            # Blacklist check: reject known bad results early
+            if self.blacklist.is_blacklisted(artist, title):
+                logger.info(f"Local FP: REJECTED by blacklist - '{artist} - {title}'")
+                return None
             
             # Get reject threshold from config (absolute floor - garbage below this)
             from config import LOCAL_FINGERPRINT
