@@ -39,9 +39,7 @@ import {
     debugSource,
     debugBadSamples,
     instrumentalMarkers,
-    wordSyncTransitionMs,
-    pixelScrollEnabled,
-    pixelScrollSpeed
+    wordSyncTransitionMs
 } from './state.js';
 
 // ========== MODULE STATE ==========
@@ -49,9 +47,6 @@ import {
 // DOM recycling: Cache line ID and word element references
 let cachedLineId = null;
 let wordElements = [];
-
-// Pixel scroll state for word-sync mode
-let _wsPixelScrollAnimating = false;
 
 // FLYWHEEL CLOCK: Monotonic time that never goes backwards
 let visualPosition = 0;        // Our smooth, monotonic position (seconds)
@@ -812,53 +807,9 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             return acc + ' ' + span;
         }, '');
         
-        // Pixel scroll: measure distance BEFORE updating surrounding lines,
-        // then update content, then animate from dim zone to bright zone.
-        if (pixelScrollEnabled && !_wsPixelScrollAnimating) {
-            const inner = document.querySelector('.pixel-scroll-inner');
-            const currentLine = document.getElementById('current');
-            const nextLine = document.getElementById('next-1');
-
-            if (inner && currentLine && nextLine) {
-                const container = document.getElementById('lyrics');
-                if (container && !container.classList.contains('pixel-scroll')) {
-                    container.classList.add('pixel-scroll');
-                }
-
-                // 1. Measure distance BEFORE content update
-                const currentRect = currentLine.getBoundingClientRect();
-                const nextRect = nextLine.getBoundingClientRect();
-                const scrollDist = nextRect.top - currentRect.top;
-
-                // 2. Update surrounding lines (content swap)
-                updateSurroundingLines(activeLineIndex);
-
-                if (scrollDist > 0) {
-                    _wsPixelScrollAnimating = true;
-                    console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
-
-                    // 3. Animate: start offset DOWN (dim zone), slide UP to center (bright zone)
-                    const animation = inner.animate([
-                        { transform: `translateY(${scrollDist}px)` },
-                        { transform: 'translateY(0)' }
-                    ], {
-                        duration: pixelScrollSpeed,
-                        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
-                    });
-
-                    animation.finished.then(() => {
-                        _wsPixelScrollAnimating = false;
-                    }).catch(() => {
-                        _wsPixelScrollAnimating = false;
-                    });
-                }
-            } else {
-                updateSurroundingLines(activeLineIndex);
-            }
-        } else {
-            updateSurroundingLines(activeLineIndex);
-        }
-
+        // Update surrounding lines (single authority - only when line changes)
+        updateSurroundingLines(activeLineIndex);
+        
         // Claim a new transition token (cancels any pending fade callbacks)
         const myToken = ++transitionToken;
         

@@ -28,8 +28,6 @@ import {
     setAnyProviderHasWordSync,
     setInstrumentalMarkers,
     setWordSyncTransitionMs,
-    setPixelScrollEnabled,
-    setPixelScrollSpeed,
     setDebugRtt,
     setDebugRttSmoothed,
     setDebugRttJitter,
@@ -45,7 +43,7 @@ import {
     debugBadSamples
 } from './state.js';
 import { isLatencyBeingAdjusted } from './latency.js';
-import { initPixelScroll, destroyPixelScroll } from './dom.js';
+import { enablePixelScroll, disablePixelScroll, setScrollSpeed, init as initPixelScroll, updateLyrics as updatePixelScrollLyrics, updateWordSync as updatePixelScrollWordSync, isPixelScrollActive, setPositionAnchor as setPixelScrollPosition } from './pixelScroll.js';
 
 // RTT smoothing constant (EMA factor)
 const RTT_SMOOTHING = 0.3;
@@ -233,24 +231,17 @@ export async function getConfig() {
         }
 
         // Apply pixel scroll settings
-        if (config.pixelScroll !== undefined) {
-            setPixelScrollEnabled(config.pixelScroll);
-            const lyricsEl = document.getElementById('lyrics');
-            if (lyricsEl) {
-                lyricsEl.classList.toggle('pixel-scroll', config.pixelScroll);
-                if (config.pixelScroll) {
-                    initPixelScroll();
-                } else {
-                    destroyPixelScroll();
-                }
+        if (config.pixelScroll) {
+            enablePixelScroll();
+            if (config.pixelScrollSpeed) {
+                setScrollSpeed(config.pixelScrollSpeed);
             }
-        }
-        if (config.pixelScrollSpeed !== undefined) {
-            setPixelScrollSpeed(config.pixelScrollSpeed);
-            document.documentElement.style.setProperty('--pixel-scroll-speed', config.pixelScrollSpeed + 'ms');
+            initPixelScroll();
+        } else {
+            disablePixelScroll();
         }
 
-        console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}, PixelScroll=${config.pixelScroll}, PixelScrollSpeed=${config.pixelScrollSpeed}ms`);
+        console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, PixelScroll=${config.pixelScroll}, ScrollSpeed=${config.pixelScrollSpeed}ms`);
 
         return config;
     } catch (error) {
@@ -336,6 +327,8 @@ export async function getCurrentTrack() {
                 setWordSyncAnchorPosition(correctedPosition);
                 setWordSyncAnchorTimestamp(endTime);
                 setWordSyncIsPlaying(data.is_playing !== false);
+                // Update pixel scroll position anchor
+                setPixelScrollPosition(correctedPosition, data.is_playing !== false);
             }
         }
         
@@ -409,6 +402,19 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
         // Update instrumental markers (timestamps where ♪ appears in line-sync)
         // Used for accurate gap detection during word-sync playback
         setInstrumentalMarkers(data.instrumental_markers);
+
+        // Feed pixel scroll module with all lyrics data
+        if (isPixelScrollActive() && data.all_lyrics) {
+            // Use first+last line text as song key for change detection
+            const first = data.all_lyrics[0] || {};
+            const last = data.all_lyrics[data.all_lyrics.length - 1] || {};
+            const songKey = `${first.text}_${last.text}_${data.all_lyrics.length}`;
+            updatePixelScrollLyrics(data.all_lyrics, songKey);
+            updatePixelScrollWordSync(
+                data.word_synced_lyrics || null,
+                data.has_word_sync && data.word_synced_lyrics != null
+            );
+        }
 
         // Update provider info (now uses word-sync provider when enabled)
         if (data.provider && updateProviderDisplayFn) {

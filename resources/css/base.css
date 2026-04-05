@@ -318,77 +318,66 @@ input[type="range"] {
 }
 
 /* ========== PIXEL SCROLL MODE ========== */
-/* Smooth pixel scrolling between lyric lines */
+/* Smooth scrolling lyrics: all lines rendered, translateY-based scroll with lerp */
 
-/* Container: clip overflow, fixed highlight band via mask */
+/* Container: clip overflow for the scrolling strip */
 #lyrics.pixel-scroll {
     overflow: hidden;
     position: relative;
-    /* Fixed highlight band: bright center zone, dim above/below.
-       Text scrolling through the container is progressively
-       brightened/dimmed by this positional mask. */
-    -webkit-mask-image: linear-gradient(to bottom,
-        rgba(0,0,0,0.35) 0%,
-        rgba(0,0,0,0.35) 30%,
-        rgba(0,0,0,1) 42%,
-        rgba(0,0,0,1) 58%,
-        rgba(0,0,0,0.35) 70%,
-        rgba(0,0,0,0.35) 100%
-    );
-    mask-image: linear-gradient(to bottom,
-        rgba(0,0,0,0.35) 0%,
-        rgba(0,0,0,0.35) 30%,
-        rgba(0,0,0,1) 42%,
-        rgba(0,0,0,1) 58%,
-        rgba(0,0,0,0.35) 70%,
-        rgba(0,0,0,0.35) 100%
-    );
 }
 
-/* Inner wrapper for translateY animation (injected by JS) */
-#lyrics.pixel-scroll .pixel-scroll-inner {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    /* Wide gap spreads lines across the container height so the
-       mask can create meaningful brightness differences between
-       the center (active) and edge (prev/next) positions. */
-    gap: 12vh;
-    width: 100%;
-    min-height: 100%;
+/* The inner scrolling strip (created by pixelScroll.js) */
+#lyrics.pixel-scroll .pixel-scroll-content {
+    text-align: center;
+    padding: 0 1rem;
     will-change: transform;
 }
 
-/* All lines same size and full opacity - the mask handles dimming */
-#lyrics.pixel-scroll .previous,
-#lyrics.pixel-scroll .next {
+/* Individual lyric lines in pixel scroll mode */
+.ps-line {
+    padding: 0.5rem 0.25rem;
     font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1));
-    opacity: 1;
-    transform: none;
-    filter: none;
     font-weight: var(--lyrics-font-weight-current, 500);
+    opacity: 0.35;
+    margin: 0.5rem 0;
+    will-change: opacity;
+    transition: opacity 0.5s ease;
+    font-family: var(--lyrics-font-family, inherit);
+    color: var(--lyrics-text-color, #ffffff);
+    text-shadow: 0 0 calc(10px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.1 * var(--lyrics-glow-intensity, 1)));
 }
 
-/* Current line: remove scale and wave in pixel scroll mode */
-#lyrics.pixel-scroll .current {
-    transform: none;
-    animation: none;
+/* Active line: bright, prominent */
+.ps-line.ps-active {
+    opacity: 1;
+    text-shadow: 0 0 calc(20px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.3 * var(--lyrics-glow-intensity, 1)));
 }
 
-/* Far lines: hide in pixel scroll mode (only show 3 lines) */
-#lyrics.pixel-scroll .far-previous,
-#lyrics.pixel-scroll .far-next {
-    display: none;
+/* Hidden lines: fade out when too far from active */
+.ps-line.ps-hidden {
+    opacity: 0;
 }
 
-/* Mobile responsive override for pixel scroll */
+/* Word-sync (karaoke) styles for pixel scroll mode */
+.ps-word {
+    display: inline;
+    transition: opacity 0.15s ease;
+}
+.ps-word-upcoming {
+    opacity: 0.5;
+}
+.ps-word-active {
+    opacity: 1;
+    color: var(--lyrics-text-color, #ffffff);
+    text-shadow: 0 0 calc(25px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.4 * var(--lyrics-glow-intensity, 1)));
+}
+.ps-word-sung {
+    opacity: 0.85;
+}
+
+/* Mobile responsive */
 @media (max-height: 600px), (max-width: 600px) {
-    #lyrics.pixel-scroll .pixel-scroll-inner {
-        gap: 8vh;
-    }
-    #lyrics.pixel-scroll .previous,
-    #lyrics.pixel-scroll .next {
+    .ps-line {
         font-size: calc(clamp(1.6rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1) * var(--lyrics-font-scale-mobile, 1));
     }
 }

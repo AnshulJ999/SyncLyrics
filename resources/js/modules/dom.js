@@ -13,18 +13,12 @@ import {
     visualModeActive,
     hasWordSync,
     wordSyncEnabled,
-    pixelScrollEnabled,
-    pixelScrollSpeed,
     setLastLyrics,
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
+import { isPixelScrollActive } from './pixelScroll.js';
 // Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
-
-// ========== PIXEL SCROLL STATE ==========
-let _pixelScrollInner = null;  // Cached inner wrapper element
-let _pixelScrollInitialized = false;
-let _pixelScrollAnimating = false;
 
 // ========== ELEMENT CACHE ==========
 // Cache for frequently accessed elements
@@ -65,129 +59,21 @@ export function updateLyricElement(element, text) {
 }
 
 /**
- * Initialize pixel scroll wrapper.
- * Wraps all lyric-line elements inside a .pixel-scroll-inner div.
- */
-export function initPixelScroll() {
-    if (_pixelScrollInitialized) return;
-    const container = document.getElementById('lyrics');
-    if (!container) return;
-    console.log('[PixelScroll] Initializing pixel scroll wrapper');
-
-    // Ensure the pixel-scroll class is on the container (CSS rules depend on it)
-    container.classList.add('pixel-scroll');
-
-    // Create inner wrapper
-    const inner = document.createElement('div');
-    inner.className = 'pixel-scroll-inner';
-
-    // Move all lyric lines into the wrapper
-    const lines = container.querySelectorAll('.lyric-line');
-    lines.forEach(line => inner.appendChild(line));
-    container.appendChild(inner);
-
-    _pixelScrollInner = inner;
-    _pixelScrollInitialized = true;
-}
-
-/**
- * Remove pixel scroll wrapper, restoring original DOM structure.
- */
-export function destroyPixelScroll() {
-    if (!_pixelScrollInitialized || !_pixelScrollInner) return;
-    const container = document.getElementById('lyrics');
-    if (!container) return;
-
-    // Remove the pixel-scroll class
-    container.classList.remove('pixel-scroll');
-
-    // Move lines back out of wrapper
-    while (_pixelScrollInner.firstChild) {
-        container.appendChild(_pixelScrollInner.firstChild);
-    }
-    _pixelScrollInner.remove();
-    _pixelScrollInner = null;
-    _pixelScrollInitialized = false;
-}
-
-/**
- * Perform a pixel scroll animation for line-sync mode using Web Animations API.
- *
- * Highlight band approach:
- * 1. Measure scroll distance BEFORE content update (old layout)
- * 2. Update content (new line → current element at center)
- * 3. Offset wrapper DOWN by scrollDistance (new text starts in dim mask zone)
- * 4. Animate to translateY(0) (text slides UP into bright mask zone)
- *
- * The CSS mask creates a fixed highlight band at the container center.
- * Text progressively brightens as it scrolls into the band.
- */
-function pixelScrollAnimate(lyrics) {
-    if (!_pixelScrollInner || _pixelScrollAnimating) {
-        updateAllLyricElements(lyrics);
-        return;
-    }
-
-    const currentEl = document.getElementById('current');
-    const nextEl = document.getElementById('next-1');
-    if (!currentEl || !nextEl) {
-        updateAllLyricElements(lyrics);
-        return;
-    }
-
-    // 1. Measure distance BEFORE content update (accurate old-layout measurement)
-    const currentRect = currentEl.getBoundingClientRect();
-    const nextRect = nextEl.getBoundingClientRect();
-    const scrollDistance = nextRect.top - currentRect.top;
-
-    if (scrollDistance <= 0) {
-        updateAllLyricElements(lyrics);
-        return;
-    }
-
-    _pixelScrollAnimating = true;
-
-    // 2. Update content to new state
-    updateAllLyricElements(lyrics);
-
-    // 3. Animate: start offset DOWN (dim zone), slide UP into center (bright zone)
-    console.log(`[PixelScroll] Animating: distance=${scrollDistance}px, speed=${pixelScrollSpeed}ms`);
-    const animation = _pixelScrollInner.animate([
-        { transform: `translateY(${scrollDistance}px)` },
-        { transform: 'translateY(0)' }
-    ], {
-        duration: pixelScrollSpeed,
-        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
-    });
-
-    animation.finished.then(() => {
-        _pixelScrollAnimating = false;
-    }).catch(() => {
-        _pixelScrollAnimating = false;
-    });
-}
-
-/**
- * Update all 6 lyric line elements with new text.
- */
-function updateAllLyricElements(lyrics) {
-    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
-    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
-    updateLyricElement(document.getElementById('current'), lyrics[2]);
-    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
-    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
-    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
-}
-
-/**
  * Set lyrics in the DOM
- *
+ * 
  * @param {Array|Object} lyrics - Lyrics array or object with msg property
  */
 export function setLyricsInDom(lyrics) {
     if (updateInProgress) return;
     if (!Array.isArray(lyrics)) {
         lyrics = ['', '', lyrics.msg || '', '', '', ''];
+    }
+
+    // When pixel scroll is active, it renders all lines independently.
+    // Skip 6-slot DOM updates entirely.
+    if (isPixelScrollActive()) {
+        setLastLyrics([...lyrics]);
+        return;
     }
 
     // When word-sync is active and enabled, the animation loop (wordSync.js) is
@@ -206,18 +92,15 @@ export function setLyricsInDom(lyrics) {
     }
 
     setUpdateInProgress(true);
-
-    // Check if the active line (index 2) changed - that's a line transition
-    const activeLineChanged = lastLyrics && lyrics[2] !== lastLyrics[2];
-
     setLastLyrics([...lyrics]);
 
-    // Pixel scroll: animate if enabled and active line changed
-    if (pixelScrollEnabled && _pixelScrollInitialized && activeLineChanged) {
-        pixelScrollAnimate(lyrics);
-    } else {
-        updateAllLyricElements(lyrics);
-    }
+    // Update all elements simultaneously (line-sync only)
+    updateLyricElement(document.getElementById('prev-2'), lyrics[0]);
+    updateLyricElement(document.getElementById('prev-1'), lyrics[1]);
+    updateLyricElement(document.getElementById('current'), lyrics[2]);
+    updateLyricElement(document.getElementById('next-1'), lyrics[3]);
+    updateLyricElement(document.getElementById('next-2'), lyrics[4]);
+    updateLyricElement(document.getElementById('next-3'), lyrics[5]);
 
     // Self-healing: If we are showing lyrics and NOT in visual mode, ensure the hidden class is gone
     if (!visualModeActive) {
