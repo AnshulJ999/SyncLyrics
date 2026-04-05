@@ -181,10 +181,29 @@ export function updatePosition(position) {
  * @param {boolean} isPlaying - Whether the track is currently playing
  */
 export function setPositionAnchor(position, isPlaying) {
+    const wasSet = _anchorSet;
     _anchorPosition = position;
     _anchorTimestamp = performance.now();
     _anchorSet = true;
     _isPlaying = isPlaying;
+
+    // On first anchor with rendered lines, immediately calculate correct target
+    // so the lerp doesn't start from a stale initial position
+    if (!wasSet && _container && _content && _displayLines.length > 0) {
+        const posMs = Math.round((position + 0.3) * 1000);
+        let idx = 0;
+        for (let i = 0; i < _displayLines.length; i++) {
+            if (Math.round(_displayLines[i].time * 1000) <= posMs) idx = i;
+            else break;
+        }
+        const el = _lineElements[idx];
+        if (el) {
+            const anchorY = _container.clientHeight * _anchorPercent;
+            _targetTranslateY = anchorY - el.offsetTop - (el.offsetHeight / 2);
+            _contentTranslateY = _targetTranslateY; // Jump, don't lerp
+            _content.style.transform = `translateY(${_contentTranslateY}px)`;
+        }
+    }
 }
 
 /**
@@ -340,10 +359,27 @@ function _renderLines() {
         _lineElements[parseInt(el.dataset.lineIndex)] = el;
     });
 
-    // Set initial position (first line below the visible area)
+    // Set initial position: anchor first line at 35% of container
     if (_lineElements[0]) {
-        _contentTranslateY = _container.clientHeight;
-        _targetTranslateY = _contentTranslateY;
+        const anchorY = _container.clientHeight * _anchorPercent;
+        // If we already have a playback position, jump to the correct line
+        if (_anchorSet) {
+            const posMs = Math.round((_anchorPosition + 0.3) * 1000);
+            let startIdx = 0;
+            for (let i = 0; i < _displayLines.length; i++) {
+                if (Math.round(_displayLines[i].time * 1000) <= posMs) startIdx = i;
+                else break;
+            }
+            const el = _lineElements[startIdx];
+            if (el) {
+                _contentTranslateY = anchorY - el.offsetTop - (el.offsetHeight / 2);
+                _targetTranslateY = _contentTranslateY;
+            }
+        } else {
+            // No position yet - place first line at the anchor point
+            _contentTranslateY = anchorY - _lineElements[0].offsetTop - (_lineElements[0].offsetHeight / 2);
+            _targetTranslateY = _contentTranslateY;
+        }
         _content.style.transform = `translateY(${_contentTranslateY}px)`;
     }
 
