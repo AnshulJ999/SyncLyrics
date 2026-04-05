@@ -812,57 +812,50 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             return acc + ' ' + span;
         }, '');
         
-        // Pixel scroll animation for word-sync mode (Web Animations API)
-        // Must run BEFORE updateSurroundingLines so we can measure the scroll distance
+        // Pixel scroll: measure distance BEFORE updating surrounding lines,
+        // then update content, then animate from dim zone to bright zone.
         if (pixelScrollEnabled && !_wsPixelScrollAnimating) {
             const inner = document.querySelector('.pixel-scroll-inner');
-            if (inner) {
-                const currentLine = document.getElementById('current');
-                const nextLine = document.getElementById('next-1');
-                if (currentLine && nextLine) {
-                    const container = document.getElementById('lyrics');
+            const currentLine = document.getElementById('current');
+            const nextLine = document.getElementById('next-1');
 
-                    // Ensure pixel-scroll class is on container (CSS rules depend on it)
-                    if (container && !container.classList.contains('pixel-scroll')) {
-                        container.classList.add('pixel-scroll');
-                    }
+            if (inner && currentLine && nextLine) {
+                const container = document.getElementById('lyrics');
+                if (container && !container.classList.contains('pixel-scroll')) {
+                    container.classList.add('pixel-scroll');
+                }
 
-                    // Use actual element positions for accurate scroll distance
-                    const currentRect = currentLine.getBoundingClientRect();
-                    const nextRect = nextLine.getBoundingClientRect();
-                    const scrollDist = nextRect.top - currentRect.top;
+                // 1. Measure distance BEFORE content update
+                const currentRect = currentLine.getBoundingClientRect();
+                const nextRect = nextLine.getBoundingClientRect();
+                const scrollDist = nextRect.top - currentRect.top;
 
-                    if (scrollDist > 0) {
-                        _wsPixelScrollAnimating = true;
-                        console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
+                // 2. Update surrounding lines (content swap)
+                updateSurroundingLines(activeLineIndex);
 
-                        // Scroll UP: next line slides into active position
-                        const animation = inner.animate([
-                            { transform: 'translateY(0)' },
-                            { transform: `translateY(-${scrollDist}px)` }
-                        ], {
-                            duration: pixelScrollSpeed,
-                            easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
-                        });
+                if (scrollDist > 0) {
+                    _wsPixelScrollAnimating = true;
+                    console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
 
-                        animation.finished.then(() => {
-                            updateSurroundingLines(activeLineIndex);
-                            _wsPixelScrollAnimating = false;
-                        }).catch(() => {
-                            updateSurroundingLines(activeLineIndex);
-                            _wsPixelScrollAnimating = false;
-                        });
-                    } else {
-                        updateSurroundingLines(activeLineIndex);
-                    }
-                } else {
-                    updateSurroundingLines(activeLineIndex);
+                    // 3. Animate: start offset DOWN (dim zone), slide UP to center (bright zone)
+                    const animation = inner.animate([
+                        { transform: `translateY(${scrollDist}px)` },
+                        { transform: 'translateY(0)' }
+                    ], {
+                        duration: pixelScrollSpeed,
+                        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
+                    });
+
+                    animation.finished.then(() => {
+                        _wsPixelScrollAnimating = false;
+                    }).catch(() => {
+                        _wsPixelScrollAnimating = false;
+                    });
                 }
             } else {
                 updateSurroundingLines(activeLineIndex);
             }
         } else {
-            // No pixel scroll - update surrounding lines immediately
             updateSurroundingLines(activeLineIndex);
         }
 

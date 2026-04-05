@@ -112,8 +112,15 @@ export function destroyPixelScroll() {
 
 /**
  * Perform a pixel scroll animation for line-sync mode using Web Animations API.
- * Scrolls the wrapper UP so the next line slides into the active position,
- * then updates content and resets when complete.
+ *
+ * Highlight band approach:
+ * 1. Measure scroll distance BEFORE content update (old layout)
+ * 2. Update content (new line → current element at center)
+ * 3. Offset wrapper DOWN by scrollDistance (new text starts in dim mask zone)
+ * 4. Animate to translateY(0) (text slides UP into bright mask zone)
+ *
+ * The CSS mask creates a fixed highlight band at the container center.
+ * Text progressively brightens as it scrolls into the band.
  */
 function pixelScrollAnimate(lyrics) {
     if (!_pixelScrollInner || _pixelScrollAnimating) {
@@ -128,7 +135,7 @@ function pixelScrollAnimate(lyrics) {
         return;
     }
 
-    // Use actual element positions for accurate scroll distance
+    // 1. Measure distance BEFORE content update (accurate old-layout measurement)
     const currentRect = currentEl.getBoundingClientRect();
     const nextRect = nextEl.getBoundingClientRect();
     const scrollDistance = nextRect.top - currentRect.top;
@@ -140,22 +147,22 @@ function pixelScrollAnimate(lyrics) {
 
     _pixelScrollAnimating = true;
 
-    // 1. Animate UP: next line slides into current position, current slides out
+    // 2. Update content to new state
+    updateAllLyricElements(lyrics);
+
+    // 3. Animate: start offset DOWN (dim zone), slide UP into center (bright zone)
     console.log(`[PixelScroll] Animating: distance=${scrollDistance}px, speed=${pixelScrollSpeed}ms`);
     const animation = _pixelScrollInner.animate([
-        { transform: 'translateY(0)' },
-        { transform: `translateY(-${scrollDistance}px)` }
+        { transform: `translateY(${scrollDistance}px)` },
+        { transform: 'translateY(0)' }
     ], {
         duration: pixelScrollSpeed,
         easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
     });
 
-    // 2. When scroll completes, update content and reset position
     animation.finished.then(() => {
-        updateAllLyricElements(lyrics);
         _pixelScrollAnimating = false;
     }).catch(() => {
-        updateAllLyricElements(lyrics);
         _pixelScrollAnimating = false;
     });
 }
