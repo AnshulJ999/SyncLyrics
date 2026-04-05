@@ -812,15 +812,14 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
             return acc + ' ' + span;
         }, '');
         
-        // Update surrounding lines (single authority - only when line changes)
-        updateSurroundingLines(activeLineIndex);
-
         // Pixel scroll animation for word-sync mode (Web Animations API)
+        // Must run BEFORE updateSurroundingLines so we can measure the scroll distance
         if (pixelScrollEnabled && !_wsPixelScrollAnimating) {
             const inner = document.querySelector('.pixel-scroll-inner');
             if (inner) {
                 const currentLine = document.getElementById('current');
-                if (currentLine) {
+                const nextLine = document.getElementById('next-1');
+                if (currentLine && nextLine) {
                     const container = document.getElementById('lyrics');
 
                     // Ensure pixel-scroll class is on container (CSS rules depend on it)
@@ -828,27 +827,43 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                         container.classList.add('pixel-scroll');
                     }
 
-                    const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
-                    const scrollDist = currentLine.offsetHeight + gap;
+                    // Use actual element positions for accurate scroll distance
+                    const currentRect = currentLine.getBoundingClientRect();
+                    const nextRect = nextLine.getBoundingClientRect();
+                    const scrollDist = nextRect.top - currentRect.top;
 
-                    _wsPixelScrollAnimating = true;
-                    console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
+                    if (scrollDist > 0) {
+                        _wsPixelScrollAnimating = true;
+                        console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
 
-                    const animation = inner.animate([
-                        { transform: `translateY(${scrollDist}px)` },
-                        { transform: 'translateY(0)' }
-                    ], {
-                        duration: pixelScrollSpeed,
-                        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
-                    });
+                        // Scroll UP: next line slides into active position
+                        const animation = inner.animate([
+                            { transform: 'translateY(0)' },
+                            { transform: `translateY(-${scrollDist}px)` }
+                        ], {
+                            duration: pixelScrollSpeed,
+                            easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
+                        });
 
-                    animation.finished.then(() => {
-                        _wsPixelScrollAnimating = false;
-                    }).catch(() => {
-                        _wsPixelScrollAnimating = false;
-                    });
+                        animation.finished.then(() => {
+                            updateSurroundingLines(activeLineIndex);
+                            _wsPixelScrollAnimating = false;
+                        }).catch(() => {
+                            updateSurroundingLines(activeLineIndex);
+                            _wsPixelScrollAnimating = false;
+                        });
+                    } else {
+                        updateSurroundingLines(activeLineIndex);
+                    }
+                } else {
+                    updateSurroundingLines(activeLineIndex);
                 }
+            } else {
+                updateSurroundingLines(activeLineIndex);
             }
+        } else {
+            // No pixel scroll - update surrounding lines immediately
+            updateSurroundingLines(activeLineIndex);
         }
 
         // Claim a new transition token (cancels any pending fade callbacks)

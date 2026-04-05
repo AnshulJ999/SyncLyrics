@@ -112,8 +112,8 @@ export function destroyPixelScroll() {
 
 /**
  * Perform a pixel scroll animation for line-sync mode using Web Animations API.
- * 1. Set content to NEW state
- * 2. Animate inner wrapper from offset DOWN to translateY(0) (smooth scroll up)
+ * Scrolls the wrapper UP so the next line slides into the active position,
+ * then updates content and resets when complete.
  */
 function pixelScrollAnimate(lyrics) {
     if (!_pixelScrollInner || _pixelScrollAnimating) {
@@ -122,34 +122,40 @@ function pixelScrollAnimate(lyrics) {
     }
 
     const currentEl = document.getElementById('current');
-    if (!currentEl) {
+    const nextEl = document.getElementById('next-1');
+    if (!currentEl || !nextEl) {
         updateAllLyricElements(lyrics);
         return;
     }
 
-    const container = document.getElementById('lyrics');
-    const gap = container ? parseFloat(getComputedStyle(container).gap) || 0 : 0;
-    const scrollDistance = currentEl.offsetHeight + gap;
+    // Use actual element positions for accurate scroll distance
+    const currentRect = currentEl.getBoundingClientRect();
+    const nextRect = nextEl.getBoundingClientRect();
+    const scrollDistance = nextRect.top - currentRect.top;
+
+    if (scrollDistance <= 0) {
+        updateAllLyricElements(lyrics);
+        return;
+    }
 
     _pixelScrollAnimating = true;
 
-    // 1. Update content to new state
-    updateAllLyricElements(lyrics);
-
-    // 2. Animate using Web Animations API (no reflow hacks or CSS class juggling)
+    // 1. Animate UP: next line slides into current position, current slides out
     console.log(`[PixelScroll] Animating: distance=${scrollDistance}px, speed=${pixelScrollSpeed}ms`);
     const animation = _pixelScrollInner.animate([
-        { transform: `translateY(${scrollDistance}px)` },
-        { transform: 'translateY(0)' }
+        { transform: 'translateY(0)' },
+        { transform: `translateY(-${scrollDistance}px)` }
     ], {
         duration: pixelScrollSpeed,
         easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)'
     });
 
-    // 3. Clean up via native Promise (reliable even when tab is backgrounded)
+    // 2. When scroll completes, update content and reset position
     animation.finished.then(() => {
+        updateAllLyricElements(lyrics);
         _pixelScrollAnimating = false;
     }).catch(() => {
+        updateAllLyricElements(lyrics);
         _pixelScrollAnimating = false;
     });
 }
