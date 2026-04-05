@@ -62,6 +62,8 @@ function cacheElements() {
         backendDeviceName: document.getElementById('backend-device-name'),
         quickStartFrontend: document.getElementById('quick-start-frontend'),
         quickStartFrontendBtn: document.getElementById('quick-start-frontend-btn'),
+        quickStartUdp: document.getElementById('quick-start-udp'),
+        quickStartUdpBtn: document.getElementById('quick-start-udp-btn'),
 
         // Device selection
         deviceSelect: document.getElementById('device-select'),
@@ -508,6 +510,10 @@ function updateButtonState() {
         elements.quickStartFrontendBtn.disabled = isActive;
         elements.quickStartFrontendBtn.textContent = isActive ? 'Running' : '▶ Start';
     }
+    if (elements.quickStartUdpBtn) {
+        elements.quickStartUdpBtn.disabled = isActive;
+        elements.quickStartUdpBtn.textContent = isActive ? 'Running' : '▶ Start';
+    }
 
     // Toggle recording indicator on source button
     if (elements.sourceToggle) {
@@ -547,7 +553,16 @@ async function handleStart(overrideMode = null) {
     // Use override mode if provided (from Quick Start)
     if (overrideMode) {
         mode = overrideMode;
-        deviceId = overrideMode === 'frontend' ? 'default' : 'auto';
+        if (overrideMode === 'frontend') {
+            deviceId = 'default';
+        } else {
+            deviceId = 'auto';
+        }
+    }
+
+    // UDP mode uses the backend engine (UDP listener is started via config)
+    if (mode === 'udp') {
+        mode = 'backend';
     }
 
     // Check HTTPS for frontend mode
@@ -796,6 +811,9 @@ export function init() {
     if (elements.quickStartFrontendBtn) {
         elements.quickStartFrontendBtn.addEventListener('click', () => handleQuickStart('frontend'));
     }
+    if (elements.quickStartUdpBtn) {
+        elements.quickStartUdpBtn.addEventListener('click', () => handleQuickStart('udp'));
+    }
 
     // Slider change handlers - update value display + immediate apply when active
     setupSlider('recognitionInterval', 's', 'recognition_interval');
@@ -834,6 +852,8 @@ async function handleQuickStart(mode) {
     if (elements.deviceSelect) {
         if (mode === 'backend') {
             elements.deviceSelect.value = 'backend:auto';
+        } else if (mode === 'udp') {
+            elements.deviceSelect.value = 'backend:auto';  // UDP uses backend engine
         } else {
             elements.deviceSelect.value = 'frontend:default';
         }

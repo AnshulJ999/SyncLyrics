@@ -260,15 +260,17 @@ class ShazamRecognizer:
         # Also verify WAV header
         self._verify_wav_header(wav_bytes)
     
-    def _verify_wav_header(self, wav_bytes: bytes) -> None:
-        """Verify WAV header sample rate is correct."""
+    def _verify_wav_header(self, wav_bytes: bytes, expected_rate: Optional[int] = None) -> None:
+        """Verify WAV header sample rate is plausible."""
         try:
             if len(wav_bytes) < 28:
                 return
             # WAV format: bytes 24-27 contain sample rate (little-endian uint32)
             header_rate = struct.unpack('<I', wav_bytes[24:28])[0]
-            expected_rate = 44100
-            if header_rate != expected_rate:
+            valid_rates = {8000, 11025, 16000, 22050, 44100, 48000, 96000}
+            if header_rate not in valid_rates:
+                logger.warning(f"WAV header has unexpected sample rate: {header_rate} Hz")
+            elif expected_rate and header_rate != expected_rate:
                 logger.warning(f"WAV header sample rate mismatch: {header_rate} Hz (expected {expected_rate} Hz)")
         except Exception as e:
             logger.debug(f"Failed to verify WAV header: {e}")
@@ -499,7 +501,7 @@ class ShazamRecognizer:
             time_skew = match.get('timeskew', 0.0)
             freq_skew = match.get('frequencyskew', 0.0)
             
-            logger.info(
+            logger.debug(
                 f"Shazam Recognized: {artist} - {title} | "
                 f"Offset: {offset:.1f}s | "
                 f"Latency: {latency:.1f}s | "

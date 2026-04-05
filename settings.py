@@ -160,6 +160,8 @@ class SettingsManager:
             "lyrics.glow_intensity": Setting("Glow Intensity", float, 1.0, False, "Lyrics", "Text glow strength (0=off, 2=max)", "slider", min_val=0.0, max_val=2.0),
             "lyrics.text_color": Setting("Lyrics Color", str, "#ffffff", False, "Lyrics", "Lyrics text color", "color"),
             "lyrics.font_weight": Setting("Font Weight", str, "Normal", False, "Lyrics", "Lyrics font weight", "select", options=["Light", "Normal", "Medium", "Semi-Bold", "Bold"]),
+            "lyrics.fade_on_recogniser_fail": Setting("Fade on Recogniser Fail", bool, True, False, "Lyrics", "Fade artwork to grey and show 'interval' after consecutive recognition failures", "switch"),
+            "lyrics.fade_on_recogniser_fail_count": Setting("Recogniser Fail Count", int, 2, False, "Lyrics", "Number of consecutive recognition failures before fading", "number", min_val=1, max_val=10),
 
             # UI Appearance
             "ui.font_family": Setting("UI Font", str, "System Default", False, "UI", "Font for menus and controls", "select", options=["System Default", "Inter", "Outfit", "Poppins", "Open Sans", "Nunito", "Roboto", "Montserrat", "Work Sans", "Oswald", "Raleway", "Bebas Neue", "Space Grotesk", "Playfair Display", "Lora", "Fraunces"]),
@@ -318,6 +320,15 @@ class SettingsManager:
             "audio_recognition.verification_timeout_cycles": Setting("Verification Timeout", int, 4, False, "Audio Recognition", "Clear pending if no confirmation in N cycles", "number", min_val=2, max_val=10),
             "audio_recognition.reaper_validation_enabled": Setting("Reaper Validation", bool, False, False, "Audio Recognition", "Validate against Reaper window title", "switch"),
             "audio_recognition.reaper_validation_threshold": Setting("Reaper Match Threshold", int, 80, False, "Audio Recognition", "Fuzzy match score (0-100) for Reaper validation", "number", min_val=50, max_val=100),
+
+            # UDP Audio Recognition
+            "udp_audio.enabled": Setting("UDP Audio Enabled", bool, False, False, "UDP Recognition", "Receive audio for fingerprinting over UDP", "switch"),
+            "udp_audio.port": Setting("UDP Port", int, 6056, False, "UDP Recognition", "UDP port to listen for audio data", "number", min_val=1024, max_val=65535),
+            "udp_audio.sample_rate": Setting("Sample Rate", int, 16000, False, "UDP Recognition", "Sample rate of incoming UDP audio (Hz)", "number", min_val=8000, max_val=48000),
+            "udp_audio.lock_position": Setting("Lock Position", bool, True, False, "UDP Recognition", "Lock to the position from the first recognition of a new track. Prevents repeating choruses from confusing the offset.", "switch"),
+            "udp_audio.lock_position_after": Setting("Lock Position After N Events", int, 2, False, "UDP Recognition", "Number of recognition events at the start of a track before position is locked", "number", min_val=1, max_val=10),
+            "udp_audio.pixel_scroll": Setting("Smooth Pixel Scroll", bool, True, False, "UDP Recognition", "Smoothly scroll between lyric lines instead of jumping. Active, previous and next lines are displayed at the same size.", "switch"),
+            "udp_audio.pixel_scroll_speed": Setting("Scroll Speed", int, 300, False, "UDP Recognition", "Pixel scroll duration in milliseconds (lower = faster)", "slider", min_val=50, max_val=3000),
 
             # HTTPS Settings (for browser microphone access)
             "server.https.enabled": Setting("HTTPS Enabled", bool, True, True, "HTTPS", "Enable HTTPS (required for browser mic)", "switch"),

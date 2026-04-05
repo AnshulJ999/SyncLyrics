@@ -17,6 +17,7 @@ import {
     setUpdateInProgress
 } from './state.js';
 import { areLyricsDifferent } from './utils.js';
+import { isPixelScrollActive } from './pixelScroll.js';
 // Note: Word-sync imports removed - animation loop is now single authority for lyrics during word-sync
 
 // ========== ELEMENT CACHE ==========
@@ -66,6 +67,13 @@ export function setLyricsInDom(lyrics) {
     if (updateInProgress) return;
     if (!Array.isArray(lyrics)) {
         lyrics = ['', '', lyrics.msg || '', '', '', ''];
+    }
+
+    // When pixel scroll is active, it renders all lines independently.
+    // Skip 6-slot DOM updates entirely.
+    if (isPixelScrollActive()) {
+        setLastLyrics([...lyrics]);
+        return;
     }
 
     // When word-sync is active and enabled, the animation loop (wordSync.js) is

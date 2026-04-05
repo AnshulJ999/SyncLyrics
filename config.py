@@ -484,6 +484,21 @@ AUDIO_BUFFER = {
     "acrcloud_enabled": _safe_bool(os.getenv("ACRCLOUD_BUFFER_ENABLED") or conf("audio_buffer.acrcloud_enabled"), False),
 }
 
+# UDP Audio Input
+# Receives PCM audio over UDP for fingerprinting (e.g., from Home Assistant audio pipeline)
+# Supports raw PCM (16-bit LE mono) and RTP-encapsulated PCM (auto-detected)
+UDP_AUDIO = {
+    "enabled": _safe_bool(os.getenv("UDP_AUDIO_ENABLED") or conf("udp_audio.enabled"), False),
+    "port": _safe_int(os.getenv("UDP_AUDIO_PORT") or conf("udp_audio.port"), 6056),
+    "sample_rate": _safe_int(os.getenv("UDP_AUDIO_SAMPLE_RATE") or conf("udp_audio.sample_rate"), 16000),
+    # Jitter buffer size in milliseconds for RTP packet reordering (0 = minimal buffering)
+    "jitter_buffer_ms": _safe_int(os.getenv("UDP_JITTER_BUFFER_MS") or conf("udp_audio.jitter_buffer_ms"), 60),
+    # Position locking: lock to the first recognition's offset to prevent chorus-confusion drift
+    "lock_position": _safe_bool(os.getenv("UDP_LOCK_POSITION") or conf("udp_audio.lock_position"), True),
+    # Number of recognition events before position is locked (allows initial settling)
+    "lock_position_after": _safe_int(os.getenv("UDP_LOCK_POSITION_AFTER") or conf("udp_audio.lock_position_after"), 2),
+}
+
 # Multi-Match Position Verification
 # When SFP returns multiple matches, use position tracking to select the correct one
 MULTI_MATCH = {

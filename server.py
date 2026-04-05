@@ -366,6 +366,12 @@ async def lyrics() -> dict:
             _instrumental_markers_cache['key'] = cache_key
             _instrumental_markers_cache['markers'] = instrumental_markers
 
+    # All lyrics with timestamps for pixel scroll mode (renders all lines client-side)
+    all_lyrics = None
+    raw_lyrics = lyrics_module.current_song_lyrics
+    if raw_lyrics and isinstance(raw_lyrics, list):
+        all_lyrics = [{"time": line[0], "text": line[1]} for line in raw_lyrics if len(line) >= 2]
+
     return {
         "lyrics": list(lyrics_data),
         "colors": colors,
@@ -380,7 +386,9 @@ async def lyrics() -> dict:
         # Flag for toggle availability: true if ANY cached provider has word-sync
         "any_provider_has_word_sync": any_provider_has_word_sync,
         # Instrumental markers for gap detection (timestamps where ♪ appears in line-sync)
-        "instrumental_markers": instrumental_markers if instrumental_markers else None
+        "instrumental_markers": instrumental_markers if instrumental_markers else None,
+        # All lyrics lines with timestamps for pixel scroll rendering
+        "all_lyrics": all_lyrics
     }
 
 @app.route("/current-track")
@@ -3376,8 +3384,14 @@ async def get_client_config():
         "lyricsTextColor": settings.get("lyrics.text_color"),
         "lyricsFontWeight": settings.get("lyrics.font_weight"),
         "uiFontFamily": settings.get("ui.font_family"),
+        # Fade on recogniser fail
+        "fadeOnRecogniserFail": settings.get("lyrics.fade_on_recogniser_fail", True),
+        "fadeOnRecogniserFailCount": settings.get("lyrics.fade_on_recogniser_fail_count", 2),
         # Custom fonts for dropdown
         "customFonts": custom_fonts,
+        # Pixel scroll (smooth line transitions)
+        "pixelScroll": settings.get("udp_audio.pixel_scroll", True),
+        "pixelScrollSpeed": settings.get("udp_audio.pixel_scroll_speed", 300),
     }
 
 @app.route("/callback")

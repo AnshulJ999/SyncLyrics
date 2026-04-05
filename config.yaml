@@ -1,0 +1,68 @@
+name: "SyncLyrics (UDP)"
+version: "1.0.22"
+slug: synclyrics_udp
+description: "Real-time synchronized lyrics. UDP audio input variant."
+url: "https://github.com/baileyboy0304/SyncLyrics"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+host_network: true
+map:
+  - addon_config:rw
+init: false
+options:
+  spotify_client_id: ""
+  spotify_client_secret: ""
+  spotify_redirect_uri: ""
+  spotify_lyrics_api_url: ""
+  lastfm_api_key: ""
+  fanart_tv_api_key: ""
+  audiodb_api_key: ""
+  server_port: 9012
+  spotify_token_cache: "/config/.spotify_cache"
+  debug_mode: false
+  log_level: "INFO"
+  spotify_polling_fast: 2
+  https_enabled: true
+  https_port: 9013
+  save_lyrics_to_db: true
+  album_art_db: true
+  spotify_polling_slow: 6
+  music_assistant_url: ""
+  music_assistant_token: ""
+  music_assistant_player_id: ""
+  cpu_compat_mode: false
+  openblas_cpu_type: ""
+  udp_audio_enabled: true
+  udp_audio_port: 6056
+  udp_audio_sample_rate: 16000
+  udp_jitter_buffer_ms: 60
+schema:
+  spotify_client_id: str
+  spotify_client_secret: str
+  spotify_redirect_uri: str?
+  spotify_lyrics_api_url: str?
+  lastfm_api_key: str?
+  fanart_tv_api_key: str?
+  audiodb_api_key: str?
+  server_port: port
+  spotify_token_cache: str
+  debug_mode: bool
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
+  spotify_polling_fast: "int(1,60)"
+  https_enabled: bool
+  https_port: port
+  save_lyrics_to_db: bool
+  album_art_db: bool
+  spotify_polling_slow: "int(1,60)"
+  music_assistant_url: str?
+  music_assistant_token: str?
+  music_assistant_player_id: str?
+  cpu_compat_mode: bool
+  openblas_cpu_type: str?
+  udp_audio_enabled: bool
+  udp_audio_port: port
+  udp_audio_sample_rate: "int(8000,48000)"
+  udp_jitter_buffer_ms: "int(0,500)"
