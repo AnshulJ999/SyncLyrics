@@ -324,6 +324,25 @@ input[type="range"] {
 #lyrics.pixel-scroll {
     overflow: hidden;
     position: relative;
+    /* Highlight zone mask: text is bright in the center, dims toward edges.
+       This creates a teleprompter effect where the active line position
+       acts as a fixed highlight bar that text scrolls through. */
+    -webkit-mask-image: linear-gradient(to bottom,
+        rgba(0,0,0,0.3) 0%,
+        rgba(0,0,0,0.5) 20%,
+        rgba(0,0,0,1) 38%,
+        rgba(0,0,0,1) 62%,
+        rgba(0,0,0,0.5) 80%,
+        rgba(0,0,0,0.3) 100%
+    );
+    mask-image: linear-gradient(to bottom,
+        rgba(0,0,0,0.3) 0%,
+        rgba(0,0,0,0.5) 20%,
+        rgba(0,0,0,1) 38%,
+        rgba(0,0,0,1) 62%,
+        rgba(0,0,0,0.5) 80%,
+        rgba(0,0,0,0.3) 100%
+    );
 }
 
 /* Inner wrapper for translateY animation (injected by JS) */
@@ -343,14 +362,16 @@ input[type="range"] {
     transition: transform var(--pixel-scroll-speed, 300ms) cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-/* Make previous and next lines the same size as current */
+/* In pixel scroll mode, all visible lines are same size and full opacity.
+   The container mask-image handles the highlight zone dimming effect. */
 #lyrics.pixel-scroll .previous,
 #lyrics.pixel-scroll .next {
     font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1));
-    opacity: 0.7;
+    opacity: 1;
     transform: none;
     filter: none;
     font-weight: var(--lyrics-font-weight-current, 500);
+    text-shadow: 0 0 calc(20px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.3 * var(--lyrics-glow-intensity, 1)));
 }
 
 /* Current line: remove scale and wave in pixel scroll mode */
@@ -370,6 +391,7 @@ input[type="range"] {
     #lyrics.pixel-scroll .previous,
     #lyrics.pixel-scroll .next {
         font-size: calc(clamp(1.6rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1) * var(--lyrics-font-scale-mobile, 1));
+        opacity: 1;
     }
 }
 

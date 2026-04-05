@@ -1,5 +1,5 @@
 name: "SyncLyrics (UDP)"
-version: "1.0.16"
+version: "1.0.17"
 slug: synclyrics_udp
 description: "Real-time synchronized lyrics. UDP audio input variant."
 url: "https://github.com/baileyboy0304/SyncLyrics"
