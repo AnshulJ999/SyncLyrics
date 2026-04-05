@@ -72,6 +72,7 @@ export function initPixelScroll() {
     if (_pixelScrollInitialized) return;
     const container = document.getElementById('lyrics');
     if (!container) return;
+    console.log('[PixelScroll] Initializing pixel scroll wrapper');
 
     // Ensure the pixel-scroll class is on the container (CSS rules depend on it)
     container.classList.add('pixel-scroll');
@@ -136,6 +137,7 @@ function pixelScrollAnimate(lyrics) {
     updateAllLyricElements(lyrics);
 
     // 2. Animate using Web Animations API (no reflow hacks or CSS class juggling)
+    console.log(`[PixelScroll] Animating: distance=${scrollDistance}px, speed=${pixelScrollSpeed}ms`);
     const animation = _pixelScrollInner.animate([
         { transform: `translateY(${scrollDistance}px)` },
         { transform: 'translateY(0)' }

@@ -250,7 +250,7 @@ export async function getConfig() {
             document.documentElement.style.setProperty('--pixel-scroll-speed', config.pixelScrollSpeed + 'ms');
         }
 
-        console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}`);
+        console.log(`Config loaded: Interval=${config.updateInterval}ms, Blur=${config.blurStrength}px, Opacity=${config.overlayOpacity}, Soft=${config.softAlbumArt}, Sharp=${config.sharpAlbumArt}, PixelScroll=${config.pixelScroll}, PixelScrollSpeed=${config.pixelScrollSpeed}ms`);
 
         return config;
     } catch (error) {

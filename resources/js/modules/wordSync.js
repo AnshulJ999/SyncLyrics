@@ -832,6 +832,7 @@ function updateWordSyncDOM(currentEl, lineData, selectionPosition, progressPosit
                     const scrollDist = currentLine.offsetHeight + gap;
 
                     _wsPixelScrollAnimating = true;
+                    console.log(`[PixelScroll-WS] Animating: distance=${scrollDist}px, speed=${pixelScrollSpeed}ms`);
 
                     const animation = inner.animate([
                         { transform: `translateY(${scrollDist}px)` },
