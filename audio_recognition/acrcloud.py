@@ -79,6 +79,11 @@ class ACRCloudRecognizer:
     def is_available(self) -> bool:
         """Check if ACRCloud is configured and available."""
         return self._enabled
+
+    def can_make_request(self) -> bool:
+        """Check if a request can be made right now (configured + within daily limit + not on cooldown)."""
+        can, _ = self._can_make_request()
+        return can
     
     def _reset_daily_counter_if_needed(self) -> None:
         """Reset the daily request counter if it's a new day."""
@@ -180,7 +185,14 @@ class ACRCloudRecognizer:
             # Check status
             status = result.get('status', {})
             if status.get('code') != 0:
-                logger.info(f"ACRCloud no match: {status.get('msg', 'Unknown')}")
+                msg = status.get('msg', 'Unknown')
+                # If the server reports quota exhausted, exhaust our local counter too.
+                # This prevents further wasteful HTTP calls until midnight resets the counter.
+                if 'limit' in msg.lower() and 'exceeded' in msg.lower():
+                    self._requests_today = self._daily_limit
+                    logger.warning(f"ACRCloud: Server quota exceeded - disabling until midnight reset ({self._requests_today}/{self._daily_limit})")
+                else:
+                    logger.info(f"ACRCloud no match: {msg}")
                 return None
             
             # Extract metadata

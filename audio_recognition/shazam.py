@@ -403,7 +403,7 @@ class ShazamRecognizer:
             # Blacklist check: reject known bad results early, fallback to ACRCloud
             if self.blacklist.is_blacklisted(artist, title):
                 logger.info(f"Shazam: REJECTED by blacklist - '{artist} - {title}'")
-                if self._acrcloud and self._acrcloud.is_available():
+                if self._acrcloud and self._acrcloud.is_available() and self._acrcloud.can_make_request():
                     logger.info("Trying ACRCloud fallback after blacklist rejection...")
                     acrcloud_wav = self._convert_to_wav(acrcloud_audio)
                     acrcloud_result = await self._acrcloud.recognize(acrcloud_audio, acrcloud_wav)
