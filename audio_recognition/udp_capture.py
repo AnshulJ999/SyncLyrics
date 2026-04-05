@@ -272,7 +272,7 @@ class UdpAudioCapture:
         self._running = False
         self._last_data_time: float = 0.0
 
-        # Track how many bytes have been received in total (monotonically
+        # Track how many bytes have been appended in total (monotonically
         # increasing even as the rolling buffer is trimmed).  Used together
         # with _last_read_total to know how much *new* audio has arrived
         # since the previous get_audio() call.
@@ -465,7 +465,8 @@ class UdpAudioCapture:
         near-duplicate chunks when the engine polls faster than audio
         arrives.
 
-        Returns None if the listener is stopped while waiting.
+        Returns None if the listener is stopped while waiting or the
+        stream goes dead (no data for 10 s).
 
         Args:
             duration: Desired audio duration in seconds.

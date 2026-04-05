@@ -317,6 +317,71 @@ input[type="range"] {
     .far-previous, .far-next { font-size: calc(clamp(0.8rem, 2vw, 1.4rem) * var(--lyrics-font-scale-far, 1) * var(--lyrics-font-scale-mobile, 1)); }
 }
 
+/* ========== PIXEL SCROLL MODE ========== */
+/* Smooth scrolling lyrics: all lines rendered, translateY-based scroll with lerp */
+
+/* Container: clip overflow for the scrolling strip */
+#lyrics.pixel-scroll {
+    overflow: hidden;
+    position: relative;
+}
+
+/* The inner scrolling strip (created by pixelScroll.js) */
+#lyrics.pixel-scroll .pixel-scroll-content {
+    text-align: center;
+    padding: 0 1rem;
+    will-change: transform;
+}
+
+/* Individual lyric lines in pixel scroll mode */
+.ps-line {
+    padding: 0.5rem 0.25rem;
+    font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1));
+    font-weight: var(--lyrics-font-weight-current, 500);
+    opacity: 0.35;
+    margin: 0.5rem 0;
+    will-change: opacity;
+    transition: opacity 0.5s ease;
+    font-family: var(--lyrics-font-family, inherit);
+    color: var(--lyrics-text-color, #ffffff);
+    text-shadow: 0 0 calc(10px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.1 * var(--lyrics-glow-intensity, 1)));
+}
+
+/* Active line: bright, prominent */
+.ps-line.ps-active {
+    opacity: 1;
+    text-shadow: 0 0 calc(20px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.3 * var(--lyrics-glow-intensity, 1)));
+}
+
+/* Hidden lines: fade out when too far from active */
+.ps-line.ps-hidden {
+    opacity: 0;
+}
+
+/* Word-sync (karaoke) styles for pixel scroll mode */
+.ps-word {
+    display: inline;
+    transition: opacity 0.15s ease;
+}
+.ps-word-upcoming {
+    opacity: 0.5;
+}
+.ps-word-active {
+    opacity: 1;
+    color: var(--lyrics-text-color, #ffffff);
+    text-shadow: 0 0 calc(25px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.4 * var(--lyrics-glow-intensity, 1)));
+}
+.ps-word-sung {
+    opacity: 0.85;
+}
+
+/* Mobile responsive */
+@media (max-height: 600px), (max-width: 600px) {
+    .ps-line {
+        font-size: calc(clamp(1.6rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1) * var(--lyrics-font-scale-mobile, 1));
+    }
+}
+
 /* ========== HOME ASSISTANT MODE ========== */
 /* Hide elements in minimal mode */
 body[data-minimal="true"] .bottom-nav,

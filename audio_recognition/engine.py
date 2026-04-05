@@ -140,6 +140,11 @@ class RecognitionEngine:
         self._pending_song: Optional[RecognitionResult] = None
         self._pending_match_count: int = 0
         self._pending_fail_count: int = 0  # For timeout (clear pending after N fails)
+
+        # Position locking: after N recognitions of a new song, lock position
+        # Subsequent recognitions confirm it's still playing but do NOT update
+        # position (prevents chorus-confusion offset jumps)
+        self._position_lock_count: int = 0  # How many same-song recognitions so far
         
         # Rolling audio buffer for improved recognition accuracy
         # Accumulates multiple capture cycles to provide longer audio samples
@@ -674,11 +679,13 @@ class RecognitionEngine:
     async def _handle_successful_recognition(self, result: RecognitionResult):
         """
         Handle a successful recognition result.
-        
+
         Includes multi-match verification for Shazam results to reduce false positives.
         ACRCloud results bypass verification (high confidence).
         Enriches metadata with Spotify if enricher is available.
         """
+        from system_utils.session_config import get_effective_value
+
         self._consecutive_failures = 0
         self._consecutive_no_match = 0  # Reset no-match counter on success
         self._last_attempt_result = "matched"
@@ -701,16 +708,34 @@ class RecognitionEngine:
         song_changed = not result.is_same_song(self._last_result)
         
         if not song_changed:
-            # Same song - just update position and state
-            self._last_result = result
+            # Check position lock settings
+            lock_enabled = get_effective_value("udp_audio.lock_position", True)
+            lock_after = get_effective_value("udp_audio.lock_position_after", 2)
+
+            self._position_lock_count += 1
+
+            if lock_enabled and self._position_lock_count > lock_after:
+                # Position is locked - do NOT update _last_result
+                self._log_recognition(result, "POSITION IGNORED")
+            else:
+                # Still within the settling window or lock disabled - update position
+                self._last_result = result
+                if lock_enabled:
+                    if self._position_lock_count == lock_after:
+                        self._log_recognition(result, f"POSITION LOCKING ({self._position_lock_count} of {lock_after}) - LOCKED")
+                    else:
+                        self._log_recognition(result, f"POSITION LOCKING ({self._position_lock_count} of {lock_after})")
+                else:
+                    self._log_recognition(result, "POSITION UPDATE")
+
             self._set_state(EngineState.ACTIVE)
-            
+
             # Clear pending if current song confirmed - prevents interleaved false positives
             # (e.g., A -> B -> A -> B pattern should NOT switch to B)
             if self._pending_song:
                 logger.debug(f"Cleared pending {self._pending_song} - current song confirmed")
                 self._clear_pending()
-            
+
             return
         
         # NEW SONG DETECTED - run validation
@@ -898,6 +923,20 @@ class RecognitionEngine:
             logger.warning(f"Reaper validation error: {e}")
             return False
     
+    def _log_recognition(self, result: RecognitionResult, position_tag: str):
+        """Log a recognition result with position lock status tag."""
+        latency = result.get_latency()
+        current_pos = result.get_current_position()
+        logger.info(
+            f"{result.recognition_provider.capitalize()} Recognized: "
+            f"{result.artist} - {result.title} | "
+            f"Offset: {result.offset:.1f}s | "
+            f"Latency: {latency:.1f}s | "
+            f"Current: {current_pos:.1f}s | "
+            f"Skew: t={result.time_skew:.6f}, f={result.frequency_skew:.4f} | "
+            f"{position_tag}"
+        )
+
     def _clear_pending(self):
         """Clear pending song verification state."""
         self._pending_song = None
@@ -930,11 +969,16 @@ class RecognitionEngine:
     async def _accept_song_change(self, result: RecognitionResult):
         """
         Accept a song change after validation.
-        
+
         Handles callbacks, enrichment, and state updates.
+        Locks position from this recognition result.
         """
         logger.info(f"Song changed to: {result}")
-        
+
+        # Reset position lock counter for the new song
+        self._position_lock_count = 0
+        self._log_recognition(result, "POSITION LOCKED")
+
         # Reset to verification state for new song
         self._verified_detection = False
         
