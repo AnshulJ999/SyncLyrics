@@ -140,9 +140,17 @@ export function setupVideoStream() {
         const vh       = window.innerHeight;
         const savedY   = localStorage.getItem(LS_POS_Y_RATIO);
         if (savedY !== null) {
-            const yRatio = parseFloat(savedY) || 0.5;
-            const maxTop = Math.max(0, vh - overlayH);
-            const rawTop = Math.round(maxTop * yRatio);
+            const parsedY = parseFloat(savedY);
+            const yRatio = isNaN(parsedY) ? 0.5 : parsedY;
+            
+            const cropTopPx    = overlayH * (cropTopPct / 100);
+            const cropBottomPx = overlayH * (cropBottomPct / 100);
+            const visibleH     = overlayH - cropTopPx - cropBottomPx;
+            
+            const naturalMinTop = -cropTopPx;
+            const naturalMaxTop = vh - cropTopPx - visibleH;
+            
+            const rawTop = Math.round(naturalMinTop + yRatio * (naturalMaxTop - naturalMinTop));
             const { top } = clampPosition(rawTop, getOverlayLeft());
             overlay.style.top = top + 'px';
         } else {
@@ -281,7 +289,12 @@ export function setupVideoStream() {
         }
     }
 
-    btn.addEventListener('click', () => {
+    let lastBtnClick = 0;
+    btn.addEventListener('click', (e) => {
+        // Prevent double-clicks (e.g. native touch click arriving after synthetic click wrapper)
+        if (e.timeStamp - lastBtnClick < 400) return;
+        lastBtnClick = e.timeStamp;
+        
         if (overlay.classList.contains('hidden')) open();
         else close();
     });
@@ -562,16 +575,18 @@ export function setupVideoStream() {
         const vh = window.innerHeight;
 
         // Crop-aware bounds: clip-path changes the *visible* region but not the layout box.
-        // offsetHeight still returns the full uncropped height, so we derive the visible
-        // region's top offset and height from the crop percentages.
         const cropTopPx    = overlayH * (cropTopPct    / 100);
         const cropBottomPx = overlayH * (cropBottomPct / 100);
         const visibleH     = overlayH - cropTopPx - cropBottomPx;
 
         // Visible region top in viewport = overlay.top + cropTopPx
-        // Constraints: visibleTop >= 0 and visibleTop + visibleH <= vh
-        const minTop = -cropTopPx;                               // allows visible top to reach 0
-        const maxTop = Math.max(minTop, vh - cropTopPx - visibleH); // visible bottom at vh
+        const naturalMinTop = -cropTopPx;
+        const naturalMaxTop = vh - cropTopPx - visibleH;
+        
+        // By min/maxing, we allow negative bounds when the video is taller than the screen,
+        // so you can still drag it around (bottom edge to bottom vs top edge to top)
+        const minTop = Math.min(naturalMinTop, naturalMaxTop);
+        const maxTop = Math.max(naturalMinTop, naturalMaxTop);
 
         const clampedTop  = clampVal(top, minTop, maxTop);
         const clampedLeft = getOverlayWidthPct() >= 99.5
@@ -584,10 +599,19 @@ export function setupVideoStream() {
         const top      = parseInt(overlay.style.top, 10) || 0;
         const vh       = window.innerHeight;
         const overlayH = Math.max(1, overlay.offsetHeight);
-        // Save proportional Y position to handle varied video heights properly.
-        // yRatio = 0 (top), 0.5 (center), 1 (bottom edge matches viewport bottom).
-        const maxTop = Math.max(0, vh - overlayH);
-        const yRatio = maxTop > 0 ? (top / maxTop) : 0.5;
+        
+        const cropTopPx    = overlayH * (cropTopPct / 100);
+        const cropBottomPx = overlayH * (cropBottomPct / 100);
+        const visibleH     = overlayH - cropTopPx - cropBottomPx;
+
+        const naturalMinTop = -cropTopPx;
+        const naturalMaxTop = vh - cropTopPx - visibleH;
+        
+        const range = naturalMaxTop - naturalMinTop;
+        let yRatio = 0.5;
+        if (range !== 0) {
+            yRatio = (top - naturalMinTop) / range;
+        }
         const clampedYRatio = Math.max(0, Math.min(1, yRatio));
         
         localStorage.setItem(LS_POS_Y_RATIO, String(clampedYRatio));
@@ -614,11 +638,20 @@ export function setupVideoStream() {
         }
 
         if (savedY !== null) {
-            const yRatio   = parseFloat(savedY) || 0;
+            const parsedY = parseFloat(savedY);
+            const yRatio   = isNaN(parsedY) ? 0.5 : parsedY;
+            
             const overlayH = getExpectedOverlayHeight();
             const vh       = window.innerHeight;
-            const maxTop   = Math.max(0, vh - overlayH);
-            const rawTop   = Math.round(maxTop * yRatio);
+            
+            const cropTopPx    = overlayH * (cropTopPct / 100);
+            const cropBottomPx = overlayH * (cropBottomPct / 100);
+            const visibleH     = overlayH - cropTopPx - cropBottomPx;
+
+            const naturalMinTop = -cropTopPx;
+            const naturalMaxTop = vh - cropTopPx - visibleH;
+            
+            const rawTop   = Math.round(naturalMinTop + yRatio * (naturalMaxTop - naturalMinTop));
             const left     = savedLeft !== null ? (parseInt(savedLeft, 10) || 0) : 0;
             const clamped  = clampPosition(rawTop, left);
             overlay.style.top  = clamped.top  + 'px';
