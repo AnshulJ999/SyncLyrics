@@ -136,7 +136,7 @@ export function setupVideoStream() {
     // Does NOT touch width or left. Used by resize handler and restorePosition.
     // Falls back to vertical centering when no saved offset exists.
     function recalcTopFromRatio() {
-        const overlayH = overlay.offsetHeight;
+        const overlayH = getExpectedOverlayHeight();
         const vh       = window.innerHeight;
         const savedY   = localStorage.getItem(LS_POS_Y_RATIO);
         if (savedY !== null) {
@@ -178,6 +178,17 @@ export function setupVideoStream() {
         overlay.style.left = left + 'px';
         syncBars();
     });
+
+    const overlaySizeObserver = new ResizeObserver(() => {
+        if (!isOpen || isDragging) return;
+        // Automatically fires when MJPEG stream aspect ratio changes mid-connection, 
+        // or during pinch zooms. Guarantees the overlay re-anchors geometrically.
+        recalcTopFromRatio();
+        const { left } = clampPosition(getOverlayTop(), getOverlayLeft());
+        overlay.style.left = left + 'px';
+        syncBars();
+    });
+    overlaySizeObserver.observe(overlay);
 
     // ── Z-Index management ───────────────────────────────────────────────────
 
