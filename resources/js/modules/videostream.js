@@ -19,6 +19,7 @@ const RECONNECT_BASE_MS = 2000;   // First retry after 2s
 const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
 
 const LS_TRANSPARENT = 'reaper_video_transparent';
+const LS_OPACITY     = 'reaper_video_opacity';
 
 export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
@@ -28,6 +29,7 @@ export function setupVideoStream() {
     const closeBtn        = document.getElementById('vs-close-btn');
     const refreshBtn      = document.getElementById('vs-refresh-btn');
     const transparencyBtn = document.getElementById('vs-transparency-btn');
+    const opacityBtn      = document.getElementById('vs-opacity-btn');
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
 
     if (!btn || !overlay || !img) return;
@@ -210,6 +212,36 @@ export function setupVideoStream() {
     if (transparencyBtn) {
         transparencyBtn.addEventListener('click', () => {
             applyTransparency(!overlay.classList.contains('vs-transparent'));
+        });
+    }
+
+    // ── Opacity ──────────────────────────────────────────────────────
+    //
+    // Cycles through 4 opacity presets (100 → 80 → 60 → 40 → 100%).
+    // Applied directly to img.style.opacity so it persists across open/close
+    // without needing any extra init on open().
+
+    const OPACITY_LEVELS = [1.0, 0.8, 0.6, 0.4];
+
+    function applyOpacity(opacity) {
+        img.style.opacity = opacity;
+        localStorage.setItem(LS_OPACITY, String(opacity));
+        if (!opacityBtn) return;
+        const pct = Math.round(opacity * 100);
+        opacityBtn.title = `Opacity: ${pct}%`;
+        opacityBtn.classList.toggle('active', opacity < 1.0);
+    }
+
+    // Restore saved opacity; sanitize to valid preset (default 1.0)
+    const savedOpacity = parseFloat(localStorage.getItem(LS_OPACITY));
+    const initOpacity  = OPACITY_LEVELS.includes(savedOpacity) ? savedOpacity : 1.0;
+    applyOpacity(initOpacity);
+
+    if (opacityBtn) {
+        opacityBtn.addEventListener('click', () => {
+            const idx     = OPACITY_LEVELS.indexOf(parseFloat(img.style.opacity) || 1.0);
+            const nextIdx = (idx === -1 ? 0 : idx + 1) % OPACITY_LEVELS.length;
+            applyOpacity(OPACITY_LEVELS[nextIdx]);
         });
     }
 
