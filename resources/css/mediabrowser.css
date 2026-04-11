@@ -109,12 +109,22 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 }
 
 /*
- * Transparency mode: white pixels (Guitar Pro paper background) multiply with
- * whatever SyncLyrics renders behind → they become transparent.
- * No streamer changes needed — controlled entirely client-side.
+ * CSS blend modes for Guitar Pro transparency.
+ * All CSS-only — streams /stream JPEG, zero server overhead.
+ *
+ * Multiply:      white paper → transparent, black notation stays.
+ *                Works best on light album art backgrounds.
+ * Screen+Invert: filter: invert(1) flips colors, then screen blend.
+ *                Paper (inverted to black) → disappears. Notation
+ *                (inverted to white) → visible on any background.
  */
-.video-stream-overlay.vs-transparent .vs-img {
+.video-stream-overlay.vs-multiply .vs-img {
     mix-blend-mode: multiply;
+}
+
+.video-stream-overlay.vs-screen .vs-img {
+    filter: invert(1);
+    mix-blend-mode: screen;
 }
 
 /* Control strip — top-right corner of the overlay, always visible */
@@ -148,8 +158,6 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     pointer-events: auto;
 }
 
@@ -165,11 +173,18 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     color: #f87171;
 }
 
-/* Active state for transparency toggle */
-.vs-control-btn.active {
+/* Multiply blend active — yellow */
+.vs-control-btn.vs-blend-multiply {
     color: #eab308;
     background: rgba(234, 179, 8, 0.2);
     border-color: rgba(234, 179, 8, 0.35);
+}
+
+/* Screen+Invert blend active — blue */
+.vs-control-btn.vs-blend-screen {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.2);
+    border-color: rgba(96, 165, 250, 0.35);
 }
 
 /* ── Fullscreen ── */

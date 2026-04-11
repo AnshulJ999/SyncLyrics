@@ -18,7 +18,7 @@ const STREAM_PORT = 9062;
 const RECONNECT_BASE_MS = 2000;   // First retry after 2s
 const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
 
-const LS_TRANSPARENT = 'reaper_video_transparent';
+const LS_BLEND_MODE  = 'reaper_video_blend_mode';
 const LS_OPACITY     = 'reaper_video_opacity';
 
 export function setupVideoStream() {
@@ -41,12 +41,7 @@ export function setupVideoStream() {
 
     // ── URL helpers ─────────────────────────────────────────────────────────
 
-    // Use /stream for regular JPEG, /transparent for PNG with white keyed to alpha=0
-    const getStreamUrl      = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
-    const getTransparentUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/transparent`;
-    const getActiveUrl      = () => overlay.classList.contains('vs-transparent')
-        ? getTransparentUrl()
-        : getStreamUrl();
+    const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
 
     // ── Control strip auto-fade ───────────────────────────────────────────────────
     //
@@ -99,9 +94,9 @@ export function setupVideoStream() {
     // ── Stream load/unload ───────────────────────────────────────────────────
 
     function loadStream() {
-        // Setting src to '' first forces the browser to drop the old connection
+        // Setting src to '' first forces the browser to drop the old MJPEG connection
         img.src = '';
-        img.src = getActiveUrl(); // picks /stream or /transparent based on toggle state
+        img.src = getStreamUrl();
     }
 
     function stopStream() {
@@ -185,33 +180,56 @@ export function setupVideoStream() {
         });
     }
 
-    // ── Transparency ─────────────────────────────────────────────────────────
+    // ── Blend Mode ──────────────────────────────────────────────────────
     //
-    // mix-blend-mode: multiply → white pixels (Guitar Pro background) become
-    // transparent, showing whatever SyncLyrics has behind the overlay.
-    // Controlled entirely client-side — no streamer changes needed.
+    // Cycles through 3 states on each click:
+    //   off → multiply → screen (invert+screen) → off
+    //
+    // Multiply:       white paper → transparent, black notation stays.
+    //                 Best on light album art backgrounds.
+    // Screen+Invert:  filter:invert(1) flips image, then screen blend removes
+    //                 the black (ex-white paper). Notation becomes white,
+    //                 visible on any background colour.
+    // All CSS-only — /stream JPEG is always used, zero server overhead.
 
-    function applyTransparency(enabled) {
-        overlay.classList.toggle('vs-transparent', enabled);
-        localStorage.setItem(LS_TRANSPARENT, enabled ? 'true' : 'false');
-        updateTransparencyBtn(enabled);
-        // Switch between /stream (JPEG) and /transparent (PNG with alpha) if open
-        if (isOpen) loadStream();
+    const BLEND_MODES = ['off', 'multiply', 'screen'];
+    let currentBlendMode = 'off'; // updated by applyBlendMode
+
+    function applyBlendMode(mode) {
+        currentBlendMode = mode;
+        overlay.classList.remove('vs-multiply', 'vs-screen');
+        if (mode === 'multiply') overlay.classList.add('vs-multiply');
+        if (mode === 'screen')   overlay.classList.add('vs-screen');
+        localStorage.setItem(LS_BLEND_MODE, mode);
+        updateBlendBtn(mode);
     }
 
-    function updateTransparencyBtn(enabled) {
+    function updateBlendBtn(mode) {
         if (!transparencyBtn) return;
-        transparencyBtn.classList.toggle('active', enabled);
-        transparencyBtn.title = enabled ? 'Disable transparency' : 'Enable transparency';
+        transparencyBtn.classList.remove('active', 'vs-blend-multiply', 'vs-blend-screen');
+        if (mode === 'multiply') {
+            transparencyBtn.classList.add('active', 'vs-blend-multiply');
+            transparencyBtn.title = 'Blend: Multiply — tap for Screen+Invert';
+        } else if (mode === 'screen') {
+            transparencyBtn.classList.add('active', 'vs-blend-screen');
+            transparencyBtn.title = 'Blend: Screen+Invert — tap to disable';
+        } else {
+            transparencyBtn.title = 'Blend: Off — tap for Multiply';
+        }
     }
 
-    // Restore saved transparency state
-    const savedTransparent = localStorage.getItem(LS_TRANSPARENT) === 'true';
-    applyTransparency(savedTransparent);
+    // Restore saved blend mode.
+    // Migrate old boolean value ('true') from the previous LS_TRANSPARENT key.
+    const _savedBlend = localStorage.getItem(LS_BLEND_MODE);
+    const initBlend   = BLEND_MODES.includes(_savedBlend)
+        ? _savedBlend
+        : (_savedBlend === 'true' ? 'multiply' : 'off');
+    applyBlendMode(initBlend);
 
     if (transparencyBtn) {
         transparencyBtn.addEventListener('click', () => {
-            applyTransparency(!overlay.classList.contains('vs-transparent'));
+            const idx = BLEND_MODES.indexOf(currentBlendMode);
+            applyBlendMode(BLEND_MODES[(idx + 1) % BLEND_MODES.length]);
         });
     }
 
