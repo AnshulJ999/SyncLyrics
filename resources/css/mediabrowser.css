@@ -122,23 +122,45 @@ body:not(.hide-nav) .video-stream-toggle-btn {
  *
  * Multiply:      white paper → transparent, black notation stays.
  *                Works best on light album art backgrounds.
- * Screen+Invert: overlay gets filter:invert(1), then screen blend.
- *                Paper (inverted to black) → disappears. Notation
- *                (inverted to white) → visible on any background.
+ * Screen+Invert: filter:invert(1) on the img flips colours, then overlay's
+ *                screen blend removes the black (ex-white paper). Notation
+ *                becomes white, visible on any background colour.
+ *
+ * Invert is applied to .vs-img (not the overlay) so all pixel manipulation
+ * lives on the img and controls render normally without counter-invert hacks.
+ * This also lets boost filters chain naturally: invert(1) contrast() brightness().
  */
 .video-stream-overlay.vs-multiply {
     mix-blend-mode: multiply;
 }
 
 .video-stream-overlay.vs-screen {
-    filter: invert(1);
     mix-blend-mode: screen;
 }
 
-/* Counter-invert controls in screen mode so buttons restore to normal appearance.
- * The overlay has filter:invert(1); applying invert(1) again on controls cancels it. */
-.video-stream-overlay.vs-screen .vs-controls {
+/* ── Image pixel filters (pre-process before blend) ── */
+
+/* Screen mode: invert so black notation → white for screen blend */
+.video-stream-overlay.vs-screen .vs-img {
     filter: invert(1);
+}
+
+/* Boost: contrast + brightness sharpen notation/background distinction.
+ * contrast() pushes greys toward black/white; brightness() whitens paper
+ * for cleaner blend removal. Three presets, persisted via localStorage. */
+.video-stream-overlay.vs-boost-low .vs-img  { filter: contrast(1.3) brightness(1.05); }
+.video-stream-overlay.vs-boost-med .vs-img  { filter: contrast(1.6) brightness(1.1); }
+.video-stream-overlay.vs-boost-high .vs-img { filter: contrast(2.0) brightness(1.15); }
+
+/* Screen + Boost: invert must chain with boost filters (higher specificity wins) */
+.video-stream-overlay.vs-screen.vs-boost-low .vs-img  { filter: invert(1) contrast(1.3) brightness(1.05); }
+.video-stream-overlay.vs-screen.vs-boost-med .vs-img  { filter: invert(1) contrast(1.6) brightness(1.1); }
+.video-stream-overlay.vs-screen.vs-boost-high .vs-img { filter: invert(1) contrast(2.0) brightness(1.15); }
+
+/* Trim thin window-chrome borders that become visible after blend removes paper */
+.video-stream-overlay.vs-multiply .vs-img,
+.video-stream-overlay.vs-screen .vs-img {
+    clip-path: inset(3px);
 }
 
 /* Control strip — top-right corner of the overlay, always visible */
@@ -201,6 +223,13 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     border-color: rgba(96, 165, 250, 0.35);
 }
 
+/* Boost active — amber */
+.vs-control-btn.vs-boost-active {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
 /* ── Fullscreen ── */
 /* When the overlay is fullscreened, show it as a centered black stage */
 .video-stream-overlay:fullscreen,
@@ -213,6 +242,10 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     top: 0 !important; /* override JS-set top */
     transform: none;
     pointer-events: auto;
+    /* Reset blend mode + filters — blending against a fullscreen black bg
+     * makes everything black (multiply) or broken (screen). */
+    mix-blend-mode: normal !important;
+    filter: none !important;
 }
 
 .video-stream-overlay:fullscreen .vs-img,

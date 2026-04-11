@@ -20,6 +20,7 @@ const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
 
 const LS_BLEND_MODE  = 'reaper_video_blend_mode';
 const LS_OPACITY     = 'reaper_video_opacity';
+const LS_BOOST       = 'reaper_video_boost';
 
 export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
@@ -30,6 +31,7 @@ export function setupVideoStream() {
     const refreshBtn      = document.getElementById('vs-refresh-btn');
     const transparencyBtn = document.getElementById('vs-transparency-btn');
     const opacityBtn      = document.getElementById('vs-opacity-btn');
+    const boostBtn        = document.getElementById('vs-boost-btn');
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
 
     if (!btn || !overlay || !img) return;
@@ -260,6 +262,47 @@ export function setupVideoStream() {
             const idx     = OPACITY_LEVELS.indexOf(parseFloat(img.style.opacity) || 1.0);
             const nextIdx = (idx === -1 ? 0 : idx + 1) % OPACITY_LEVELS.length;
             applyOpacity(OPACITY_LEVELS[nextIdx]);
+        });
+    }
+
+    // ── Boost ────────────────────────────────────────────────────────────
+    //
+    // Cycles through 4 filter presets that sharpen notation visibility:
+    //   off → low → medium → high → off
+    //
+    // Filters (contrast + brightness) are applied to .vs-img via CSS classes
+    // on the overlay. They pre-process pixels before the blend calculation,
+    // so notation lines become bolder and paper becomes cleaner.
+
+    const BOOST_LEVELS = ['off', 'low', 'med', 'high'];
+    const BOOST_LABELS = { off: 'Off', low: 'Low', med: 'Medium', high: 'High' };
+    let currentBoost = 'off';
+
+    function applyBoost(level) {
+        currentBoost = level;
+        overlay.classList.remove('vs-boost-low', 'vs-boost-med', 'vs-boost-high');
+        if (level === 'low')  overlay.classList.add('vs-boost-low');
+        if (level === 'med')  overlay.classList.add('vs-boost-med');
+        if (level === 'high') overlay.classList.add('vs-boost-high');
+        localStorage.setItem(LS_BOOST, level);
+        updateBoostBtn(level);
+    }
+
+    function updateBoostBtn(level) {
+        if (!boostBtn) return;
+        boostBtn.classList.remove('vs-boost-active');
+        if (level !== 'off') boostBtn.classList.add('vs-boost-active');
+        boostBtn.title = `Boost: ${BOOST_LABELS[level]} — tap to cycle`;
+    }
+
+    // Restore saved boost level
+    const savedBoost = localStorage.getItem(LS_BOOST);
+    applyBoost(BOOST_LEVELS.includes(savedBoost) ? savedBoost : 'off');
+
+    if (boostBtn) {
+        boostBtn.addEventListener('click', () => {
+            const idx = BOOST_LEVELS.indexOf(currentBoost);
+            applyBoost(BOOST_LEVELS[(idx + 1) % BOOST_LEVELS.length]);
         });
     }
 
