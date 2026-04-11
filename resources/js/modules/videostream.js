@@ -39,8 +39,12 @@ export function setupVideoStream() {
 
     // ── URL helpers ─────────────────────────────────────────────────────────
 
-    // Use /stream for the raw MJPEG — we handle our own HTML/CSS, no need for /
-    const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
+    // Use /stream for regular JPEG, /transparent for PNG with white keyed to alpha=0
+    const getStreamUrl      = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
+    const getTransparentUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/transparent`;
+    const getActiveUrl      = () => overlay.classList.contains('vs-transparent')
+        ? getTransparentUrl()
+        : getStreamUrl();
 
     // ── Control strip auto-fade ───────────────────────────────────────────────────
     //
@@ -95,7 +99,7 @@ export function setupVideoStream() {
     function loadStream() {
         // Setting src to '' first forces the browser to drop the old connection
         img.src = '';
-        img.src = getStreamUrl();
+        img.src = getActiveUrl(); // picks /stream or /transparent based on toggle state
     }
 
     function stopStream() {
@@ -189,6 +193,8 @@ export function setupVideoStream() {
         overlay.classList.toggle('vs-transparent', enabled);
         localStorage.setItem(LS_TRANSPARENT, enabled ? 'true' : 'false');
         updateTransparencyBtn(enabled);
+        // Switch between /stream (JPEG) and /transparent (PNG with alpha) if open
+        if (isOpen) loadStream();
     }
 
     function updateTransparencyBtn(enabled) {
