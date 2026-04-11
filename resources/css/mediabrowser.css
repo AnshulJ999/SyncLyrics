@@ -95,6 +95,9 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     /* Let touch events fall through to lyrics by default; JS sets pointer-events
      * to 'auto' when unlocked (drag mode) and 'none' when locked (passthrough mode) */
     pointer-events: none;
+    /* Prevent browser scroll/pan from claiming touches during drag.
+     * Orthogonal to pointer-events — only has effect when overlay actually receives events. */
+    touch-action: none;
 }
 
 .video-stream-overlay.hidden {

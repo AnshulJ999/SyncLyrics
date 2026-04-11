@@ -40,7 +40,7 @@ const LS_CROP_BOTTOM      = 'reaper_video_crop_bottom_pct';
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
 const DEFAULT_ZINDEX  = 950;
-const ZINDEX_STEP     = 10;
+const ZINDEX_STEP     = 50;
 
 export function setupVideoStream() {
     // ── DOM refs — ALL declared at top to avoid TDZ errors during init ────────
@@ -588,6 +588,7 @@ export function setupVideoStream() {
 
     overlay.addEventListener('pointermove', (e) => {
         if (!isDragging || isLocked) return;
+        e.preventDefault(); // Prevent browser scroll from firing pointercancel mid-drag
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
 
