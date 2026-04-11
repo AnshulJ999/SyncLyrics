@@ -575,10 +575,31 @@
         <span id="vs-saturation-value" class="vs-slider-value">100%</span>
     </div>
     <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-palette"></i> Hue</span>
+        <input id="vs-hue-slider" type="range" class="vs-slider" min="-180" max="180" value="0" step="5">
+        <span id="vs-hue-value" class="vs-slider-value">0°</span>
+    </div>
+    <div class="vs-slider-row">
         <span class="vs-slider-label"><i class="bi bi-eye"></i> Opacity</span>
         <input id="vs-opacity-slider" type="range" class="vs-slider" min="10" max="100" value="100" step="5">
         <span id="vs-opacity-value" class="vs-slider-value">100%</span>
     </div>
+    <div class="vs-slider-row vs-zindex-row">
+        <span class="vs-slider-label"><i class="bi bi-stack"></i> Z-Index</span>
+        <button id="vs-zindex-minus" class="vs-zindex-btn">−</button>
+        <span id="vs-zindex-value" class="vs-slider-value vs-zindex-val">950</span>
+        <button id="vs-zindex-plus" class="vs-zindex-btn">+</button>
+    </div>
+</div>
+
+<!-- Video Stream Edit Bar (top-left) — Lock and Crop buttons -->
+<div id="vs-edit-bar" class="vs-edit-bar hidden">
+    <button id="vs-lock-btn" class="vs-control-btn" title="Lock position (long-press to snap to center)">
+        <i class="bi bi-unlock"></i>
+    </button>
+    <button id="vs-crop-btn" class="vs-control-btn" title="Edit / Crop">
+        <i class="bi bi-crop"></i>
+    </button>
 </div>
 
 <!-- Device Picker Modal (outside player-ui-container for proper z-index) -->

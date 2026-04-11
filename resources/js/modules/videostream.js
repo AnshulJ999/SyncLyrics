@@ -7,108 +7,162 @@
  * Features:
  *  - Full-width auto-height overlay (no black bars, no modal backdrop)
  *  - Transparency mode: multiply / screen+invert blend modes
- *  - Per-filter sliders: contrast, brightness, saturation, opacity
- *  - Per-blend-mode filter persistence in localStorage
+ *  - Per-filter sliders: contrast, brightness, saturation, hue, opacity
+ *  - Per-blend-mode filter + opacity persistence in localStorage
+ *  - Drag (touch + mouse) to reposition, pinch-to-resize (aspect ratio preserved)
+ *  - Lock button: freezes position/size + enables passthrough; long-press = snap to center
+ *  - Z-index stepper (configurable via popup)
  *  - Fullscreen via native requestFullscreen() API
  *  - Auto-reconnect on stream drop (exponential backoff)
- *  - Controls extracted to sibling div (unaffected by blend modes)
+ *  - Controls extracted to sibling divs (unaffected by blend modes)
  *
  * Level 2 - Imports: nothing (self-contained, no state/api dependencies)
  */
 
-const STREAM_PORT = 9062;
-const RECONNECT_BASE_MS = 2000;   // First retry after 2s
-const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
+const STREAM_PORT      = 9062;
+const RECONNECT_BASE_MS = 2000;
+const RECONNECT_MAX_MS  = 10000;
 
-const LS_BLEND_MODE        = 'reaper_video_blend_mode';
-const LS_OPACITY           = 'reaper_video_opacity';
-const LS_FILTERS_MULTIPLY  = 'reaper_video_filters_multiply';
-const LS_FILTERS_SCREEN    = 'reaper_video_filters_screen';
+// localStorage keys
+const LS_BLEND_MODE       = 'reaper_video_blend_mode';
+const LS_OPACITY_OFF      = 'reaper_video_opacity_off';
+const LS_OPACITY_BLEND    = 'reaper_video_opacity_blend';
+const LS_FILTERS_MULTIPLY = 'reaper_video_filters_multiply';
+const LS_FILTERS_SCREEN   = 'reaper_video_filters_screen';
+const LS_POS_TOP          = 'reaper_video_top';
+const LS_POS_LEFT         = 'reaper_video_left';
+const LS_WIDTH_PCT        = 'reaper_video_width_pct';
+const LS_ZINDEX           = 'reaper_video_zindex';
+const LS_LOCKED           = 'reaper_video_locked';
 
-// Default filter values (100% = no change)
-const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100 };
+// Defaults
+const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
+const DEFAULT_ZINDEX  = 950;
+const ZINDEX_STEP     = 10;
 
 export function setupVideoStream() {
+    // ── DOM refs — ALL declared at top to avoid TDZ errors during init ────────
     const btn             = document.getElementById('btn-video-stream');
     const overlay         = document.getElementById('video-stream-overlay');
     const img             = document.getElementById('video-stream-img');
     const controlsBar     = document.getElementById('vs-controls-bar');
+    const editBar         = document.getElementById('vs-edit-bar');
     const closeBtn        = document.getElementById('vs-close-btn');
     const refreshBtn      = document.getElementById('vs-refresh-btn');
     const transparencyBtn = document.getElementById('vs-transparency-btn');
     const boostBtn        = document.getElementById('vs-boost-btn');
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
+    const lockBtn         = document.getElementById('vs-lock-btn');
+    const cropBtn         = document.getElementById('vs-crop-btn');
 
-    // Slider popup elements
+    // Slider popup elements (must be declared before any function that reads them)
     const sliderPopup      = document.getElementById('vs-slider-popup');
     const contrastSlider   = document.getElementById('vs-contrast-slider');
     const brightnessSlider = document.getElementById('vs-brightness-slider');
     const saturationSlider = document.getElementById('vs-saturation-slider');
+    const hueSlider        = document.getElementById('vs-hue-slider');
     const opacitySlider    = document.getElementById('vs-opacity-slider');
+    const zindexMinusBtn   = document.getElementById('vs-zindex-minus');
+    const zindexPlusBtn    = document.getElementById('vs-zindex-plus');
 
     if (!btn || !overlay || !img) return;
 
+    // ── Runtime state ─────────────────────────────────────────────────────────
     let isOpen          = false;
     let sliderPopupOpen = false;
-    let reconnectTimer = null;
-    let reconnectDelay = RECONNECT_BASE_MS;
-    let fadeTimer      = null;
+    let reconnectTimer  = null;
+    let reconnectDelay  = RECONNECT_BASE_MS;
+    let fadeTimer       = null;
+    let isLocked        = false;
+    let currentZIndex   = DEFAULT_ZINDEX;
 
-    // ── URL helpers ─────────────────────────────────────────────────────────
-
+    // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
 
-    // ── Control strip auto-fade ───────────────────────────────────────────────────
-    //
-    // Controls fade to near-invisible after FADE_DELAY_MS of no interaction.
-    // Any hover (desktop) or touch on the controls strip resets the timer.
-
-    const FADE_DELAY_MS = 300000;
+    // ── Control auto-fade ────────────────────────────────────────────────────
+    const FADE_DELAY_MS = 300000; // 5 min
 
     function showControls() {
-        if (!controlsBar) return;
-        controlsBar.classList.remove('faded');
+        controlsBar?.classList.remove('faded');
+        editBar?.classList.remove('faded');
         clearTimeout(fadeTimer);
-        fadeTimer = setTimeout(() => controlsBar?.classList.add('faded'), FADE_DELAY_MS);
+        fadeTimer = setTimeout(() => {
+            controlsBar?.classList.add('faded');
+            editBar?.classList.add('faded');
+        }, FADE_DELAY_MS);
     }
 
     function hideControlsImmediate() {
         clearTimeout(fadeTimer);
         fadeTimer = null;
         controlsBar?.classList.remove('faded');
+        editBar?.classList.remove('faded');
     }
 
     if (controlsBar) {
         controlsBar.addEventListener('mouseenter', showControls);
         controlsBar.addEventListener('touchstart', showControls, { passive: true });
     }
+    if (editBar) {
+        editBar.addEventListener('mouseenter', showControls);
+        editBar.addEventListener('touchstart', showControls, { passive: true });
+    }
 
     // ── Centering ────────────────────────────────────────────────────────────
-    //
-    // We cannot use CSS transform: translateY(-50%) because transform creates
-    // a GPU compositing layer that breaks mix-blend-mode: multiply on children.
-    // Instead, compute top manually after the image has natural dimensions.
+    // NO transform: transform creates a GPU compositing layer that breaks mix-blend-mode.
+    // We compute top manually in JS.
 
     function centerOverlay() {
         const overlayH  = overlay.offsetHeight;
         const viewportH = window.innerHeight;
         const top = Math.max(0, Math.round((viewportH - overlayH) / 2));
-        overlay.style.top = top + 'px';
+        overlay.style.top   = top + 'px';
+        overlay.style.left  = '0px';
+        overlay.style.width = '100%';
     }
 
-    // Sync controls bar position to overlay's top-right corner
-    function syncControlsPosition() {
-        if (!controlsBar || !isOpen) return;
+    function snapToCenter() {
+        centerOverlay();
+        localStorage.removeItem(LS_POS_TOP);
+        localStorage.removeItem(LS_POS_LEFT);
+        localStorage.removeItem(LS_WIDTH_PCT);
+        syncBars();
+    }
+
+    // Sync both sibling bars' top to match overlay top-right / top-left corners
+    function syncBars() {
+        if (!isOpen) return;
         const rect = overlay.getBoundingClientRect();
-        controlsBar.style.top = (rect.top + 6) + 'px';
+        const topPx = (rect.top + 6) + 'px';
+        if (controlsBar) controlsBar.style.top = topPx;
+        if (editBar)     editBar.style.top     = topPx;
     }
 
     window.addEventListener('resize', () => {
-        if (isOpen) {
-            centerOverlay();
-            syncControlsPosition();
-        }
+        if (!isOpen) return;
+        centerOverlay();
+        syncBars();
     });
+
+    // ── Z-Index management ───────────────────────────────────────────────────
+
+    function applyZIndex(z) {
+        currentZIndex = z;
+        overlay.style.zIndex      = String(z);
+        if (controlsBar) controlsBar.style.zIndex = String(z + 10);
+        if (editBar)     editBar.style.zIndex     = String(z + 10);
+        if (sliderPopup) sliderPopup.style.zIndex = String(z + 60);
+        localStorage.setItem(LS_ZINDEX, String(z));
+        const el = document.getElementById('vs-zindex-value');
+        if (el) el.textContent = String(z);
+    }
+
+    if (zindexMinusBtn) {
+        zindexMinusBtn.addEventListener('click', () => applyZIndex(Math.max(100, currentZIndex - ZINDEX_STEP)));
+    }
+    if (zindexPlusBtn) {
+        zindexPlusBtn.addEventListener('click', () => applyZIndex(Math.min(1900, currentZIndex + ZINDEX_STEP)));
+    }
 
     // ── Stream load/unload ───────────────────────────────────────────────────
 
@@ -135,8 +189,8 @@ export function setupVideoStream() {
 
     img.addEventListener('load', () => {
         reconnectDelay = RECONNECT_BASE_MS;
-        centerOverlay();
-        syncControlsPosition();
+        restorePosition();
+        syncBars();
     });
 
     function scheduleReconnect() {
@@ -156,6 +210,7 @@ export function setupVideoStream() {
         isOpen = true;
         overlay.classList.remove('hidden');
         controlsBar?.classList.remove('hidden');
+        editBar?.classList.remove('hidden');
         btn.classList.add('active');
         loadStream();
         showControls();
@@ -165,9 +220,11 @@ export function setupVideoStream() {
         isOpen = false;
         overlay.classList.add('hidden');
         controlsBar?.classList.add('hidden');
+        editBar?.classList.add('hidden');
         btn.classList.remove('active');
         stopStream();
         hideControlsImmediate();
+        toggleSliderPopup(false);
 
         if (document.fullscreenElement === overlay) {
             document.exitFullscreen().catch(() => {});
@@ -175,41 +232,39 @@ export function setupVideoStream() {
     }
 
     btn.addEventListener('click', () => {
-        if (overlay.classList.contains('hidden')) {
-            open();
-        } else {
-            close();
-        }
+        if (overlay.classList.contains('hidden')) open();
+        else close();
     });
 
-    if (closeBtn) {
-        closeBtn.addEventListener('click', close);
-    }
+    if (closeBtn) closeBtn.addEventListener('click', close);
 
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
             reconnectDelay = RECONNECT_BASE_MS;
             loadStream();
         });
     }
 
-    // ── Filter state ────────────────────────────────────────────────────────
-    //
-    // Per-blend-mode filter values (contrast, brightness, saturation).
-    // Opacity is shared across all modes.
-    // Stored as JSON in localStorage per mode.
+    // ── Filter state ─────────────────────────────────────────────────────────
+    // Per-blend-mode: contrast, brightness, saturation, hue
+    // Opacity: two keys — off mode vs blend mode
 
-    const filters = { contrast: 100, brightness: 100, saturation: 100 };
+    const filters = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
     let currentOpacity = 100;
 
-    function filtersStorageKey(blendMode) {
-        if (blendMode === 'multiply') return LS_FILTERS_MULTIPLY;
-        if (blendMode === 'screen')   return LS_FILTERS_SCREEN;
+    function filtersStorageKey(mode) {
+        if (mode === 'multiply') return LS_FILTERS_MULTIPLY;
+        if (mode === 'screen')   return LS_FILTERS_SCREEN;
         return null;
+    }
+
+    function opacityStorageKey(mode) {
+        return (mode === 'multiply' || mode === 'screen') ? LS_OPACITY_BLEND : LS_OPACITY_OFF;
+    }
+
+    function clampVal(v, min, max) {
+        return Math.max(min, Math.min(max, v));
     }
 
     function saveFilters() {
@@ -226,6 +281,7 @@ export function setupVideoStream() {
                 filters.contrast   = clampVal(saved.contrast   ?? 100, 50, 400);
                 filters.brightness = clampVal(saved.brightness ?? 100, 50, 200);
                 filters.saturation = clampVal(saved.saturation ?? 100, 0, 200);
+                filters.hue        = clampVal(saved.hue        ?? 0, -180, 180);
             } catch {
                 Object.assign(filters, DEFAULT_FILTERS);
             }
@@ -235,34 +291,34 @@ export function setupVideoStream() {
         applyFilters();
     }
 
-    function clampVal(v, min, max) {
-        return Math.max(min, Math.min(max, v));
+    function restoreOpacityForMode() {
+        const key = opacityStorageKey(currentBlendMode);
+        const raw = localStorage.getItem(key);
+        const defaults = (currentBlendMode === 'off') ? 40 : 100;
+        const pct = raw !== null ? clampVal(parseInt(raw, 10) || defaults, 10, 100) : defaults;
+        applyOpacity(pct);
     }
 
-    /** Build the CSS filter string for the current blend mode + filter values.
-     *
-     * Multiply (black tabs on white paper): white paper must stay pure white to vanish
-     *   via multiply. saturate → contrast → brightness.
-     * Screen (white tabs): saturate strips colour for cleaner invert, then invert(1)
-     *   flips, then contrast → brightness push inverted paper blacker for screen removal.
-     * No blend: no filter (returns empty string).
+    /** Build CSS filter string for current blend mode + filter values.
+     * Order: saturate → hue-rotate → [invert] → contrast → brightness
+     * Saturation and hue-rotate go BEFORE invert so they apply to the original colours.
      */
     function computeFilter() {
-        const c = (filters.contrast / 100).toFixed(2);
+        const c = (filters.contrast   / 100).toFixed(2);
         const b = (filters.brightness / 100).toFixed(2);
         const s = (filters.saturation / 100).toFixed(2);
+        const h = filters.hue;
 
         if (currentBlendMode === 'screen') {
-            return `saturate(${s}) invert(1) contrast(${c}) brightness(${b})`;
+            return `saturate(${s}) hue-rotate(${h}deg) invert(1) contrast(${c}) brightness(${b})`;
         } else if (currentBlendMode === 'multiply') {
-            return `saturate(${s}) contrast(${c}) brightness(${b})`;
+            return `saturate(${s}) hue-rotate(${h}deg) contrast(${c}) brightness(${b})`;
         }
-        return ''; // no blend mode = no filter
+        return '';
     }
 
     function applyFilters() {
-        const filterStr = computeFilter();
-        img.style.filter = filterStr || '';
+        img.style.filter = computeFilter() || '';
         updateSliders();
         updateBoostBtn();
     }
@@ -270,14 +326,11 @@ export function setupVideoStream() {
     function applyOpacity(pct) {
         currentOpacity = clampVal(pct, 10, 100);
         img.style.opacity = currentOpacity / 100;
-        localStorage.setItem(LS_OPACITY, String(currentOpacity));
+        localStorage.setItem(opacityStorageKey(currentBlendMode), String(currentOpacity));
         updateOpacitySlider();
     }
 
-    // ── Blend Mode ──────────────────────────────────────────────────────
-    //
-    // Cycles through 3 states on each click:
-    //   off → multiply → screen (invert+screen) → off
+    // ── Blend Mode ───────────────────────────────────────────────────────────
 
     const BLEND_MODES = ['off', 'multiply', 'screen'];
     let currentBlendMode = 'off';
@@ -289,21 +342,17 @@ export function setupVideoStream() {
         if (mode === 'screen')   overlay.classList.add('vs-screen');
         localStorage.setItem(LS_BLEND_MODE, mode);
         updateBlendBtn(mode);
-        // Restore the filter values saved for this blend mode
         restoreFiltersForMode();
+        restoreOpacityForMode();
     }
 
     function updateBlendBtn(mode) {
         if (!transparencyBtn) return;
         transparencyBtn.classList.remove('active');
         if (mode !== 'off') transparencyBtn.classList.add('active');
-        if (mode === 'multiply') {
-            transparencyBtn.title = 'Blend: Multiply — tap for Screen+Invert';
-        } else if (mode === 'screen') {
-            transparencyBtn.title = 'Blend: Screen+Invert — tap to disable';
-        } else {
-            transparencyBtn.title = 'Blend: Off — tap for Multiply';
-        }
+        if (mode === 'multiply')  transparencyBtn.title = 'Blend: Multiply — tap for Screen+Invert';
+        else if (mode === 'screen') transparencyBtn.title = 'Blend: Screen+Invert — tap to disable';
+        else                      transparencyBtn.title = 'Blend: Off — tap for Multiply';
     }
 
     // Restore saved blend mode (+ migrate old boolean 'true' → multiply)
@@ -320,14 +369,8 @@ export function setupVideoStream() {
         });
     }
 
-    // Restore saved opacity (default 100)
-    const savedOpacity = parseInt(localStorage.getItem(LS_OPACITY), 10);
-    applyOpacity(isNaN(savedOpacity) ? 100 : savedOpacity);
-
-    // ── Slider Popup ────────────────────────────────────────────────────
-    //
-    // 4-slider popup: contrast, brightness, saturation, opacity.
-    // Single tap on boost button opens/closes.
+    // ── Slider Popup ─────────────────────────────────────────────────────────
+    // Single tap on boost button opens/closes
 
     function toggleSliderPopup(forceState) {
         if (!sliderPopup) return;
@@ -335,32 +378,33 @@ export function setupVideoStream() {
         sliderPopup.classList.toggle('hidden', !sliderPopupOpen);
     }
 
-    // Boost button — single tap opens/closes slider popup
     if (boostBtn) {
-        boostBtn.addEventListener('click', () => {
-            toggleSliderPopup();
-        });
+        boostBtn.addEventListener('click', () => toggleSliderPopup());
     }
 
     function updateBoostBtn() {
         if (!boostBtn) return;
         const hasFilters = currentBlendMode !== 'off' &&
-            (filters.contrast !== 100 || filters.brightness !== 100 || filters.saturation !== 100);
+            (filters.contrast !== 100 || filters.brightness !== 100 ||
+             filters.saturation !== 100 || filters.hue !== 0);
         boostBtn.classList.toggle('active', hasFilters);
         boostBtn.title = hasFilters ? 'Filters (active)' : 'Filters';
     }
 
     function updateSliders() {
-        if (contrastSlider) contrastSlider.value = filters.contrast;
+        if (contrastSlider)   contrastSlider.value   = filters.contrast;
         if (brightnessSlider) brightnessSlider.value = filters.brightness;
         if (saturationSlider) saturationSlider.value = filters.saturation;
+        if (hueSlider)        hueSlider.value        = filters.hue;
 
         const cv = document.getElementById('vs-contrast-value');
         const bv = document.getElementById('vs-brightness-value');
         const sv = document.getElementById('vs-saturation-value');
+        const hv = document.getElementById('vs-hue-value');
         if (cv) cv.textContent = `${filters.contrast}%`;
         if (bv) bv.textContent = `${filters.brightness}%`;
         if (sv) sv.textContent = `${filters.saturation}%`;
+        if (hv) hv.textContent = `${filters.hue}°`;
     }
 
     function updateOpacitySlider() {
@@ -369,38 +413,38 @@ export function setupVideoStream() {
         if (ov) ov.textContent = `${currentOpacity}%`;
     }
 
-    // ── Slider input handlers — real-time updates as user drags ──
+    // Slider input handlers
     if (contrastSlider) {
         contrastSlider.addEventListener('input', () => {
             filters.contrast = parseInt(contrastSlider.value, 10);
-            applyFilters();
-            saveFilters();
+            applyFilters(); saveFilters();
         });
     }
-
     if (brightnessSlider) {
         brightnessSlider.addEventListener('input', () => {
             filters.brightness = parseInt(brightnessSlider.value, 10);
-            applyFilters();
-            saveFilters();
+            applyFilters(); saveFilters();
         });
     }
-
     if (saturationSlider) {
         saturationSlider.addEventListener('input', () => {
             filters.saturation = parseInt(saturationSlider.value, 10);
-            applyFilters();
-            saveFilters();
+            applyFilters(); saveFilters();
         });
     }
-
+    if (hueSlider) {
+        hueSlider.addEventListener('input', () => {
+            filters.hue = parseInt(hueSlider.value, 10);
+            applyFilters(); saveFilters();
+        });
+    }
     if (opacitySlider) {
         opacitySlider.addEventListener('input', () => {
             applyOpacity(parseInt(opacitySlider.value, 10));
         });
     }
 
-    // Close popup on outside tap
+    // Close popup on outside click
     document.addEventListener('click', (e) => {
         if (sliderPopupOpen && sliderPopup &&
             !sliderPopup.contains(e.target) &&
@@ -408,6 +452,240 @@ export function setupVideoStream() {
             toggleSliderPopup(false);
         }
     });
+
+    // ── Lock & Passthrough ───────────────────────────────────────────────────
+    // Lock   = freeze position/size + enable passthrough clicks
+    // Unlock = overlay is a drag/pinch target
+    // Long-press (1200ms) on lock btn = snap to center + unlock
+
+    let lockHoldTimer  = null;
+    let lockPressTime  = 0;
+    const LOCK_HOLD_MS = 1200;
+
+    function setLocked(locked) {
+        isLocked = locked;
+        localStorage.setItem(LS_LOCKED, locked ? '1' : '0');
+        if (lockBtn) {
+            lockBtn.innerHTML = locked
+                ? '<i class="bi bi-lock"></i>'
+                : '<i class="bi bi-unlock"></i>';
+            lockBtn.classList.toggle('vs-locked', locked);
+            lockBtn.title = locked
+                ? 'Locked — long-press to snap to center'
+                : 'Unlocked — tap to lock';
+        }
+        // Passthrough: locked = pointer-events none, unlocked = auto (draggable)
+        overlay.style.pointerEvents = locked ? 'none' : 'auto';
+    }
+
+    if (lockBtn) {
+        // Touch start — start hold timer
+        lockBtn.addEventListener('pointerdown', (e) => {
+            lockPressTime = Date.now();
+            lockHoldTimer = setTimeout(() => {
+                // Long-press: snap to center
+                snapToCenter();
+                setLocked(false);
+                lockHoldTimer = null;
+            }, LOCK_HOLD_MS);
+        });
+
+        // Touch end — if not a long-press, toggle lock
+        lockBtn.addEventListener('pointerup', (e) => {
+            if (lockHoldTimer) {
+                clearTimeout(lockHoldTimer);
+                lockHoldTimer = null;
+                setLocked(!isLocked);
+            }
+        });
+
+        lockBtn.addEventListener('pointerleave', () => {
+            if (lockHoldTimer) { clearTimeout(lockHoldTimer); lockHoldTimer = null; }
+        });
+    }
+
+    // ── Drag (touch + mouse) ─────────────────────────────────────────────────
+    // Only active when unlocked (overlay.style.pointerEvents = 'auto')
+    // At width=100%: Y-axis only (left is always 0)
+    // At width<100%: full 2D
+
+    let isDragging       = false;
+    let dragStartX       = 0;
+    let dragStartY       = 0;
+    let overlayStartTop  = 0;
+    let overlayStartLeft = 0;
+    let activePointers   = new Map(); // pointerId → true (tracks concurrent pointers on overlay)
+    const DRAG_DEAD_ZONE = 10; // px before drag activates
+
+    function getOverlayLeft() {
+        return parseInt(overlay.style.left, 10) || 0;
+    }
+    function getOverlayTop() {
+        return parseInt(overlay.style.top, 10) || 0;
+    }
+    function getOverlayWidthPct() {
+        const w = parseFloat(overlay.style.width) || 100;
+        return w; // already in %
+    }
+
+    function clampPosition(top, left) {
+        const overlayW = overlay.offsetWidth;
+        const overlayH = overlay.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const clampedTop  = clampVal(top,  0, Math.max(0, vh - overlayH));
+        // Only allow left movement if width < 100%
+        const clampedLeft = getOverlayWidthPct() >= 99.5
+            ? 0
+            : clampVal(left, 0, Math.max(0, vw - overlayW));
+        return { top: clampedTop, left: clampedLeft };
+    }
+
+    function savePosition() {
+        localStorage.setItem(LS_POS_TOP,   String(parseInt(overlay.style.top,  10) || 0));
+        localStorage.setItem(LS_POS_LEFT,  String(parseInt(overlay.style.left, 10) || 0));
+        localStorage.setItem(LS_WIDTH_PCT, String(getOverlayWidthPct()));
+    }
+
+    function restorePosition() {
+        const savedTop  = localStorage.getItem(LS_POS_TOP);
+        const savedLeft = localStorage.getItem(LS_POS_LEFT);
+        const savedW    = localStorage.getItem(LS_WIDTH_PCT);
+
+        if (savedW !== null) {
+            overlay.style.width = parseFloat(savedW) + '%';
+        }
+
+        if (savedTop !== null) {
+            const top  = parseInt(savedTop,  10) || 0;
+            const left = parseInt(savedLeft, 10) || 0;
+            const clamped = clampPosition(top, left);
+            overlay.style.top  = clamped.top  + 'px';
+            overlay.style.left = clamped.left + 'px';
+        } else {
+            centerOverlay();
+        }
+        syncBars();
+    }
+
+    overlay.addEventListener('pointerdown', (e) => {
+        activePointers.set(e.pointerId, true);
+        if (isLocked) { showControls(); return; }
+        // If 2+ pointers are now active, this is becoming a pinch — abort drag
+        if (activePointers.size > 1) { isDragging = false; return; }
+        isDragging       = true;
+        dragStartX       = e.clientX;
+        dragStartY       = e.clientY;
+        overlayStartTop  = getOverlayTop();
+        overlayStartLeft = getOverlayLeft();
+        overlay.setPointerCapture(e.pointerId);
+        document.body.classList.add('vs-dragging');
+    });
+
+    overlay.addEventListener('pointermove', (e) => {
+        if (!isDragging || isLocked) return;
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+
+        if (Math.abs(dx) < DRAG_DEAD_ZONE && Math.abs(dy) < DRAG_DEAD_ZONE) return;
+
+        const newTop  = overlayStartTop  + dy;
+        const newLeft = overlayStartLeft + dx;
+        const clamped = clampPosition(newTop, newLeft);
+
+        overlay.style.top  = clamped.top  + 'px';
+        overlay.style.left = clamped.left + 'px';
+        syncBars();
+    });
+
+    overlay.addEventListener('pointerup', (e) => {
+        activePointers.delete(e.pointerId);
+        if (!isDragging) return;
+        isDragging = false;
+        document.body.classList.remove('vs-dragging');
+        savePosition();
+    });
+
+    overlay.addEventListener('pointercancel', (e) => {
+        activePointers.delete(e.pointerId);
+        isDragging = false;
+        document.body.classList.remove('vs-dragging');
+    });
+
+    // ── Pinch-to-resize ──────────────────────────────────────────────────────
+    // Track two touch pointers; scale overlay width based on pinch distance ratio.
+    // Clamps to [30%, 100%]. Height adjusts automatically (img height: auto).
+
+    let pinchPointers    = new Map(); // pointerId → {x, y}
+    let pinchStartDist   = 0;
+    let pinchStartWidthPct = 100;
+
+    function getPinchDistance(map) {
+        const pts = [...map.values()];
+        if (pts.length < 2) return 0;
+        const dx = pts[0].x - pts[1].x;
+        const dy = pts[0].y - pts[1].y;
+        return Math.hypot(dx, dy);
+    }
+
+    overlay.addEventListener('touchstart', (e) => {
+        if (isLocked) return;
+        for (const t of e.changedTouches) {
+            pinchPointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+        if (pinchPointers.size === 2) {
+            // Starting a pinch — cancel any ongoing drag
+            isDragging = false;
+            document.body.classList.remove('vs-dragging');
+            pinchStartDist      = getPinchDistance(pinchPointers);
+            pinchStartWidthPct  = getOverlayWidthPct();
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    overlay.addEventListener('touchmove', (e) => {
+        if (isLocked || pinchPointers.size < 2) return;
+
+        for (const t of e.changedTouches) {
+            if (pinchPointers.has(t.identifier)) {
+                pinchPointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+            }
+        }
+
+        const currentDist = getPinchDistance(pinchPointers);
+        if (pinchStartDist === 0) return;
+        const scale = currentDist / pinchStartDist;
+        const newPct = clampVal(pinchStartWidthPct * scale, 30, 100);
+        overlay.style.width = newPct + '%';
+        // Re-center left if back to full width
+        if (newPct >= 99.5) overlay.style.left = '0px';
+        syncBars();
+        e.preventDefault();
+    }, { passive: false });
+
+    overlay.addEventListener('touchend', (e) => {
+        for (const t of e.changedTouches) {
+            pinchPointers.delete(t.identifier);
+        }
+        if (pinchPointers.size < 2) {
+            if (pinchStartDist > 0) {
+                // Pinch just ended — save
+                savePosition();
+                pinchStartDist = 0;
+            }
+        }
+    });
+
+    // ── Position restore (on first load) ─────────────────────────────────────
+    // Called after img.onload to ensure offsetHeight is correct
+
+    // ── Lock restore ─────────────────────────────────────────────────────────
+    const savedLocked = localStorage.getItem(LS_LOCKED);
+    setLocked(savedLocked === '1');
+
+    // ── Z-Index restore ──────────────────────────────────────────────────────
+    const savedZ = parseInt(localStorage.getItem(LS_ZINDEX), 10);
+    applyZIndex(isNaN(savedZ) ? DEFAULT_ZINDEX : savedZ);
 
     // ── Fullscreen ───────────────────────────────────────────────────────────
 
@@ -433,6 +711,14 @@ export function setupVideoStream() {
     }
 
     document.addEventListener('fullscreenchange', updateFullscreenBtn);
+
+    // ── Crop button (placeholder for Phase 2F) ───────────────────────────────
+    if (cropBtn) {
+        cropBtn.addEventListener('click', () => {
+            // TODO: Phase 2F — implement crop handle UI
+            console.log('[VideoStream] Crop mode — coming soon');
+        });
+    }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
 

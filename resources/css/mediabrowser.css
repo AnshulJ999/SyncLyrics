@@ -86,13 +86,14 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     position: fixed;
     left: 0;
     width: 100%;
-    z-index: 500; /* above lyrics/controls, below any modals (2000+) */
+    z-index: 950; /* above player-ui-container (900), below settings (1000) */
     /* top is set dynamically by JS (centerOverlay) after image dimensions are known */
     /* NO transform: — transform creates a GPU compositing layer which breaks */
     /* mix-blend-mode: multiply on children (they blend against the layer, not the page) */
     top: 0;
     background: transparent;
-    /* Let touch events fall through to lyrics - only controls strip is interactive */
+    /* Let touch events fall through to lyrics by default; JS sets pointer-events
+     * to 'auto' when unlocked (drag mode) and 'none' when locked (passthrough mode) */
     pointer-events: none;
 }
 
@@ -160,7 +161,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 .vs-controls {
     position: fixed;
     right: 10px;
-    z-index: 510; /* just above overlay (500), below player-ui (900) */
+    z-index: 960; /* above overlay (950) */
     display: flex;
     gap: 10px;
     pointer-events: auto;
@@ -213,6 +214,39 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     background: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.35);
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+/* Locked state — lock icon tinted amber to indicate locked */
+.vs-control-btn.vs-locked {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Edit bar — top-left sibling, mirrors vs-controls positioning */
+.vs-edit-bar {
+    position: fixed;
+    left: 10px;
+    z-index: 960;
+    display: flex;
+    gap: 10px;
+    pointer-events: auto;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+.vs-edit-bar.faded {
+    opacity: 0.02;
+}
+
+.vs-edit-bar.hidden {
+    display: none;
+}
+
+/* Overlay dragging cursor — applied to body during drag so cursor stays correct */
+body.vs-dragging {
+    cursor: grabbing !important;
+    user-select: none;
 }
 
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
@@ -298,6 +332,39 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 }
 
 /* (Boost-active removed — all active buttons now use unified .active class) */
+
+/* Z-Index stepper row in slider popup */
+.vs-zindex-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 4px;
+    padding-top: 8px;
+}
+
+.vs-zindex-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+}
+
+.vs-zindex-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.vs-zindex-val {
+    min-width: 36px;
+    text-align: center;
+}
 
 /* ── Fullscreen ── */
 /* When the overlay is fullscreened, show it as a centered black stage */
