@@ -6,10 +6,12 @@
  *
  * Features:
  *  - Full-width auto-height overlay (no black bars, no modal backdrop)
- *  - Transparency mode: mix-blend-mode:multiply (Guitar Pro white bg → transparent)
+ *  - Transparency mode: multiply / screen+invert blend modes
+ *  - Per-filter sliders: contrast, brightness, saturation, opacity
+ *  - Per-blend-mode filter persistence in localStorage
  *  - Fullscreen via native requestFullscreen() API
  *  - Auto-reconnect on stream drop (exponential backoff)
- *  - All prefs persisted in localStorage
+ *  - Controls extracted to sibling div (unaffected by blend modes)
  *
  * Level 2 - Imports: nothing (self-contained, no state/api dependencies)
  */
@@ -18,24 +20,22 @@ const STREAM_PORT = 9062;
 const RECONNECT_BASE_MS = 2000;   // First retry after 2s
 const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
 
-const LS_BLEND_MODE      = 'reaper_video_blend_mode';
-const LS_OPACITY         = 'reaper_video_opacity';
-const LS_BOOST_MULTIPLY  = 'reaper_video_boost_multiply';
-const LS_BOOST_SCREEN    = 'reaper_video_boost_screen';
+const LS_BLEND_MODE        = 'reaper_video_blend_mode';
+const LS_OPACITY           = 'reaper_video_opacity';
+const LS_FILTERS_MULTIPLY  = 'reaper_video_filters_multiply';
+const LS_FILTERS_SCREEN    = 'reaper_video_filters_screen';
 
-// Boost presets — used by the cycle button; slider allows any value 0–200
-const BOOST_PRESETS = [0, 50, 100, 150];
-const BOOST_LABELS  = { 0: 'Off', 50: 'Low', 100: 'Medium', 150: 'High' };
+// Default filter values (100% = no change)
+const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100 };
 
 export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
     const overlay         = document.getElementById('video-stream-overlay');
     const img             = document.getElementById('video-stream-img');
-    const controls        = overlay?.querySelector('.vs-controls');
+    const controlsBar     = document.getElementById('vs-controls-bar');
     const closeBtn        = document.getElementById('vs-close-btn');
     const refreshBtn      = document.getElementById('vs-refresh-btn');
     const transparencyBtn = document.getElementById('vs-transparency-btn');
-    const opacityBtn      = document.getElementById('vs-opacity-btn');
     const boostBtn        = document.getElementById('vs-boost-btn');
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
 
@@ -58,23 +58,21 @@ export function setupVideoStream() {
     const FADE_DELAY_MS = 300000;
 
     function showControls() {
-        if (!controls) return;
-        controls.classList.remove('faded');
+        if (!controlsBar) return;
+        controlsBar.classList.remove('faded');
         clearTimeout(fadeTimer);
-        fadeTimer = setTimeout(() => controls?.classList.add('faded'), FADE_DELAY_MS);
+        fadeTimer = setTimeout(() => controlsBar?.classList.add('faded'), FADE_DELAY_MS);
     }
 
     function hideControlsImmediate() {
         clearTimeout(fadeTimer);
         fadeTimer = null;
-        controls?.classList.remove('faded');
+        controlsBar?.classList.remove('faded');
     }
 
-    if (controls) {
-        // Reveal on hover (desktop mouse)
-        controls.addEventListener('mouseenter', showControls);
-        // Reveal on any touch of the strip (tablet)
-        controls.addEventListener('touchstart', showControls, { passive: true });
+    if (controlsBar) {
+        controlsBar.addEventListener('mouseenter', showControls);
+        controlsBar.addEventListener('touchstart', showControls, { passive: true });
     }
 
     // ── Centering ────────────────────────────────────────────────────────────
@@ -82,26 +80,31 @@ export function setupVideoStream() {
     // We cannot use CSS transform: translateY(-50%) because transform creates
     // a GPU compositing layer that breaks mix-blend-mode: multiply on children.
     // Instead, compute top manually after the image has natural dimensions.
-    //
-    // NOTE: overlay.style.top is later overridden by the drag system (Phase 2).
-    // centerOverlay() acts as the "snap to center" default.
 
     function centerOverlay() {
         const overlayH  = overlay.offsetHeight;
         const viewportH = window.innerHeight;
-        // Clamp: never go above viewport top, always stay within viewport
         const top = Math.max(0, Math.round((viewportH - overlayH) / 2));
         overlay.style.top = top + 'px';
     }
 
+    // Sync controls bar position to overlay's top-right corner
+    function syncControlsPosition() {
+        if (!controlsBar || !isOpen) return;
+        const rect = overlay.getBoundingClientRect();
+        controlsBar.style.top = (rect.top + 6) + 'px';
+    }
+
     window.addEventListener('resize', () => {
-        if (isOpen) centerOverlay();
+        if (isOpen) {
+            centerOverlay();
+            syncControlsPosition();
+        }
     });
 
     // ── Stream load/unload ───────────────────────────────────────────────────
 
     function loadStream() {
-        // Setting src to '' first forces the browser to drop the old MJPEG connection
         img.src = '';
         img.src = getStreamUrl();
     }
@@ -117,16 +120,15 @@ export function setupVideoStream() {
 
     // ── Auto-reconnect ───────────────────────────────────────────────────────
 
-    // img.onerror fires when the MJPEG connection is lost or server goes down
     img.addEventListener('error', () => {
         if (!isOpen) return;
         scheduleReconnect();
     });
 
-    // img.onload fires on the first successful frame — reset backoff + recenter
     img.addEventListener('load', () => {
         reconnectDelay = RECONNECT_BASE_MS;
         centerOverlay();
+        syncControlsPosition();
     });
 
     function scheduleReconnect() {
@@ -135,7 +137,6 @@ export function setupVideoStream() {
             reconnectTimer = null;
             if (isOpen) {
                 loadStream();
-                // Exponential backoff: double delay each retry, capped at max
                 reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
             }
         }, reconnectDelay);
@@ -146,19 +147,20 @@ export function setupVideoStream() {
     function open() {
         isOpen = true;
         overlay.classList.remove('hidden');
+        controlsBar?.classList.remove('hidden');
         btn.classList.add('active');
         loadStream();
-        showControls(); // start fade cycle
+        showControls();
     }
 
     function close() {
         isOpen = false;
         overlay.classList.add('hidden');
+        controlsBar?.classList.add('hidden');
         btn.classList.remove('active');
         stopStream();
-        hideControlsImmediate(); // reset for next open
+        hideControlsImmediate();
 
-        // Exit fullscreen if we own it
         if (document.fullscreenElement === overlay) {
             document.exitFullscreen().catch(() => {});
         }
@@ -187,100 +189,90 @@ export function setupVideoStream() {
         });
     }
 
-    // ── Blend Mode ──────────────────────────────────────────────────────
+    // ── Filter state ────────────────────────────────────────────────────────
     //
-    // Cycles through 3 states on each click:
-    //   off → multiply → screen (invert+screen) → off
-    //
-    // Multiply:       white paper → transparent, black notation stays.
-    //                 Best on light album art backgrounds.
-    // Screen+Invert:  filter:invert(1) flips image, then screen blend removes
-    //                 the black (ex-white paper). Notation becomes white,
-    //                 visible on any background colour.
-    // All CSS-only — /stream JPEG is always used, zero server overhead.
+    // Per-blend-mode filter values (contrast, brightness, saturation).
+    // Opacity is shared across all modes.
+    // Stored as JSON in localStorage per mode.
 
-    // ── Boost state & helpers (declared before blend mode because
-    //    applyBlendMode() calls restoreBoostForMode() during init) ────────
-    //
-    // Boost is a 0–200 integer ("percentage"). The slider maps this to
-    // CSS filter values that differ per blend mode:
-    //   Multiply (black tabs): contrast ↑, brightness slightly ↓
-    //   Screen (white tabs):   contrast ↑, brightness slightly ↑
-    // At 0 the image is unfiltered. Beyond 100 is "extreme" territory.
-    // The cycle button snaps to presets (0/50/100/150).
+    const filters = { contrast: 100, brightness: 100, saturation: 100 };
+    let currentOpacity = 100;
 
-    let currentBoost = 0; // 0–200
-
-    function boostStorageKey(blendMode) {
-        if (blendMode === 'multiply') return LS_BOOST_MULTIPLY;
-        if (blendMode === 'screen')   return LS_BOOST_SCREEN;
+    function filtersStorageKey(blendMode) {
+        if (blendMode === 'multiply') return LS_FILTERS_MULTIPLY;
+        if (blendMode === 'screen')   return LS_FILTERS_SCREEN;
         return null;
     }
 
-    /** Build the CSS filter string for the current blend mode + boost level.
+    function saveFilters() {
+        const key = filtersStorageKey(currentBlendMode);
+        if (key) localStorage.setItem(key, JSON.stringify({ ...filters }));
+    }
+
+    function restoreFiltersForMode() {
+        const key = filtersStorageKey(currentBlendMode);
+        const raw = key ? localStorage.getItem(key) : null;
+        if (raw) {
+            try {
+                const saved = JSON.parse(raw);
+                filters.contrast   = clampVal(saved.contrast   ?? 100, 50, 400);
+                filters.brightness = clampVal(saved.brightness ?? 100, 50, 200);
+                filters.saturation = clampVal(saved.saturation ?? 100, 0, 200);
+            } catch {
+                Object.assign(filters, DEFAULT_FILTERS);
+            }
+        } else {
+            Object.assign(filters, DEFAULT_FILTERS);
+        }
+        applyFilters();
+    }
+
+    function clampVal(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    /** Build the CSS filter string for the current blend mode + filter values.
      *
-     * Multiply (black tabs): white paper must stay pure white to vanish
-     *   via multiply. contrast sharpens edges, brightness goes SLIGHTLY UP
-     *   to push near-white paper toward pure white. Lowering brightness
-     *   was wrong — it turned white paper gray, which multiply keeps visible.
-     * Screen (white tabs): invert flips colours first, then contrast + brightness
-     *   push the inverted paper (now black) blacker for cleaner screen removal.
-     *
-     * Edit the multipliers below to tune. t ranges 0.0 – 2.0 (slider 0–200).
+     * Multiply (black tabs on white paper): white paper must stay pure white to vanish
+     *   via multiply. saturate → contrast → brightness.
+     * Screen (white tabs): saturate strips colour for cleaner invert, then invert(1)
+     *   flips, then contrast → brightness push inverted paper blacker for screen removal.
+     * No blend: no filter (returns empty string).
      */
-    function computeBoostFilter(pct) {
-        const t = pct / 100; // 0.0 – 2.0
+    function computeFilter() {
+        const c = (filters.contrast / 100).toFixed(2);
+        const b = (filters.brightness / 100).toFixed(2);
+        const s = (filters.saturation / 100).toFixed(2);
+
         if (currentBlendMode === 'screen') {
-            // White tabs: invert + contrast up + brightness up
-            const contrast   = 1 + t * 1.5;   // 1.0 → 4.0
-            const brightness = 1 + t * 0.25;   // 1.0 → 1.5
-            return `invert(1) contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
+            return `saturate(${s}) invert(1) contrast(${c}) brightness(${b})`;
         } else if (currentBlendMode === 'multiply') {
-            // Black tabs: contrast sharpens edges, brightness slightly up
-            // so near-white paper becomes pure white (fully transparent via multiply)
-            const contrast   = 1 + t * 1.5;   // 1.0 → 4.0
-            const brightness = 1 + t * 0.12;   // 1.0 → 1.24
-            return `contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
+            return `saturate(${s}) contrast(${c}) brightness(${b})`;
         }
         return ''; // no blend mode = no filter
     }
 
-    function applyBoost(pct) {
-        currentBoost = pct;
-        // Apply filter inline (overrides CSS class-based presets)
-        const filterStr = computeBoostFilter(pct);
+    function applyFilters() {
+        const filterStr = computeFilter();
         img.style.filter = filterStr || '';
-        // Persist per blend mode
-        const key = boostStorageKey(currentBlendMode);
-        if (key) localStorage.setItem(key, String(pct));
-        updateBoostBtn(pct);
-        updateBoostSlider(pct);
+        updateSliders();
+        updateBoostBtn();
     }
 
-    function restoreBoostForMode() {
-        const key = boostStorageKey(currentBlendMode);
-        const raw = key ? localStorage.getItem(key) : null;
-        const pct = raw !== null ? Math.max(0, Math.min(200, parseInt(raw, 10) || 0)) : 0;
-        applyBoost(pct);
-    }
-
-    function updateBoostBtn(pct) {
-        if (!boostBtn) return;
-        boostBtn.classList.toggle('vs-boost-active', pct > 0);
-        const label = BOOST_LABELS[pct] || `${pct}%`;
-        boostBtn.title = `Boost: ${label} — tap to cycle`;
-    }
-
-    function updateBoostSlider(pct) {
-        const slider = document.getElementById('vs-boost-slider');
-        const valEl  = document.getElementById('vs-boost-value');
-        if (slider) slider.value = pct;
-        if (valEl)  valEl.textContent = pct === 0 ? 'Off' : `${pct}%`;
+    function applyOpacity(pct) {
+        currentOpacity = clampVal(pct, 10, 100);
+        img.style.opacity = currentOpacity / 100;
+        localStorage.setItem(LS_OPACITY, String(currentOpacity));
+        updateOpacitySlider();
     }
 
     // ── Blend Mode ──────────────────────────────────────────────────────
+    //
+    // Cycles through 3 states on each click:
+    //   off → multiply → screen (invert+screen) → off
+
     const BLEND_MODES = ['off', 'multiply', 'screen'];
-    let currentBlendMode = 'off'; // updated by applyBlendMode
+    let currentBlendMode = 'off';
 
     function applyBlendMode(mode) {
         currentBlendMode = mode;
@@ -289,26 +281,24 @@ export function setupVideoStream() {
         if (mode === 'screen')   overlay.classList.add('vs-screen');
         localStorage.setItem(LS_BLEND_MODE, mode);
         updateBlendBtn(mode);
-        // Restore the boost level saved for this blend mode
-        restoreBoostForMode();
+        // Restore the filter values saved for this blend mode
+        restoreFiltersForMode();
     }
 
     function updateBlendBtn(mode) {
         if (!transparencyBtn) return;
-        transparencyBtn.classList.remove('active', 'vs-blend-multiply', 'vs-blend-screen');
+        transparencyBtn.classList.remove('active');
+        if (mode !== 'off') transparencyBtn.classList.add('active');
         if (mode === 'multiply') {
-            transparencyBtn.classList.add('active', 'vs-blend-multiply');
             transparencyBtn.title = 'Blend: Multiply — tap for Screen+Invert';
         } else if (mode === 'screen') {
-            transparencyBtn.classList.add('active', 'vs-blend-screen');
             transparencyBtn.title = 'Blend: Screen+Invert — tap to disable';
         } else {
             transparencyBtn.title = 'Blend: Off — tap for Multiply';
         }
     }
 
-    // Restore saved blend mode.
-    // Migrate old boolean value ('true') from the previous LS_TRANSPARENT key.
+    // Restore saved blend mode (+ migrate old boolean 'true' → multiply)
     const _savedBlend = localStorage.getItem(LS_BLEND_MODE);
     const initBlend   = BLEND_MODES.includes(_savedBlend)
         ? _savedBlend
@@ -322,50 +312,21 @@ export function setupVideoStream() {
         });
     }
 
-    // ── Opacity ──────────────────────────────────────────────────────
-    //
-    // Continuous 10–100% via slider, with cycle presets on button tap.
-    // Applied directly to img.style.opacity.
-
-    const OPACITY_PRESETS = [100, 80, 60, 40];
-
-    function applyOpacity(pct) {
-        const val = Math.max(10, Math.min(100, pct));
-        img.style.opacity = val / 100;
-        localStorage.setItem(LS_OPACITY, String(val));
-        if (opacityBtn) {
-            opacityBtn.title = `Opacity: ${val}%`;
-            opacityBtn.classList.toggle('active', val < 100);
-        }
-        updateOpacitySlider(val);
-    }
-
-    function updateOpacitySlider(pct) {
-        const slider = document.getElementById('vs-opacity-slider');
-        const valEl  = document.getElementById('vs-opacity-value');
-        if (slider) slider.value = pct;
-        if (valEl)  valEl.textContent = `${pct}%`;
-    }
-
     // Restore saved opacity (default 100)
     const savedOpacity = parseInt(localStorage.getItem(LS_OPACITY), 10);
     applyOpacity(isNaN(savedOpacity) ? 100 : savedOpacity);
 
-    // ── Boost init ──────────────────────────────────────────────────────
-    // Initial restore (after blend mode has been set above)
-    restoreBoostForMode();
-
     // ── Slider Popup ────────────────────────────────────────────────────
     //
-    // Combined popup for boost + opacity sliders.
-    // Open via: long-press (500ms hold) OR double-tap on boost/opacity button.
-    // Single tap still cycles presets as before.
-    // The popup is a sibling of the overlay so blend modes don't affect it.
+    // 4-slider popup: contrast, brightness, saturation, opacity.
+    // Single tap on boost button opens/closes.
 
-    const sliderPopup   = document.getElementById('vs-slider-popup');
-    const boostSlider   = document.getElementById('vs-boost-slider');
-    const opacitySlider = document.getElementById('vs-opacity-slider');
-    let sliderPopupOpen = false;
+    const sliderPopup      = document.getElementById('vs-slider-popup');
+    const contrastSlider   = document.getElementById('vs-contrast-slider');
+    const brightnessSlider = document.getElementById('vs-brightness-slider');
+    const saturationSlider = document.getElementById('vs-saturation-slider');
+    const opacitySlider    = document.getElementById('vs-opacity-slider');
+    let sliderPopupOpen    = false;
 
     function toggleSliderPopup(forceState) {
         if (!sliderPopup) return;
@@ -373,105 +334,62 @@ export function setupVideoStream() {
         sliderPopup.classList.toggle('hidden', !sliderPopupOpen);
     }
 
-    // ── Long-press helper ──
-    // Returns a cleanup function. Attaches to both touch and mouse events.
-    // If held for HOLD_MS without moving, calls onLongPress and suppresses
-    // the subsequent click event so the cycle doesn't also fire.
-    const HOLD_MS = 500;
-
-    function addLongPress(el, onLongPress) {
-        if (!el) return;
-        let holdTimer = null;
-        let didLongPress = false;
-
-        function startHold(e) {
-            didLongPress = false;
-            holdTimer = setTimeout(() => {
-                didLongPress = true;
-                onLongPress();
-            }, HOLD_MS);
-        }
-
-        function cancelHold() {
-            clearTimeout(holdTimer);
-            holdTimer = null;
-        }
-
-        // Suppress the click that follows a long-press release
-        function onClick(e) {
-            if (didLongPress) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                didLongPress = false;
-            }
-        }
-
-        el.addEventListener('touchstart', startHold, { passive: true });
-        el.addEventListener('touchend', cancelHold);
-        el.addEventListener('touchmove', cancelHold);
-        el.addEventListener('mousedown', startHold);
-        el.addEventListener('mouseup', cancelHold);
-        el.addEventListener('mouseleave', cancelHold);
-        // Must be registered BEFORE the cycle click handler to suppress it
-        el.addEventListener('click', onClick, { capture: true });
-    }
-
-    // Attach long-press to both buttons
-    addLongPress(boostBtn,   () => toggleSliderPopup());
-    addLongPress(opacityBtn, () => toggleSliderPopup());
-
-    // ── Double-tap detection ──
-    let lastBoostTap   = 0;
-    let lastOpacityTap = 0;
-
-    // Boost button: double-tap → slider, single tap → cycle presets
+    // Boost button — single tap opens/closes slider popup
     if (boostBtn) {
         boostBtn.addEventListener('click', () => {
-            const now = Date.now();
-            if (now - lastBoostTap < 400) {
-                toggleSliderPopup();
-                lastBoostTap = 0;
-                return;
-            }
-            lastBoostTap = now;
-            // Single tap — cycle: 0 → 50 → 100 → 150 → 0
-            let nextIdx = 0;
-            for (let i = 0; i < BOOST_PRESETS.length; i++) {
-                if (BOOST_PRESETS[i] === currentBoost) {
-                    nextIdx = (i + 1) % BOOST_PRESETS.length;
-                    break;
-                }
-                if (BOOST_PRESETS[i] > currentBoost) { nextIdx = i; break; }
-                nextIdx = 0;
-            }
-            applyBoost(BOOST_PRESETS[nextIdx]);
+            toggleSliderPopup();
         });
     }
 
-    // Opacity button: double-tap → slider, single tap → cycle presets
-    if (opacityBtn) {
-        opacityBtn.addEventListener('click', () => {
-            const now = Date.now();
-            if (now - lastOpacityTap < 400) {
-                toggleSliderPopup();
-                lastOpacityTap = 0;
-                return;
-            }
-            lastOpacityTap = now;
-            const cur = Math.round(parseFloat(img.style.opacity) * 100) || 100;
-            let nextIdx = 0;
-            for (let i = 0; i < OPACITY_PRESETS.length; i++) {
-                if (OPACITY_PRESETS[i] <= cur - 1) { nextIdx = i; break; }
-                nextIdx = 0;
-            }
-            applyOpacity(OPACITY_PRESETS[nextIdx]);
-        });
+    function updateBoostBtn() {
+        if (!boostBtn) return;
+        const hasFilters = currentBlendMode !== 'off' &&
+            (filters.contrast !== 100 || filters.brightness !== 100 || filters.saturation !== 100);
+        boostBtn.classList.toggle('active', hasFilters);
+        boostBtn.title = hasFilters ? 'Filters (active)' : 'Filters';
+    }
+
+    function updateSliders() {
+        if (contrastSlider) contrastSlider.value = filters.contrast;
+        if (brightnessSlider) brightnessSlider.value = filters.brightness;
+        if (saturationSlider) saturationSlider.value = filters.saturation;
+
+        const cv = document.getElementById('vs-contrast-value');
+        const bv = document.getElementById('vs-brightness-value');
+        const sv = document.getElementById('vs-saturation-value');
+        if (cv) cv.textContent = `${filters.contrast}%`;
+        if (bv) bv.textContent = `${filters.brightness}%`;
+        if (sv) sv.textContent = `${filters.saturation}%`;
+    }
+
+    function updateOpacitySlider() {
+        if (opacitySlider) opacitySlider.value = currentOpacity;
+        const ov = document.getElementById('vs-opacity-value');
+        if (ov) ov.textContent = `${currentOpacity}%`;
     }
 
     // ── Slider input handlers — real-time updates as user drags ──
-    if (boostSlider) {
-        boostSlider.addEventListener('input', () => {
-            applyBoost(parseInt(boostSlider.value, 10));
+    if (contrastSlider) {
+        contrastSlider.addEventListener('input', () => {
+            filters.contrast = parseInt(contrastSlider.value, 10);
+            applyFilters();
+            saveFilters();
+        });
+    }
+
+    if (brightnessSlider) {
+        brightnessSlider.addEventListener('input', () => {
+            filters.brightness = parseInt(brightnessSlider.value, 10);
+            applyFilters();
+            saveFilters();
+        });
+    }
+
+    if (saturationSlider) {
+        saturationSlider.addEventListener('input', () => {
+            filters.saturation = parseInt(saturationSlider.value, 10);
+            applyFilters();
+            saveFilters();
         });
     }
 
@@ -485,8 +403,7 @@ export function setupVideoStream() {
     document.addEventListener('click', (e) => {
         if (sliderPopupOpen && sliderPopup &&
             !sliderPopup.contains(e.target) &&
-            e.target !== boostBtn && !boostBtn?.contains(e.target) &&
-            e.target !== opacityBtn && !opacityBtn?.contains(e.target)) {
+            e.target !== boostBtn && !boostBtn?.contains(e.target)) {
             toggleSliderPopup(false);
         }
     });
@@ -507,7 +424,6 @@ export function setupVideoStream() {
             if (document.fullscreenElement === overlay) {
                 document.exitFullscreen().catch(() => {});
             } else {
-                // navigationUI: 'hide' suppresses browser's fullscreen UI controls
                 overlay.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
                     console.warn('[VideoStream] Fullscreen request failed:', err);
                 });
@@ -520,7 +436,6 @@ export function setupVideoStream() {
     // ── Keyboard ─────────────────────────────────────────────────────────────
 
     document.addEventListener('keydown', (e) => {
-        // Escape closes overlay (unless we're in OS fullscreen — browser handles that)
         if (e.key === 'Escape' && isOpen && document.fullscreenElement !== overlay) {
             close();
         }

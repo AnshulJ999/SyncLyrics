@@ -535,38 +535,47 @@
 
 <!-- Video Stream Overlay (floating panel, not a modal) -->
 <div id="video-stream-overlay" class="video-stream-overlay hidden">
-    <div class="vs-controls">
-        <button id="vs-transparency-btn" class="vs-control-btn" title="Enable transparency">
-            <i class="bi bi-layers"></i>
-        </button>
-        <button id="vs-opacity-btn" class="vs-control-btn" title="Opacity: 100%">
-            <i class="bi bi-circle-half"></i>
-        </button>
-        <button id="vs-boost-btn" class="vs-control-btn" title="Boost: Off">
-            <i class="bi bi-brightness-high"></i>
-        </button>
-        <button id="vs-fullscreen-btn" class="vs-control-btn" title="Fullscreen">
-            <i class="bi bi-fullscreen"></i>
-        </button>
-        <button id="vs-refresh-btn" class="vs-control-btn" title="Refresh stream">
-            <i class="bi bi-arrow-clockwise"></i>
-        </button>
-        <button id="vs-close-btn" class="vs-control-btn vs-close" title="Close">
-            <i class="bi bi-x-lg"></i>
-        </button>
-    </div>
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
+</div>
+
+<!-- Video Stream Controls (sibling — outside overlay so blend modes don't affect buttons) -->
+<div id="vs-controls-bar" class="vs-controls hidden">
+    <button id="vs-transparency-btn" class="vs-control-btn" title="Blend: Off">
+        <i class="bi bi-layers"></i>
+    </button>
+    <button id="vs-boost-btn" class="vs-control-btn" title="Filters">
+        <i class="bi bi-circle-half"></i>
+    </button>
+    <button id="vs-fullscreen-btn" class="vs-control-btn" title="Fullscreen">
+        <i class="bi bi-fullscreen"></i>
+    </button>
+    <button id="vs-refresh-btn" class="vs-control-btn" title="Refresh stream">
+        <i class="bi bi-arrow-clockwise"></i>
+    </button>
+    <button id="vs-close-btn" class="vs-control-btn vs-close" title="Close">
+        <i class="bi bi-x-lg"></i>
+    </button>
 </div>
 
 <!-- Video Stream Slider Popup (sibling, not inside overlay — unaffected by blend) -->
 <div id="vs-slider-popup" class="vs-slider-popup hidden">
     <div class="vs-slider-row">
-        <span class="vs-slider-label"><i class="bi bi-brightness-high"></i> Boost</span>
-        <input id="vs-boost-slider" type="range" class="vs-slider" min="0" max="200" value="0" step="5">
-        <span id="vs-boost-value" class="vs-slider-value">Off</span>
+        <span class="vs-slider-label"><i class="bi bi-symmetry-vertical"></i> Contrast</span>
+        <input id="vs-contrast-slider" type="range" class="vs-slider" min="50" max="400" value="100" step="5">
+        <span id="vs-contrast-value" class="vs-slider-value">100%</span>
     </div>
     <div class="vs-slider-row">
-        <span class="vs-slider-label"><i class="bi bi-circle-half"></i> Opacity</span>
+        <span class="vs-slider-label"><i class="bi bi-brightness-high"></i> Brightness</span>
+        <input id="vs-brightness-slider" type="range" class="vs-slider" min="50" max="200" value="100" step="5">
+        <span id="vs-brightness-value" class="vs-slider-value">100%</span>
+    </div>
+    <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-droplet-half"></i> Saturation</span>
+        <input id="vs-saturation-slider" type="range" class="vs-slider" min="0" max="200" value="100" step="5">
+        <span id="vs-saturation-value" class="vs-slider-value">100%</span>
+    </div>
+    <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-eye"></i> Opacity</span>
         <input id="vs-opacity-slider" type="range" class="vs-slider" min="10" max="100" value="100" step="5">
         <span id="vs-opacity-value" class="vs-slider-value">100%</span>
     </div>

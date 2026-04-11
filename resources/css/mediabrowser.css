@@ -140,17 +140,12 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 
 /* ── Image pixel filters (pre-process before blend) ── */
 
-/* Screen mode: invert so black notation → white for screen blend */
-.video-stream-overlay.vs-screen .vs-img {
-    filter: invert(1);
-}
-
-/* Boost is applied via inline filter style by JS (computeBoostFilter).
- * This allows continuous slider values instead of fixed class presets.
- * The JS computes mode-specific filter strings:
- *   Multiply: contrast(1+t*1.5) brightness(1+t*0.12)
- *   Screen:   invert(1) contrast(1+t*1.5) brightness(1+t*0.25)
- * where t = sliderValue / 100 (range 0–2). */
+/* All filters (invert for screen mode, contrast, brightness, saturation)
+ * are applied via inline img.style.filter by JS computeFilter().
+ * This allows continuous slider values and mode-specific filter chains:
+ *   Screen:   saturate(s) invert(1) contrast(c) brightness(b)
+ *   Multiply: saturate(s) contrast(c) brightness(b)
+ * Per-mode values persisted as JSON in localStorage. */
 
 /* Trim thin window-chrome borders that become visible after blend removes paper.
  * Bottom edge is thicker (scrollbar/status bar area). Order: top right bottom left. */
@@ -159,15 +154,16 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     clip-path: inset(3px 3px 6px 3px);
 }
 
-/* Control strip — top-right corner of the overlay, always visible */
+/* Control strip — sibling div positioned at overlay's top-right.
+ * Extracted from inside the overlay so blend modes don't affect buttons.
+ * JS syncs position to match overlay's top-right corner. */
 .vs-controls {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 10;
+    position: fixed;
+    right: 10px;
+    z-index: 510; /* just above overlay (500), below player-ui (900) */
     display: flex;
-    gap: 8px;
-    pointer-events: auto; /* only this strip is interactive */
+    gap: 10px;
+    pointer-events: auto;
     opacity: 1;
     transition: opacity 0.5s ease;
 }
@@ -177,14 +173,18 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     opacity: 0.02;
 }
 
+.vs-controls.hidden {
+    display: none;
+}
+
 .vs-control-btn {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.65);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: rgba(255, 255, 255, 0.8);
-    font-size: 0.72rem;
+    font-size: 0.85rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -207,25 +207,12 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     color: #f87171;
 }
 
-/* Generic active state — used by opacity button (neutral white tint) */
+/* Unified active state — subtle white glow for all active buttons */
 .vs-control-btn.active {
     color: white;
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-/* Multiply blend active — yellow */
-.vs-control-btn.vs-blend-multiply {
-    color: #eab308;
-    background: rgba(234, 179, 8, 0.2);
-    border-color: rgba(234, 179, 8, 0.35);
-}
-
-/* Screen+Invert blend active — blue */
-.vs-control-btn.vs-blend-screen {
-    color: #60a5fa;
-    background: rgba(96, 165, 250, 0.2);
-    border-color: rgba(96, 165, 250, 0.35);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
 }
 
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
@@ -310,12 +297,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     text-align: right;
 }
 
-/* Boost active — amber */
-.vs-control-btn.vs-boost-active {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.2);
-    border-color: rgba(245, 158, 11, 0.35);
-}
+/* (Boost-active removed — all active buttons now use unified .active class) */
 
 /* ── Fullscreen ── */
 /* When the overlay is fullscreened, show it as a centered black stage */
@@ -348,12 +330,8 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     clip-path: none !important;
 }
 
-.video-stream-overlay:fullscreen .vs-controls,
-.video-stream-overlay:-webkit-full-screen .vs-controls {
-    position: fixed; /* Float over the fullscreen content */
-    top: 12px;
-    right: 12px;
-}
+/* Controls bar is already position:fixed as a sibling — in fullscreen,
+ * JS keeps it visible and positioned at the top-right of the fullscreen overlay. */
 
 /* Icon sizing */
 .media-browser-toggle-btn i {
