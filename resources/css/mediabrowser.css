@@ -126,6 +126,13 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     display: flex;
     gap: 6px;
     pointer-events: auto; /* only this strip is interactive */
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+/* Auto-fade: after idle timeout JS adds this class */
+.vs-controls.faded {
+    opacity: 0.02;
 }
 
 .vs-control-btn {

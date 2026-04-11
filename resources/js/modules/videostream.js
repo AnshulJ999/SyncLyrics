@@ -24,6 +24,7 @@ export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
     const overlay         = document.getElementById('video-stream-overlay');
     const img             = document.getElementById('video-stream-img');
+    const controls        = overlay?.querySelector('.vs-controls');
     const closeBtn        = document.getElementById('vs-close-btn');
     const refreshBtn      = document.getElementById('vs-refresh-btn');
     const transparencyBtn = document.getElementById('vs-transparency-btn');
@@ -34,11 +35,39 @@ export function setupVideoStream() {
     let isOpen         = false;
     let reconnectTimer = null;
     let reconnectDelay = RECONNECT_BASE_MS;
+    let fadeTimer      = null;
 
     // ── URL helpers ─────────────────────────────────────────────────────────
 
     // Use /stream for the raw MJPEG — we handle our own HTML/CSS, no need for /
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
+
+    // ── Control strip auto-fade ───────────────────────────────────────────────────
+    //
+    // Controls fade to near-invisible after FADE_DELAY_MS of no interaction.
+    // Any hover (desktop) or touch on the controls strip resets the timer.
+
+    const FADE_DELAY_MS = 3000;
+
+    function showControls() {
+        if (!controls) return;
+        controls.classList.remove('faded');
+        clearTimeout(fadeTimer);
+        fadeTimer = setTimeout(() => controls?.classList.add('faded'), FADE_DELAY_MS);
+    }
+
+    function hideControlsImmediate() {
+        clearTimeout(fadeTimer);
+        fadeTimer = null;
+        controls?.classList.remove('faded');
+    }
+
+    if (controls) {
+        // Reveal on hover (desktop mouse)
+        controls.addEventListener('mouseenter', showControls);
+        // Reveal on any touch of the strip (tablet)
+        controls.addEventListener('touchstart', showControls, { passive: true });
+    }
 
     // ── Centering ────────────────────────────────────────────────────────────
     //
@@ -111,6 +140,7 @@ export function setupVideoStream() {
         overlay.classList.remove('hidden');
         btn.classList.add('active');
         loadStream();
+        showControls(); // start fade cycle
     }
 
     function close() {
@@ -118,6 +148,7 @@ export function setupVideoStream() {
         overlay.classList.add('hidden');
         btn.classList.remove('active');
         stopStream();
+        hideControlsImmediate(); // reset for next open
 
         // Exit fullscreen if we own it
         if (document.fullscreenElement === overlay) {
