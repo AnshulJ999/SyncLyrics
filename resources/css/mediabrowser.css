@@ -275,7 +275,7 @@ body.vs-dragging {
 /* The pill is the ONLY draggable target */
 .vs-crop-handle-indicator {
     width: 80px;
-    height: 32px;                          /* tall enough for comfortable touch */
+    height: 8px;                          /* tall enough for comfortable touch */
     background: rgba(251, 146, 60, 0.85);  /* orange */
     border-radius: 16px;
     box-shadow: 0 0 10px rgba(251, 146, 60, 0.5);

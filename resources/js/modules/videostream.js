@@ -895,10 +895,10 @@ export function setupVideoStream() {
     }
 
     function resetLyricsOffset() {
-        currentLyricsOffset = 0;
+        // Clear the DOM only — do NOT touch currentLyricsOffset.
+        // Keeping the in-memory value intact means the next open() re-applies it correctly.
         if (lyricsEl) lyricsEl.style.marginTop = '';
         updateLyricsOffsetSlider();
-        // Do NOT persist 0 on reset — next open should still restore the saved value
     }
 
     function updateLyricsOffsetSlider() {
