@@ -409,6 +409,8 @@ FEATURES = {
     "word_sync_auto_switch": _safe_bool(conf("features.word_sync_auto_switch"), False),  # Respect provider priority
     "word_sync_default_enabled": _safe_bool(conf("features.word_sync_default_enabled"), True),  # Word-sync ON by default
     "spicetify_database": _safe_bool(conf("features.spicetify_database"), True),  # Cache audio analysis from Spicetify
+    # REAPER video overlay — disabled by default; opt-in via REAPER_VIDEO_ENABLED=true in .env
+    "reaper_video_enabled": os.getenv("REAPER_VIDEO_ENABLED", "").lower() == "true" or _safe_bool(conf("features.reaper_video_enabled"), False),
 }
 
 ALBUM_ART = {

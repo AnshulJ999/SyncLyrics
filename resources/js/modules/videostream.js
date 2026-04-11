@@ -34,6 +34,8 @@ const LS_POS_LEFT         = 'reaper_video_left';
 const LS_WIDTH_PCT        = 'reaper_video_width_pct';
 const LS_ZINDEX           = 'reaper_video_zindex';
 const LS_LOCKED           = 'reaper_video_locked';
+const LS_CROP_TOP         = 'reaper_video_crop_top_pct';
+const LS_CROP_BOTTOM      = 'reaper_video_crop_bottom_pct';
 
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
@@ -136,6 +138,8 @@ export function setupVideoStream() {
         const topPx = (rect.top + 6) + 'px';
         if (controlsBar) controlsBar.style.top = topPx;
         if (editBar)     editBar.style.top     = topPx;
+        // Keep crop handles aligned when overlay moves/resizes
+        applyCrop();
     }
 
     window.addEventListener('resize', () => {
@@ -712,13 +716,144 @@ export function setupVideoStream() {
 
     document.addEventListener('fullscreenchange', updateFullscreenBtn);
 
-    // ── Crop button (placeholder for Phase 2F) ───────────────────────────────
-    if (cropBtn) {
-        cropBtn.addEventListener('click', () => {
-            // TODO: Phase 2F — implement crop handle UI
-            console.log('[VideoStream] Crop mode — coming soon');
+    // ── Crop ─────────────────────────────────────────────────────────────────
+    // Implemented via CSS clip-path: inset(topPct% 0 bottomPct% 0).
+    // topPct / bottomPct are percentages of the overlay's own height.
+    // The visible indicator divs are positioned in viewport coords at the crop edge.
+
+    const cropTopHandle    = document.getElementById('vs-crop-top-handle');
+    const cropBottomHandle = document.getElementById('vs-crop-bottom-handle');
+
+    let cropTopPct    = 0;  // 0–50
+    let cropBottomPct = 0;  // 0–50
+    let isCropMode    = false;
+
+    // Apply clip-path to overlay and reposition handle divs in viewport coords
+    function applyCrop() {
+        overlay.style.clipPath = (cropTopPct === 0 && cropBottomPct === 0)
+            ? ''
+            : `inset(${cropTopPct.toFixed(2)}% 0 ${cropBottomPct.toFixed(2)}% 0)`;
+
+        // Reposition handles to match the crop lines in viewport coords
+        if (!isCropMode) return;
+        const rect = overlay.getBoundingClientRect();
+        const topEdgePx    = rect.top  + rect.height * (cropTopPct    / 100);
+        const bottomEdgePx = rect.top  + rect.height * (1 - cropBottomPct / 100);
+
+        if (cropTopHandle) {
+            cropTopHandle.style.top = (topEdgePx - 22) + 'px'; // center on crop line
+        }
+        if (cropBottomHandle) {
+            cropBottomHandle.style.top = (bottomEdgePx - 22) + 'px';
+        }
+    }
+
+    function saveCrop() {
+        localStorage.setItem(LS_CROP_TOP,    String(cropTopPct));
+        localStorage.setItem(LS_CROP_BOTTOM, String(cropBottomPct));
+    }
+
+    function restoreCrop() {
+        const rawT = localStorage.getItem(LS_CROP_TOP);
+        const rawB = localStorage.getItem(LS_CROP_BOTTOM);
+        cropTopPct    = rawT !== null ? clampVal(parseFloat(rawT)    || 0, 0, 50) : 0;
+        cropBottomPct = rawB !== null ? clampVal(parseFloat(rawB) || 0, 0, 50) : 0;
+        applyCrop();
+    }
+
+    function enterCropMode() {
+        isCropMode = true;
+        if (cropBtn) {
+            cropBtn.classList.add('active');
+            cropBtn.title = 'Exit crop mode';
+        }
+        cropTopHandle?.classList.remove('hidden');
+        cropBottomHandle?.classList.remove('hidden');
+        applyCrop(); // position handles
+    }
+
+    function exitCropMode() {
+        isCropMode = false;
+        if (cropBtn) {
+            cropBtn.classList.remove('active');
+            cropBtn.title = 'Edit / Crop';
+        }
+        cropTopHandle?.classList.add('hidden');
+        cropBottomHandle?.classList.add('hidden');
+        saveCrop();
+    }
+
+    // Generic handle drag logic — works for both top and bottom
+    function setupCropHandleDrag(handleEl, isTop) {
+        if (!handleEl) return;
+
+        let dragging    = false;
+        let startY      = 0;
+        let startPct    = 0;
+
+        function onMove(clientY) {
+            if (!dragging) return;
+            const rect = overlay.getBoundingClientRect();
+            if (rect.height === 0) return;
+
+            const deltaY   = clientY - startY;
+            const deltaPct = (deltaY / rect.height) * 100;
+
+            if (isTop) {
+                const maxTop = 50 - cropBottomPct;
+                cropTopPct = clampVal(startPct + deltaPct, 0, maxTop);
+            } else {
+                // For bottom: moving handle up = increasing bottomPct (more cropped)
+                const maxBottom = 50 - cropTopPct;
+                cropBottomPct = clampVal(startPct - deltaPct, 0, maxBottom);
+            }
+            applyCrop();
+        }
+
+        handleEl.addEventListener('pointerdown', (e) => {
+            if (!isCropMode) return;
+            dragging  = true;
+            startY    = e.clientY;
+            startPct  = isTop ? cropTopPct : cropBottomPct;
+            handleEl.setPointerCapture(e.pointerId);
+            handleEl.classList.add('dragging');
+            e.stopPropagation();
+        });
+
+        handleEl.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            onMove(e.clientY);
+            e.stopPropagation();
+        });
+
+        handleEl.addEventListener('pointerup', (e) => {
+            if (!dragging) return;
+            dragging = false;
+            handleEl.classList.remove('dragging');
+            saveCrop();
+            e.stopPropagation();
+        });
+
+        handleEl.addEventListener('pointercancel', () => {
+            dragging = false;
+            handleEl.classList.remove('dragging');
         });
     }
+
+    setupCropHandleDrag(cropTopHandle,    true);
+    setupCropHandleDrag(cropBottomHandle, false);
+
+    // Crop button toggle
+    if (cropBtn) {
+        cropBtn.addEventListener('click', () => {
+            if (isCropMode) exitCropMode();
+            else            enterCropMode();
+        });
+    }
+
+    // Restore saved crop on load
+    restoreCrop();
+
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
 

@@ -725,7 +725,7 @@ async function main() {
     console.log('[Main] Initializing SyncLyrics...');
 
     // Load config first
-    await getConfig();
+    const config = await getConfig();
 
     // Initialize display from URL params
     initializeDisplay();
@@ -758,8 +758,14 @@ async function main() {
     // Initialize media browser
     setupMediaBrowser();
 
-    // Initialize video stream
-    setupVideoStream();
+    // Initialize video stream (REAPER_VIDEO_ENABLED feature flag required)
+    if (config?.reaperVideoEnabled) {
+        setupVideoStream();
+    } else {
+        // Hide the video stream button so it doesn't appear for regular users
+        const vsBtn = document.getElementById('btn-video-stream');
+        if (vsBtn) vsBtn.style.display = 'none';
+    }
 
     // Initialize waveform and spectrum visualizers
     initWaveform();
