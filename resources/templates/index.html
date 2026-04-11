@@ -533,19 +533,23 @@
     </div>
 </div>
 
-<!-- Video Stream Modal -->
-<div id="video-stream-modal" class="media-browser-modal hidden">
-    <div class="media-browser-content">
-        <div class="media-browser-controls">
-            <button id="video-stream-refresh" class="media-browser-control-btn" title="Refresh">
-                <i class="bi bi-arrow-clockwise"></i>
-            </button>
-            <button id="video-stream-close" class="media-browser-control-btn close-btn" title="Close">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-        <iframe id="video-stream-frame" class="media-browser-frame" src="" allow="autoplay" style="border-radius: 16px;"></iframe>
+<!-- Video Stream Overlay (floating panel, not a modal) -->
+<div id="video-stream-overlay" class="video-stream-overlay hidden">
+    <div class="vs-controls">
+        <button id="vs-transparency-btn" class="vs-control-btn" title="Enable transparency">
+            <i class="bi bi-layers"></i>
+        </button>
+        <button id="vs-fullscreen-btn" class="vs-control-btn" title="Fullscreen">
+            <i class="bi bi-fullscreen"></i>
+        </button>
+        <button id="vs-refresh-btn" class="vs-control-btn" title="Refresh stream">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+        <button id="vs-close-btn" class="vs-control-btn vs-close" title="Close">
+            <i class="bi bi-x-lg"></i>
+        </button>
     </div>
+    <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
 </div>
 
 <!-- Device Picker Modal (outside player-ui-container for proper z-index) -->
