@@ -585,6 +585,11 @@
         <span id="vs-opacity-value" class="vs-slider-value">100%</span>
     </div>
     <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-shadows"></i> BG Blur</span>
+        <input id="vs-bg-blur-slider" type="range" class="vs-slider" min="0" max="40" value="15" step="1">
+        <span id="vs-bg-blur-value" class="vs-slider-value">15px</span>
+    </div>
+    <div class="vs-slider-row">
         <span class="vs-slider-label"><i class="bi bi-text-center"></i> Lyrics Offset</span>
         <input id="vs-lyrics-offset-slider" type="range" class="vs-slider" min="-400" max="200" value="0" step="10">
         <span id="vs-lyrics-offset-value" class="vs-slider-value">0px</span>
@@ -592,9 +597,9 @@
     <div class="vs-slider-row vs-lyrics-mode-row">
         <span class="vs-slider-label"><i class="bi bi-list-ul"></i> Lyrics Lines</span>
         <div class="vs-lyrics-mode-btns">
-            <button id="vs-lyrics-mode-full"    class="vs-zindex-btn active" title="Show all lines">All</button>
-            <button id="vs-lyrics-mode-focused" class="vs-zindex-btn"        title="Show 3 lines (prev, current, next)">3</button>
-            <button id="vs-lyrics-mode-solo"    class="vs-zindex-btn"        title="Show current line only">1</button>
+            <button id="vs-lyrics-mode-full"    class="vs-mode-btn active" title="Show all lines">All</button>
+            <button id="vs-lyrics-mode-focused" class="vs-mode-btn"        title="Show 3 lines (prev, current, next)">3</button>
+            <button id="vs-lyrics-mode-solo"    class="vs-mode-btn"        title="Show current line only">1</button>
         </div>
     </div>
     <div class="vs-slider-row vs-zindex-row">

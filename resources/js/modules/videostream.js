@@ -19,9 +19,13 @@
  * Level 2 - Imports: nothing (self-contained, no state/api dependencies)
  */
 
-const STREAM_PORT      = 9062;
+const STREAM_PORT       = 9062;
 const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS  = 10000;
+// Hold-to-drag: how long finger must be down before drag activates.
+// Taps shorter than this pass through to underlying elements.
+// Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
+const TAP_THRESHOLD_MS  = 400;
 
 // localStorage keys
 const LS_BLEND_MODE         = 'reaper_video_blend_mode';
@@ -29,7 +33,7 @@ const LS_OPACITY_OFF        = 'reaper_video_opacity_off';
 const LS_OPACITY_BLEND      = 'reaper_video_opacity_blend';
 const LS_FILTERS_MULTIPLY   = 'reaper_video_filters_multiply';
 const LS_FILTERS_SCREEN     = 'reaper_video_filters_screen';
-const LS_POS_BOTTOM_OFFSET  = 'reaper_video_bottom_offset';  // replaces LS_POS_TOP
+const LS_POS_BOTTOM_OFFSET  = 'reaper_video_bottom_offset';
 const LS_POS_LEFT           = 'reaper_video_left';
 const LS_WIDTH_PCT          = 'reaper_video_width_pct';
 const LS_ZINDEX             = 'reaper_video_zindex';
@@ -37,6 +41,7 @@ const LS_LOCKED             = 'reaper_video_locked';
 const LS_CROP_TOP           = 'reaper_video_crop_top_pct';
 const LS_CROP_BOTTOM        = 'reaper_video_crop_bottom_pct';
 const LS_LYRICS_MODE        = 'reaper_video_lyrics_mode';
+const LS_BG_BLUR            = 'reaper_video_bg_blur';
 
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
@@ -65,9 +70,10 @@ export function setupVideoStream() {
     const saturationSlider = document.getElementById('vs-saturation-slider');
     const hueSlider        = document.getElementById('vs-hue-slider');
     const opacitySlider    = document.getElementById('vs-opacity-slider');
-    const zindexMinusBtn   = document.getElementById('vs-zindex-minus');
-    const zindexPlusBtn    = document.getElementById('vs-zindex-plus');
+    const zindexMinusBtn    = document.getElementById('vs-zindex-minus');
+    const zindexPlusBtn     = document.getElementById('vs-zindex-plus');
     const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
+    const bgBlurSlider      = document.getElementById('vs-bg-blur-slider');
 
     if (!btn || !overlay || !img) return;
 
@@ -253,9 +259,10 @@ export function setupVideoStream() {
         stopStream();
         hideControlsImmediate();
         toggleSliderPopup(false);
-        if (isCropMode) exitCropMode();   // hide handles if crop mode was active
-        resetLyricsOffset();              // restore lyrics to normal position
-        resetLyricsMode();               // restore all lyric lines visible
+        if (isCropMode) exitCropMode();
+        resetLyricsOffset();
+        resetLyricsMode();
+        resetBgBlur();             // remove body class — background-overlay reverts to current mode
 
         if (document.fullscreenElement === overlay) {
             document.exitFullscreen().catch(() => {});
@@ -535,29 +542,6 @@ export function setupVideoStream() {
         });
     }
 
-    // ── Drag (touch + mouse) ─────────────────────────────────────────────────
-    // Only active when unlocked (overlay.style.pointerEvents = 'auto')
-    // At width=100%: Y-axis only (left is always 0)
-    // At width<100%: full 2D
-
-    let isDragging       = false;
-    let dragStartX       = 0;
-    let dragStartY       = 0;
-    let overlayStartTop  = 0;
-    let overlayStartLeft = 0;
-    let activePointers   = new Map(); // pointerId → true (tracks concurrent pointers on overlay)
-    const DRAG_DEAD_ZONE = 10; // px before drag activates
-
-    function getOverlayLeft() {
-        return parseInt(overlay.style.left, 10) || 0;
-    }
-    function getOverlayTop() {
-        return parseInt(overlay.style.top, 10) || 0;
-    }
-    function getOverlayWidthPct() {
-        const w = parseFloat(overlay.style.width) || 100;
-        return w; // already in %
-    }
 
     function clampPosition(top, left) {
         const overlayW = overlay.offsetWidth;
@@ -626,32 +610,69 @@ export function setupVideoStream() {
         syncBars();
     }
 
+    // ── Drag (touch + mouse) ─────────────────────────────────────────────────
+    // Hold-to-drag: tap shorter than TAP_THRESHOLD_MS passes through to underlying elements.
+    // Drag activates after TAP_THRESHOLD_MS hold OR if dead zone is exceeded while holding.
+    // Only active when unlocked (overlay.style.pointerEvents = 'auto')
+
+    let isDragging       = false;
+    let dragActive       = false;
+    let tapTimer         = null;
+    let dragStartX       = 0;
+    let dragStartY       = 0;
+    let overlayStartTop  = 0;
+    let overlayStartLeft = 0;
+    let activePointers   = new Map();
+    let dragStartPointerId = 0;
+    const DRAG_DEAD_ZONE = 10;
+
+    function getOverlayLeft() { return parseInt(overlay.style.left, 10) || 0; }
+    function getOverlayTop()  { return parseInt(overlay.style.top,  10) || 0; }
+    function getOverlayWidthPct() { return parseFloat(overlay.style.width) || 100; }
+
+    function activateDrag() {
+        if (dragActive) return;
+        dragActive = true;
+        overlay.setPointerCapture(dragStartPointerId);
+        document.body.classList.add('vs-dragging');
+    }
+
     overlay.addEventListener('pointerdown', (e) => {
         activePointers.set(e.pointerId, true);
         if (isLocked) { showControls(); return; }
-        // If 2+ pointers are now active, this is becoming a pinch — abort drag
-        if (activePointers.size > 1) { isDragging = false; return; }
-        isDragging       = true;
-        dragStartX       = e.clientX;
-        dragStartY       = e.clientY;
-        overlayStartTop  = getOverlayTop();
-        overlayStartLeft = getOverlayLeft();
-        overlay.setPointerCapture(e.pointerId);
-        document.body.classList.add('vs-dragging');
+        if (activePointers.size > 1) { isDragging = false; dragActive = false; return; }
+
+        isDragging        = true;
+        dragActive        = false;
+        dragStartX        = e.clientX;
+        dragStartY        = e.clientY;
+        overlayStartTop   = getOverlayTop();
+        overlayStartLeft  = getOverlayLeft();
+        dragStartPointerId = e.pointerId;
+
+        // Start hold timer — if it fires, drag is activated
+        tapTimer = setTimeout(() => {
+            tapTimer = null;
+            if (isDragging) activateDrag();
+        }, TAP_THRESHOLD_MS);
     });
 
     overlay.addEventListener('pointermove', (e) => {
         if (!isDragging || isLocked) return;
-        e.preventDefault(); // Prevent browser scroll from firing pointercancel mid-drag
+        e.preventDefault();
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
 
-        if (Math.abs(dx) < DRAG_DEAD_ZONE && Math.abs(dy) < DRAG_DEAD_ZONE) return;
+        // Exceeded dead zone during hold — activate drag immediately
+        if (!dragActive && (Math.abs(dx) > DRAG_DEAD_ZONE || Math.abs(dy) > DRAG_DEAD_ZONE)) {
+            activateDrag();
+        }
+
+        if (!dragActive) return;
 
         const newTop  = overlayStartTop  + dy;
         const newLeft = overlayStartLeft + dx;
         const clamped = clampPosition(newTop, newLeft);
-
         overlay.style.top  = clamped.top  + 'px';
         overlay.style.left = clamped.left + 'px';
         syncBars();
@@ -659,15 +680,27 @@ export function setupVideoStream() {
 
     overlay.addEventListener('pointerup', (e) => {
         activePointers.delete(e.pointerId);
+        if (tapTimer) {
+            // Released before threshold: was a tap — release capture so event reaches underlying elements
+            clearTimeout(tapTimer);
+            tapTimer = null;
+            if (dragActive) overlay.releasePointerCapture(e.pointerId);
+            isDragging = false;
+            dragActive = false;
+            return;
+        }
         if (!isDragging) return;
         isDragging = false;
+        dragActive = false;
         document.body.classList.remove('vs-dragging');
         savePosition();
     });
 
     overlay.addEventListener('pointercancel', (e) => {
         activePointers.delete(e.pointerId);
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
         isDragging = false;
+        dragActive = false;
         document.body.classList.remove('vs-dragging');
     });
 
@@ -964,7 +997,7 @@ export function setupVideoStream() {
         updateLyricsOffsetSlider();
     }
 
-    // Apply restored offset + mode to lyrics when overlay opens.
+    // Apply restored offset + mode + blur when overlay opens.
     // Secondary click listener runs after open() (first listener) has set isOpen = true.
     btn.addEventListener('click', () => {
         if (isOpen) {
@@ -974,6 +1007,7 @@ export function setupVideoStream() {
             if (currentLyricsMode !== 'full') {
                 applyLyricsMode(currentLyricsMode);
             }
+            applyBgBlur(currentBgBlur);  // always re-apply blur class on open
         }
     });
 
@@ -1017,6 +1051,49 @@ export function setupVideoStream() {
     if (_savedLyricsMode && ['full', 'focused', 'solo'].includes(_savedLyricsMode)) {
         currentLyricsMode = _savedLyricsMode;
         updateLyricsModeButtons();
+    }
+
+    // ── Background Blur Override ─────────────────────────────────────────────────
+    // When the video overlay is open, a CSS class on <body> combined with a CSS
+    // custom property forces the background-overlay's backdrop-filter to the
+    // user-chosen blur value — overriding sharp/soft/blur mode and visual mode.
+    // On overlay close, the class is removed and the existing mode resumes exactly.
+
+    let currentBgBlur = 15; // px; default: comfortable mid-level frosted glass
+
+    function applyBgBlur(px) {
+        currentBgBlur = Math.max(0, Math.min(40, Math.round(px)));
+        document.documentElement.style.setProperty('--vs-blur-override', currentBgBlur + 'px');
+        document.body.classList.add('vs-overlay-active');
+        localStorage.setItem(LS_BG_BLUR, String(currentBgBlur));
+        updateBgBlurSlider();
+    }
+
+    function resetBgBlur() {
+        // Remove class so the existing background mode (sharp/soft/blur) takes over again.
+        // Do NOT clear --vs-blur-override or currentBgBlur — preserve for next open.
+        document.body.classList.remove('vs-overlay-active');
+    }
+
+    function updateBgBlurSlider() {
+        if (!bgBlurSlider) return;
+        bgBlurSlider.value = currentBgBlur;
+        const valEl = document.getElementById('vs-bg-blur-value');
+        if (valEl) valEl.textContent = currentBgBlur + 'px';
+    }
+
+    if (bgBlurSlider) {
+        bgBlurSlider.addEventListener('input', () => {
+            applyBgBlur(parseInt(bgBlurSlider.value, 10));
+        });
+    }
+
+    // Restore saved blur on init (don't apply class — overlay is closed at this point)
+    const _savedBgBlur = localStorage.getItem(LS_BG_BLUR);
+    if (_savedBgBlur !== null) {
+        currentBgBlur = Math.max(0, Math.min(40, parseInt(_savedBgBlur, 10) || 15));
+        document.documentElement.style.setProperty('--vs-blur-override', currentBgBlur + 'px');
+        updateBgBlurSlider();
     }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────

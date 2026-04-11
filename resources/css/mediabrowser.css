@@ -205,6 +205,15 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Explicit :active prevents the brief invisible-icon flash on touch
+   that occurs when no :active rule exists and the browser applies its own highlight. */
+.vs-control-btn:active {
+    background: rgba(255, 255, 255, 0.28);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.45);
+    transition: none; /* instant — no fade on press */
+}
+
 .vs-control-btn.vs-close:hover {
     background: rgba(239, 68, 68, 0.35);
     border-color: rgba(239, 68, 68, 0.5);
@@ -321,15 +330,51 @@ body.vs-dragging {
     display: none;
 }
 
-/* ── Lyrics Lines mode row layout ──────────────────────────────────────────── */
-.vs-lyrics-mode-row {
-    align-items: center;
-}
-
+/* ── Lyrics Lines mode toggle buttons (All / 3 / 1) ────────────────────────── */
+/* Separate class from vs-zindex-btn — these need to fill available row space. */
 .vs-lyrics-mode-btns {
     display: flex;
+    flex: 1;
     gap: 4px;
-    margin-left: auto;
+    min-width: 0;
+}
+
+.vs-mode-btn {
+    flex: 1;
+    height: 26px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.vs-mode-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: white;
+}
+
+.vs-mode-btn.active {
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #93c5fd;
+}
+
+/* ── Background blur override (REAPER video overlay only) ───────────────────── */
+/* When video overlay is open, body.vs-overlay-active is added by videostream.js.
+ * The --vs-blur-override CSS var is set to the user's chosen blur level.
+ * This selector is more specific than body.sharp-mode / body.soft-mode rules
+ * so it wins without disrupting any existing mode state. On overlay close,
+ * the class is removed and the background-overlay reverts to the current mode. */
+body.vs-overlay-active #background-overlay {
+    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(160%) !important;
+    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(160%) !important;
 }
 
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
