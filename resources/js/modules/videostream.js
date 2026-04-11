@@ -24,18 +24,19 @@ const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS  = 10000;
 
 // localStorage keys
-const LS_BLEND_MODE       = 'reaper_video_blend_mode';
-const LS_OPACITY_OFF      = 'reaper_video_opacity_off';
-const LS_OPACITY_BLEND    = 'reaper_video_opacity_blend';
-const LS_FILTERS_MULTIPLY = 'reaper_video_filters_multiply';
-const LS_FILTERS_SCREEN   = 'reaper_video_filters_screen';
-const LS_POS_TOP          = 'reaper_video_top';
-const LS_POS_LEFT         = 'reaper_video_left';
-const LS_WIDTH_PCT        = 'reaper_video_width_pct';
-const LS_ZINDEX           = 'reaper_video_zindex';
-const LS_LOCKED           = 'reaper_video_locked';
-const LS_CROP_TOP         = 'reaper_video_crop_top_pct';
-const LS_CROP_BOTTOM      = 'reaper_video_crop_bottom_pct';
+const LS_BLEND_MODE         = 'reaper_video_blend_mode';
+const LS_OPACITY_OFF        = 'reaper_video_opacity_off';
+const LS_OPACITY_BLEND      = 'reaper_video_opacity_blend';
+const LS_FILTERS_MULTIPLY   = 'reaper_video_filters_multiply';
+const LS_FILTERS_SCREEN     = 'reaper_video_filters_screen';
+const LS_POS_BOTTOM_OFFSET  = 'reaper_video_bottom_offset';  // replaces LS_POS_TOP
+const LS_POS_LEFT           = 'reaper_video_left';
+const LS_WIDTH_PCT          = 'reaper_video_width_pct';
+const LS_ZINDEX             = 'reaper_video_zindex';
+const LS_LOCKED             = 'reaper_video_locked';
+const LS_CROP_TOP           = 'reaper_video_crop_top_pct';
+const LS_CROP_BOTTOM        = 'reaper_video_crop_bottom_pct';
+const LS_LYRICS_MODE        = 'reaper_video_lyrics_mode';
 
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
@@ -115,7 +116,8 @@ export function setupVideoStream() {
     // NO transform: transform creates a GPU compositing layer that breaks mix-blend-mode.
     // We compute top manually in JS.
 
-    function centerOverlay() {
+    // Full reset — used ONLY by snapToCenter (resets width=100%, left=0, centers top)
+    function centerOverlayFull() {
         const overlayH  = overlay.offsetHeight;
         const viewportH = window.innerHeight;
         const top = Math.max(0, Math.round((viewportH - overlayH) / 2));
@@ -124,9 +126,26 @@ export function setupVideoStream() {
         overlay.style.width = '100%';
     }
 
+    // Position-preserving — only recalculates top from saved bottom offset.
+    // Does NOT touch width or left. Used by resize handler and restorePosition.
+    // Falls back to vertical centering when no saved offset exists.
+    function recalcTopFromBottom() {
+        const overlayH = overlay.offsetHeight;
+        const vh       = window.innerHeight;
+        const savedB   = localStorage.getItem(LS_POS_BOTTOM_OFFSET);
+        if (savedB !== null) {
+            const bottomOffset = parseInt(savedB, 10) || 0;
+            const rawTop = vh - overlayH - bottomOffset;
+            const { top } = clampPosition(rawTop, getOverlayLeft());
+            overlay.style.top = top + 'px';
+        } else {
+            overlay.style.top = Math.max(0, Math.round((vh - overlayH) / 2)) + 'px';
+        }
+    }
+
     function snapToCenter() {
-        centerOverlay();
-        localStorage.removeItem(LS_POS_TOP);
+        centerOverlayFull();
+        localStorage.removeItem(LS_POS_BOTTOM_OFFSET);
         localStorage.removeItem(LS_POS_LEFT);
         localStorage.removeItem(LS_WIDTH_PCT);
         syncBars();
@@ -145,7 +164,11 @@ export function setupVideoStream() {
 
     window.addEventListener('resize', () => {
         if (!isOpen) return;
-        centerOverlay();
+        // Recalc top from saved bottom offset — preserves user's pinch width and left position
+        recalcTopFromBottom();
+        // Re-clamp left to new viewport bounds (width unchanged)
+        const { left } = clampPosition(getOverlayTop(), getOverlayLeft());
+        overlay.style.left = left + 'px';
         syncBars();
     });
 
@@ -231,7 +254,8 @@ export function setupVideoStream() {
         hideControlsImmediate();
         toggleSliderPopup(false);
         if (isCropMode) exitCropMode();   // hide handles if crop mode was active
-        resetLyricsOffset();              // always restore lyrics to normal position on close
+        resetLyricsOffset();              // restore lyrics to normal position
+        resetLyricsMode();               // restore all lyric lines visible
 
         if (document.fullscreenElement === overlay) {
             document.exitFullscreen().catch(() => {});
@@ -561,28 +585,43 @@ export function setupVideoStream() {
     }
 
     function savePosition() {
-        localStorage.setItem(LS_POS_TOP,   String(parseInt(overlay.style.top,  10) || 0));
-        localStorage.setItem(LS_POS_LEFT,  String(parseInt(overlay.style.left, 10) || 0));
-        localStorage.setItem(LS_WIDTH_PCT, String(getOverlayWidthPct()));
+        const top      = parseInt(overlay.style.top, 10) || 0;
+        const vh       = window.innerHeight;
+        const overlayH = overlay.offsetHeight;
+        // Save as distance from element bottom to viewport bottom.
+        // This way, different-height videos (height:auto) always restore
+        // to the same bottom edge position regardless of stream aspect ratio.
+        const bottomOffset = vh - top - overlayH;
+        localStorage.setItem(LS_POS_BOTTOM_OFFSET, String(bottomOffset));
+        localStorage.setItem(LS_POS_LEFT,           String(parseInt(overlay.style.left, 10) || 0));
+        localStorage.setItem(LS_WIDTH_PCT,          String(getOverlayWidthPct()));
     }
 
     function restorePosition() {
-        const savedTop  = localStorage.getItem(LS_POS_TOP);
+        const savedB    = localStorage.getItem(LS_POS_BOTTOM_OFFSET);
         const savedLeft = localStorage.getItem(LS_POS_LEFT);
         const savedW    = localStorage.getItem(LS_WIDTH_PCT);
 
+        // Restore width first — offsetHeight depends on width when height is auto
         if (savedW !== null) {
             overlay.style.width = parseFloat(savedW) + '%';
         }
 
-        if (savedTop !== null) {
-            const top  = parseInt(savedTop,  10) || 0;
-            const left = parseInt(savedLeft, 10) || 0;
-            const clamped = clampPosition(top, left);
+        if (savedB !== null) {
+            const bottomOffset = parseInt(savedB, 10) || 0;
+            const overlayH = overlay.offsetHeight;
+            const vh       = window.innerHeight;
+            const rawTop   = vh - overlayH - bottomOffset;
+            const left     = savedLeft !== null ? (parseInt(savedLeft, 10) || 0) : 0;
+            const clamped  = clampPosition(rawTop, left);
             overlay.style.top  = clamped.top  + 'px';
             overlay.style.left = clamped.left + 'px';
         } else {
-            centerOverlay();
+            // No saved state — center vertically, left=0
+            const vh = window.innerHeight;
+            const overlayH = overlay.offsetHeight;
+            overlay.style.top  = Math.max(0, Math.round((vh - overlayH) / 2)) + 'px';
+            overlay.style.left = '0px';
         }
         syncBars();
     }
@@ -925,13 +964,60 @@ export function setupVideoStream() {
         updateLyricsOffsetSlider();
     }
 
-    // Apply restored offset to lyrics element when overlay opens.
+    // Apply restored offset + mode to lyrics when overlay opens.
     // Secondary click listener runs after open() (first listener) has set isOpen = true.
     btn.addEventListener('click', () => {
-        if (isOpen && currentLyricsOffset !== 0) {
-            if (lyricsEl) lyricsEl.style.marginTop = currentLyricsOffset + 'px';
+        if (isOpen) {
+            if (currentLyricsOffset !== 0 && lyricsEl) {
+                lyricsEl.style.marginTop = currentLyricsOffset + 'px';
+            }
+            if (currentLyricsMode !== 'full') {
+                applyLyricsMode(currentLyricsMode);
+            }
         }
     });
+
+    // ── Lyrics Focus Mode ─────────────────────────────────────────────────────
+    // Three states: full (default) | focused (3 lines) | solo (1 line).
+    // Applies CSS classes to the lyrics container. Matches lyrics offset lifecycle:
+    // resets to 'full' on close, restores saved mode on open.
+
+    let currentLyricsMode = 'full'; // 'full' | 'focused' | 'solo'
+
+    function applyLyricsMode(mode) {
+        currentLyricsMode = mode;
+        if (lyricsEl) {
+            lyricsEl.classList.remove('vs-lyric-focused', 'vs-lyric-solo');
+            if (mode === 'focused') lyricsEl.classList.add('vs-lyric-focused');
+            else if (mode === 'solo') lyricsEl.classList.add('vs-lyric-solo');
+        }
+        localStorage.setItem(LS_LYRICS_MODE, mode);
+        updateLyricsModeButtons();
+    }
+
+    function resetLyricsMode() {
+        // Clear DOM only — preserve currentLyricsMode for next open (same as offset pattern)
+        if (lyricsEl) lyricsEl.classList.remove('vs-lyric-focused', 'vs-lyric-solo');
+        updateLyricsModeButtons();
+    }
+
+    function updateLyricsModeButtons() {
+        ['full', 'focused', 'solo'].forEach(m => {
+            const el = document.getElementById(`vs-lyrics-mode-${m}`);
+            if (el) el.classList.toggle('active', currentLyricsMode === m && isOpen);
+        });
+    }
+
+    document.getElementById('vs-lyrics-mode-full')   ?.addEventListener('click', () => applyLyricsMode('full'));
+    document.getElementById('vs-lyrics-mode-focused') ?.addEventListener('click', () => applyLyricsMode('focused'));
+    document.getElementById('vs-lyrics-mode-solo')    ?.addEventListener('click', () => applyLyricsMode('solo'));
+
+    // Restore saved mode from localStorage on init (don't apply to DOM — overlay is closed)
+    const _savedLyricsMode = localStorage.getItem(LS_LYRICS_MODE);
+    if (_savedLyricsMode && ['full', 'focused', 'solo'].includes(_savedLyricsMode)) {
+        currentLyricsMode = _savedLyricsMode;
+        updateLyricsModeButtons();
+    }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
 

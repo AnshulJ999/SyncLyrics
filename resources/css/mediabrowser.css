@@ -304,6 +304,34 @@ body.vs-dragging {
     box-shadow: 0 0 16px rgba(251, 146, 60, 0.8);
 }
 
+/* ── Lyrics Focus Mode (REAPER video overlay only) ──────────────────────────── */
+/* Classes toggled on #lyrics by videostream.js. Resets to 'full' on overlay close. */
+
+/* Focused: show only prev-1, current, next-1 */
+#lyrics.vs-lyric-focused .far-previous,
+#lyrics.vs-lyric-focused .far-next {
+    display: none;
+}
+
+/* Solo: show only current line */
+#lyrics.vs-lyric-solo .far-previous,
+#lyrics.vs-lyric-solo .previous,
+#lyrics.vs-lyric-solo .next,
+#lyrics.vs-lyric-solo .far-next {
+    display: none;
+}
+
+/* ── Lyrics Lines mode row layout ──────────────────────────────────────────── */
+.vs-lyrics-mode-row {
+    align-items: center;
+}
+
+.vs-lyrics-mode-btns {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
 /* Floating panel for fine-tuning boost + opacity. Positioned as a sibling
  * to the overlay (not inside it) so blend modes don't affect it. */
