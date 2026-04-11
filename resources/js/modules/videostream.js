@@ -33,7 +33,7 @@ const LS_OPACITY_OFF        = 'reaper_video_opacity_off';
 const LS_OPACITY_BLEND      = 'reaper_video_opacity_blend';
 const LS_FILTERS_MULTIPLY   = 'reaper_video_filters_multiply';
 const LS_FILTERS_SCREEN     = 'reaper_video_filters_screen';
-const LS_POS_BOTTOM_OFFSET  = 'reaper_video_bottom_offset';
+const LS_POS_Y_RATIO        = 'reaper_video_y_ratio';
 const LS_POS_LEFT           = 'reaper_video_left';
 const LS_WIDTH_PCT          = 'reaper_video_width_pct';
 const LS_ZINDEX             = 'reaper_video_zindex';
@@ -132,16 +132,17 @@ export function setupVideoStream() {
         overlay.style.width = '100%';
     }
 
-    // Position-preserving — only recalculates top from saved bottom offset.
+    // Position-preserving — only recalculates top from saved proportional y-ratio.
     // Does NOT touch width or left. Used by resize handler and restorePosition.
     // Falls back to vertical centering when no saved offset exists.
-    function recalcTopFromBottom() {
+    function recalcTopFromRatio() {
         const overlayH = overlay.offsetHeight;
         const vh       = window.innerHeight;
-        const savedB   = localStorage.getItem(LS_POS_BOTTOM_OFFSET);
-        if (savedB !== null) {
-            const bottomOffset = parseInt(savedB, 10) || 0;
-            const rawTop = vh - overlayH - bottomOffset;
+        const savedY   = localStorage.getItem(LS_POS_Y_RATIO);
+        if (savedY !== null) {
+            const yRatio = parseFloat(savedY) || 0.5;
+            const maxTop = Math.max(0, vh - overlayH);
+            const rawTop = Math.round(maxTop * yRatio);
             const { top } = clampPosition(rawTop, getOverlayLeft());
             overlay.style.top = top + 'px';
         } else {
@@ -151,7 +152,7 @@ export function setupVideoStream() {
 
     function snapToCenter() {
         centerOverlayFull();
-        localStorage.removeItem(LS_POS_BOTTOM_OFFSET);
+        localStorage.removeItem(LS_POS_Y_RATIO);
         localStorage.removeItem(LS_POS_LEFT);
         localStorage.removeItem(LS_WIDTH_PCT);
         syncBars();
@@ -170,8 +171,8 @@ export function setupVideoStream() {
 
     window.addEventListener('resize', () => {
         if (!isOpen) return;
-        // Recalc top from saved bottom offset — preserves user's pinch width and left position
-        recalcTopFromBottom();
+        // Recalc top from saved proportional offset — preserves user's pinch width and left position
+        recalcTopFromRatio();
         // Re-clamp left to new viewport bounds (width unchanged)
         const { left } = clampPosition(getOverlayTop(), getOverlayLeft());
         overlay.style.left = left + 'px';
@@ -571,31 +572,42 @@ export function setupVideoStream() {
     function savePosition() {
         const top      = parseInt(overlay.style.top, 10) || 0;
         const vh       = window.innerHeight;
-        const overlayH = overlay.offsetHeight;
-        // Save as distance from element bottom to viewport bottom.
-        // This way, different-height videos (height:auto) always restore
-        // to the same bottom edge position regardless of stream aspect ratio.
-        const bottomOffset = vh - top - overlayH;
-        localStorage.setItem(LS_POS_BOTTOM_OFFSET, String(bottomOffset));
-        localStorage.setItem(LS_POS_LEFT,           String(parseInt(overlay.style.left, 10) || 0));
-        localStorage.setItem(LS_WIDTH_PCT,          String(getOverlayWidthPct()));
+        const overlayH = Math.max(1, overlay.offsetHeight);
+        // Save proportional Y position to handle varied video heights properly.
+        // yRatio = 0 (top), 0.5 (center), 1 (bottom edge matches viewport bottom).
+        const maxTop = Math.max(0, vh - overlayH);
+        const yRatio = maxTop > 0 ? (top / maxTop) : 0.5;
+        const clampedYRatio = Math.max(0, Math.min(1, yRatio));
+        
+        localStorage.setItem(LS_POS_Y_RATIO, String(clampedYRatio));
+        localStorage.setItem(LS_POS_LEFT,    String(parseInt(overlay.style.left, 10) || 0));
+        localStorage.setItem(LS_WIDTH_PCT,   String(getOverlayWidthPct()));
+    }
+
+    function getExpectedOverlayHeight() {
+        if (img && img.naturalWidth && img.naturalHeight) {
+            // Bypass CSS layout delay by predicting the box model height mathematically
+            return Math.max(1, Math.round(overlay.offsetWidth * (img.naturalHeight / img.naturalWidth)));
+        }
+        return Math.max(1, overlay.offsetHeight);
     }
 
     function restorePosition() {
-        const savedB    = localStorage.getItem(LS_POS_BOTTOM_OFFSET);
+        const savedY    = localStorage.getItem(LS_POS_Y_RATIO);
         const savedLeft = localStorage.getItem(LS_POS_LEFT);
         const savedW    = localStorage.getItem(LS_WIDTH_PCT);
 
-        // Restore width first — offsetHeight depends on width when height is auto
+        // Restore width first — new height will strictly follow this width via aspect ratio
         if (savedW !== null) {
             overlay.style.width = parseFloat(savedW) + '%';
         }
 
-        if (savedB !== null) {
-            const bottomOffset = parseInt(savedB, 10) || 0;
-            const overlayH = overlay.offsetHeight;
+        if (savedY !== null) {
+            const yRatio   = parseFloat(savedY) || 0;
+            const overlayH = getExpectedOverlayHeight();
             const vh       = window.innerHeight;
-            const rawTop   = vh - overlayH - bottomOffset;
+            const maxTop   = Math.max(0, vh - overlayH);
+            const rawTop   = Math.round(maxTop * yRatio);
             const left     = savedLeft !== null ? (parseInt(savedLeft, 10) || 0) : 0;
             const clamped  = clampPosition(rawTop, left);
             overlay.style.top  = clamped.top  + 'px';
@@ -603,7 +615,7 @@ export function setupVideoStream() {
         } else {
             // No saved state — center vertically, left=0
             const vh = window.innerHeight;
-            const overlayH = overlay.offsetHeight;
+            const overlayH = getExpectedOverlayHeight();
             overlay.style.top  = Math.max(0, Math.round((vh - overlayH) / 2)) + 'px';
             overlay.style.left = '0px';
         }
@@ -681,12 +693,30 @@ export function setupVideoStream() {
     overlay.addEventListener('pointerup', (e) => {
         activePointers.delete(e.pointerId);
         if (tapTimer) {
-            // Released before threshold: was a tap — release capture so event reaches underlying elements
+            // Released before threshold: was a tap
             clearTimeout(tapTimer);
             tapTimer = null;
             if (dragActive) overlay.releasePointerCapture(e.pointerId);
             isDragging = false;
             dragActive = false;
+            
+            // Synthesize click pass-through to underlying elements
+            const prevPE = overlay.style.pointerEvents;
+            overlay.style.pointerEvents = 'none';
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            overlay.style.pointerEvents = prevPE;
+            
+            if (target && target !== overlay) {
+                const clickEvent = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    button: 0
+                });
+                target.dispatchEvent(clickEvent);
+            }
             return;
         }
         if (!isDragging) return;
