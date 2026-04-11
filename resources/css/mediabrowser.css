@@ -87,9 +87,10 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     left: 0;
     width: 100%;
     z-index: 500; /* above lyrics/controls, below any modals (2000+) */
-    /* Centered vertically by default; JS can override top for drag reposition */
-    top: 50%;
-    transform: translateY(-50%);
+    /* top is set dynamically by JS (centerOverlay) after image dimensions are known */
+    /* NO transform: — transform creates a GPU compositing layer which breaks */
+    /* mix-blend-mode: multiply on children (they blend against the layer, not the page) */
+    top: 0;
     background: transparent;
     /* Let touch events fall through to lyrics - only controls strip is interactive */
     pointer-events: none;
@@ -116,25 +117,25 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     mix-blend-mode: multiply;
 }
 
-/* Control strip — always visible, top-right corner of the overlay */
+/* Control strip — top-right corner of the overlay, always visible */
 .vs-controls {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 4px;
+    right: 4px;
     z-index: 10;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     pointer-events: auto; /* only this strip is interactive */
 }
 
 .vs-control-btn {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.65);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: rgba(255, 255, 255, 0.8);
-    font-size: 0.9rem;
+    font-size: 0.72rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -173,9 +174,9 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    top: 0;
+    top: 0 !important; /* override JS-set top */
     transform: none;
-    pointer-events: auto; /* All events work in fullscreen */
+    pointer-events: auto;
 }
 
 .video-stream-overlay:fullscreen .vs-img,
@@ -378,9 +379,8 @@ body:not(.hide-nav) .media-browser-toggle-btn {
         bottom: calc(var(--buttons-base, 80px) + 202px); /* 150px + 40px + 12px gap */
     }
 
-    /* On mobile, overlay centering stays the same (full-width auto-height) */
+    /* On mobile, overlay top is still managed by JS */
     .video-stream-overlay {
-        top: 50%;
-        transform: translateY(-50%);
+        top: 0;
     }
 }

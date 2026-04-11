@@ -40,6 +40,27 @@ export function setupVideoStream() {
     // Use /stream for the raw MJPEG — we handle our own HTML/CSS, no need for /
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
 
+    // ── Centering ────────────────────────────────────────────────────────────
+    //
+    // We cannot use CSS transform: translateY(-50%) because transform creates
+    // a GPU compositing layer that breaks mix-blend-mode: multiply on children.
+    // Instead, compute top manually after the image has natural dimensions.
+    //
+    // NOTE: overlay.style.top is later overridden by the drag system (Phase 2).
+    // centerOverlay() acts as the "snap to center" default.
+
+    function centerOverlay() {
+        const overlayH  = overlay.offsetHeight;
+        const viewportH = window.innerHeight;
+        // Clamp: never go above viewport top, always stay within viewport
+        const top = Math.max(0, Math.round((viewportH - overlayH) / 2));
+        overlay.style.top = top + 'px';
+    }
+
+    window.addEventListener('resize', () => {
+        if (isOpen) centerOverlay();
+    });
+
     // ── Stream load/unload ───────────────────────────────────────────────────
 
     function loadStream() {
@@ -65,9 +86,10 @@ export function setupVideoStream() {
         scheduleReconnect();
     });
 
-    // img.onload fires on the first successful frame — reset backoff
+    // img.onload fires on the first successful frame — reset backoff + recenter
     img.addEventListener('load', () => {
         reconnectDelay = RECONNECT_BASE_MS;
+        centerOverlay();
     });
 
     function scheduleReconnect() {
