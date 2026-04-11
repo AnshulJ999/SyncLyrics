@@ -39,9 +39,17 @@ export function setupVideoStream() {
     const boostBtn        = document.getElementById('vs-boost-btn');
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
 
+    // Slider popup elements
+    const sliderPopup      = document.getElementById('vs-slider-popup');
+    const contrastSlider   = document.getElementById('vs-contrast-slider');
+    const brightnessSlider = document.getElementById('vs-brightness-slider');
+    const saturationSlider = document.getElementById('vs-saturation-slider');
+    const opacitySlider    = document.getElementById('vs-opacity-slider');
+
     if (!btn || !overlay || !img) return;
 
-    let isOpen         = false;
+    let isOpen          = false;
+    let sliderPopupOpen = false;
     let reconnectTimer = null;
     let reconnectDelay = RECONNECT_BASE_MS;
     let fadeTimer      = null;
@@ -320,13 +328,6 @@ export function setupVideoStream() {
     //
     // 4-slider popup: contrast, brightness, saturation, opacity.
     // Single tap on boost button opens/closes.
-
-    const sliderPopup      = document.getElementById('vs-slider-popup');
-    const contrastSlider   = document.getElementById('vs-contrast-slider');
-    const brightnessSlider = document.getElementById('vs-brightness-slider');
-    const saturationSlider = document.getElementById('vs-saturation-slider');
-    const opacitySlider    = document.getElementById('vs-opacity-slider');
-    let sliderPopupOpen    = false;
 
     function toggleSliderPopup(forceState) {
         if (!sliderPopup) return;
