@@ -145,24 +145,12 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     filter: invert(1);
 }
 
-/* Boost: contrast + brightness filters sharpen notation visibility.
- * Only active when a blend mode is also on (no effect without blend).
- * Tuned separately per mode:
- *   Multiply (black tabs): contrast sharpens; brightness stays near-neutral
- *     or slightly lower so black lines stay bold, not washed out.
- *   Screen (white tabs): contrast sharpens; brightness slightly up to
- *     push near-white paper fully white for cleaner screen removal.
- * Persisted per-mode via localStorage. */
-
-/* ── Multiply + Boost (black notation on transparent bg) ── */
-.video-stream-overlay.vs-multiply.vs-boost-low .vs-img  { filter: contrast(1.3) brightness(0.97); }
-.video-stream-overlay.vs-multiply.vs-boost-med .vs-img  { filter: contrast(1.5) brightness(0.93); }
-.video-stream-overlay.vs-multiply.vs-boost-high .vs-img { filter: contrast(1.8) brightness(0.90); }
-
-/* ── Screen + Boost (invert + white notation on dark bg) ── */
-.video-stream-overlay.vs-screen.vs-boost-low .vs-img  { filter: invert(1) contrast(1.3) brightness(1.05); }
-.video-stream-overlay.vs-screen.vs-boost-med .vs-img  { filter: invert(1) contrast(1.6) brightness(1.1); }
-.video-stream-overlay.vs-screen.vs-boost-high .vs-img { filter: invert(1) contrast(2.0) brightness(1.15); }
+/* Boost is applied via inline filter style by JS (computeBoostFilter).
+ * This allows continuous slider values instead of fixed class presets.
+ * The JS computes mode-specific filter strings:
+ *   Multiply: contrast(1+t*0.8) brightness(1-t*0.12)
+ *   Screen:   invert(1) contrast(1+t*1.0) brightness(1+t*0.15)
+ * where t = sliderValue / 100 (range 0–2). */
 
 /* Trim thin window-chrome borders that become visible after blend removes paper */
 .video-stream-overlay.vs-multiply .vs-img,
@@ -173,11 +161,11 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 /* Control strip — top-right corner of the overlay, always visible */
 .vs-controls {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 6px;
+    right: 6px;
     z-index: 10;
     display: flex;
-    gap: 6px;
+    gap: 8px;
     pointer-events: auto; /* only this strip is interactive */
     opacity: 1;
     transition: opacity 0.5s ease;
@@ -237,6 +225,88 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     color: #60a5fa;
     background: rgba(96, 165, 250, 0.2);
     border-color: rgba(96, 165, 250, 0.35);
+}
+
+/* ========== VIDEO STREAM SLIDER POPUP ========== */
+/* Floating panel for fine-tuning boost + opacity. Positioned as a sibling
+ * to the overlay (not inside it) so blend modes don't affect it. */
+.vs-slider-popup {
+    position: fixed;
+    top: 40px;
+    right: 12px;
+    min-width: 240px;
+    background: rgba(26, 27, 38, 0.95);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    z-index: 550; /* above overlay (500), below player-ui (900) */
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: auto;
+}
+
+.vs-slider-popup.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.vs-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+}
+
+.vs-slider-label {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+    min-width: 70px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.vs-slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.vs-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
+.vs-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
+.vs-slider-value {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.55);
+    min-width: 32px;
+    text-align: right;
 }
 
 /* Boost active — amber */

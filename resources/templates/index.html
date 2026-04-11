@@ -558,6 +558,20 @@
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
 </div>
 
+<!-- Video Stream Slider Popup (sibling, not inside overlay — unaffected by blend) -->
+<div id="vs-slider-popup" class="vs-slider-popup hidden">
+    <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-brightness-high"></i> Boost</span>
+        <input id="vs-boost-slider" type="range" class="vs-slider" min="0" max="200" value="0" step="5">
+        <span id="vs-boost-value" class="vs-slider-value">Off</span>
+    </div>
+    <div class="vs-slider-row">
+        <span class="vs-slider-label"><i class="bi bi-circle-half"></i> Opacity</span>
+        <input id="vs-opacity-slider" type="range" class="vs-slider" min="10" max="100" value="100" step="5">
+        <span id="vs-opacity-value" class="vs-slider-value">100%</span>
+    </div>
+</div>
+
 <!-- Device Picker Modal (outside player-ui-container for proper z-index) -->
 <div id="device-picker-modal" class="device-picker-modal hidden">
     <div class="device-picker-content">
