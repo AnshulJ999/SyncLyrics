@@ -66,6 +66,7 @@ export function setupVideoStream() {
     const opacitySlider    = document.getElementById('vs-opacity-slider');
     const zindexMinusBtn   = document.getElementById('vs-zindex-minus');
     const zindexPlusBtn    = document.getElementById('vs-zindex-plus');
+    const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
 
     if (!btn || !overlay || !img) return;
 
@@ -229,6 +230,8 @@ export function setupVideoStream() {
         stopStream();
         hideControlsImmediate();
         toggleSliderPopup(false);
+        if (isCropMode) exitCropMode();   // hide handles if crop mode was active
+        resetLyricsOffset();              // always restore lyrics to normal position on close
 
         if (document.fullscreenElement === overlay) {
             document.exitFullscreen().catch(() => {});
@@ -537,8 +540,20 @@ export function setupVideoStream() {
         const overlayH = overlay.offsetHeight;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        const clampedTop  = clampVal(top,  0, Math.max(0, vh - overlayH));
-        // Only allow left movement if width < 100%
+
+        // Crop-aware bounds: clip-path changes the *visible* region but not the layout box.
+        // offsetHeight still returns the full uncropped height, so we derive the visible
+        // region's top offset and height from the crop percentages.
+        const cropTopPx    = overlayH * (cropTopPct    / 100);
+        const cropBottomPx = overlayH * (cropBottomPct / 100);
+        const visibleH     = overlayH - cropTopPx - cropBottomPx;
+
+        // Visible region top in viewport = overlay.top + cropTopPx
+        // Constraints: visibleTop >= 0 and visibleTop + visibleH <= vh
+        const minTop = -cropTopPx;                               // allows visible top to reach 0
+        const maxTop = Math.max(minTop, vh - cropTopPx - visibleH); // visible bottom at vh
+
+        const clampedTop  = clampVal(top, minTop, maxTop);
         const clampedLeft = getOverlayWidthPct() >= 99.5
             ? 0
             : clampVal(left, 0, Math.max(0, vw - overlayW));
@@ -715,7 +730,11 @@ export function setupVideoStream() {
         });
     }
 
-    document.addEventListener('fullscreenchange', updateFullscreenBtn);
+    document.addEventListener('fullscreenchange', () => {
+        updateFullscreenBtn();
+        // Exit crop mode when entering fullscreen — handles would overlap fullscreen content
+        if (document.fullscreenElement === overlay && isCropMode) exitCropMode();
+    });
 
     // ── Crop ─────────────────────────────────────────────────────────────────
     // Implemented via CSS clip-path: inset(topPct% 0 bottomPct% 0).
@@ -784,13 +803,17 @@ export function setupVideoStream() {
         saveCrop();
     }
 
-    // Generic handle drag logic — works for both top and bottom
+    // Generic handle drag logic — works for both top and bottom.
+    // Events attach to the pill (first child) since the container wrapper has pointer-events:none.
+    // setPointerCapture on the pill, .dragging class on the outer container (CSS selector target).
     function setupCropHandleDrag(handleEl, isTop) {
         if (!handleEl) return;
+        const pill = handleEl.firstElementChild; // .vs-crop-handle-indicator
+        if (!pill) return;
 
-        let dragging    = false;
-        let startY      = 0;
-        let startPct    = 0;
+        let dragging = false;
+        let startY   = 0;
+        let startPct = 0;
 
         function onMove(clientY) {
             if (!dragging) return;
@@ -804,30 +827,29 @@ export function setupVideoStream() {
                 const maxTop = 50 - cropBottomPct;
                 cropTopPct = clampVal(startPct + deltaPct, 0, maxTop);
             } else {
-                // For bottom: moving handle up = increasing bottomPct (more cropped)
                 const maxBottom = 50 - cropTopPct;
                 cropBottomPct = clampVal(startPct - deltaPct, 0, maxBottom);
             }
             applyCrop();
         }
 
-        handleEl.addEventListener('pointerdown', (e) => {
+        pill.addEventListener('pointerdown', (e) => {
             if (!isCropMode) return;
-            dragging  = true;
-            startY    = e.clientY;
-            startPct  = isTop ? cropTopPct : cropBottomPct;
-            handleEl.setPointerCapture(e.pointerId);
-            handleEl.classList.add('dragging');
+            dragging = true;
+            startY   = e.clientY;
+            startPct = isTop ? cropTopPct : cropBottomPct;
+            pill.setPointerCapture(e.pointerId);
+            handleEl.classList.add('dragging');  // CSS target is the outer container
             e.stopPropagation();
         });
 
-        handleEl.addEventListener('pointermove', (e) => {
+        pill.addEventListener('pointermove', (e) => {
             if (!dragging) return;
             onMove(e.clientY);
             e.stopPropagation();
         });
 
-        handleEl.addEventListener('pointerup', (e) => {
+        pill.addEventListener('pointerup', (e) => {
             if (!dragging) return;
             dragging = false;
             handleEl.classList.remove('dragging');
@@ -835,7 +857,7 @@ export function setupVideoStream() {
             e.stopPropagation();
         });
 
-        handleEl.addEventListener('pointercancel', () => {
+        pill.addEventListener('pointercancel', () => {
             dragging = false;
             handleEl.classList.remove('dragging');
         });
@@ -855,6 +877,61 @@ export function setupVideoStream() {
     // Restore saved crop on load
     restoreCrop();
 
+    // ── Lyrics Offset ─────────────────────────────────────────────────────────
+    // Shifts the lyrics container up or down via margin-top.
+    // Uses margin-top (not transform) to avoid conflicting with the container's
+    // existing transform: translateY() used by visual mode animations.
+    // Resets to 0 on close — offset is only meaningful while the overlay is open.
+
+    const LS_LYRICS_OFFSET = 'reaper_video_lyrics_offset';
+    const lyricsEl = document.getElementById('lyrics');
+    let currentLyricsOffset = 0; // px, range -400 to +200
+
+    function applyLyricsOffset(px) {
+        currentLyricsOffset = clampVal(px, -400, 200);
+        if (lyricsEl) lyricsEl.style.marginTop = currentLyricsOffset === 0 ? '' : currentLyricsOffset + 'px';
+        localStorage.setItem(LS_LYRICS_OFFSET, String(currentLyricsOffset));
+        updateLyricsOffsetSlider();
+    }
+
+    function resetLyricsOffset() {
+        currentLyricsOffset = 0;
+        if (lyricsEl) lyricsEl.style.marginTop = '';
+        updateLyricsOffsetSlider();
+        // Do NOT persist 0 on reset — next open should still restore the saved value
+    }
+
+    function updateLyricsOffsetSlider() {
+        if (!lyricsOffsetSlider) return;
+        lyricsOffsetSlider.value = currentLyricsOffset;
+        const valEl = document.getElementById('vs-lyrics-offset-value');
+        if (valEl) {
+            const sign = currentLyricsOffset > 0 ? '+' : '';
+            valEl.textContent = `${sign}${currentLyricsOffset}px`;
+        }
+    }
+
+    if (lyricsOffsetSlider) {
+        lyricsOffsetSlider.addEventListener('input', () => {
+            applyLyricsOffset(parseInt(lyricsOffsetSlider.value, 10));
+        });
+    }
+
+    // Restore saved offset and sync slider display on init
+    // (Don't apply margin to DOM here — overlay is closed at this point)
+    const _savedLyricsOffset = localStorage.getItem(LS_LYRICS_OFFSET);
+    if (_savedLyricsOffset !== null) {
+        currentLyricsOffset = clampVal(parseInt(_savedLyricsOffset, 10) || 0, -400, 200);
+        updateLyricsOffsetSlider();
+    }
+
+    // Apply restored offset to lyrics element when overlay opens.
+    // Secondary click listener runs after open() (first listener) has set isOpen = true.
+    btn.addEventListener('click', () => {
+        if (isOpen && currentLyricsOffset !== 0) {
+            if (lyricsEl) lyricsEl.style.marginTop = currentLyricsOffset + 'px';
+        }
+    });
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
 

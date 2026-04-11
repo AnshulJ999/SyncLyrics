@@ -253,38 +253,42 @@ body.vs-dragging {
 }
 
 /* ── Crop handles ─────────────────────────────────────────────────────────── */
-/* Full-width fixed divs that span the current crop edge.
- * Thick invisible touch target (44px) around a slim visible indicator. */
+/* Positioning wrapper only — pointer-events off so it doesn't block buttons.
+ * Only the center pill indicator captures touch/drag. */
 .vs-crop-handle {
     position: fixed;
     left: 0;
     width: 100%;
-    height: 44px;                          /* tall touch target */
+    height: 44px;                          /* tall wrapper for centering */
     z-index: 961;                          /* above controls bar */
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: ns-resize;
-    pointer-events: auto;
-    touch-action: none;                    /* prevent scroll-during-drag */
+    pointer-events: none;                  /* wrapper is NOT interactive */
+    touch-action: none;
 }
 
 .vs-crop-handle.hidden {
     display: none;
 }
 
-/* Slim visible indicator bar inside the handle */
+/* The pill is the ONLY draggable target */
 .vs-crop-handle-indicator {
     width: 80px;
-    height: 4px;
-    background: rgba(251, 146, 60, 0.85);  /* orange crop line */
-    border-radius: 2px;
+    height: 32px;                          /* tall enough for comfortable touch */
+    background: rgba(251, 146, 60, 0.85);  /* orange */
+    border-radius: 16px;
     box-shadow: 0 0 10px rgba(251, 146, 60, 0.5);
-    pointer-events: none;
+    pointer-events: auto;                  /* ← only the pill is interactive */
+    cursor: ns-resize;
+    touch-action: none;
     transition: background 0.15s, box-shadow 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-/* Full-width hairline track so cropped area boundary is clear */
+/* Hairline track across full width — purely visual, not interactive */
 .vs-crop-handle::before {
     content: '';
     position: absolute;
