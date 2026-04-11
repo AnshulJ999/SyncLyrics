@@ -28,6 +28,53 @@
     transform: scale(1.05);
 }
 
+/* ========== VIDEO STREAM TOGGLE BUTTON ========== */
+/* 3rd row, above media browser toggle on bottom-left */
+.video-stream-toggle-btn {
+    position: fixed;
+    bottom: 128px; /* 76px + 40px + 12px gap */
+    left: 24px;
+    z-index: 140;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.video-stream-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+.video-stream-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+.video-stream-toggle-btn.active {
+    color: #eab308; /* yellow indicator */
+    background: rgba(234, 179, 8, 0.15);
+    border-color: rgba(234, 179, 8, 0.3);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .video-stream-toggle-btn {
+    display: none !important;
+}
+
+/* Push up when bottom nav is visible */
+body:not(.hide-nav) .video-stream-toggle-btn {
+    bottom: 160px; /* 108px + 40px + 12px */
+}
+
 /* Icon sizing */
 .media-browser-toggle-btn i {
     font-size: 1.2rem;
@@ -204,5 +251,11 @@ body:not(.hide-nav) .media-browser-toggle-btn {
         right: auto;
         left: 16px;
         bottom: calc(var(--buttons-base, 80px) + 150px);
+    }
+    
+    .video-stream-toggle-btn {
+        right: auto;
+        left: 16px;
+        bottom: calc(var(--buttons-base, 80px) + 202px); /* 150px + 40px + 12px gap */
     }
 }

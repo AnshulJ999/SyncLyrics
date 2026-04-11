@@ -391,6 +391,11 @@
     <i class="bi bi-spotify"></i>
 </button>
 
+<!-- NEW: Video Stream Button (3rd row) -->
+<button id="btn-video-stream" class="video-stream-toggle-btn" title="Video Stream">
+    <i class="bi bi-camera-video"></i>
+</button>
+
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
     <i class="bi bi-music-note"></i>
@@ -525,6 +530,21 @@
             </button>
         </div>
         <iframe id="media-browser-frame" class="media-browser-frame" src="" allow="autoplay"></iframe>
+    </div>
+</div>
+
+<!-- Video Stream Modal -->
+<div id="video-stream-modal" class="media-browser-modal hidden">
+    <div class="media-browser-content">
+        <div class="media-browser-controls">
+            <button id="video-stream-refresh" class="media-browser-control-btn" title="Refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <button id="video-stream-close" class="media-browser-control-btn close-btn" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <iframe id="video-stream-frame" class="media-browser-frame" src="" allow="autoplay" style="border-radius: 16px;"></iframe>
     </div>
 </div>
 

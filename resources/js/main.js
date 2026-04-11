@@ -126,6 +126,9 @@ import { initKeyboardShortcuts } from './modules/keyboard.js';
 // Media Browser (Level 2)
 import { setupMediaBrowser, updateMediaBrowserIcon } from './modules/mediabrowser.js';
 
+// Video Stream (Level 2)
+import { setupVideoStream } from './modules/videostream.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -754,6 +757,9 @@ async function main() {
 
     // Initialize media browser
     setupMediaBrowser();
+
+    // Initialize video stream
+    setupVideoStream();
 
     // Initialize waveform and spectrum visualizers
     initWaveform();
