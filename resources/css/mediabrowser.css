@@ -145,14 +145,21 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     filter: invert(1);
 }
 
-/* Boost: contrast + brightness sharpen notation/background distinction.
- * contrast() pushes greys toward black/white; brightness() whitens paper
- * for cleaner blend removal. Three presets, persisted via localStorage. */
-.video-stream-overlay.vs-boost-low .vs-img  { filter: contrast(1.3) brightness(1.05); }
-.video-stream-overlay.vs-boost-med .vs-img  { filter: contrast(1.6) brightness(1.1); }
-.video-stream-overlay.vs-boost-high .vs-img { filter: contrast(2.0) brightness(1.15); }
+/* Boost: contrast + brightness filters sharpen notation visibility.
+ * Only active when a blend mode is also on (no effect without blend).
+ * Tuned separately per mode:
+ *   Multiply (black tabs): contrast sharpens; brightness stays near-neutral
+ *     or slightly lower so black lines stay bold, not washed out.
+ *   Screen (white tabs): contrast sharpens; brightness slightly up to
+ *     push near-white paper fully white for cleaner screen removal.
+ * Persisted per-mode via localStorage. */
 
-/* Screen + Boost: invert must chain with boost filters (higher specificity wins) */
+/* ── Multiply + Boost (black notation on transparent bg) ── */
+.video-stream-overlay.vs-multiply.vs-boost-low .vs-img  { filter: contrast(1.3) brightness(0.97); }
+.video-stream-overlay.vs-multiply.vs-boost-med .vs-img  { filter: contrast(1.5) brightness(0.93); }
+.video-stream-overlay.vs-multiply.vs-boost-high .vs-img { filter: contrast(1.8) brightness(0.90); }
+
+/* ── Screen + Boost (invert + white notation on dark bg) ── */
 .video-stream-overlay.vs-screen.vs-boost-low .vs-img  { filter: invert(1) contrast(1.3) brightness(1.05); }
 .video-stream-overlay.vs-screen.vs-boost-med .vs-img  { filter: invert(1) contrast(1.6) brightness(1.1); }
 .video-stream-overlay.vs-screen.vs-boost-high .vs-img { filter: invert(1) contrast(2.0) brightness(1.15); }

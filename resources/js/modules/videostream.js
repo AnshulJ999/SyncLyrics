@@ -18,9 +18,13 @@ const STREAM_PORT = 9062;
 const RECONNECT_BASE_MS = 2000;   // First retry after 2s
 const RECONNECT_MAX_MS  = 10000;  // Cap at 10s between retries
 
-const LS_BLEND_MODE  = 'reaper_video_blend_mode';
-const LS_OPACITY     = 'reaper_video_opacity';
-const LS_BOOST       = 'reaper_video_boost';
+const LS_BLEND_MODE      = 'reaper_video_blend_mode';
+const LS_OPACITY         = 'reaper_video_opacity';
+const LS_BOOST_MULTIPLY  = 'reaper_video_boost_multiply';
+const LS_BOOST_SCREEN    = 'reaper_video_boost_screen';
+
+const BOOST_LEVELS = ['off', 'low', 'med', 'high'];
+const BOOST_LABELS = { off: 'Off', low: 'Low', med: 'Medium', high: 'High' };
 
 export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
@@ -50,7 +54,7 @@ export function setupVideoStream() {
     // Controls fade to near-invisible after FADE_DELAY_MS of no interaction.
     // Any hover (desktop) or touch on the controls strip resets the timer.
 
-    const FADE_DELAY_MS = 3000;
+    const FADE_DELAY_MS = 300000;
 
     function showControls() {
         if (!controls) return;
@@ -194,6 +198,41 @@ export function setupVideoStream() {
     //                 visible on any background colour.
     // All CSS-only — /stream JPEG is always used, zero server overhead.
 
+    // ── Boost state & helpers (declared before blend mode because
+    //    applyBlendMode() calls restoreBoostForMode() during init) ────────
+    let currentBoost = 'off';
+
+    function boostStorageKey(blendMode) {
+        if (blendMode === 'multiply') return LS_BOOST_MULTIPLY;
+        if (blendMode === 'screen')   return LS_BOOST_SCREEN;
+        return null;
+    }
+
+    function applyBoost(level) {
+        currentBoost = level;
+        overlay.classList.remove('vs-boost-low', 'vs-boost-med', 'vs-boost-high');
+        if (level === 'low')  overlay.classList.add('vs-boost-low');
+        if (level === 'med')  overlay.classList.add('vs-boost-med');
+        if (level === 'high') overlay.classList.add('vs-boost-high');
+        const key = boostStorageKey(currentBlendMode);
+        if (key) localStorage.setItem(key, level);
+        updateBoostBtn(level);
+    }
+
+    function restoreBoostForMode() {
+        const key = boostStorageKey(currentBlendMode);
+        const saved = key ? localStorage.getItem(key) : null;
+        applyBoost(BOOST_LEVELS.includes(saved) ? saved : 'off');
+    }
+
+    function updateBoostBtn(level) {
+        if (!boostBtn) return;
+        boostBtn.classList.remove('vs-boost-active');
+        if (level !== 'off') boostBtn.classList.add('vs-boost-active');
+        boostBtn.title = `Boost: ${BOOST_LABELS[level]} — tap to cycle`;
+    }
+
+    // ── Blend Mode ──────────────────────────────────────────────────────
     const BLEND_MODES = ['off', 'multiply', 'screen'];
     let currentBlendMode = 'off'; // updated by applyBlendMode
 
@@ -204,6 +243,8 @@ export function setupVideoStream() {
         if (mode === 'screen')   overlay.classList.add('vs-screen');
         localStorage.setItem(LS_BLEND_MODE, mode);
         updateBlendBtn(mode);
+        // Restore the boost level saved for this blend mode
+        restoreBoostForMode();
     }
 
     function updateBlendBtn(mode) {
@@ -265,39 +306,12 @@ export function setupVideoStream() {
         });
     }
 
-    // ── Boost ────────────────────────────────────────────────────────────
-    //
-    // Cycles through 4 filter presets that sharpen notation visibility:
-    //   off → low → medium → high → off
-    //
-    // Filters (contrast + brightness) are applied to .vs-img via CSS classes
-    // on the overlay. They pre-process pixels before the blend calculation,
-    // so notation lines become bolder and paper becomes cleaner.
+    // ── Boost init & event wiring ──────────────────────────────────────
+    // (State, helpers, and functions are declared above blend mode section
+    // to avoid TDZ issues — applyBlendMode() calls restoreBoostForMode().)
 
-    const BOOST_LEVELS = ['off', 'low', 'med', 'high'];
-    const BOOST_LABELS = { off: 'Off', low: 'Low', med: 'Medium', high: 'High' };
-    let currentBoost = 'off';
-
-    function applyBoost(level) {
-        currentBoost = level;
-        overlay.classList.remove('vs-boost-low', 'vs-boost-med', 'vs-boost-high');
-        if (level === 'low')  overlay.classList.add('vs-boost-low');
-        if (level === 'med')  overlay.classList.add('vs-boost-med');
-        if (level === 'high') overlay.classList.add('vs-boost-high');
-        localStorage.setItem(LS_BOOST, level);
-        updateBoostBtn(level);
-    }
-
-    function updateBoostBtn(level) {
-        if (!boostBtn) return;
-        boostBtn.classList.remove('vs-boost-active');
-        if (level !== 'off') boostBtn.classList.add('vs-boost-active');
-        boostBtn.title = `Boost: ${BOOST_LABELS[level]} — tap to cycle`;
-    }
-
-    // Restore saved boost level
-    const savedBoost = localStorage.getItem(LS_BOOST);
-    applyBoost(BOOST_LEVELS.includes(savedBoost) ? savedBoost : 'off');
+    // Initial restore (after blend mode has been set above)
+    restoreBoostForMode();
 
     if (boostBtn) {
         boostBtn.addEventListener('click', () => {
