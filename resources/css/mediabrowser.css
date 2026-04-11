@@ -112,19 +112,33 @@ body:not(.hide-nav) .video-stream-toggle-btn {
  * CSS blend modes for Guitar Pro transparency.
  * All CSS-only — streams /stream JPEG, zero server overhead.
  *
+ * IMPORTANT: blend mode is applied to the overlay div itself, NOT to .vs-img.
+ * Reason: position:fixed creates a new stacking context. A child element's
+ * mix-blend-mode blends within that isolated context (transparent background)
+ * rather than with the page below — producing no visible effect.
+ * By applying mix-blend-mode to the fixed overlay itself, it blends against
+ * the viewport stacking context (album art, lyrics, etc.) as intended.
+ * Source: CSS Compositing spec + SO #33223603 (score 37).
+ *
  * Multiply:      white paper → transparent, black notation stays.
  *                Works best on light album art backgrounds.
- * Screen+Invert: filter: invert(1) flips colors, then screen blend.
+ * Screen+Invert: overlay gets filter:invert(1), then screen blend.
  *                Paper (inverted to black) → disappears. Notation
  *                (inverted to white) → visible on any background.
  */
-.video-stream-overlay.vs-multiply .vs-img {
+.video-stream-overlay.vs-multiply {
     mix-blend-mode: multiply;
 }
 
-.video-stream-overlay.vs-screen .vs-img {
+.video-stream-overlay.vs-screen {
     filter: invert(1);
     mix-blend-mode: screen;
+}
+
+/* Counter-invert controls in screen mode so buttons restore to normal appearance.
+ * The overlay has filter:invert(1); applying invert(1) again on controls cancels it. */
+.video-stream-overlay.vs-screen .vs-controls {
+    filter: invert(1);
 }
 
 /* Control strip — top-right corner of the overlay, always visible */
