@@ -232,14 +232,14 @@ export function setupVideoStream() {
         const t = pct / 100; // 0.0 – 2.0
         if (currentBlendMode === 'screen') {
             // White tabs: invert + contrast up + brightness up
-            const contrast   = 1 + t * 1.0;   // 1.0 → 3.0
-            const brightness = 1 + t * 0.15;   // 1.0 → 1.3
+            const contrast   = 1 + t * 1.5;   // 1.0 → 4.0
+            const brightness = 1 + t * 0.25;   // 1.0 → 1.5
             return `invert(1) contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
         } else if (currentBlendMode === 'multiply') {
             // Black tabs: contrast sharpens edges, brightness slightly up
             // so near-white paper becomes pure white (fully transparent via multiply)
-            const contrast   = 1 + t * 1.0;   // 1.0 → 3.0
-            const brightness = 1 + t * 0.08;   // 1.0 → 1.16
+            const contrast   = 1 + t * 1.5;   // 1.0 → 4.0
+            const brightness = 1 + t * 0.12;   // 1.0 → 1.24
             return `contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
         }
         return ''; // no blend mode = no filter

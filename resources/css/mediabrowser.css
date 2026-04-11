@@ -148,14 +148,15 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 /* Boost is applied via inline filter style by JS (computeBoostFilter).
  * This allows continuous slider values instead of fixed class presets.
  * The JS computes mode-specific filter strings:
- *   Multiply: contrast(1+t*0.8) brightness(1-t*0.12)
- *   Screen:   invert(1) contrast(1+t*1.0) brightness(1+t*0.15)
+ *   Multiply: contrast(1+t*1.5) brightness(1+t*0.12)
+ *   Screen:   invert(1) contrast(1+t*1.5) brightness(1+t*0.25)
  * where t = sliderValue / 100 (range 0–2). */
 
-/* Trim thin window-chrome borders that become visible after blend removes paper */
+/* Trim thin window-chrome borders that become visible after blend removes paper.
+ * Bottom edge is thicker (scrollbar/status bar area). Order: top right bottom left. */
 .video-stream-overlay.vs-multiply .vs-img,
 .video-stream-overlay.vs-screen .vs-img {
-    clip-path: inset(3px);
+    clip-path: inset(3px 3px 6px 3px);
 }
 
 /* Control strip — top-right corner of the overlay, always visible */
