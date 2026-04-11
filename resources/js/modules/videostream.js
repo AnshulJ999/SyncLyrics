@@ -217,18 +217,29 @@ export function setupVideoStream() {
         return null;
     }
 
-    /** Build the CSS filter string for the current blend mode + boost level */
+    /** Build the CSS filter string for the current blend mode + boost level.
+     *
+     * Multiply (black tabs): white paper must stay pure white to vanish
+     *   via multiply. contrast sharpens edges, brightness goes SLIGHTLY UP
+     *   to push near-white paper toward pure white. Lowering brightness
+     *   was wrong — it turned white paper gray, which multiply keeps visible.
+     * Screen (white tabs): invert flips colours first, then contrast + brightness
+     *   push the inverted paper (now black) blacker for cleaner screen removal.
+     *
+     * Edit the multipliers below to tune. t ranges 0.0 – 2.0 (slider 0–200).
+     */
     function computeBoostFilter(pct) {
         const t = pct / 100; // 0.0 – 2.0
         if (currentBlendMode === 'screen') {
             // White tabs: invert + contrast up + brightness up
-            const contrast   = 1 + t * 1.0;  // 1.0 → 3.0
-            const brightness = 1 + t * 0.15;  // 1.0 → 1.3
+            const contrast   = 1 + t * 1.0;   // 1.0 → 3.0
+            const brightness = 1 + t * 0.15;   // 1.0 → 1.3
             return `invert(1) contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
         } else if (currentBlendMode === 'multiply') {
-            // Black tabs: contrast up + brightness slightly down
-            const contrast   = 1 + t * 0.8;  // 1.0 → 2.6
-            const brightness = 1 - t * 0.12;  // 1.0 → 0.76
+            // Black tabs: contrast sharpens edges, brightness slightly up
+            // so near-white paper becomes pure white (fully transparent via multiply)
+            const contrast   = 1 + t * 1.0;   // 1.0 → 3.0
+            const brightness = 1 + t * 0.08;   // 1.0 → 1.16
             return `contrast(${contrast.toFixed(2)}) brightness(${brightness.toFixed(2)})`;
         }
         return ''; // no blend mode = no filter
@@ -346,17 +357,15 @@ export function setupVideoStream() {
 
     // ── Slider Popup ────────────────────────────────────────────────────
     //
-    // Combined popup for boost + opacity sliders. Double-tap the boost or
-    // opacity button to open; single tap cycles presets as before.
-    // The popup is a sibling of the overlay (not inside it) so blend modes
-    // don't affect the slider UI.
+    // Combined popup for boost + opacity sliders.
+    // Open via: long-press (500ms hold) OR double-tap on boost/opacity button.
+    // Single tap still cycles presets as before.
+    // The popup is a sibling of the overlay so blend modes don't affect it.
 
     const sliderPopup   = document.getElementById('vs-slider-popup');
     const boostSlider   = document.getElementById('vs-boost-slider');
     const opacitySlider = document.getElementById('vs-opacity-slider');
     let sliderPopupOpen = false;
-    let lastBoostTap    = 0;
-    let lastOpacityTap  = 0;
 
     function toggleSliderPopup(forceState) {
         if (!sliderPopup) return;
@@ -364,18 +373,68 @@ export function setupVideoStream() {
         sliderPopup.classList.toggle('hidden', !sliderPopupOpen);
     }
 
+    // ── Long-press helper ──
+    // Returns a cleanup function. Attaches to both touch and mouse events.
+    // If held for HOLD_MS without moving, calls onLongPress and suppresses
+    // the subsequent click event so the cycle doesn't also fire.
+    const HOLD_MS = 500;
+
+    function addLongPress(el, onLongPress) {
+        if (!el) return;
+        let holdTimer = null;
+        let didLongPress = false;
+
+        function startHold(e) {
+            didLongPress = false;
+            holdTimer = setTimeout(() => {
+                didLongPress = true;
+                onLongPress();
+            }, HOLD_MS);
+        }
+
+        function cancelHold() {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+
+        // Suppress the click that follows a long-press release
+        function onClick(e) {
+            if (didLongPress) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                didLongPress = false;
+            }
+        }
+
+        el.addEventListener('touchstart', startHold, { passive: true });
+        el.addEventListener('touchend', cancelHold);
+        el.addEventListener('touchmove', cancelHold);
+        el.addEventListener('mousedown', startHold);
+        el.addEventListener('mouseup', cancelHold);
+        el.addEventListener('mouseleave', cancelHold);
+        // Must be registered BEFORE the cycle click handler to suppress it
+        el.addEventListener('click', onClick, { capture: true });
+    }
+
+    // Attach long-press to both buttons
+    addLongPress(boostBtn,   () => toggleSliderPopup());
+    addLongPress(opacityBtn, () => toggleSliderPopup());
+
+    // ── Double-tap detection ──
+    let lastBoostTap   = 0;
+    let lastOpacityTap = 0;
+
     // Boost button: double-tap → slider, single tap → cycle presets
     if (boostBtn) {
         boostBtn.addEventListener('click', () => {
             const now = Date.now();
             if (now - lastBoostTap < 400) {
-                // Double-tap — toggle slider popup
                 toggleSliderPopup();
-                lastBoostTap = 0; // reset so triple-tap doesn't re-trigger
+                lastBoostTap = 0;
                 return;
             }
             lastBoostTap = now;
-            // Single tap — cycle through presets: 0 → 50 → 100 → 150 → 0
+            // Single tap — cycle: 0 → 50 → 100 → 150 → 0
             let nextIdx = 0;
             for (let i = 0; i < BOOST_PRESETS.length; i++) {
                 if (BOOST_PRESETS[i] === currentBoost) {
@@ -409,7 +468,7 @@ export function setupVideoStream() {
         });
     }
 
-    // Slider input handlers — real-time updates as user drags
+    // ── Slider input handlers — real-time updates as user drags ──
     if (boostSlider) {
         boostSlider.addEventListener('input', () => {
             applyBoost(parseInt(boostSlider.value, 10));
