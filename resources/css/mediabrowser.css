@@ -194,6 +194,8 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     pointer-events: auto;
 }
 
@@ -207,6 +209,13 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     background: rgba(239, 68, 68, 0.35);
     border-color: rgba(239, 68, 68, 0.5);
     color: #f87171;
+}
+
+/* Generic active state — used by opacity button (neutral white tint) */
+.vs-control-btn.active {
+    color: white;
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Multiply blend active — yellow */
@@ -255,6 +264,10 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     max-width: 100vw;
     object-fit: contain;
     pointer-events: none;
+    /* Reset img-level filters and clip: blending is already disabled on the
+     * overlay, so invert+clip applied in blend mode must not persist here. */
+    filter: none !important;
+    clip-path: none !important;
 }
 
 .video-stream-overlay:fullscreen .vs-controls,
