@@ -1241,18 +1241,26 @@ export function setupVideoStream() {
     }
 
     // Apply restored offset + mode + blur when overlay opens.
-    // Secondary click listener runs after open() (first listener) has set isOpen = true.
-    btn.addEventListener('click', () => {
-        if (isOpen) {
-            if (currentLyricsOffset !== 0 && lyricsEl) {
-                lyricsEl.style.marginTop = currentLyricsOffset + 'px';
-            }
-            if (currentLyricsMode !== 'full') {
-                applyLyricsMode(currentLyricsMode);
-            }
-            applyBgBlur(currentBgBlur);  // always re-apply blur class on open
-        }
-    });
+    // IMPORTANT DEPRECATION (2026-04-12):
+    // This secondary listener is deliberately commented out. Previously, it blindly and 
+    // aggressively applied custom layout modes BEFORE the video stream physically loaded. 
+    // This caused the lyrics layout to warp uselessly if the user opened the overlay 
+    // while REAPER was paused or unreachable.
+    // By disabling this, we mathematically guarantee that the UI ONLY warps into the custom 
+    // layout naturally inside `img.onload -> exitStandby()` exactly when the live video 
+    // visually presents itself on the screen.
+    // 
+    // btn.addEventListener('click', () => {
+    //     if (isOpen) {
+    //         if (currentLyricsOffset !== 0 && lyricsEl) {
+    //             lyricsEl.style.marginTop = currentLyricsOffset + 'px';
+    //         }
+    //         if (currentLyricsMode !== 'full') {
+    //             applyLyricsMode(currentLyricsMode);
+    //         }
+    //         applyBgBlur(currentBgBlur);  // always re-apply blur class on open
+    //     }
+    // });
 
     // ── Lyrics Focus Mode ─────────────────────────────────────────────────────
     // Three states: full (default) | focused (3 lines) | solo (1 line).
