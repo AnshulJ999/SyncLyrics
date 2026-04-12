@@ -372,9 +372,25 @@ body.vs-dragging {
  * This selector is more specific than body.sharp-mode / body.soft-mode rules
  * so it wins without disrupting any existing mode state. On overlay close,
  * the class is removed and the background-overlay reverts to the current mode. */
+/* 1. Default (Blur) Mode: Natively 180% saturation */
 body.vs-overlay-active #background-overlay {
-    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(160%) !important;
-    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(160%) !important;
+    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(180%) !important;
+}
+
+/* 2. Soft Mode: Natively 140% saturation */
+body.vs-overlay-active.soft-mode #background-overlay {
+    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(140%) !important;
+}
+
+/* 3. Sharp Mode: Natively 130% saturation */
+body.vs-overlay-active.sharp-mode #background-overlay {
+    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(130%) !important;
+    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(130%) !important;
+    
+    /* Preserve Sharp Mode's ultra-transparent mask (3% black) to let sharp art shine */
+    background: rgba(0, 0, 0, 0.03) !important;
 }
 
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
