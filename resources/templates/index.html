@@ -538,6 +538,10 @@
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
 </div>
 
+<!-- Native Fullscreen Iframe (Dormant until handoff) -->
+<iframe id="vs-native-iframe" class="hidden" allow="fullscreen" style="width:100%; height:100%; border:none; position:fixed; z-index:9999; top:0; left:0;"></iframe>
+
+
 <!-- Video Stream Controls (sibling — outside overlay so blend modes don't affect buttons) -->
 <div id="vs-controls-bar" class="vs-controls hidden">
     <button id="vs-transparency-btn" class="vs-control-btn" title="Blend: Off">

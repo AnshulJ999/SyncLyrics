@@ -88,6 +88,8 @@ export function setupVideoStream() {
     const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
     const bgBlurSlider      = document.getElementById('vs-bg-blur-slider');
 
+    const iframe          = document.getElementById('vs-native-iframe');
+
     if (!btn || !overlay || !img) return;
 
     // ── Runtime state ─────────────────────────────────────────────────────────
@@ -101,6 +103,7 @@ export function setupVideoStream() {
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
+    const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
 
     // ── Control auto-fade ────────────────────────────────────────────────────
     const FADE_DELAY_MS = 5000; //
@@ -297,7 +300,7 @@ export function setupVideoStream() {
         resetLyricsMode();
         resetBgBlur();             // remove body class — background-overlay reverts to current mode
 
-        if (document.fullscreenElement === overlay) {
+        if (document.fullscreenElement === iframe) {
             document.exitFullscreen().catch(() => {});
         }
     }
@@ -871,11 +874,11 @@ export function setupVideoStream() {
     const savedZ = parseInt(localStorage.getItem(LS_ZINDEX), 10);
     applyZIndex(isNaN(savedZ) ? DEFAULT_ZINDEX : savedZ);
 
-    // ── Fullscreen ───────────────────────────────────────────────────────────
+    // ── Fullscreen (Iframe Handoff) ──────────────────────────────────────────
 
     function updateFullscreenBtn() {
         if (!fullscreenBtn) return;
-        const isFs = document.fullscreenElement === overlay;
+        const isFs = document.fullscreenElement === iframe;
         fullscreenBtn.innerHTML = isFs
             ? '<i class="bi bi-fullscreen-exit"></i>'
             : '<i class="bi bi-fullscreen"></i>';
@@ -884,11 +887,24 @@ export function setupVideoStream() {
 
     if (fullscreenBtn) {
         fullscreenBtn.addEventListener('click', () => {
-            if (document.fullscreenElement === overlay) {
+            if (document.fullscreenElement === iframe) {
                 document.exitFullscreen().catch(() => {});
             } else {
-                overlay.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
+                if (!iframe) return;
+                
+                if (isCropMode) exitCropMode();
+                
+                // 1) Handoff: stop img stream, start iframe
+                img.src = '';
+                iframe.src = getViewerUrl();
+                iframe.classList.remove('hidden');
+                
+                iframe.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
                     console.warn('[VideoStream] Fullscreen request failed:', err);
+                    // Revert handoff on failure
+                    iframe.src = '';
+                    iframe.classList.add('hidden');
+                    if (isOpen) img.src = getStreamUrl();
                 });
             }
         });
@@ -896,8 +912,15 @@ export function setupVideoStream() {
 
     document.addEventListener('fullscreenchange', () => {
         updateFullscreenBtn();
-        // Exit crop mode when entering fullscreen — handles would overlap fullscreen content
-        if (document.fullscreenElement === overlay && isCropMode) exitCropMode();
+        
+        // Handoff Return: when exiting fullscreen, swap streams back
+        if (document.fullscreenElement === null) {
+            if (iframe && !iframe.classList.contains('hidden')) {
+                iframe.src = '';
+                iframe.classList.add('hidden');
+                if (isOpen) img.src = getStreamUrl();
+            }
+        }
     });
 
     // ── Crop ─────────────────────────────────────────────────────────────────
@@ -1232,7 +1255,7 @@ export function setupVideoStream() {
     // ── Keyboard ─────────────────────────────────────────────────────────────
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && isOpen && document.fullscreenElement !== overlay) {
+        if (e.key === 'Escape' && isOpen && document.fullscreenElement !== iframe) {
             close();
         }
     });

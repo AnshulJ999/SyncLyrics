@@ -100,8 +100,10 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     touch-action: none;
 }
 
-.video-stream-overlay.hidden {
-    display: none;
+.video-stream-overlay.hidden,
+#vs-native-iframe.hidden {
+    display: none !important;
+    pointer-events: none !important;
 }
 
 /* The MJPEG image — full width, auto height (= exact video frame dimensions) */
