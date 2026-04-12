@@ -212,7 +212,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 }
 
 .vs-control-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.75);
     color: white;
     border-color: rgba(255, 255, 255, 0.3);
 }
@@ -220,7 +220,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 /* Explicit :active prevents the brief invisible-icon flash on touch
    that occurs when no :active rule exists and the browser applies its own highlight. */
 .vs-control-btn:active {
-    background: rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.95);
     color: white;
     border-color: rgba(255, 255, 255, 0.45);
     transition: none; /* instant — no fade on press */
