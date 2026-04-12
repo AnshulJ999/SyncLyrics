@@ -20,7 +20,7 @@
  */
 
 const STREAM_PORT           = 9062;
-const STREAM_STATUS_POLL_MS = 2000;
+const STREAM_STATUS_POLL_MS = 3000;
 const STANDBY_DELAY_MS      = 18000; // Matches Python configuration timeout for idle/black before fading UI
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
@@ -318,10 +318,23 @@ export function setupVideoStream() {
     });
 
     // Master JSON Heartbeat: Bypasses Chrome's silent handling of graceful disconnects
+    let lastHeartbeatTime = 0;
+    
     function startStatusHeartbeat() {
         if (statusTimer) clearInterval(statusTimer);
+        lastHeartbeatTime = Date.now();
+        
         statusTimer = setInterval(() => {
             if (!isOpen) return;
+
+            // ── The OS Sleep Detector ──
+            // Android Chrome silent-suspends TCP sockets when the screen locks, completely bypassing 'onerror'.
+            // If more than 10 seconds magically pass between this 2s tick, we mathematically know the tablet was asleep!
+            const now = Date.now();
+            if (now - lastHeartbeatTime > 10000) {
+                handleSocketDeath(); // Instantly flag the UI so the next few lines cleanly rebuild the connection.
+            }
+            lastHeartbeatTime = now;
 
             fetch(getStatusUrl())
                 .then(r => {
@@ -342,9 +355,11 @@ export function setupVideoStream() {
                             exitStandby(); // Guarantee UI fades back in natively if the OS socket survived the Idle timeout
                         }
                     } else if (data.stream_state === 'idle' || data.stream_state === 'black') {
-                        // Project is "black" or "idle". We queue the 15-second grace period.
-                        // We strictly DO NOT mark streamOk=false because Python is keeping the socket alive during this period!
+                        // Keep the 15-second visual grace period exactly as requested so the UI doesn't flicker black.
                         queueStandby();
+                        // BUT explicitly mark the network as dead so we physically guarantee a fresh feed when playback resumes!
+                        streamOk = false;
+                        isConnecting = false;
                     } else {
                         // "starting" states aggressively kill the connection
                         handleSocketDeath();
@@ -405,9 +420,15 @@ export function setupVideoStream() {
 
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
-            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-            reconnectDelay = RECONNECT_BASE_MS;
-            loadStream();
+            if (!isOpen) return;
+            // clear the current Ghost stream to force Chrome to completely drop the MJPEG decoder
+            img.src = '';
+            
+            // Yield the thread for 50ms so Chrome natively registers the decoder death before dialing it up again
+            setTimeout(() => {
+                handleSocketDeath(); // Force standy sequence explicitly
+                loadStream();        // Brutally cache-bust and revive
+            }, 50);
         });
     }
 
