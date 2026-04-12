@@ -282,18 +282,14 @@ export function setupVideoStream() {
         if (iframe)      iframe.classList.remove('vs-standby');
 
         // Smoothly re-apply the UI mods upon waking up
-        if (typeof lyricsEl !== 'undefined' && lyricsEl) {
-            if (typeof currentLyricsOffset !== 'undefined' && currentLyricsOffset !== 0) {
+        if (lyricsEl) {
+            if (currentLyricsOffset !== 0) {
                 lyricsEl.style.marginTop = currentLyricsOffset + 'px';
             }
-            if (typeof currentLyricsMode !== 'undefined') {
-                if (currentLyricsMode === 'focused') lyricsEl.classList.add('vs-lyric-focused');
-                if (currentLyricsMode === 'solo')    lyricsEl.classList.add('vs-lyric-solo');
-            }
+            if (currentLyricsMode === 'focused') lyricsEl.classList.add('vs-lyric-focused');
+            if (currentLyricsMode === 'solo')    lyricsEl.classList.add('vs-lyric-solo');
         }
-        if (typeof applyBgBlur !== 'undefined' && typeof currentBgBlur !== 'undefined') {
-            applyBgBlur(currentBgBlur, currentBgMode);
-        }
+        applyBgBlur(currentBgBlur, currentBgMode);
     }
 
     function queueStandby() {
@@ -414,7 +410,13 @@ export function setupVideoStream() {
         editBar?.classList.add('hidden');
         btn.classList.remove('active');
         stopStream();
-        exitStandby(); // Always clean state naturally on violent close
+        
+        // Strip standby classes purely natively to prevent UI collisions
+        overlay.classList.remove('vs-standby');
+        if (controlsBar) controlsBar.classList.remove('vs-standby');
+        if (editBar)     editBar.classList.remove('vs-standby');
+        if (iframe)      iframe.classList.remove('vs-standby');
+
         hideControlsImmediate();
         toggleSliderPopup(false);
         if (isCropMode) exitCropMode();
