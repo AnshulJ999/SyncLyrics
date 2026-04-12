@@ -20,7 +20,7 @@
  */
 
 const STREAM_PORT           = 9062;
-const STREAM_STATUS_POLL_MS = 5000;
+const STREAM_STATUS_POLL_MS = 2000;
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -271,14 +271,8 @@ export function setupVideoStream() {
     function dropConnection() {
         if (!isOpen) return;
         
-        // Prevent JS from continuously thrashing the DOM if we are already securely in Standby.
-        // A browser often throws 'error' recursively if you repeatedly assign img.src = '' while offline.
-        if (img.src && !img.src.endsWith(window.location.host + '/')) {
-            img.src = ''; 
-        }
-        
         streamOk = false;     // Flag for the heartbeat to reconnect safely
-        enterStandby();       // Elegantly fade UI 
+        enterStandby();       // Elegantly fade UI covering the preserved frozen frame
     }
 
     // Immediate fallback: only triggers if OS sends a clean TCP abort before heartbeat polls
@@ -430,7 +424,7 @@ export function setupVideoStream() {
     function restoreOpacityForMode() {
         const key = opacityStorageKey(currentBlendMode);
         const raw = localStorage.getItem(key);
-        const defaults = (currentBlendMode === 'off') ? 40 : 100;
+        const defaults = (currentBlendMode === 'off') ? 100 : 100;
         const pct = raw !== null ? clampVal(parseInt(raw, 10) || defaults, 10, 100) : defaults;
         applyOpacity(pct);
     }
