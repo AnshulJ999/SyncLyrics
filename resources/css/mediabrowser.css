@@ -393,6 +393,20 @@ body.vs-overlay-active.sharp-mode #background-overlay {
     background: rgba(0, 0, 0, 0.03) !important;
 }
 
+/* ── OVERRIDE MODE (Ultimate Sandbox Control) ────────────────────────── */
+/* Zero out the underlying album art layer completely */
+body.vs-overlay-active.vs-override-mode #background-layer {
+    filter: blur(0px) !important;
+    transform: none !important;
+}
+
+/* Master override using the math injected from the slider (calculated in videostream.js) */
+body.vs-overlay-active.vs-override-mode #background-overlay {
+    backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(var(--vs-computed-saturate, 160%)) !important;
+    -webkit-backdrop-filter: blur(var(--vs-blur-override, 15px)) saturate(var(--vs-computed-saturate, 160%)) !important;
+    background: rgba(0, 0, 0, var(--vs-computed-opacity, 0.4)) !important;
+}
+
 /* ========== VIDEO STREAM SLIDER POPUP ========== */
 /* Floating panel for fine-tuning boost + opacity. Positioned as a sibling
  * to the overlay (not inside it) so blend modes don't affect it. */

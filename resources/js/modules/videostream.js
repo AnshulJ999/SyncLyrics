@@ -1144,25 +1144,55 @@ export function setupVideoStream() {
     }
 
     // ── Background Blur Override ─────────────────────────────────────────────────
-    // When the video overlay is open, a CSS class on <body> combined with a CSS
-    // custom property forces the background-overlay's backdrop-filter to the
-    // user-chosen blur value — overriding sharp/soft/blur mode and visual mode.
-    // On overlay close, the class is removed and the existing mode resumes exactly.
-
+    const LS_BG_MODE = 'vs_bgBlurMode';
     let currentBgBlur = 15; // px; default: comfortable mid-level frosted glass
+    let currentBgMode = 'auto'; // 'auto' | 'override'
+    
+    const btnBgAuto     = document.getElementById('vs-bg-mode-auto');
+    const btnBgOverride = document.getElementById('vs-bg-mode-override');
 
-    function applyBgBlur(px) {
+    function updateBgModeButtons() {
+        if (!btnBgAuto || !btnBgOverride) return;
+        btnBgAuto.classList.toggle('active', currentBgMode === 'auto');
+        btnBgOverride.classList.toggle('active', currentBgMode === 'override');
+    }
+
+    function applyBgBlur(px, mode = currentBgMode) {
         currentBgBlur = Math.max(0, Math.min(40, Math.round(px)));
+        currentBgMode = mode;
+        
         document.documentElement.style.setProperty('--vs-blur-override', currentBgBlur + 'px');
+        
+        // Compute Sandbox/Override math interpolations
+        if (currentBgMode === 'override') {
+            // Slider (0~40px)
+            // Saturation: 130% -> 180%  ( +1.25 per px )
+            const computedSat = 130 + (currentBgBlur * 1.25);
+            // Opacity of mask: 0.05 -> 0.6  ( +0.01375 per px )
+            const computedOp = 0.05 + (currentBgBlur * 0.01375);
+            
+            document.documentElement.style.setProperty('--vs-computed-saturate', `${computedSat}%`);
+            // Format to 3 decimal places to avoid floating point CSS parsing issues
+            document.documentElement.style.setProperty('--vs-computed-opacity', computedOp.toFixed(3));
+            
+            document.body.classList.add('vs-override-mode');
+        } else {
+            document.body.classList.remove('vs-override-mode');
+        }
+        
         document.body.classList.add('vs-overlay-active');
+        
         localStorage.setItem(LS_BG_BLUR, String(currentBgBlur));
+        localStorage.setItem(LS_BG_MODE, currentBgMode);
+        
         updateBgBlurSlider();
+        updateBgModeButtons();
     }
 
     function resetBgBlur() {
-        // Remove class so the existing background mode (sharp/soft/blur) takes over again.
-        // Do NOT clear --vs-blur-override or currentBgBlur — preserve for next open.
+        // Remove classes so the existing background mode (sharp/soft/blur) takes over again.
         document.body.classList.remove('vs-overlay-active');
+        document.body.classList.remove('vs-override-mode');
     }
 
     function updateBgBlurSlider() {
@@ -1173,17 +1203,28 @@ export function setupVideoStream() {
     }
 
     if (bgBlurSlider) {
-        bgBlurSlider.addEventListener('input', () => {
-            applyBgBlur(parseInt(bgBlurSlider.value, 10));
-        });
+        bgBlurSlider.addEventListener('input', () => applyBgBlur(parseInt(bgBlurSlider.value, 10)));
+    }
+    
+    if (btnBgAuto) {
+        btnBgAuto.addEventListener('click', () => applyBgBlur(currentBgBlur, 'auto'));
+    }
+    
+    if (btnBgOverride) {
+        btnBgOverride.addEventListener('click', () => applyBgBlur(currentBgBlur, 'override'));
     }
 
-    // Restore saved blur on init (don't apply class — overlay is closed at this point)
+    // Restore saved blur mode & amount on init (don't apply class — overlay is closed at this point)
     const _savedBgBlur = localStorage.getItem(LS_BG_BLUR);
+    const _savedBgMode = localStorage.getItem(LS_BG_MODE);
+    if (_savedBgMode === 'auto' || _savedBgMode === 'override') {
+        currentBgMode = _savedBgMode;
+    }
     if (_savedBgBlur !== null) {
         currentBgBlur = Math.max(0, Math.min(40, parseInt(_savedBgBlur, 10) || 15));
         document.documentElement.style.setProperty('--vs-blur-override', currentBgBlur + 'px');
         updateBgBlurSlider();
+        updateBgModeButtons();
     }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
