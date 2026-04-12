@@ -1168,8 +1168,8 @@ export function setupVideoStream() {
             // Slider (0~40px)
             // Saturation: 130% -> 180%  ( +1.25 per px )
             const computedSat = 130 + (currentBgBlur * 1.25);
-            // Opacity of mask: 0.05 -> 0.6  ( +0.01375 per px )
-            const computedOp = 0.05 + (currentBgBlur * 0.01375);
+            // Opacity of mask: 0.03 -> 0.30  ( +0.00675 per px )
+            const computedOp = 0.03 + (currentBgBlur * 0.00675);
             
             document.documentElement.style.setProperty('--vs-computed-saturate', `${computedSat}%`);
             // Format to 3 decimal places to avoid floating point CSS parsing issues
