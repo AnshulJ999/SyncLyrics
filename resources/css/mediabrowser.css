@@ -174,7 +174,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 
 /* Auto-fade: after idle timeout JS adds this class */
 .vs-controls.faded {
-    opacity: 0.02;
+    opacity: 0.04;
 }
 
 .vs-controls.hidden {
@@ -220,19 +220,13 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     color: #f87171;
 }
 
-/* Unified active state — subtle white glow for all active buttons */
-.vs-control-btn.active {
-    color: white;
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.35);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
-}
-
-/* Locked state — lock icon tinted amber to indicate locked */
+/* Unified active state — high opacity black for maximum visibility on all backgrounds */
+.vs-control-btn.active,
 .vs-control-btn.vs-locked {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.15);
-    border-color: rgba(245, 158, 11, 0.3);
+    color: white;
+    background: rgba(0, 0, 0, 0.85);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
 }
 
 /* Edit bar — top-left sibling, mirrors vs-controls positioning */
@@ -248,7 +242,7 @@ body:not(.hide-nav) .video-stream-toggle-btn {
 }
 
 .vs-edit-bar.faded {
-    opacity: 0.02;
+    opacity: 0.04;
 }
 
 .vs-edit-bar.hidden {

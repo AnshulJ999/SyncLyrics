@@ -103,7 +103,7 @@ export function setupVideoStream() {
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
 
     // ── Control auto-fade ────────────────────────────────────────────────────
-    const FADE_DELAY_MS = 300000; // 5 min
+    const FADE_DELAY_MS = 5000; //
 
     function showControls() {
         controlsBar?.classList.remove('faded');
@@ -708,7 +708,9 @@ export function setupVideoStream() {
 
     overlay.addEventListener('pointerdown', (e) => {
         activePointers.set(e.pointerId, true);
-        if (isLocked) { showControls(); return; }
+        showControls(); // Unconditionally wake up controls on any tap
+        
+        if (isLocked) return;
         if (activePointers.size > 1) { isDragging = false; dragActive = false; return; }
 
         isDragging        = true;
