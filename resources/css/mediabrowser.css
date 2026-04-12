@@ -289,6 +289,7 @@ body.vs-dragging {
 
 /* The pill is the ONLY draggable target */
 .vs-crop-handle-indicator {
+    position: relative;
     width: 80px;
     height: 8px;                          /* tall enough for comfortable touch */
     background: rgba(251, 146, 60, 0.85);  /* orange */
@@ -301,6 +302,16 @@ body.vs-dragging {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* Invisible fat touch target for easier grabbing */
+.vs-crop-handle-indicator::after {
+    content: '';
+    position: absolute;
+    top: -28px;
+    bottom: -28px;
+    left: -24px;
+    right: -24px;
 }
 
 /* Hairline track across full width — purely visual, not interactive */
