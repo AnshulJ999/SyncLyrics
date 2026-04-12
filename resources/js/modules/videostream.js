@@ -49,6 +49,19 @@ const DEFAULT_ZINDEX  = 950;
 const ZINDEX_STEP     = 50;
 
 export function setupVideoStream() {
+    // --- GHOST CLICK SUPPRESSOR FOR TAP PASSTHROUGH ---
+    // When we synthesize a click via tap passthrough, the browser's native touch 
+    // sequence still generates a physical `click` ~300ms later at the exact same geometry.
+    // That native click hits the overlay (or newly opened backdrops like Queue) and triggers 
+    // "close on outside click" listeners, instantly shutting the menus.
+    // We suppress ANY trusted (native) clicks for 500ms following a synthetic passthrough.
+    window.addEventListener('click', (e) => {
+        if (e.isTrusted && window.__vs_suppress_click && (Date.now() - window.__vs_suppress_click < 500)) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true); // Capture phase explicitly intercepts before ANY other document listeners
+
     // ── DOM refs — ALL declared at top to avoid TDZ errors during init ────────
     const btn             = document.getElementById('btn-video-stream');
     const overlay         = document.getElementById('video-stream-overlay');
@@ -751,6 +764,9 @@ export function setupVideoStream() {
             overlay.style.pointerEvents = prevPE;
             
             if (target && target !== overlay) {
+                // Activate global ghost-click suppressor
+                window.__vs_suppress_click = Date.now();
+                
                 const clickEvent = new MouseEvent('click', {
                     view: window,
                     bubbles: true,
