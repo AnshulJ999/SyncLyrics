@@ -322,18 +322,31 @@ body.vs-dragging {
 /* ── Lyrics Focus Mode (REAPER video overlay only) ──────────────────────────── */
 /* Classes toggled on #lyrics by videostream.js. Resets to 'full' on overlay close. */
 
-/* Focused: show only prev-1, current, next-1 */
-#lyrics.vs-lyric-focused .far-previous,
-#lyrics.vs-lyric-focused .far-next {
-    display: none;
+/* Smooth transition anchors for Video UI Restoration */
+#lyrics {
+    transition: margin-top 0.3s ease !important;
 }
 
-/* Solo: show only current line */
+body .background-layer,
+body .background-overlay {
+    transition: background-image 0.5s ease-in-out, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease, background 0.3s ease, filter 0.3s ease !important;
+}
+
+/* Focused & Solo Modes: Smooth collapse instead of display:none snapping */
+#lyrics.vs-lyric-focused .far-previous,
+#lyrics.vs-lyric-focused .far-next,
 #lyrics.vs-lyric-solo .far-previous,
 #lyrics.vs-lyric-solo .previous,
 #lyrics.vs-lyric-solo .next,
 #lyrics.vs-lyric-solo .far-next {
-    display: none;
+    opacity: 0;
+    max-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
 }
 
 /* ── Lyrics Lines mode toggle buttons (All / 3 / 1) ────────────────────────── */

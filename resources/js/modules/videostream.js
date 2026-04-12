@@ -21,7 +21,7 @@
 
 const STREAM_PORT           = 9062;
 const STREAM_STATUS_POLL_MS = 3000;
-const STANDBY_DELAY_MS      = 18000; // Matches Python configuration timeout for idle/black before fading UI
+const STANDBY_DELAY_MS      = 20000;
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -266,6 +266,13 @@ export function setupVideoStream() {
         if (controlsBar) controlsBar.classList.add('vs-standby');
         if (editBar)     editBar.classList.add('vs-standby');
         if (iframe)      iframe.classList.add('vs-standby');
+
+        // Smoothly un-apply the UI mods natively without destroying memory/slider values
+        if (typeof lyricsEl !== 'undefined' && lyricsEl) {
+            lyricsEl.style.marginTop = '';
+            lyricsEl.classList.remove('vs-lyric-focused', 'vs-lyric-solo');
+        }
+        document.body.classList.remove('vs-overlay-active', 'vs-override-mode');
     }
 
     function exitStandby() {
@@ -273,6 +280,20 @@ export function setupVideoStream() {
         if (controlsBar) controlsBar.classList.remove('vs-standby');
         if (editBar)     editBar.classList.remove('vs-standby');
         if (iframe)      iframe.classList.remove('vs-standby');
+
+        // Smoothly re-apply the UI mods upon waking up
+        if (typeof lyricsEl !== 'undefined' && lyricsEl) {
+            if (typeof currentLyricsOffset !== 'undefined' && currentLyricsOffset !== 0) {
+                lyricsEl.style.marginTop = currentLyricsOffset + 'px';
+            }
+            if (typeof currentLyricsMode !== 'undefined') {
+                if (currentLyricsMode === 'focused') lyricsEl.classList.add('vs-lyric-focused');
+                if (currentLyricsMode === 'solo')    lyricsEl.classList.add('vs-lyric-solo');
+            }
+        }
+        if (typeof applyBgBlur !== 'undefined' && typeof currentBgBlur !== 'undefined') {
+            applyBgBlur(currentBgBlur, currentBgMode);
+        }
     }
 
     function queueStandby() {
@@ -329,9 +350,9 @@ export function setupVideoStream() {
 
             // ── The OS Sleep Detector ──
             // Android Chrome silent-suspends TCP sockets when the screen locks, completely bypassing 'onerror'.
-            // If more than 10 seconds magically pass between this 2s tick, we mathematically know the tablet was asleep!
+            // If more than 15 seconds magically pass between this 2s tick, we mathematically know the tablet was asleep!
             const now = Date.now();
-            if (now - lastHeartbeatTime > 10000) {
+            if (now - lastHeartbeatTime > 15000) {
                 handleSocketDeath(); // Instantly flag the UI so the next few lines cleanly rebuild the connection.
             }
             lastHeartbeatTime = now;
