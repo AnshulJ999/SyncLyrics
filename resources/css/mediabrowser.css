@@ -61,9 +61,8 @@
 
 .video-stream-toggle-btn.active {
     color: white;
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.35);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
 }
 
 /* Hide in minimal mode */
