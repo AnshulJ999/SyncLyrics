@@ -21,7 +21,7 @@
 
 const STREAM_PORT       = 9062;
 const RECONNECT_BASE_MS = 2000;
-const RECONNECT_MAX_MS  = 10000;
+const RECONNECT_MAX_MS  = 5000;
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -250,16 +250,33 @@ export function setupVideoStream() {
         reconnectDelay = RECONNECT_BASE_MS;
     }
 
-    // ── Auto-reconnect ───────────────────────────────────────────────────────
+    // ── Auto-reconnect & Standby ─────────────────────────────────────────────
+
+    function enterStandby() {
+        overlay.classList.add('vs-standby');
+        if (controlsBar) controlsBar.classList.add('vs-standby');
+        if (editBar)     editBar.classList.add('vs-standby');
+        if (iframe)      iframe.classList.add('vs-standby');
+    }
+
+    function exitStandby() {
+        overlay.classList.remove('vs-standby');
+        if (controlsBar) controlsBar.classList.remove('vs-standby');
+        if (editBar)     editBar.classList.remove('vs-standby');
+        if (iframe)      iframe.classList.remove('vs-standby');
+    }
 
     img.addEventListener('error', () => {
         if (!isOpen) return;
+        enterStandby();
         scheduleReconnect();
     });
 
     img.addEventListener('load', () => {
         reconnectDelay = RECONNECT_BASE_MS;
+        exitStandby();
         restorePosition();
+        showControls();
         syncBars();
     });
 
@@ -293,6 +310,7 @@ export function setupVideoStream() {
         editBar?.classList.add('hidden');
         btn.classList.remove('active');
         stopStream();
+        exitStandby(); // Always clean state naturally on violent close
         hideControlsImmediate();
         toggleSliderPopup(false);
         if (isCropMode) exitCropMode();

@@ -98,11 +98,21 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     /* Prevent browser scroll/pan from claiming touches during drag.
      * Orthogonal to pointer-events — only has effect when overlay actually receives events. */
     touch-action: none;
+    transition: opacity 0.5s ease;
 }
 
 .video-stream-overlay.hidden,
 #vs-native-iframe.hidden {
     display: none !important;
+    pointer-events: none !important;
+}
+
+/* Standby mode: mathematically identical hidden state but using opacity for smooth fading */
+.video-stream-overlay.vs-standby,
+.vs-controls.vs-standby,
+.vs-edit-bar.vs-standby,
+#vs-native-iframe.vs-standby {
+    opacity: 0 !important;
     pointer-events: none !important;
 }
 
