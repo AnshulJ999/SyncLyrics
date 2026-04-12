@@ -19,9 +19,8 @@
  * Level 2 - Imports: nothing (self-contained, no state/api dependencies)
  */
 
-const STREAM_PORT       = 9062;
-const RECONNECT_BASE_MS = 2000;
-const RECONNECT_MAX_MS  = 5000;
+const STREAM_PORT           = 9062;
+const STREAM_STATUS_POLL_MS = 5000;
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -95,14 +94,15 @@ export function setupVideoStream() {
     // ── Runtime state ─────────────────────────────────────────────────────────
     let isOpen          = false;
     let sliderPopupOpen = false;
-    let reconnectTimer  = null;
-    let reconnectDelay  = RECONNECT_BASE_MS;
+    let statusTimer     = null;
+    let streamOk        = false;
     let fadeTimer       = null;
     let isLocked        = false;
     let currentZIndex   = DEFAULT_ZINDEX;
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
+    const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
 
     // ── Control auto-fade ────────────────────────────────────────────────────
@@ -237,17 +237,18 @@ export function setupVideoStream() {
     // ── Stream load/unload ───────────────────────────────────────────────────
 
     function loadStream() {
-        img.src = '';
-        img.src = getStreamUrl();
+        if (!isOpen) return;
+        // The cache-buster forces the browser to open a fresh TCP socket to Python.
+        img.src = getStreamUrl() + '?t=' + Date.now(); 
     }
 
     function stopStream() {
         img.src = '';
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
+        streamOk = false;
+        if (statusTimer) {
+            clearInterval(statusTimer);
+            statusTimer = null;
         }
-        reconnectDelay = RECONNECT_BASE_MS;
     }
 
     // ── Auto-reconnect & Standby ─────────────────────────────────────────────
@@ -266,29 +267,65 @@ export function setupVideoStream() {
         if (iframe)      iframe.classList.remove('vs-standby');
     }
 
+    // Forcefully drops the ghost connection if the heartbeat or native OS stack detects a crash.
+    function dropConnection() {
+        if (!isOpen) return;
+        
+        // Prevent JS from continuously thrashing the DOM if we are already securely in Standby.
+        // A browser often throws 'error' recursively if you repeatedly assign img.src = '' while offline.
+        if (img.src && !img.src.endsWith(window.location.host + '/')) {
+            img.src = ''; 
+        }
+        
+        streamOk = false;     // Flag for the heartbeat to reconnect safely
+        enterStandby();       // Elegantly fade UI 
+    }
+
+    // Immediate fallback: only triggers if OS sends a clean TCP abort before heartbeat polls
     img.addEventListener('error', () => {
         if (!isOpen) return;
-        enterStandby();
-        scheduleReconnect();
+        dropConnection();
     });
 
+    // Validates a successful connection
     img.addEventListener('load', () => {
-        reconnectDelay = RECONNECT_BASE_MS;
+        if (!isOpen) return;
+        streamOk = true;
         exitStandby();
         restorePosition();
         showControls();
         syncBars();
     });
 
-    function scheduleReconnect() {
-        if (reconnectTimer) return;
-        reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            if (isOpen) {
-                loadStream();
-                reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
-            }
-        }, reconnectDelay);
+    // Master JSON Heartbeat: Bypasses Chrome's silent handling of graceful disconnects
+    function startStatusHeartbeat() {
+        if (statusTimer) clearInterval(statusTimer);
+        statusTimer = setInterval(() => {
+            if (!isOpen) return;
+
+            fetch(getStatusUrl())
+                .then(r => {
+                    if (!r.ok) {
+                        dropConnection();
+                        return null; // Stop propagation
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    if (!data) return;
+
+                    if (data.stream_state === 'active') {
+                        if (!streamOk) loadStream(); // Execute the cache-busting connection
+                    } else {
+                        // Project is "black", "idle", or "starting". We ensure we are resting.
+                        dropConnection();
+                    }
+                })
+                .catch(() => {
+                    // Network error (Server aggressively dead)
+                    dropConnection();
+                });
+        }, STREAM_STATUS_POLL_MS);
     }
 
     // ── Open / Close ─────────────────────────────────────────────────────────
@@ -299,6 +336,8 @@ export function setupVideoStream() {
         controlsBar?.classList.remove('hidden');
         editBar?.classList.remove('hidden');
         btn.classList.add('active');
+        
+        startStatusHeartbeat();
         loadStream();
         showControls();
     }
