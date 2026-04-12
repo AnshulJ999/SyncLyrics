@@ -1114,27 +1114,41 @@ export function setupVideoStream() {
         }
     }
 
-    const LS_CROP_TOP    = 'reaper_video_crop_top_pct';
-    const LS_CROP_BOTTOM = 'reaper_video_crop_bottom_pct';
-    const LS_CROP_LEFT   = 'reaper_video_crop_left_pct';
-    const LS_CROP_RIGHT  = 'reaper_video_crop_right_pct';
+    let activeCropPreset = parseInt(localStorage.getItem('vs_active_crop_preset'), 10) || 1;
+
+    function getCropKey(presetNum) {
+        return `vs_crop_preset_${presetNum}`;
+    }
 
     function saveCrop() {
-        localStorage.setItem(LS_CROP_TOP,    String(cropTopPct));
-        localStorage.setItem(LS_CROP_BOTTOM, String(cropBottomPct));
-        localStorage.setItem(LS_CROP_LEFT,   String(cropLeftPct));
-        localStorage.setItem(LS_CROP_RIGHT,  String(cropRightPct));
+        const data = { t: cropTopPct, b: cropBottomPct, l: cropLeftPct, r: cropRightPct };
+        localStorage.setItem(getCropKey(activeCropPreset), JSON.stringify(data));
+        localStorage.setItem('vs_active_crop_preset', String(activeCropPreset));
     }
 
     function restoreCrop() {
-        const rawT = localStorage.getItem(LS_CROP_TOP);
-        const rawB = localStorage.getItem(LS_CROP_BOTTOM);
-        const rawL = localStorage.getItem(LS_CROP_LEFT);
-        const rawR = localStorage.getItem(LS_CROP_RIGHT);
-        cropTopPct    = rawT !== null ? clampVal(parseFloat(rawT) || 0, 0, 50) : 0;
-        cropBottomPct = rawB !== null ? clampVal(parseFloat(rawB) || 0, 0, 50) : 0;
-        cropLeftPct   = rawL !== null ? clampVal(parseFloat(rawL) || 0, 0, 50) : 0;
-        cropRightPct  = rawR !== null ? clampVal(parseFloat(rawR) || 0, 0, 50) : 0;
+        try {
+            const raw = localStorage.getItem(getCropKey(activeCropPreset));
+            if (raw) {
+                const data = JSON.parse(raw);
+                cropTopPct    = clampVal(parseFloat(data.t) || 0, 0, 50);
+                cropBottomPct = clampVal(parseFloat(data.b) || 0, 0, 50);
+                cropLeftPct   = clampVal(parseFloat(data.l) || 0, 0, 50);
+                cropRightPct  = clampVal(parseFloat(data.r) || 0, 0, 50);
+            } else {
+                // Backwards compatibility migration from legacy single-slot vars
+                if (activeCropPreset === 1 && localStorage.getItem('reaper_video_crop_top_pct')) {
+                    cropTopPct    = clampVal(parseFloat(localStorage.getItem('reaper_video_crop_top_pct')) || 0, 0, 50);
+                    cropBottomPct = clampVal(parseFloat(localStorage.getItem('reaper_video_crop_bottom_pct')) || 0, 0, 50);
+                    cropLeftPct   = clampVal(parseFloat(localStorage.getItem('reaper_video_crop_left_pct')) || 0, 0, 50);
+                    cropRightPct  = clampVal(parseFloat(localStorage.getItem('reaper_video_crop_right_pct')) || 0, 0, 50);
+                } else {
+                    cropTopPct = cropBottomPct = cropLeftPct = cropRightPct = 0;
+                }
+            }
+        } catch (e) {
+            cropTopPct = cropBottomPct = cropLeftPct = cropRightPct = 0;
+        }
         applyCrop();
     }
 
@@ -1256,6 +1270,35 @@ export function setupVideoStream() {
             else            enterCropMode();
         });
     }
+
+    // Crop Presets functionality
+    const presetBtns = document.querySelectorAll('.vs-crop-preset-btn');
+    
+    function updatePresetUI() {
+        presetBtns.forEach(btn => {
+            const id = parseInt(btn.dataset.preset, 10);
+            if (id === activeCropPreset) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+    }
+
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const presetId = parseInt(btn.dataset.preset, 10);
+            if (activeCropPreset === presetId) return; // already active
+            
+            // Switch active slot
+            activeCropPreset = presetId;
+            localStorage.setItem('vs_active_crop_preset', String(activeCropPreset));
+            updatePresetUI();
+            
+            // Instantly load bounds into mathematically positioned Handles
+            restoreCrop();
+        });
+    });
+    
+    // Ensure accurate initial UI highlighting
+    updatePresetUI();
 
     // Restore saved crop on load
     restoreCrop();

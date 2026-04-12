@@ -261,6 +261,23 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     display: none;
 }
 
+/* Crop Presets Pill Bar */
+.vs-crop-presets {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    padding-left: 10px;
+    margin-left: 2px;
+}
+
+.vs-crop-preset-btn {
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 0 12px;
+}
+
 /* Overlay dragging cursor — applied to body during drag so cursor stays correct */
 body.vs-dragging {
     cursor: grabbing !important;
