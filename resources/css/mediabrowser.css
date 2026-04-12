@@ -319,6 +319,30 @@ body.vs-dragging {
     box-shadow: 0 0 16px rgba(251, 146, 60, 0.8);
 }
 
+/* Modifiers for horizontal side handles */
+.vs-crop-handle.horizontal {
+    top: 0;
+    left: auto;
+    width: 44px;
+    height: 100%;
+    flex-direction: column;
+}
+
+.vs-crop-handle.horizontal .vs-crop-handle-indicator {
+    width: 8px;
+    height: 80px;
+    cursor: ew-resize;
+}
+
+.vs-crop-handle.horizontal::before {
+    top: 0;
+    bottom: 0;
+    left: 21px; /* perfectly center hairline within 44px wrapper */
+    right: auto;
+    width: 2px;
+    height: 100%;
+}
+
 /* ── Lyrics Focus Mode (REAPER video overlay only) ──────────────────────────── */
 /* Classes toggled on #lyrics by videostream.js. Resets to 'full' on overlay close. */
 

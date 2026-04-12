@@ -839,10 +839,22 @@ export function setupVideoStream() {
         document.body.classList.add('vs-dragging');
     }
 
+    let tapHistory = [];
+
     overlay.addEventListener('pointerdown', (e) => {
         activePointers.set(e.pointerId, true);
         showControls(); // Unconditionally wake up controls on any tap
         
+        // Triple-Tap to Fullscreen Native Implementation
+        const now = Date.now();
+        tapHistory = tapHistory.filter(t => now - t < 600);
+        tapHistory.push(now);
+        if (tapHistory.length === 3) {
+            tapHistory = [];
+            if (fullscreenBtn) fullscreenBtn.click();
+            return;
+        }
+
         if (isLocked) return;
         if (activePointers.size > 1) { isDragging = false; dragActive = false; return; }
 
@@ -1060,20 +1072,26 @@ export function setupVideoStream() {
 
     const cropTopHandle    = document.getElementById('vs-crop-top-handle');
     const cropBottomHandle = document.getElementById('vs-crop-bottom-handle');
+    const cropLeftHandle   = document.getElementById('vs-crop-left-handle');
+    const cropRightHandle  = document.getElementById('vs-crop-right-handle');
 
     let cropTopPct    = 0;  // 0–50
     let cropBottomPct = 0;  // 0–50
+    let cropLeftPct   = 0;  // 0–50
+    let cropRightPct  = 0;  // 0–50
     let isCropMode    = false;
 
     // Apply clip-path to overlay and reposition handle divs in viewport coords
     function applyCrop() {
-        overlay.style.clipPath = (cropTopPct === 0 && cropBottomPct === 0)
+        overlay.style.clipPath = (cropTopPct === 0 && cropRightPct === 0 && cropBottomPct === 0 && cropLeftPct === 0)
             ? ''
-            : `inset(${cropTopPct.toFixed(2)}% 0 ${cropBottomPct.toFixed(2)}% 0)`;
+            : `inset(${cropTopPct.toFixed(2)}% ${cropRightPct.toFixed(2)}% ${cropBottomPct.toFixed(2)}% ${cropLeftPct.toFixed(2)}%)`;
 
         // Reposition handles to match the crop lines in viewport coords
         if (!isCropMode) return;
         const rect = overlay.getBoundingClientRect();
+        
+        // Y-Axis Positioning
         const topEdgePx    = rect.top  + rect.height * (cropTopPct    / 100);
         const bottomEdgePx = rect.top  + rect.height * (1 - cropBottomPct / 100);
 
@@ -1083,18 +1101,40 @@ export function setupVideoStream() {
         if (cropBottomHandle) {
             cropBottomHandle.style.top = (bottomEdgePx - 22) + 'px';
         }
+
+        // X-Axis Positioning
+        const leftEdgePx   = rect.left + rect.width  * (cropLeftPct  / 100);
+        const rightEdgePx  = rect.left + rect.width  * (1 - cropRightPct / 100);
+
+        if (cropLeftHandle) {
+            cropLeftHandle.style.left = (leftEdgePx - 22) + 'px'; // center on crop line
+        }
+        if (cropRightHandle) {
+            cropRightHandle.style.left = (rightEdgePx - 22) + 'px';
+        }
     }
+
+    const LS_CROP_TOP    = 'reaper_video_crop_top_pct';
+    const LS_CROP_BOTTOM = 'reaper_video_crop_bottom_pct';
+    const LS_CROP_LEFT   = 'reaper_video_crop_left_pct';
+    const LS_CROP_RIGHT  = 'reaper_video_crop_right_pct';
 
     function saveCrop() {
         localStorage.setItem(LS_CROP_TOP,    String(cropTopPct));
         localStorage.setItem(LS_CROP_BOTTOM, String(cropBottomPct));
+        localStorage.setItem(LS_CROP_LEFT,   String(cropLeftPct));
+        localStorage.setItem(LS_CROP_RIGHT,  String(cropRightPct));
     }
 
     function restoreCrop() {
         const rawT = localStorage.getItem(LS_CROP_TOP);
         const rawB = localStorage.getItem(LS_CROP_BOTTOM);
-        cropTopPct    = rawT !== null ? clampVal(parseFloat(rawT)    || 0, 0, 50) : 0;
+        const rawL = localStorage.getItem(LS_CROP_LEFT);
+        const rawR = localStorage.getItem(LS_CROP_RIGHT);
+        cropTopPct    = rawT !== null ? clampVal(parseFloat(rawT) || 0, 0, 50) : 0;
         cropBottomPct = rawB !== null ? clampVal(parseFloat(rawB) || 0, 0, 50) : 0;
+        cropLeftPct   = rawL !== null ? clampVal(parseFloat(rawL) || 0, 0, 50) : 0;
+        cropRightPct  = rawR !== null ? clampVal(parseFloat(rawR) || 0, 0, 50) : 0;
         applyCrop();
     }
 
@@ -1106,6 +1146,8 @@ export function setupVideoStream() {
         }
         cropTopHandle?.classList.remove('hidden');
         cropBottomHandle?.classList.remove('hidden');
+        cropLeftHandle?.classList.remove('hidden');
+        cropRightHandle?.classList.remove('hidden');
         applyCrop(); // position handles
     }
 
@@ -1117,35 +1159,51 @@ export function setupVideoStream() {
         }
         cropTopHandle?.classList.add('hidden');
         cropBottomHandle?.classList.add('hidden');
+        cropLeftHandle?.classList.add('hidden');
+        cropRightHandle?.classList.add('hidden');
         saveCrop();
     }
 
-    // Generic handle drag logic — works for both top and bottom.
+    // Generic handle drag logic — works for both top/bottom and left/right.
     // Events attach to the pill (first child) since the container wrapper has pointer-events:none.
     // setPointerCapture on the pill, .dragging class on the outer container (CSS selector target).
-    function setupCropHandleDrag(handleEl, isTop) {
+    function setupCropHandleDrag(handleEl, axis, isStart) {
         if (!handleEl) return;
         const pill = handleEl.firstElementChild; // .vs-crop-handle-indicator
         if (!pill) return;
 
         let dragging = false;
-        let startY   = 0;
+        let startPos = 0;
         let startPct = 0;
 
-        function onMove(clientY) {
+        function onMove(clientX, clientY) {
             if (!dragging) return;
             const rect = overlay.getBoundingClientRect();
-            if (rect.height === 0) return;
 
-            const deltaY   = clientY - startY;
-            const deltaPct = (deltaY / rect.height) * 100;
+            if (axis === 'y') {
+                if (rect.height === 0) return;
+                const deltaY   = clientY - startPos;
+                const deltaPct = (deltaY / rect.height) * 100;
 
-            if (isTop) {
-                const maxTop = 50 - cropBottomPct;
-                cropTopPct = clampVal(startPct + deltaPct, 0, maxTop);
+                if (isStart) {
+                    const maxTop = 50 - cropBottomPct;
+                    cropTopPct = clampVal(startPct + deltaPct, 0, maxTop);
+                } else {
+                    const maxBottom = 50 - cropTopPct;
+                    cropBottomPct = clampVal(startPct - deltaPct, 0, maxBottom);
+                }
             } else {
-                const maxBottom = 50 - cropTopPct;
-                cropBottomPct = clampVal(startPct - deltaPct, 0, maxBottom);
+                if (rect.width === 0) return;
+                const deltaX   = clientX - startPos;
+                const deltaPct = (deltaX / rect.width) * 100;
+
+                if (isStart) {
+                    const maxLeft = 50 - cropRightPct;
+                    cropLeftPct = clampVal(startPct + deltaPct, 0, maxLeft);
+                } else {
+                    const maxRight = 50 - cropLeftPct;
+                    cropRightPct = clampVal(startPct - deltaPct, 0, maxRight);
+                }
             }
             applyCrop();
         }
@@ -1153,8 +1211,14 @@ export function setupVideoStream() {
         pill.addEventListener('pointerdown', (e) => {
             if (!isCropMode) return;
             dragging = true;
-            startY   = e.clientY;
-            startPct = isTop ? cropTopPct : cropBottomPct;
+            startPos = axis === 'y' ? e.clientY : e.clientX;
+            
+            if (axis === 'y') {
+                startPct = isStart ? cropTopPct : cropBottomPct;
+            } else {
+                startPct = isStart ? cropLeftPct : cropRightPct;
+            }
+
             pill.setPointerCapture(e.pointerId);
             handleEl.classList.add('dragging');  // CSS target is the outer container
             e.stopPropagation();
@@ -1162,7 +1226,7 @@ export function setupVideoStream() {
 
         pill.addEventListener('pointermove', (e) => {
             if (!dragging) return;
-            onMove(e.clientY);
+            onMove(e.clientX, e.clientY);
             e.stopPropagation();
         });
 
@@ -1180,8 +1244,10 @@ export function setupVideoStream() {
         });
     }
 
-    setupCropHandleDrag(cropTopHandle,    true);
-    setupCropHandleDrag(cropBottomHandle, false);
+    setupCropHandleDrag(cropTopHandle,    'y', true);
+    setupCropHandleDrag(cropBottomHandle, 'y', false);
+    setupCropHandleDrag(cropLeftHandle,   'x', true);
+    setupCropHandleDrag(cropRightHandle,  'x', false);
 
     // Crop button toggle
     if (cropBtn) {
@@ -1397,4 +1463,11 @@ export function setupVideoStream() {
             close();
         }
     });
+
+    // ── Global Tap-to-Wake (passive observer) ────────────────────────────────
+    window.addEventListener('pointerdown', () => {
+        if (isOpen && document.fullscreenElement !== iframe) {
+            showControls();
+        }
+    }, { passive: true });
 }
