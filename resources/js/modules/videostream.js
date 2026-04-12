@@ -21,6 +21,7 @@
 
 const STREAM_PORT           = 9062;
 const STREAM_STATUS_POLL_MS = 2000;
+const STANDBY_DELAY_MS      = 18000; // Matches Python configuration timeout for idle/black before fading UI
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -96,6 +97,8 @@ export function setupVideoStream() {
     let sliderPopupOpen = false;
     let statusTimer     = null;
     let streamOk        = false;
+    let isConnecting    = false;
+    let standbyTimer    = null;
     let fadeTimer       = null;
     let isLocked        = false;
     let currentZIndex   = DEFAULT_ZINDEX;
@@ -238,13 +241,18 @@ export function setupVideoStream() {
 
     function loadStream() {
         if (!isOpen) return;
+        isConnecting = true;
         // The cache-buster forces the browser to open a fresh TCP socket to Python.
         img.src = getStreamUrl() + '?t=' + Date.now(); 
+        
+        // 8-second safety release in case the connection ghosts silently
+        setTimeout(() => { isConnecting = false; }, 8000); 
     }
 
     function stopStream() {
         img.src = '';
         streamOk = false;
+        cancelStandby();
         if (statusTimer) {
             clearInterval(statusTimer);
             statusTimer = null;
@@ -267,24 +275,42 @@ export function setupVideoStream() {
         if (iframe)      iframe.classList.remove('vs-standby');
     }
 
-    // Forcefully drops the ghost connection if the heartbeat or native OS stack detects a crash.
-    function dropConnection() {
+    function queueStandby() {
+        if (!isOpen || standbyTimer) return;
+        standbyTimer = setTimeout(() => {
+            standbyTimer = null;
+            enterStandby();
+        }, STANDBY_DELAY_MS);
+    }
+
+    function cancelStandby() {
+        if (standbyTimer) {
+            clearTimeout(standbyTimer);
+            standbyTimer = null;
+        }
+    }
+
+    // Forcefully marks the connection dead if the native OS stack catches a TCP drop.
+    function handleSocketDeath() {
         if (!isOpen) return;
         
+        isConnecting = false; // Release the loading lock on abort
         streamOk = false;     // Flag for the heartbeat to reconnect safely
-        enterStandby();       // Elegantly fade UI covering the preserved frozen frame
+        queueStandby();       // Start the fade-out grace period
     }
 
     // Immediate fallback: only triggers if OS sends a clean TCP abort before heartbeat polls
     img.addEventListener('error', () => {
         if (!isOpen) return;
-        dropConnection();
+        handleSocketDeath();
     });
 
     // Validates a successful connection
     img.addEventListener('load', () => {
         if (!isOpen) return;
+        isConnecting = false; // Successfully downloaded the first frame
         streamOk = true;
+        cancelStandby();      // Rip away the timeout execution
         exitStandby();
         restorePosition();
         showControls();
@@ -300,7 +326,7 @@ export function setupVideoStream() {
             fetch(getStatusUrl())
                 .then(r => {
                     if (!r.ok) {
-                        dropConnection();
+                        handleSocketDeath();
                         return null; // Stop propagation
                     }
                     return r.json();
@@ -309,15 +335,24 @@ export function setupVideoStream() {
                     if (!data) return;
 
                     if (data.stream_state === 'active') {
-                        if (!streamOk) loadStream(); // Execute the cache-busting connection
+                        cancelStandby();
+                        if (!streamOk) {
+                            if (!isConnecting) loadStream(); // Dial a new cache-busting connection
+                        } else {
+                            exitStandby(); // Guarantee UI fades back in natively if the OS socket survived the Idle timeout
+                        }
+                    } else if (data.stream_state === 'idle' || data.stream_state === 'black') {
+                        // Project is "black" or "idle". We queue the 15-second grace period.
+                        // We strictly DO NOT mark streamOk=false because Python is keeping the socket alive during this period!
+                        queueStandby();
                     } else {
-                        // Project is "black", "idle", or "starting". We ensure we are resting.
-                        dropConnection();
+                        // "starting" states aggressively kill the connection
+                        handleSocketDeath();
                     }
                 })
                 .catch(() => {
                     // Network error (Server aggressively dead)
-                    dropConnection();
+                    handleSocketDeath();
                 });
         }, STREAM_STATUS_POLL_MS);
     }
@@ -955,7 +990,7 @@ export function setupVideoStream() {
                     // Revert handoff on failure
                     iframe.src = '';
                     iframe.classList.add('hidden');
-                    if (isOpen) img.src = getStreamUrl();
+                    if (isOpen) loadStream(); // Use strict cache-busting entry point 
                 });
             }
         });
@@ -969,7 +1004,7 @@ export function setupVideoStream() {
             if (iframe && !iframe.classList.contains('hidden')) {
                 iframe.src = '';
                 iframe.classList.add('hidden');
-                if (isOpen) img.src = getStreamUrl();
+                if (isOpen) loadStream(); // Restore cache-busting heartbeat safely
             }
         }
     });
