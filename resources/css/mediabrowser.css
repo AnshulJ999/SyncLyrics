@@ -205,11 +205,19 @@ body:not(.hide-nav) .ha-toggle-btn {
     left: 24px !important;    /* aligned with video-stream-toggle-btn */
     top: auto !important;     /* override the JS-set style.top on the parent */
     z-index: 145 !important;  /* above media browser (z-index: 140) */
-    opacity: 0.12;            /* barely visible, hinted at rather than shown */
+    opacity: 0.10;            /* barely visible, hinted at rather than shown */
     pointer-events: auto;     /* stays interactable — escape hatch to switch modes */
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle .vs-control-btn {
-    pointer-events: auto;   /* buttons inside also receive clicks/taps */
+    pointer-events: auto;                          /* buttons inside also receive clicks/taps */
+    /* Match the aesthetic of .media-browser-toggle-btn / .video-stream-toggle-btn */
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);         /* white-tinted, not black */
+    border: 1px solid rgba(255, 255, 255, 0.1);   /* subtle, matches sibling buttons */
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    box-shadow: none;                              /* remove the glow from .active state */
 }
 
 /* The MJPEG image — full width, auto height (= exact video frame dimensions) */
