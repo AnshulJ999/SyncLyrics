@@ -196,7 +196,7 @@ body:not(.hide-nav) .ha-toggle-btn {
     pointer-events: none !important;
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle {
-    opacity: 0.75;          /* barely visible, hinted at rather than shown */
+    opacity: 0.12;          /* barely visible, hinted at rather than shown */
     pointer-events: auto;   /* stays interactable — escape hatch to switch modes */
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle .vs-control-btn {

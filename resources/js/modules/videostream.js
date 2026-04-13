@@ -121,9 +121,9 @@ export function setupVideoStream() {
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
     const POLL_MS         = 500;    // ms between /playback polls
     const DRIFT_THRESH    = 0.2;    // seconds before forcing a re-seek
-    const DRIFT_CHECK_MS  = 2000;   // ms between drift checks
-    const DRIFT_COOL_MS   = 1000;   // ms cooldown after a drift correction
-    const SEEK_DEBOUNCE   = 175;    // ms debounce for rapid scrub (H.265 keyframe protection)
+    const DRIFT_CHECK_MS  = 3000;   // ms between drift checks
+    const DRIFT_COOL_MS   = 2000;   // ms cooldown after a drift correction
+    const SEEK_DEBOUNCE   = 225;    // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT   = 15.0;   // seconds of no-video before entering standby
 
     let syncActive         = false;
@@ -165,14 +165,15 @@ export function setupVideoStream() {
         updateModeButtons();
 
         if (mode === 'direct') {
-            // Switch to Direct mode: hide MJPEG, show video
+            // Switch to Direct mode: hide MJPEG, keep video hidden until first real canplay
             img.style.display = 'none';
             img.removeAttribute('src');
             streamOk = false;
             isConnecting = false;
-            video.style.display = 'block';
-            queueStandby(); // Enter standby until companion script provides a valid video
-            startSync();    // Begin /playback polling and drift correction
+            video.style.display = 'none'; // revealed in canplay handler, not before
+            cancelStandby();    // clear any pending timer before entering immediately
+            enterStandby();     // immediate standby — no 20s grace on mode entry
+            startSync();        // begin /playback polling; standby lifts on first valid frame
         } else {
             // Switch to Capture mode: stop sync, hide video, show MJPEG
             stopSync();
@@ -260,6 +261,7 @@ export function setupVideoStream() {
             video.load();
             video.addEventListener('canplay', function onReady() {
                 video.removeEventListener('canplay', onReady);
+                video.style.display = 'block'; // reveal now that a real frame is ready
                 restorePosition();
                 showControls();
                 syncBars();
@@ -653,6 +655,7 @@ export function setupVideoStream() {
 
     function close() {
         isOpen = false;
+        directMode = null; // Reset so open() always fully re-initializes (startSync/loadStream)
         localStorage.setItem(LS_IS_OPEN, 'false');
         overlay.classList.add('hidden');
         controlsBar?.classList.add('hidden');
