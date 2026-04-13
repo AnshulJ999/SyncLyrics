@@ -3567,14 +3567,18 @@ async def home_assistant():
 
     # Optional: long-lived access token for zero-click auto-authentication.
     # HA frontend supports: /?auth_callback=1#access_token=TOKEN&token_type=Bearer
-    ha_token = (
-        os.getenv("SYSTEM_HOME_ASSISTANT_TOKEN", "").strip()
-        or conf("system.home_assistant.token", "").strip()
-    )
+  #  ha_token = (
+  #      os.getenv("SYSTEM_HOME_ASSISTANT_TOKEN", "").strip()
+  #      or conf("system.home_assistant.token", "").strip()
+  #  )
 
+    # Note: Long-lived HA tokens are API-only (Authorization: Bearer header).
+    # They cannot auto-login the HA frontend via URL — that mechanism was removed
+    # from HA in 2019. Login persistence is handled by browser cookies scoped to
+    # the HA origin; log in once in the iframe and the session persists indefinitely.
     iframe_url = ha_url.rstrip("/")
-    if ha_token:
-        iframe_url = f"{iframe_url}/?auth_callback=1#access_token={ha_token}&token_type=Bearer"
+#    if ha_token:
+#        iframe_url = f"{iframe_url}/?auth_callback=1#access_token={ha_token}&token_type=Bearer"
 
     return f"""
     <!DOCTYPE html>
