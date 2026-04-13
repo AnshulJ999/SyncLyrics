@@ -190,14 +190,23 @@ body:not(.hide-nav) .ha-toggle-btn {
  * pointer-events: auto on a child of pointer-events: none parent IS valid per CSS spec. */
 .vs-edit-bar.vs-standby-partial {
     pointer-events: none; /* bar background doesn't intercept touches */
+    /* Note: do NOT reposition the bar here — invisible flex siblings would push
+     * #vs-mode-toggle to an unpredictable offset. Instead we fix #vs-mode-toggle
+     * directly (see rule below) to break it out of the flex layout entirely. */
 }
 .vs-edit-bar.vs-standby-partial > *:not(#vs-mode-toggle) {
     opacity: 0 !important;
     pointer-events: none !important;
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle {
-    opacity: 0.12;          /* barely visible, hinted at rather than shown */
-    pointer-events: auto;   /* stays interactable — escape hatch to switch modes */
+    /* Break out of edit bar's flex flow so invisible siblings don't push us off */
+    position: fixed !important;
+    bottom: 124px !important; /* above video-stream-toggle-btn (76px + 40px height + 8px gap) */
+    left: 24px !important;    /* aligned with video-stream-toggle-btn */
+    top: auto !important;     /* override the JS-set style.top on the parent */
+    z-index: 145 !important;  /* above media browser (z-index: 140) */
+    opacity: 0.12;            /* barely visible, hinted at rather than shown */
+    pointer-events: auto;     /* stays interactable — escape hatch to switch modes */
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle .vs-control-btn {
     pointer-events: auto;   /* buttons inside also receive clicks/taps */
@@ -268,7 +277,9 @@ body:not(.hide-nav) .ha-toggle-btn {
 /* Trim thin window-chrome borders that become visible after blend removes paper.
  * Bottom edge is thicker (scrollbar/status bar area). Order: top right bottom left. */
 .video-stream-overlay.vs-multiply .vs-img,
-.video-stream-overlay.vs-screen .vs-img {
+.video-stream-overlay.vs-multiply .vs-video,
+.video-stream-overlay.vs-screen .vs-img,
+.video-stream-overlay.vs-screen .vs-video {
     clip-path: inset(3px 3px 6px 3px);
 }
 

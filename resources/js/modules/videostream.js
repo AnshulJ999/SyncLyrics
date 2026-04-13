@@ -27,6 +27,14 @@ const STANDBY_DELAY_MS      = 20000;
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
 const TAP_THRESHOLD_MS  = 400;
 
+// Direct mode latency compensation mode.
+// 'always'   : apply LATENCY_COMP_MS offset to src_time at all times
+//              (playback, pause, scrub) — video always leads REAPER by this amount.
+// 'playback' : only apply when REAPER is actively playing; paused/scrubbed
+//              frames show the exact cursor position with no offset.
+// Flip this constant to test which feels more correct. No frontend exposure needed.
+const LATENCY_COMP_MODE = 'playback';
+
 // localStorage keys
 const LS_BLEND_MODE         = 'reaper_video_blend_mode';
 const LS_OPACITY_OFF        = 'reaper_video_opacity_off';
@@ -120,9 +128,9 @@ export function setupVideoStream() {
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
     const POLL_MS         = 500;    // ms between /playback polls
-    const DRIFT_THRESH    = 0.2;    // seconds before forcing a re-seek
+    const DRIFT_THRESH    = 0.25;    // drift threshold before forcing a re-seek
     const DRIFT_CHECK_MS  = 3000;   // ms between drift checks
-    const DRIFT_COOL_MS   = 2000;   // ms cooldown after a drift correction
+    const DRIFT_COOL_MS   = 3000;   // ms cooldown after a drift correction
     const SEEK_DEBOUNCE   = 225;    // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT   = 15.0;   // seconds of no-video before entering standby
 
@@ -283,15 +291,16 @@ export function setupVideoStream() {
         const prevPlaying = syncLastState ? syncLastState.state : -1;
         const safeRate    = Math.max(0.0625, Math.min(16, data.rate));
         const latSec      = latencyCompMs / 1000.0;
+        const isPlayingNow = (data.state & 1) || (data.state & 4);
         let   compTime    = data.src_time;
-        if (compTime !== null && latSec !== 0) {
+        if (compTime !== null && latSec !== 0 &&
+            (LATENCY_COMP_MODE === 'always' || isPlayingNow)) {
             compTime += latSec;
         }
 
         // REAPER state flags: 0=Stopped, 1=Playing, 2=Paused, 4=Recording (bitfield)
-        const isPlaying = (data.state & 1) || (data.state & 4);
-
-        if (isPlaying) {
+        // isPlayingNow was computed above (for latency comp mode check) — reuse it here.
+        if (isPlayingNow) {
             video.playbackRate = safeRate;
             if (prevPlaying !== 1 && prevPlaying !== 5) {
                 // Transition to play — seek to correct position then start
