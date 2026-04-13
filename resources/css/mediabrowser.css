@@ -205,7 +205,7 @@ body:not(.hide-nav) .ha-toggle-btn {
     left: 24px !important;    /* aligned with video-stream-toggle-btn */
     top: auto !important;     /* override the JS-set style.top on the parent */
     z-index: 145 !important;  /* above media browser (z-index: 140) */
-    opacity: 0.10;            /* barely visible, hinted at rather than shown */
+    opacity: 0.08;            /* barely visible, hinted at rather than shown */
     pointer-events: auto;     /* stays interactable — escape hatch to switch modes */
 }
 .vs-edit-bar.vs-standby-partial #vs-mode-toggle .vs-control-btn {
