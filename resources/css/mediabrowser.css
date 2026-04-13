@@ -266,9 +266,9 @@ body:not(.hide-nav) .video-stream-toggle-btn {
     display: flex;
     gap: 8px;
     align-items: center;
-    border-left: 1px solid rgba(255, 255, 255, 0.15);
-    padding-left: 10px;
-    margin-left: 2px;
+    border-left: 0px solid rgba(255, 255, 255, 0.0);
+    padding-left: 0px;
+    margin-left: 0px;
 }
 
 .vs-crop-preset-btn {
