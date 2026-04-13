@@ -1283,15 +1283,7 @@ export function setupVideoStream() {
                 
                 if (isCropMode) exitCropMode();
                 
-                if (directMode) {
-                    // Direct mode: use native video fullscreen (no iframe handoff needed)
-                    video.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
-                        console.warn('[VideoStream] Video fullscreen failed:', err);
-                    });
-                    return; // Skip the iframe handoff below
-                }
-
-                // 1) Capture mode handoff: stop img stream, start iframe
+                // Iframe handoff: streamer's native UI handles both Capture and Direct modes
                 img.src = '';
                 iframe.src = getViewerUrl();
                 iframe.classList.remove('hidden');
@@ -1301,7 +1293,7 @@ export function setupVideoStream() {
                     // Revert handoff on failure
                     iframe.src = '';
                     iframe.classList.add('hidden');
-                    if (isOpen) loadStream(); // Use strict cache-busting entry point
+                    if (isOpen && !directMode) loadStream(); // Restore MJPEG stream (Capture mode only)
                 });
             }
         });

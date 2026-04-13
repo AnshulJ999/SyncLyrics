@@ -188,15 +188,18 @@ body:not(.hide-nav) .ha-toggle-btn {
     pointer-events: none;
 }
 
-/* The HTML5 video element — full width, auto height (same as img).
- * aspect-ratio: 16/9 is a placeholder so the overlay doesn't collapse to 0px
- * before any video is loaded. Once a video src is set, the browser replaces
- * this with the video's intrinsic aspect ratio automatically. */
+/* The HTML5 video element — full width, auto height (same as img) */
 .vs-video {
     display: block;
     width: 100%;
     height: auto;
-    aspect-ratio: 16 / 9;
+    /* aspect-ratio: 16 / 9; */
+    /* NOTE (2026-04-13): Commented out — this was intended as a placeholder to prevent
+     * the overlay collapsing to 0px before a video src is set in Direct mode.
+     * However it forces the element box to exactly 16:9 regardless of the video's actual
+     * encoded dimensions. When the video is not 16:9 the element box is taller than the
+     * visual content, creating invisible extra space that throws off crop handles and
+     * prevents dragging to the bottom of the screen. Testing without it. */
     pointer-events: none;
 }
 
@@ -354,30 +357,11 @@ body:not(.hide-nav) .ha-toggle-btn {
     padding: 0 12px;
 }
 
-/* Mode Toggle (Stream vs Direct video) */
+/* Mode Toggle (Stream vs Direct video) — plain flex wrapper, no separator */
 .vs-mode-toggle {
     display: flex;
-    gap: 4px;
-    margin-left: 8px;
-    border-left: 1px solid rgba(255, 255, 255, 0.15);
-    padding-left: 8px;
-}
-
-.vs-mode-toggle .vs-mode-btn {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    font-size: 14px;
-    display: flex;
+    gap: 10px; /* match .vs-edit-bar gap */
     align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-}
-
-.vs-mode-toggle .vs-mode-btn.active {
-    background: rgba(59, 130, 246, 0.25);
-    border-color: rgba(59, 130, 246, 0.5);
-    color: #93c5fd;
 }
 
 /* Latency compensation buttons */
@@ -542,7 +526,8 @@ body .background-overlay {
     min-width: 0;
 }
 
-.vs-mode-btn {
+/* Scoped to slider popup only — prevents conflict with .vs-mode-btn on edit-bar buttons */
+.vs-slider-popup .vs-mode-btn {
     flex: 1;
     height: 26px;
     border-radius: 6px;
@@ -558,12 +543,12 @@ body .background-overlay {
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.vs-mode-btn:hover {
+.vs-slider-popup .vs-mode-btn:hover {
     background: rgba(255, 255, 255, 0.16);
     color: white;
 }
 
-.vs-mode-btn.active {
+.vs-slider-popup .vs-mode-btn.active {
     background: rgba(59, 130, 246, 0.25);
     border-color: rgba(59, 130, 246, 0.5);
     color: #93c5fd;
