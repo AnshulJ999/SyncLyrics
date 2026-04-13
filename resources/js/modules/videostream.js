@@ -115,8 +115,27 @@ export function setupVideoStream() {
     let fadeTimer       = null;
     let isLocked        = false;
     let currentZIndex   = DEFAULT_ZINDEX;
-    let directMode      = false;  // Mode A (false) = MJPEG, Mode B (true) = Direct video
+    let directMode      = null;   // null = not yet initialized; false = Capture (MJPEG); true = Direct video
     let latencyCompMs   = 100;    // Latency compensation in milliseconds (default 100ms)
+
+    // ── Sync Engine state (Direct mode only) ─────────────────────────────────
+    const POLL_MS         = 500;    // ms between /playback polls
+    const DRIFT_THRESH    = 0.2;    // seconds before forcing a re-seek
+    const DRIFT_CHECK_MS  = 2000;   // ms between drift checks
+    const DRIFT_COOL_MS   = 1000;   // ms cooldown after a drift correction
+    const SEEK_DEBOUNCE   = 175;    // ms debounce for rapid scrub (H.265 keyframe protection)
+    const BLACK_TIMEOUT   = 15.0;   // seconds of no-video before entering standby
+
+    let syncActive         = false;
+    let syncPollTimer      = null;
+    let syncDriftTimer     = null;
+    let syncLastState      = null;
+    let syncLastPollTime   = 0;
+    let syncLastCorrection = 0;
+    let syncSeekDebounce   = null;
+    let syncCurrentFile    = null;
+    let syncNoVideoSince   = 0;
+    let syncBlackHandled   = false;
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
@@ -137,7 +156,9 @@ export function setupVideoStream() {
 
     function switchSourceMode(mode) {
         const newDirectMode = (mode === 'direct');
-        if (newDirectMode === directMode) return; // Already in this mode
+        // directMode === null means first call (initializing) — always proceed.
+        // Subsequent calls: skip if already in the requested mode.
+        if (directMode !== null && newDirectMode === directMode) return;
 
         directMode = newDirectMode;
         localStorage.setItem(LS_MODE_KEY, mode);
@@ -150,15 +171,166 @@ export function setupVideoStream() {
             streamOk = false;
             isConnecting = false;
             video.style.display = 'block';
-            queueStandby(); // Enter standby until companion script provides video
-            // Sync polling will start separately in the sync engine
+            queueStandby(); // Enter standby until companion script provides a valid video
+            startSync();    // Begin /playback polling and drift correction
         } else {
-            // Switch to Capture mode: hide video, show MJPEG
+            // Switch to Capture mode: stop sync, hide video, show MJPEG
+            stopSync();
             video.pause();
             video.removeAttribute('src');
             video.style.display = 'none';
             img.style.display = 'block';
             loadStream(); // Start the MJPEG stream
+        }
+    }
+
+    // ── Sync Engine (Direct Mode — Phase B) ─────────────────────────────────
+    // Ports the sync logic from reaper_video_streamer.py (lines 965-1114).
+    // Polls /playback every 500ms, loads video on file change, seeks/plays/pauses
+    // to match REAPER transport state, and corrects drift every 2 seconds.
+
+    function startSync() {
+        if (syncActive) return;
+        syncActive         = true;
+        syncLastState      = null;
+        syncCurrentFile    = null;
+        syncNoVideoSince   = 0;
+        syncBlackHandled   = false;
+        doPoll();                                          // immediate first poll
+        syncPollTimer  = setInterval(doPoll,       POLL_MS);
+        syncDriftTimer = setInterval(checkDrift, DRIFT_CHECK_MS);
+    }
+
+    function stopSync() {
+        syncActive = false;
+        if (syncPollTimer)   { clearInterval(syncPollTimer);    syncPollTimer   = null; }
+        if (syncDriftTimer)  { clearInterval(syncDriftTimer);   syncDriftTimer  = null; }
+        if (syncSeekDebounce){ clearTimeout(syncSeekDebounce);  syncSeekDebounce = null; }
+    }
+
+    function doPoll() {
+        if (!syncActive) return;
+        fetch(getPlaybackUrl())
+            .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
+            .then(handlePlaybackState)
+            .catch(() => {
+                // Streamer unreachable — enter standby so the UI doesn't show a stale frame
+                console.warn('[VideoStream] /playback unreachable — entering standby');
+                queueStandby();
+            });
+    }
+
+    function handlePlaybackState(data) {
+        syncLastPollTime = Date.now();
+
+        // ── Companion script not running ────────────────────────────────────────
+        if (!data.companion_alive) {
+            console.info('[VideoStream] Waiting for REAPER companion script...');
+            video.pause();
+            queueStandby();
+            syncLastState = data;
+            return;
+        }
+
+        // ── No video item at current timeline position (pure black frame) ───────
+        if (!data.file || data.src_time === null || data.src_time === undefined) {
+            if (syncNoVideoSince === 0) {
+                syncNoVideoSince  = Date.now();
+                syncBlackHandled  = false;
+            }
+            if (!syncBlackHandled && (Date.now() - syncNoVideoSince) / 1000 >= BLACK_TIMEOUT) {
+                syncBlackHandled = true;
+                video.pause();
+                queueStandby();
+            }
+            syncLastState = data;
+            return;
+        }
+
+        // ── Valid video — reset black-frame tracking ─────────────────────────────
+        syncNoVideoSince = 0;
+        syncBlackHandled = false;
+        cancelStandby();
+        exitStandby();
+
+        // ── File changed — reload video source, then apply state ─────────────────
+        if (data.file !== syncCurrentFile) {
+            syncCurrentFile = data.file;
+            video.src = getVideoUrl(); // cache-bust to force fresh load
+            video.load();
+            video.addEventListener('canplay', function onReady() {
+                video.removeEventListener('canplay', onReady);
+                restorePosition();
+                showControls();
+                syncBars();
+                // Clear syncLastState before applying: otherwise applyPlaybackState
+                // sees prevPlaying === data.state and skips the seek+play branch.
+                syncLastState = null;
+                applyPlaybackState(data);
+                syncLastState = data;
+            });
+            syncLastState = data;
+            return;
+        }
+
+        applyPlaybackState(data);
+        syncLastState = data;
+    }
+
+    function applyPlaybackState(data) {
+        const prevPlaying = syncLastState ? syncLastState.state : -1;
+        const safeRate    = Math.max(0.0625, Math.min(16, data.rate));
+        const latSec      = latencyCompMs / 1000.0;
+        let   compTime    = data.src_time;
+        if (compTime !== null && latSec !== 0) {
+            compTime += latSec;
+        }
+
+        // REAPER state flags: 0=Stopped, 1=Playing, 2=Paused, 4=Recording (bitfield)
+        const isPlaying = (data.state & 1) || (data.state & 4);
+
+        if (isPlaying) {
+            video.playbackRate = safeRate;
+            if (prevPlaying !== 1 && prevPlaying !== 5) {
+                // Transition to play — seek to correct position then start
+                video.currentTime = compTime;
+                video.play().catch(() => {});
+            } else if (syncLastState && Math.abs(data.src_time - syncLastState.src_time) > 1.0) {
+                // Large position jump while playing = timeline scrub — debounce to avoid stalls
+                if (syncSeekDebounce) clearTimeout(syncSeekDebounce);
+                syncSeekDebounce = setTimeout(() => {
+                    syncSeekDebounce = null;
+                    video.currentTime = compTime;
+                }, SEEK_DEBOUNCE);
+            }
+            // Propagate rate change immediately (e.g. half-speed preview)
+            if (syncLastState && Math.abs(data.rate - syncLastState.rate) > 0.001) {
+                video.playbackRate = safeRate;
+            }
+        } else {
+            // Paused (2) or Stopped (0)
+            video.pause();
+            if (compTime !== null) {
+                video.currentTime = compTime;
+            }
+        }
+    }
+
+    function checkDrift() {
+        const isPlaying = syncLastState && ((syncLastState.state & 1) || (syncLastState.state & 4));
+        if (!syncActive || !syncLastState || !isPlaying)       return;
+        if (video.paused || video.readyState < 2)               return;
+        if (Date.now() - syncLastCorrection < DRIFT_COOL_MS)    return;
+        if (syncSeekDebounce)                                    return;
+
+        const elapsed  = (Date.now() - syncLastPollTime) / 1000;
+        const latSec   = latencyCompMs / 1000.0;
+        const expected = syncLastState.src_time + elapsed * syncLastState.rate + latSec;
+        const drift    = Math.abs(video.currentTime - expected);
+
+        if (drift > DRIFT_THRESH) {
+            video.currentTime  = expected;
+            syncLastCorrection = Date.now();
         }
     }
 
@@ -307,6 +479,11 @@ export function setupVideoStream() {
         img.src = '';
         streamOk = false;
         cancelStandby();
+        stopSync();           // Stop Direct-mode sync engine if running
+        if (video) {
+            video.pause();
+            video.removeAttribute('src');
+        }
         if (statusTimer) {
             clearInterval(statusTimer);
             statusTimer = null;
@@ -407,6 +584,10 @@ export function setupVideoStream() {
             }
             lastHeartbeatTime = now;
 
+            // In Direct mode the sync engine handles everything via /playback.
+            // Don't poll /status or call loadStream() — that would re-set img.src.
+            if (directMode) return;
+
             fetch(getStatusUrl())
                 .then(r => {
                     if (!r.ok) {
@@ -503,14 +684,24 @@ export function setupVideoStream() {
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             if (!isOpen) return;
-            // clear the current Ghost stream to force Chrome to completely drop the MJPEG decoder
-            img.src = '';
-            
-            // Yield the thread for 50ms so Chrome natively registers the decoder death before dialing it up again
-            setTimeout(() => {
-                handleSocketDeath(); // Force standy sequence explicitly
-                loadStream();        // Brutally cache-bust and revive
-            }, 50);
+
+            if (directMode) {
+                // Direct mode: restart sync engine (re-poll /playback and reload video)
+                stopSync();
+                video.pause();
+                video.removeAttribute('src');
+                syncCurrentFile = null; // Force file reload on next poll
+                queueStandby();
+                startSync();
+            } else {
+                // Capture mode: clear the current ghost stream to force Chrome to drop the MJPEG decoder
+                img.src = '';
+                // Yield the thread for 50ms so Chrome natively registers the decoder death
+                setTimeout(() => {
+                    handleSocketDeath(); // Force standby sequence explicitly
+                    loadStream();        // Brutally cache-bust and revive
+                }, 50);
+            }
         });
     }
 
@@ -586,14 +777,18 @@ export function setupVideoStream() {
     }
 
     function applyFilters() {
-        img.style.filter = computeFilter() || '';
+        const f = computeFilter() || '';
+        img.style.filter   = f;
+        if (video) video.style.filter = f; // Apply to video element too (Direct mode)
         updateSliders();
         updateBoostBtn();
     }
 
     function applyOpacity(pct) {
         currentOpacity = clampVal(pct, 10, 100);
-        img.style.opacity = currentOpacity / 100;
+        const opacity  = currentOpacity / 100;
+        img.style.opacity   = opacity;
+        if (video) video.style.opacity = opacity; // Apply to video element too (Direct mode)
         localStorage.setItem(opacityStorageKey(currentBlendMode), String(currentOpacity));
         updateOpacitySlider();
     }
@@ -825,6 +1020,11 @@ export function setupVideoStream() {
     }
 
     function getExpectedOverlayHeight() {
+        // Direct mode: use video's intrinsic dimensions once loaded
+        if (directMode && video && video.videoWidth && video.videoHeight) {
+            return Math.max(1, Math.round(overlay.offsetWidth * (video.videoHeight / video.videoWidth)));
+        }
+        // Capture mode: use img's intrinsic dimensions
         if (img && img.naturalWidth && img.naturalHeight) {
             // Bypass CSS layout delay by predicting the box model height mathematically
             return Math.max(1, Math.round(overlay.offsetWidth * (img.naturalHeight / img.naturalWidth)));
@@ -1083,17 +1283,25 @@ export function setupVideoStream() {
                 
                 if (isCropMode) exitCropMode();
                 
-                // 1) Handoff: stop img stream, start iframe
+                if (directMode) {
+                    // Direct mode: use native video fullscreen (no iframe handoff needed)
+                    video.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
+                        console.warn('[VideoStream] Video fullscreen failed:', err);
+                    });
+                    return; // Skip the iframe handoff below
+                }
+
+                // 1) Capture mode handoff: stop img stream, start iframe
                 img.src = '';
                 iframe.src = getViewerUrl();
                 iframe.classList.remove('hidden');
-                
+
                 iframe.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
                     console.warn('[VideoStream] Fullscreen request failed:', err);
                     // Revert handoff on failure
                     iframe.src = '';
                     iframe.classList.add('hidden');
-                    if (isOpen) loadStream(); // Use strict cache-busting entry point 
+                    if (isOpen) loadStream(); // Use strict cache-busting entry point
                 });
             }
         });
@@ -1113,7 +1321,7 @@ export function setupVideoStream() {
             if (iframe && !iframe.classList.contains('hidden')) {
                 iframe.src = '';
                 iframe.classList.add('hidden');
-                if (isOpen) loadStream(); // Restore cache-busting heartbeat safely
+                if (isOpen && !directMode) loadStream(); // Restore MJPEG stream (Capture mode only)
             }
         }
     });

@@ -188,11 +188,15 @@ body:not(.hide-nav) .ha-toggle-btn {
     pointer-events: none;
 }
 
-/* The HTML5 video element — full width, auto height (same as img) */
+/* The HTML5 video element — full width, auto height (same as img).
+ * aspect-ratio: 16/9 is a placeholder so the overlay doesn't collapse to 0px
+ * before any video is loaded. Once a video src is set, the browser replaces
+ * this with the video's intrinsic aspect ratio automatically. */
 .vs-video {
     display: block;
     width: 100%;
     height: auto;
+    aspect-ratio: 16 / 9;
     pointer-events: none;
 }
 
