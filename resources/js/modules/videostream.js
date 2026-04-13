@@ -67,6 +67,7 @@ export function setupVideoStream() {
     const btn             = document.getElementById('btn-video-stream');
     const overlay         = document.getElementById('video-stream-overlay');
     const img             = document.getElementById('video-stream-img');
+    const video           = document.getElementById('video-stream-video');
     const controlsBar     = document.getElementById('vs-controls-bar');
     const editBar         = document.getElementById('vs-edit-bar');
     const closeBtn        = document.getElementById('vs-close-btn');
@@ -76,6 +77,17 @@ export function setupVideoStream() {
     const fullscreenBtn   = document.getElementById('vs-fullscreen-btn');
     const lockBtn         = document.getElementById('vs-lock-btn');
     const cropBtn         = document.getElementById('vs-crop-btn');
+
+    // Mode toggle buttons
+    const modeCapturBtn   = document.getElementById('vs-mode-capture');
+    const modeDirectBtn   = document.getElementById('vs-mode-direct');
+
+    // Latency control elements
+    const latencyCtrl     = document.getElementById('vs-latency-ctrl');
+    const latencyDown     = document.getElementById('vs-latency-down');
+    const latencyUp       = document.getElementById('vs-latency-up');
+    const latencyValue    = document.getElementById('vs-latency-value');
+    const latencyReset    = document.getElementById('vs-latency-reset');
 
     // Slider popup elements (must be declared before any function that reads them)
     const sliderPopup      = document.getElementById('vs-slider-popup');
@@ -103,11 +115,52 @@ export function setupVideoStream() {
     let fadeTimer       = null;
     let isLocked        = false;
     let currentZIndex   = DEFAULT_ZINDEX;
+    let directMode      = false;  // Mode A (false) = MJPEG, Mode B (true) = Direct video
+    let latencyCompMs   = 100;    // Latency compensation in milliseconds (default 100ms)
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
     const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
+    const getPlaybackUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/playback`;
+    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?t=${Date.now()}`;
+
+    // ── Mode switching (Capture MJPEG vs Direct video file) ──────────────────
+    const LS_MODE_KEY = 'reaper_video_mode';
+    const LS_LATENCY_KEY = 'reaper_video_latency_ms';
+
+    function updateModeButtons() {
+        if (modeCapturBtn) modeCapturBtn.classList.toggle('active', !directMode);
+        if (modeDirectBtn) modeDirectBtn.classList.toggle('active', directMode);
+        if (latencyCtrl) latencyCtrl.style.display = directMode ? 'block' : 'none';
+    }
+
+    function switchSourceMode(mode) {
+        const newDirectMode = (mode === 'direct');
+        if (newDirectMode === directMode) return; // Already in this mode
+
+        directMode = newDirectMode;
+        localStorage.setItem(LS_MODE_KEY, mode);
+        updateModeButtons();
+
+        if (mode === 'direct') {
+            // Switch to Direct mode: hide MJPEG, show video
+            img.style.display = 'none';
+            img.removeAttribute('src');
+            streamOk = false;
+            isConnecting = false;
+            video.style.display = 'block';
+            queueStandby(); // Enter standby until companion script provides video
+            // Sync polling will start separately in the sync engine
+        } else {
+            // Switch to Capture mode: hide video, show MJPEG
+            video.pause();
+            video.removeAttribute('src');
+            video.style.display = 'none';
+            img.style.display = 'block';
+            loadStream(); // Start the MJPEG stream
+        }
+    }
 
     // ── Control auto-fade ────────────────────────────────────────────────────
     const FADE_DELAY_MS = 5000; //
@@ -399,9 +452,12 @@ export function setupVideoStream() {
         controlsBar?.classList.remove('hidden');
         editBar?.classList.remove('hidden');
         btn.classList.add('active');
-        
+
+        // Restore saved mode (default to Capture if not found)
+        const savedMode = localStorage.getItem(LS_MODE_KEY) || 'capture';
+        switchSourceMode(savedMode);
+
         startStatusHeartbeat();
-        loadStream();
         showControls();
     }
 
@@ -1299,6 +1355,82 @@ export function setupVideoStream() {
 
     // Restore saved crop on load
     restoreCrop();
+
+    // ── Mode Toggle (Stream vs Direct video) ──────────────────────────────────
+    if (modeCapturBtn && modeDirectBtn) {
+        modeCapturBtn.addEventListener('click', () => switchSourceMode('capture'));
+        modeDirectBtn.addEventListener('click', () => switchSourceMode('direct'));
+    }
+
+    // ── Latency Compensation Control (Direct mode only) ───────────────────────
+    function updateLatencyDisplay() {
+        if (latencyValue) {
+            latencyValue.textContent = (latencyCompMs >= 0 ? '+' : '') + latencyCompMs + 'ms';
+        }
+    }
+
+    function setLatencyMs(ms) {
+        ms = Math.max(-2000, Math.min(2000, ms)); // Clamp -2000 to +2000
+        latencyCompMs = ms;
+        localStorage.setItem(LS_LATENCY_KEY, String(ms));
+        updateLatencyDisplay();
+    }
+
+    // Load saved latency from localStorage
+    const savedLatency = localStorage.getItem(LS_LATENCY_KEY);
+    if (savedLatency !== null) {
+        latencyCompMs = parseInt(savedLatency, 10);
+    } else {
+        latencyCompMs = 100; // Default
+    }
+    updateLatencyDisplay();
+
+    // Latency button handlers: hold-to-accelerate (10ms steps, then 50ms)
+    function setupLatencyButton(btn, direction) {
+        if (!btn) return;
+        let holdTimer = null;
+        let accelTimer = null;
+        let holdStart = 0;
+
+        function doStep() {
+            const held = Date.now() - holdStart;
+            const step = held > 1500 ? 50 : 10; // Accelerate after 1.5s
+            setLatencyMs(latencyCompMs + direction * step);
+        }
+
+        function startHold(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            holdStart = Date.now();
+            setLatencyMs(latencyCompMs + direction * 10); // Immediate first step
+            holdTimer = setTimeout(() => {
+                // After 400ms hold, start repeating every 80ms
+                accelTimer = setInterval(doStep, 80);
+            }, 400);
+        }
+
+        function stopHold(e) {
+            if (e) e.preventDefault();
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+            if (accelTimer) { clearInterval(accelTimer); accelTimer = null; }
+        }
+
+        btn.addEventListener('pointerdown', startHold);
+        btn.addEventListener('pointerup', stopHold);
+        btn.addEventListener('pointerleave', stopHold);
+        btn.addEventListener('pointercancel', stopHold);
+        btn.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    setupLatencyButton(latencyDown, -1);
+    setupLatencyButton(latencyUp, +1);
+
+    if (latencyReset) {
+        latencyReset.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setLatencyMs(100); // Reset to default
+        });
+    }
 
     // ── Lyrics Offset ─────────────────────────────────────────────────────────
     // Shifts the lyrics container up or down via margin-top.

@@ -559,6 +559,7 @@
 <!-- Video Stream Overlay (floating panel, not a modal) -->
 <div id="video-stream-overlay" class="video-stream-overlay hidden">
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
+    <video id="video-stream-video" class="vs-video" playsinline preload="auto" muted style="display: none;"></video>
 </div>
 
 <!-- Native Fullscreen Iframe (Dormant until handoff) -->
@@ -642,6 +643,18 @@
         <span id="vs-zindex-value" class="vs-slider-value vs-zindex-val">950</span>
         <button id="vs-zindex-plus" class="vs-zindex-btn">+</button>
     </div>
+
+    <!-- Latency Compensation Control (Direct Mode only) -->
+    <div id="vs-latency-ctrl" class="vs-slider-row" style="display: none; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 8px;">
+        <span class="vs-slider-label"><i class="bi bi-hourglass-split"></i> Latency Comp</span>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px;">
+            <button id="vs-latency-down" class="vs-latency-btn">−</button>
+            <span id="vs-latency-value" class="vs-slider-value" style="min-width: 60px; text-align: center;">+100ms</span>
+            <button id="vs-latency-up" class="vs-latency-btn">+</button>
+            <button id="vs-latency-reset" class="vs-latency-btn" style="font-size: 11px; padding: 0 6px;">RST</button>
+        </div>
+        <div style="color: rgba(255,255,255,0.4); font-size: 10px; text-align: center; margin-top: 6px;">Hold to adjust</div>
+    </div>
 </div>
 
 <!-- Video Stream Edit Bar (top-left) — Lock and Crop buttons -->
@@ -658,6 +671,16 @@
         <button class="vs-control-btn vs-crop-preset-btn active" data-preset="1">1</button>
         <button class="vs-control-btn vs-crop-preset-btn" data-preset="2">2</button>
         <button class="vs-control-btn vs-crop-preset-btn" data-preset="3">3</button>
+    </div>
+
+    <!-- Video Stream Mode Toggle (Stream vs Direct) -->
+    <div id="vs-mode-toggle" class="vs-mode-toggle">
+        <button id="vs-mode-capture" class="vs-control-btn vs-mode-btn active" data-mode="capture" title="MJPEG Stream">
+            <i class="bi bi-broadcast"></i>
+        </button>
+        <button id="vs-mode-direct" class="vs-control-btn vs-mode-btn" data-mode="direct" title="Direct Video">
+            <i class="bi bi-film"></i>
+        </button>
     </div>
 </div>
 

@@ -188,6 +188,14 @@ body:not(.hide-nav) .ha-toggle-btn {
     pointer-events: none;
 }
 
+/* The HTML5 video element — full width, auto height (same as img) */
+.vs-video {
+    display: block;
+    width: 100%;
+    height: auto;
+    pointer-events: none;
+}
+
 /*
  * CSS blend modes for Guitar Pro transparency.
  * All CSS-only — streams /stream JPEG, zero server overhead.
@@ -340,6 +348,57 @@ body:not(.hide-nav) .ha-toggle-btn {
     font-weight: 600;
     font-family: inherit;
     padding: 0 12px;
+}
+
+/* Mode Toggle (Stream vs Direct video) */
+.vs-mode-toggle {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    padding-left: 8px;
+}
+
+.vs-mode-toggle .vs-mode-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.vs-mode-toggle .vs-mode-btn.active {
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #93c5fd;
+}
+
+/* Latency compensation buttons */
+.vs-latency-btn {
+    width: 32px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: background 0.15s, color 0.15s;
+}
+
+.vs-latency-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.vs-latency-btn:active {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 /* Overlay dragging cursor — applied to body during drag so cursor stays correct */
