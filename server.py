@@ -3380,6 +3380,7 @@ async def get_client_config():
         "customFonts": custom_fonts,
         # Feature flags
         "reaperVideoEnabled": FEATURES.get("reaper_video_enabled", False),
+        "haEnabled": FEATURES.get("ha_enabled", False),
     }
 
 @app.route("/callback")
@@ -3529,6 +3530,68 @@ async def media_browser(subpath='index.html'):
         # CRITICAL: React build uses /static/ paths which conflict with SyncLyrics' own /static/ route
         # We need to serve static files from the spotify-browser directory
         return await send_from_directory(str(spotify_browser_dir), subpath)
+
+# --- Home Assistant Route ---
+# Serves an iframe wrapper page pointing at the user's HA instance.
+# Gated behind HA_ENABLED=true. Login persistence is handled by browser cookies
+# (same HA origin). Optional long-lived token enables zero-click auto-auth.
+
+@app.route('/ha/')
+async def home_assistant():
+    """
+    Returns a minimal HTML page that iframes the configured Home Assistant server.
+
+    Config (in .env or settings.json):
+        HA_ENABLED=true
+        SYSTEM_HOME_ASSISTANT_URL=http://192.168.1.x:8123
+        SYSTEM_HOME_ASSISTANT_TOKEN=<long-lived-token>  (optional, for auto-login)
+    """
+    if not FEATURES.get("ha_enabled", False):
+        return "<html><body>Home Assistant integration is not enabled.</body></html>", 403
+
+    ha_url = (
+        os.getenv("SYSTEM_HOME_ASSISTANT_URL", "").strip()
+        or conf("system.home_assistant.url", "").strip()
+    )
+    if not ha_url:
+        return """
+        <html>
+        <head><title>Home Assistant Not Configured</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #1a1a2e; color: #fff;">
+            <h1>⚠️ Home Assistant Not Configured</h1>
+            <p>Set the server URL in your .env file or Settings:</p>
+            <p><code>SYSTEM_HOME_ASSISTANT_URL=http://192.168.1.x:8123</code></p>
+        </body>
+        </html>
+        """, 400
+
+    # Optional: long-lived access token for zero-click auto-authentication.
+    # HA frontend supports: /?auth_callback=1#access_token=TOKEN&token_type=Bearer
+    ha_token = (
+        os.getenv("SYSTEM_HOME_ASSISTANT_TOKEN", "").strip()
+        or conf("system.home_assistant.token", "").strip()
+    )
+
+    iframe_url = ha_url.rstrip("/")
+    if ha_token:
+        iframe_url = f"{iframe_url}/?auth_callback=1#access_token={ha_token}&token_type=Bearer"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Home Assistant</title>
+        <style>
+            body, html {{ margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1a2e; }}
+            iframe {{ width: 100%; height: 100%; border: none; }}
+        </style>
+    </head>
+    <body>
+        <iframe src="{iframe_url}" allow="autoplay"></iframe>
+    </body>
+    </html>
+    """
+
 
 
 @app.route('/api/spotify/browser-token')

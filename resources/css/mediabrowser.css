@@ -29,11 +29,11 @@
 }
 
 /* ========== VIDEO STREAM TOGGLE BUTTON ========== */
-/* 3rd row, above media browser toggle on bottom-left */
+/* Row 2 — same bottom as media-browser, right of it */
 .video-stream-toggle-btn {
     position: fixed;
-    bottom: 128px; /* 76px + 40px + 12px gap */
-    left: 24px;
+    bottom: 76px; /* same row as media-browser */
+    left: 76px;   /* media-browser width(40) + gap(12) + left(24) */
     z-index: 140;
     width: 40px;
     height: 40px;
@@ -72,7 +72,55 @@ body[data-minimal="true"] .video-stream-toggle-btn {
 
 /* Push up when bottom nav is visible */
 body:not(.hide-nav) .video-stream-toggle-btn {
-    bottom: 160px; /* 108px + 40px + 12px */
+    bottom: 108px; /* same as media-browser nav-visible offset */
+}
+
+/* ========== HOME ASSISTANT TOGGLE BUTTON ========== */
+/* Row 2 — rightmost of the three, same bottom as media-browser and video-stream */
+.ha-toggle-btn {
+    position: fixed;
+    bottom: 76px; /* same row */
+    left: 128px;  /* left(24) + btn(40) + gap(12) + btn(40) + gap(12) */
+    z-index: 140;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.ha-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+.ha-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+/* Active state when modal is open */
+.ha-toggle-btn.active {
+    color: #18BCEF; /* HA blue */
+    background: rgba(24, 188, 239, 0.15);
+    border-color: rgba(24, 188, 239, 0.3);
+}
+
+/* Hide in minimal mode */
+body[data-minimal="true"] .ha-toggle-btn {
+    display: none !important;
+}
+
+/* Push up when bottom nav is visible */
+body:not(.hide-nav) .ha-toggle-btn {
+    bottom: 108px;
 }
 
 /* ========== VIDEO STREAM OVERLAY ========== */
@@ -803,6 +851,73 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     border-radius: 0 0 16px 16px;
 }
 
+/* ========== HA MODAL ========== */
+/* Shares the same modal pattern as media-browser-modal */
+.ha-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.ha-modal:not(.hidden) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.ha-modal.hidden {
+    display: flex; /* Keep flex during transition */
+}
+
+.ha-modal-content {
+    position: relative;
+    background: rgba(18, 18, 18, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    width: 100%;
+    height: 100%;
+    max-width: 95vw;
+    max-height: 95vh;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    transform: scale(0.95) translateY(20px);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+.ha-modal:not(.hidden) .ha-modal-content {
+    transform: scale(1) translateY(0);
+}
+
+.ha-modal-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    display: flex;
+    gap: 12px;
+}
+
+.ha-frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: #121212;
+    border-radius: 0 0 16px 16px;
+}
+
 /* ========== MOBILE LAYOUT ========== */
 /* Position media browser button on right edge for mobile (separate from left stack) */
 @media (max-width: 825px) {
@@ -812,10 +927,18 @@ body:not(.hide-nav) .media-browser-toggle-btn {
         bottom: calc(var(--buttons-base, 80px) + 150px);
     }
     
+    /* Video stream: same row as media-browser, to its right */
     .video-stream-toggle-btn {
         right: auto;
-        left: 16px;
-        bottom: calc(var(--buttons-base, 80px) + 202px); /* 150px + 40px + 12px gap */
+        left: 68px; /* 16 + 40 + 12 */
+        bottom: calc(var(--buttons-base, 80px) + 150px);
+    }
+
+    /* HA: same row, rightmost */
+    .ha-toggle-btn {
+        right: auto;
+        left: 120px; /* 16 + 40 + 12 + 40 + 12 */
+        bottom: calc(var(--buttons-base, 80px) + 150px);
     }
 
     /* On mobile, overlay top is still managed by JS */

@@ -386,14 +386,19 @@
     </button>
 </div>
 
-<!-- NEW: Media Browser Button (2nd row above visual mode toggle) -->
+<!-- Row 2 (above visual-mode row): [Spotify/MA] [Video Stream] [Home Assistant] -->
 <button id="btn-media-browser" class="media-browser-toggle-btn" title="Media Browser">
     <i class="bi bi-spotify"></i>
 </button>
 
-<!-- NEW: Video Stream Button (3rd row) -->
+<!-- Video Stream Button (same row as media browser, to its right) -->
 <button id="btn-video-stream" class="video-stream-toggle-btn" title="Video Stream">
     <i class="bi bi-camera-video"></i>
+</button>
+
+<!-- Home Assistant Button (same row, rightmost — hidden until HA_ENABLED=true) -->
+<button id="btn-home-assistant" class="ha-toggle-btn" title="Home Assistant" style="display:none">
+    <i class="bi bi-house-fill"></i>
 </button>
 
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
@@ -530,6 +535,24 @@
             </button>
         </div>
         <iframe id="media-browser-frame" class="media-browser-frame" src="" allow="autoplay"></iframe>
+    </div>
+</div>
+
+<!-- Home Assistant Modal -->
+<div id="ha-modal" class="ha-modal hidden">
+    <div class="ha-modal-content">
+        <div class="ha-modal-controls">
+            <button id="ha-open-tab" class="media-browser-control-btn" title="Open in new tab">
+                <i class="bi bi-box-arrow-up-right"></i>
+            </button>
+            <button id="ha-refresh" class="media-browser-control-btn" title="Refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <button id="ha-close" class="media-browser-control-btn close-btn" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <iframe id="ha-frame" class="ha-frame" src="" allow="autoplay"></iframe>
     </div>
 </div>
 

@@ -411,6 +411,8 @@ FEATURES = {
     "spicetify_database": _safe_bool(conf("features.spicetify_database"), True),  # Cache audio analysis from Spicetify
     # REAPER video overlay — disabled by default; opt-in via REAPER_VIDEO_ENABLED=true in .env
     "reaper_video_enabled": os.getenv("REAPER_VIDEO_ENABLED", "").lower() == "true" or _safe_bool(conf("features.reaper_video_enabled"), False),
+    # Home Assistant embed — disabled by default; opt-in via HA_ENABLED=true in .env
+    "ha_enabled": os.getenv("HA_ENABLED", "").lower() == "true" or _safe_bool(conf("features.ha_enabled"), False),
 }
 
 ALBUM_ART = {

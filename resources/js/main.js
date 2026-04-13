@@ -129,6 +129,9 @@ import { setupMediaBrowser, updateMediaBrowserIcon } from './modules/mediabrowse
 // Video Stream (Level 2)
 import { setupVideoStream } from './modules/videostream.js';
 
+// Home Assistant Browser (Level 2)
+import { setupHomeAssistant } from './modules/habrowser.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -766,6 +769,13 @@ async function main() {
         const vsBtn = document.getElementById('btn-video-stream');
         if (vsBtn) vsBtn.style.display = 'none';
     }
+
+    // Initialize Home Assistant embed (HA_ENABLED feature flag required)
+    if (config?.haEnabled) {
+        setupHomeAssistant();
+    }
+    // Note: HA button is hidden by default in HTML (style="display:none").
+    // setupHomeAssistant() removes that hide when called.
 
     // Initialize waveform and spectrum visualizers
     initWaveform();
