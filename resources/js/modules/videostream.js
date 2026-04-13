@@ -839,22 +839,10 @@ export function setupVideoStream() {
         document.body.classList.add('vs-dragging');
     }
 
-    let tapHistory = [];
-
     overlay.addEventListener('pointerdown', (e) => {
         activePointers.set(e.pointerId, true);
         showControls(); // Unconditionally wake up controls on any tap
         
-        // Triple-Tap to Fullscreen Native Implementation
-        const now = Date.now();
-        tapHistory = tapHistory.filter(t => now - t < 600);
-        tapHistory.push(now);
-        if (tapHistory.length === 3) {
-            tapHistory = [];
-            if (fullscreenBtn) fullscreenBtn.click();
-            return;
-        }
-
         if (isLocked) return;
         if (activePointers.size > 1) { isDragging = false; dragActive = false; return; }
 
@@ -1057,6 +1045,12 @@ export function setupVideoStream() {
         
         // Handoff Return: when exiting fullscreen, swap streams back
         if (document.fullscreenElement === null) {
+            // Flush phantom pointers that were swallowed by the native iframe transition
+            activePointers.clear();
+            isDragging = false;
+            dragActive = false;
+            document.body.classList.remove('vs-dragging');
+            
             if (iframe && !iframe.classList.contains('hidden')) {
                 iframe.src = '';
                 iframe.classList.add('hidden');
@@ -1507,10 +1501,39 @@ export function setupVideoStream() {
         }
     });
 
-    // ── Global Tap-to-Wake (passive observer) ────────────────────────────────
-    window.addEventListener('pointerdown', () => {
+    // ── Global Gestures (passive observer) ───────────────────────────────────
+    let tapHistory = [];
+    window.addEventListener('pointerdown', (e) => {
         if (isOpen && document.fullscreenElement !== iframe) {
             showControls();
+            
+            // Triple-Tap to Fullscreen Native Tracker
+            const rect = overlay.getBoundingClientRect();
+            const isInsideOverlay = (
+                e.clientX >= rect.left && e.clientX <= rect.right &&
+                e.clientY >= rect.top && e.clientY <= rect.bottom
+            );
+
+            if (isInsideOverlay) {
+                const now = Date.now();
+                tapHistory = tapHistory.filter(t => now - t < 600);
+                tapHistory.push(now);
+                if (tapHistory.length === 3) {
+                    tapHistory = [];
+                    if (fullscreenBtn) fullscreenBtn.click();
+                }
+            } else {
+                tapHistory = []; // Reset if tapped outside
+            }
         }
     }, { passive: true });
+
+    // ── External Cross-Origin Gesture Bridges ────────────────────────────────
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'rvs-triple-tap') {
+            if (isOpen && document.fullscreenElement === iframe) {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+    });
 }
