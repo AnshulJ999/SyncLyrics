@@ -180,6 +180,29 @@ body:not(.hide-nav) .ha-toggle-btn {
     pointer-events: none !important;
 }
 
+/* Partial standby for the edit bar: most controls fade to invisible, but the mode toggle
+ * stays faintly visible and interactable so the user can always switch modes.
+ *
+ * Why this approach: CSS opacity is multiplicative — setting opacity: 0 on a parent makes
+ * all children invisible regardless of their own opacity. So we skip the full .vs-standby
+ * class on editBar and use this partial class instead, targeting children individually.
+ *
+ * pointer-events: auto on a child of pointer-events: none parent IS valid per CSS spec. */
+.vs-edit-bar.vs-standby-partial {
+    pointer-events: none; /* bar background doesn't intercept touches */
+}
+.vs-edit-bar.vs-standby-partial > *:not(#vs-mode-toggle) {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+.vs-edit-bar.vs-standby-partial #vs-mode-toggle {
+    opacity: 0.75;          /* barely visible, hinted at rather than shown */
+    pointer-events: auto;   /* stays interactable — escape hatch to switch modes */
+}
+.vs-edit-bar.vs-standby-partial #vs-mode-toggle .vs-control-btn {
+    pointer-events: auto;   /* buttons inside also receive clicks/taps */
+}
+
 /* The MJPEG image — full width, auto height (= exact video frame dimensions) */
 .vs-img {
     display: block;

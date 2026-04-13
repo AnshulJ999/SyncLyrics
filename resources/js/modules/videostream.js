@@ -343,7 +343,11 @@ export function setupVideoStream() {
         clearTimeout(fadeTimer);
         fadeTimer = setTimeout(() => {
             controlsBar?.classList.add('faded');
-            editBar?.classList.add('faded');
+            // Don't add .faded to editBar while in standby-partial — its parent opacity
+            // must stay at 1 so the mode toggle (opacity: 0.15) remains barely visible.
+            if (!editBar?.classList.contains('vs-standby-partial')) {
+                editBar?.classList.add('faded');
+            }
         }, FADE_DELAY_MS);
     }
 
@@ -495,7 +499,12 @@ export function setupVideoStream() {
     function enterStandby() {
         overlay.classList.add('vs-standby');
         if (controlsBar) controlsBar.classList.add('vs-standby');
-        if (editBar)     editBar.classList.add('vs-standby');
+        // Edit bar uses partial standby: most controls disappear but mode toggle stays
+        // faintly visible (opacity 0.15) so the user can always switch modes.
+        if (editBar) {
+            editBar.classList.remove('faded'); // parent opacity must be 1 for child opacity rules to work
+            editBar.classList.add('vs-standby-partial');
+        }
         if (iframe)      iframe.classList.add('vs-standby');
 
         // Smoothly un-apply the UI mods natively without destroying memory/slider values
@@ -509,7 +518,7 @@ export function setupVideoStream() {
     function exitStandby() {
         overlay.classList.remove('vs-standby');
         if (controlsBar) controlsBar.classList.remove('vs-standby');
-        if (editBar)     editBar.classList.remove('vs-standby');
+        if (editBar)     editBar.classList.remove('vs-standby-partial');
         if (iframe)      iframe.classList.remove('vs-standby');
 
         // Smoothly re-apply the UI mods upon waking up
@@ -654,7 +663,8 @@ export function setupVideoStream() {
         // Strip standby classes purely natively to prevent UI collisions
         overlay.classList.remove('vs-standby');
         if (controlsBar) controlsBar.classList.remove('vs-standby');
-        if (editBar)     editBar.classList.remove('vs-standby');
+        if (editBar)   { editBar.classList.remove('vs-standby');         // legacy guard
+                         editBar.classList.remove('vs-standby-partial'); }
         if (iframe)      iframe.classList.remove('vs-standby');
 
         hideControlsImmediate();
