@@ -932,6 +932,7 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     border: none;
     background: #121212;
     border-radius: 0 0 16px 16px;
+    color-scheme: light; /* Force HA to resolve prefers-color-scheme as light */
 }
 
 /* ========== MOBILE LAYOUT ========== */
