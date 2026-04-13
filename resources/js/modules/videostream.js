@@ -42,6 +42,7 @@ const LS_CROP_TOP           = 'reaper_video_crop_top_pct';
 const LS_CROP_BOTTOM        = 'reaper_video_crop_bottom_pct';
 const LS_LYRICS_MODE        = 'reaper_video_lyrics_mode';
 const LS_BG_BLUR            = 'reaper_video_bg_blur';
+const LS_IS_OPEN            = 'reaper_video_is_open';
 
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
@@ -393,6 +394,7 @@ export function setupVideoStream() {
 
     function open() {
         isOpen = true;
+        localStorage.setItem(LS_IS_OPEN, 'true');
         overlay.classList.remove('hidden');
         controlsBar?.classList.remove('hidden');
         editBar?.classList.remove('hidden');
@@ -405,6 +407,7 @@ export function setupVideoStream() {
 
     function close() {
         isOpen = false;
+        localStorage.setItem(LS_IS_OPEN, 'false');
         overlay.classList.add('hidden');
         controlsBar?.classList.add('hidden');
         editBar?.classList.add('hidden');
@@ -1536,4 +1539,9 @@ export function setupVideoStream() {
             }
         }
     });
+
+    // Boot to saved state unconditionally
+    if (localStorage.getItem(LS_IS_OPEN) === 'true') {
+        open();
+    }
 }
