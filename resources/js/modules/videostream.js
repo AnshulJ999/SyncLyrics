@@ -142,7 +142,7 @@ export function setupVideoStream() {
     const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
     const getPlaybackUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/playback`;
-    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video`;
+    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?t=${Date.now()}`; // Some cache-busting is necessary, else the stale video/frame shows when switchiing videos
 
     // ── Mode switching (Capture MJPEG vs Direct video file) ──────────────────
     const LS_MODE_KEY = 'reaper_video_mode';
