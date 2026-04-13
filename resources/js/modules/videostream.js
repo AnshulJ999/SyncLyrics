@@ -142,7 +142,7 @@ export function setupVideoStream() {
     const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
     const getPlaybackUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/playback`;
-    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?t=${Date.now()}`;
+    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video`;
 
     // ── Mode switching (Capture MJPEG vs Direct video file) ──────────────────
     const LS_MODE_KEY = 'reaper_video_mode';
