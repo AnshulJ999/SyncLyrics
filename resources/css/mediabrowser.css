@@ -240,6 +240,7 @@ body:not(.hide-nav) .ha-toggle-btn {
      * encoded dimensions. When the video is not 16:9 the element box is taller than the
      * visual content, creating invisible extra space that throws off crop handles and
      * prevents dragging to the bottom of the screen. Testing without it. */
+    transition: opacity 0.3s ease; /* smooth fade on file-change (opacity controlled by JS) */
     pointer-events: none;
 }
 

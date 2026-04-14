@@ -150,7 +150,12 @@ export function setupVideoStream() {
     const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
     const getPlaybackUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/playback`;
-    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?t=${Date.now()}`; // Some cache-busting is necessary, else the stale video/frame shows when switchiing videos
+    const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?v=${encodeURIComponent(syncCurrentFile || '')}`;
+    // Stable path-based URL: the server ignores the query param and always serves companion_state["file"].
+    // Using the file path as the cache key (rather than ?t=Date.now()) lets the browser reuse cached
+    // range chunks when returning to a previously-loaded project — backward seeks and project revisits
+    // cost zero network traffic. Safe because tab videos never change content; ETag (mtime+size) on the
+    // server handles the rare case where a file IS replaced at the same path.
 
     // ── Mode switching (Capture MJPEG vs Direct video file) ──────────────────
     const LS_MODE_KEY = 'reaper_video_mode';
@@ -265,7 +270,8 @@ export function setupVideoStream() {
         // ── File changed — reload video source, then apply state ─────────────────
         if (data.file !== syncCurrentFile) {
             syncCurrentFile = data.file;
-            video.src = getVideoUrl(); // cache-bust to force fresh load
+            video.style.opacity = '0'; // fade out immediately (CSS transition handles animation)
+            video.src = getVideoUrl();
             video.load();
             video.addEventListener('canplay', function onReady() {
                 video.removeEventListener('canplay', onReady);
@@ -278,6 +284,11 @@ export function setupVideoStream() {
                 syncLastState = null;
                 applyPlaybackState(data);
                 syncLastState = data;
+                // Fade in — rAF ensures browser has painted opacity:0 before we flip to 1,
+                // which is required to trigger the CSS transition. Restore to the
+                // user-configured opacity (currentOpacity/100) not hardcoded 1, so the
+                // slider value is preserved across file changes.
+                requestAnimationFrame(() => { video.style.opacity = String(currentOpacity / 100); });
             });
             syncLastState = data;
             return;
