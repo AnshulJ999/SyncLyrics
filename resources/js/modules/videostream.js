@@ -127,12 +127,13 @@ export function setupVideoStream() {
     let latencyCompMs   = 100;    // Latency compensation in milliseconds (default 100ms)
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
-    const POLL_MS         = 500;    // ms between /playback polls
+    const POLL_MS         = 250;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
     const DRIFT_THRESH    = 0.25;    // drift threshold before forcing a re-seek
     const DRIFT_CHECK_MS  = 3000;   // ms between drift checks
     const DRIFT_COOL_MS   = 3000;   // ms cooldown after a drift correction
     const SEEK_DEBOUNCE   = 225;    // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT   = 15.0;   // seconds of no-video before entering standby
+    const STOPPED_SEEK_THRESH = 0.04; // only re-seek when stopped/paused if delta > this (sec, ≈1 frame @25fps)
 
     let syncActive         = false;
     let syncPollTimer      = null;
@@ -150,6 +151,8 @@ export function setupVideoStream() {
     let syncCanplayHandler = null;
     let syncSeekedHandler  = null;
     let syncFadeInTimer    = null;
+    let syncLastDataAgeSec = 0;      // precise age of data at last poll (RTT-based)
+    let syncLatestServerTime = 0;    // Fix A: monotonic guard — drop out-of-order fetch responses
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
@@ -230,23 +233,45 @@ export function setupVideoStream() {
         if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
         if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
         if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);               syncFadeInTimer    = null; }
-        syncFileLoading = false;
+        syncFileLoading      = false;
+        syncLatestServerTime = 0; // Fix D: reset monotonic guard so fresh sessions are not blocked
     }
 
     function doPoll() {
         if (!syncActive) return;
+        const fetchStart = Date.now();
         fetch(getPlaybackUrl())
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
-            .then(handlePlaybackState)
+            .then(data => {
+                const rtt = Date.now() - fetchStart;
+                // Compute precise data age: how old is this data right now?
+                // server_time = when Python generated the response
+                // received_at = when Python last got a UDP packet from REAPER
+                // data_age = (server_time - received_at) + (rtt / 2)
+                if (data.server_time && data.received_at) {
+                    syncLastDataAgeSec = (data.server_time - data.received_at) + (rtt / 2000.0);
+                } else {
+                    syncLastDataAgeSec = rtt / 2000.0;
+                }
+                handlePlaybackState(data);
+            })
             .catch(() => {
-                // Streamer unreachable — enter standby so the UI doesn't show a stale frame
-                console.warn('[VideoStream] /playback unreachable — entering standby');
+                // Streamer unreachable - enter standby so the UI doesn't show a stale frame
+                console.warn('[VideoStream] /playback unreachable - entering standby');
                 queueStandby();
             });
     }
 
     function handlePlaybackState(data) {
         syncLastPollTime = Date.now();
+
+        // Fix A: Monotonic server_time guard — drop out-of-order fetch responses.
+        // At 250ms poll intervals, two in-flight fetches can resolve in reversed order.
+        // An older response arriving late would snap the video backward, causing thrash.
+        if (data.server_time) {
+            if (data.server_time < syncLatestServerTime) return; // stale — discard
+            syncLatestServerTime = data.server_time;
+        }
 
         // ── Companion script not running ────────────────────────────────────────
         if (!data.companion_alive) {
@@ -363,6 +388,12 @@ export function setupVideoStream() {
             (LATENCY_COMP_MODE === 'always' || isPlayingNow)) {
             compTime += latSec;
         }
+        // Data age compensation: only when actively playing.
+        // When stopped/paused, src_time is a static snapshot — the position is not
+        // advancing, so adding data_age would over-seek and cause thrashing.
+        if (compTime !== null && isPlayingNow) {
+            compTime += syncLastDataAgeSec * data.rate;
+        }
 
         // REAPER state flags: 0=Stopped, 1=Playing, 2=Paused, 4=Recording (bitfield)
         // isPlayingNow was computed above (for latency comp mode check) — reuse it here.
@@ -372,6 +403,10 @@ export function setupVideoStream() {
                 // Transition to play — seek to correct position then start
                 video.currentTime = compTime;
                 video.play().catch(() => {});
+                // Fix C: Reset drift cooldown at play-start.
+                // Gives the decoder a grace period before checkDrift fires while
+                // hardware is still spooling up; prevents the initial-jitter "snap".
+                syncLastCorrection = Date.now();
             } else if (syncLastState && Math.abs(data.src_time - syncLastState.src_time) > 1.0) {
                 // Large position jump while playing = timeline scrub — debounce to avoid stalls
                 if (syncSeekDebounce) clearTimeout(syncSeekDebounce);
@@ -385,9 +420,12 @@ export function setupVideoStream() {
                 video.playbackRate = safeRate;
             }
         } else {
-            // Paused (2) or Stopped (0)
+            // Paused (2) or Stopped (0) — use src_time directly, no data_age offset.
+            // Fix B: Delta guard — only re-seek if position moved by more than STOPPED_SEEK_THRESH.
+            // Repeatedly setting video.currentTime to the same frame saturates the HTML5 decoder
+            // (each assignment triggers a keyframe hunt and buffer flush).
             video.pause();
-            if (compTime !== null) {
+            if (compTime !== null && Math.abs(video.currentTime - compTime) > STOPPED_SEEK_THRESH) {
                 video.currentTime = compTime;
             }
         }
@@ -410,9 +448,11 @@ export function setupVideoStream() {
         if (Date.now() - syncLastCorrection < DRIFT_COOL_MS)    return;
         if (syncSeekDebounce)                                    return;
 
-        const elapsed  = (Date.now() - syncLastPollTime) / 1000;
+        // Precise drift computation using data age from RTT measurement.
+        // checkDrift only runs when isPlaying is true, so data_age compensation is always safe here.
+        const wallElapsed = (Date.now() - syncLastPollTime) / 1000;
         const latSec   = latencyCompMs / 1000.0;
-        const expected = syncLastState.src_time + elapsed * syncLastState.rate + latSec;
+        const expected = syncLastState.src_time + (wallElapsed + syncLastDataAgeSec) * syncLastState.rate + latSec;
         const drift    = Math.abs(video.currentTime - expected);
 
         if (drift > DRIFT_THRESH) {
