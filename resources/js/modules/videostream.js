@@ -486,7 +486,7 @@ export function setupVideoStream() {
         zindexMinusBtn.addEventListener('click', () => applyZIndex(Math.max(100, currentZIndex - ZINDEX_STEP)));
     }
     if (zindexPlusBtn) {
-        zindexPlusBtn.addEventListener('click', () => applyZIndex(Math.min(1900, currentZIndex + ZINDEX_STEP)));
+        zindexPlusBtn.addEventListener('click', () => applyZIndex(Math.min(15000, currentZIndex + ZINDEX_STEP)));
     }
 
     // ── Stream load/unload ───────────────────────────────────────────────────
