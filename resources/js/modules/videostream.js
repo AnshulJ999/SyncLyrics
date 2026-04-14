@@ -144,6 +144,7 @@ export function setupVideoStream() {
     let syncCurrentFile    = null;
     let syncNoVideoSince   = 0;
     let syncBlackHandled   = false;
+    let syncFileLoading    = false; // true while a new video src is loading (guards opacity self-heal)
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
@@ -266,10 +267,15 @@ export function setupVideoStream() {
         syncBlackHandled = false;
         cancelStandby();
         exitStandby();
+        // Self-heal: if opacity got stuck at 0 for any reason (safety timer cleared, seeked
+        // never fired, listener lost), restore it here on every valid poll — unless a file
+        // load is actively in progress (canplay hasn't fired yet; opacity is intentionally 0).
+        if (!syncFileLoading) video.style.opacity = String(currentOpacity / 100);
 
         // ── File changed — reload video source, then apply state ─────────────────
         if (data.file !== syncCurrentFile) {
             syncCurrentFile = data.file;
+            syncFileLoading = true; // guard opacity self-heal until canplay fires
 
             // Instant hide — no CSS transition on fade-out.
             // The animated 300ms window lets the src-change loading placeholder bleed through
@@ -282,6 +288,8 @@ export function setupVideoStream() {
             video.load();
             video.addEventListener('canplay', function onReady() {
                 video.removeEventListener('canplay', onReady);
+                // NOTE: syncFileLoading stays true here — the seek is still async.
+                // It is cleared in onSeeked (or the safety timer) once the fade-in completes.
                 video.style.display = 'block'; // reveal now that a real frame is ready
                 restorePosition();
                 showControls();
@@ -298,6 +306,7 @@ export function setupVideoStream() {
                 const targetOpacity = String(currentOpacity / 100);
                 function onSeeked() {
                     clearTimeout(seekSafetyTimer);
+                    syncFileLoading = false; // fade-in done; self-heal polling can resume
                     video.style.transition = ''; // restore CSS transition from stylesheet
                     requestAnimationFrame(() => { video.style.opacity = targetOpacity; });
                 }
@@ -305,6 +314,7 @@ export function setupVideoStream() {
                 // fade in anyway so opacity doesn't stay stuck at 0.
                 const seekSafetyTimer = setTimeout(() => {
                     video.removeEventListener('seeked', onSeeked);
+                    syncFileLoading = false; // fade-in done via safety path
                     video.style.transition = '';
                     video.style.opacity = targetOpacity;
                 }, 1500);
@@ -360,8 +370,18 @@ export function setupVideoStream() {
 
     function checkDrift() {
         const isPlaying = syncLastState && ((syncLastState.state & 1) || (syncLastState.state & 4));
-        if (!syncActive || !syncLastState || !isPlaying)       return;
-        if (video.paused || video.readyState < 2)               return;
+        if (!syncActive || !syncLastState || !isPlaying)    return;
+        if (video.readyState < 2)                           return; // not enough data yet
+
+        // Self-heal: REAPER is playing but video.play() was silently aborted (swallowed by
+        // .catch(()=>{}), typically AbortError from concurrent currentTime+play() calls).
+        // Once aborted, prevPlaying stays at 1 so applyPlaybackState never re-calls play().
+        // checkDrift runs every DRIFT_CHECK_MS (3s) and is the only catch-all recovery point.
+        if (video.paused) {
+            video.play().catch(() => {});
+            return; // Skip position correction this cycle; next cycle will assess drift
+        }
+
         if (Date.now() - syncLastCorrection < DRIFT_COOL_MS)    return;
         if (syncSeekDebounce)                                    return;
 
