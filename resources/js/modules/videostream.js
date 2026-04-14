@@ -270,7 +270,14 @@ export function setupVideoStream() {
         // ── File changed — reload video source, then apply state ─────────────────
         if (data.file !== syncCurrentFile) {
             syncCurrentFile = data.file;
-            video.style.opacity = '0'; // fade out immediately (CSS transition handles animation)
+
+            // Instant hide — no CSS transition on fade-out.
+            // The animated 300ms window lets the src-change loading placeholder bleed through
+            // at non-zero opacity; in Screen+Invert mode that thin black placeholder → white bar.
+            video.style.transition = 'none';
+            void video.offsetWidth; // force reflow so 'none' takes effect before opacity changes
+            video.style.opacity = '0';
+
             video.src = getVideoUrl();
             video.load();
             video.addEventListener('canplay', function onReady() {
@@ -282,13 +289,26 @@ export function setupVideoStream() {
                 // Clear syncLastState before applying: otherwise applyPlaybackState
                 // sees prevPlaying === data.state and skips the seek+play branch.
                 syncLastState = null;
-                applyPlaybackState(data);
+                applyPlaybackState(data); // issues async seek to compTime
                 syncLastState = data;
-                // Fade in — rAF ensures browser has painted opacity:0 before we flip to 1,
-                // which is required to trigger the CSS transition. Restore to the
-                // user-configured opacity (currentOpacity/100) not hardcoded 1, so the
-                // slider value is preserved across file changes.
-                requestAnimationFrame(() => { video.style.opacity = String(currentOpacity / 100); });
+
+                // Fade in AFTER seek completes (not at canplay/frame 0).
+                // 'seeked' fires once the correct frame is decoded — avoids any wrong-frame flash.
+                // Restore the CSS transition first so the fade-in is animated.
+                const targetOpacity = String(currentOpacity / 100);
+                function onSeeked() {
+                    clearTimeout(seekSafetyTimer);
+                    video.style.transition = ''; // restore CSS transition from stylesheet
+                    requestAnimationFrame(() => { video.style.opacity = targetOpacity; });
+                }
+                // Safety: if 'seeked' never fires (error, seek clamped past duration, etc.)
+                // fade in anyway so opacity doesn't stay stuck at 0.
+                const seekSafetyTimer = setTimeout(() => {
+                    video.removeEventListener('seeked', onSeeked);
+                    video.style.transition = '';
+                    video.style.opacity = targetOpacity;
+                }, 1500);
+                video.addEventListener('seeked', onSeeked, { once: true });
             });
             syncLastState = data;
             return;
