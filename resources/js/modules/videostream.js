@@ -145,6 +145,11 @@ export function setupVideoStream() {
     let syncNoVideoSince   = 0;
     let syncBlackHandled   = false;
     let syncFileLoading    = false; // true while a new video src is loading (guards opacity self-heal)
+    // Outer refs so a new file-change can cancel any in-flight transition from the previous load:
+    // prevents stale safety timers / seeked handlers from contaminating the new load.
+    let syncCanplayHandler = null;
+    let syncSeekedHandler  = null;
+    let syncFadeInTimer    = null;
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
@@ -218,9 +223,14 @@ export function setupVideoStream() {
 
     function stopSync() {
         syncActive = false;
-        if (syncPollTimer)   { clearInterval(syncPollTimer);    syncPollTimer   = null; }
-        if (syncDriftTimer)  { clearInterval(syncDriftTimer);   syncDriftTimer  = null; }
-        if (syncSeekDebounce){ clearTimeout(syncSeekDebounce);  syncSeekDebounce = null; }
+        if (syncPollTimer)      { clearInterval(syncPollTimer);               syncPollTimer      = null; }
+        if (syncDriftTimer)     { clearInterval(syncDriftTimer);               syncDriftTimer     = null; }
+        if (syncSeekDebounce)   { clearTimeout(syncSeekDebounce);              syncSeekDebounce   = null; }
+        // Cancel any in-flight file-change transition
+        if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
+        if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
+        if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);               syncFadeInTimer    = null; }
+        syncFileLoading = false;
     }
 
     function doPoll() {
@@ -275,7 +285,13 @@ export function setupVideoStream() {
         // ── File changed — reload video source, then apply state ─────────────────
         if (data.file !== syncCurrentFile) {
             syncCurrentFile = data.file;
-            syncFileLoading = true; // guard opacity self-heal until canplay fires
+            syncFileLoading = true;
+
+            // Cancel any in-flight transition from the previous file load so stale handlers
+            // can't fire during this load (safety timer → wrong opacity, seeked → phantom fade-in).
+            if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
+            if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
+            if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);                              syncFadeInTimer    = null; }
 
             // Instant hide — no CSS transition on fade-out.
             // The animated 300ms window lets the src-change loading placeholder bleed through
@@ -286,8 +302,10 @@ export function setupVideoStream() {
 
             video.src = getVideoUrl();
             video.load();
-            video.addEventListener('canplay', function onReady() {
+
+            const onReady = function() {
                 video.removeEventListener('canplay', onReady);
+                syncCanplayHandler = null;
                 // NOTE: syncFileLoading stays true here — the seek is still async.
                 // It is cleared in onSeeked (or the safety timer) once the fade-in completes.
                 video.style.display = 'block'; // reveal now that a real frame is ready
@@ -304,22 +322,29 @@ export function setupVideoStream() {
                 // 'seeked' fires once the correct frame is decoded — avoids any wrong-frame flash.
                 // Restore the CSS transition first so the fade-in is animated.
                 const targetOpacity = String(currentOpacity / 100);
-                function onSeeked() {
-                    clearTimeout(seekSafetyTimer);
-                    syncFileLoading = false; // fade-in done; self-heal polling can resume
+                const onSeeked = function() {
+                    clearTimeout(syncFadeInTimer);
+                    syncFadeInTimer   = null;
+                    syncSeekedHandler = null;
+                    syncFileLoading   = false; // fade-in done; self-heal polling can resume
                     video.style.transition = ''; // restore CSS transition from stylesheet
                     requestAnimationFrame(() => { video.style.opacity = targetOpacity; });
-                }
+                };
                 // Safety: if 'seeked' never fires (error, seek clamped past duration, etc.)
-                // fade in anyway so opacity doesn't stay stuck at 0.
-                const seekSafetyTimer = setTimeout(() => {
+                // fade in anyway so opacity doesn't stay stuck at 0 permanently.
+                syncFadeInTimer = setTimeout(() => {
                     video.removeEventListener('seeked', onSeeked);
-                    syncFileLoading = false; // fade-in done via safety path
+                    syncFadeInTimer   = null;
+                    syncSeekedHandler = null;
+                    syncFileLoading   = false; // fade-in done via safety path
                     video.style.transition = '';
                     video.style.opacity = targetOpacity;
                 }, 1500);
+                syncSeekedHandler = onSeeked;
                 video.addEventListener('seeked', onSeeked, { once: true });
-            });
+            };
+            syncCanplayHandler = onReady;
+            video.addEventListener('canplay', onReady);
             syncLastState = data;
             return;
         }
