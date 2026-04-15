@@ -133,6 +133,7 @@ export function setupVideoStream() {
     const DRIFT_COOL_MS      = 3000;    // ms cooldown after a drift correction
     const SEEK_DEBOUNCE      = 225;     // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT      = 15.0;    // seconds of no-video before entering standby
+    const PLAY_SEEK_THRESH   = 0.500;   // min drift (sec) required to force a seek when unpausing (smooth startup)
 
     // Slew-Rate PLL constants
     const DRIFT_PLL_ENABLED  = true;    // slew-rate PLL on/off feature flag
@@ -405,8 +406,10 @@ export function setupVideoStream() {
         if (isPlayingNow) {
             video.playbackRate = safeRate;
             if (prevPlaying !== 1 && prevPlaying !== 5) {
-                // Transition to play — seek to correct position then start
-                video.currentTime = compTime;
+                // Transition to play — only seek if wildly out of place (smooth startup)
+                if (Math.abs(video.currentTime - compTime) > PLAY_SEEK_THRESH) {
+                    video.currentTime = compTime;
+                }
                 video.play().catch(() => {});
                 // Fix C: Reset drift cooldown at play-start.
                 // Gives the decoder a grace period before checkDrift fires while
