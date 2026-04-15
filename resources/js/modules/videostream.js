@@ -111,6 +111,19 @@ export function setupVideoStream() {
 
     const iframe          = document.getElementById('vs-native-iframe');
 
+    // Debug HUD cell refs (Phase 10.2) — cached once to avoid 11× getElementById on every 200ms poll.
+    const dbgFpsEl   = document.getElementById('vs-dbg-fps');
+    const dbgRttEl   = document.getElementById('vs-dbg-rtt');
+    const dbgAgeEl   = document.getElementById('vs-dbg-age');
+    const dbgSyncEl  = document.getElementById('vs-dbg-sync');
+    const dbgDriftEl = document.getElementById('vs-dbg-drift');
+    const dbgRateEl  = document.getElementById('vs-dbg-rate');
+    const dbgFlushEl = document.getElementById('vs-dbg-flush');
+    const dbgBufEl   = document.getElementById('vs-dbg-buf');
+    const dbgDropEl  = document.getElementById('vs-dbg-drop');
+    const dbgSeeksEl = document.getElementById('vs-dbg-seeks');
+    const dbgPllEl   = document.getElementById('vs-dbg-pll');
+
     if (!btn || !overlay || !img) return;
 
     // ── Runtime state ─────────────────────────────────────────────────────────
@@ -294,6 +307,12 @@ export function setupVideoStream() {
         syncFpsLastFrames = 0;
         syncDbgTotalSeeks = 0;
         syncDbgTotalPll   = 0;
+
+        // Cancel any in-flight auto-blend sampling so stale timers don't fire
+        // after a mode switch (Direct → Capture) and apply an incorrect blend mode.
+        autoBlendSampleTimers.forEach(clearTimeout);
+        autoBlendSampleTimers = [];
+        autoBlendDetecting    = false;
     }
 
     function doPoll() {
@@ -747,29 +766,17 @@ export function setupVideoStream() {
         let dropNow = 0;
         try { dropNow = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().droppedVideoFrames : 0; } catch (e) {}
 
-        const elFps   = document.getElementById('vs-dbg-fps');
-        const elRtt   = document.getElementById('vs-dbg-rtt');
-        const elAge   = document.getElementById('vs-dbg-age');
-        const elSync  = document.getElementById('vs-dbg-sync');
-        const elDrift = document.getElementById('vs-dbg-drift');
-        const elRate  = document.getElementById('vs-dbg-rate');
-        const elFlush = document.getElementById('vs-dbg-flush');
-        const elBuf   = document.getElementById('vs-dbg-buf');
-        const elDrop  = document.getElementById('vs-dbg-drop');
-        const elSeeks = document.getElementById('vs-dbg-seeks');
-        const elPll   = document.getElementById('vs-dbg-pll');
-
-        if (elFps)   { elFps.textContent   = syncFpsValue;                     elFps.className   = 'vs-dbg-val'; }
-        if (elRtt)   { elRtt.textContent   = rtt + 'ms';                       elRtt.className   = 'vs-dbg-val'; }
-        if (elAge)   { elAge.textContent   = ageStr;                           elAge.className   = 'vs-dbg-val ' + ageClass; }
-        if (elSync)  { elSync.textContent  = Math.round(syncDbgRawSyncMs) + 'ms'; elSync.className  = 'vs-dbg-val ' + rawSyncClass; }
-        if (elDrift) { elDrift.textContent = Math.round(syncDbgDriftMs) + 'ms';   elDrift.className = 'vs-dbg-val ' + syncDbgDriftState; }
-        if (elRate)  { elRate.textContent  = rateStr;                          elRate.className  = 'vs-dbg-val ' + rateClass; }
-        if (elFlush) { elFlush.textContent = flushStr;                         elFlush.className = 'vs-dbg-val ' + flushClass; }
-        if (elBuf)   { elBuf.textContent   = bufSec.toFixed(1) + 's';          elBuf.className   = 'vs-dbg-val ' + bufClass; }
-        if (elDrop)  { elDrop.textContent  = dropNow || '—';                   elDrop.className  = 'vs-dbg-val ' + (dropNow > 0 ? 'seek' : 'dim'); }
-        if (elSeeks) { elSeeks.textContent = syncDbgTotalSeeks || '—';         elSeeks.className = 'vs-dbg-val ' + (syncDbgTotalSeeks > 0 ? 'seek' : 'dim'); }
-        if (elPll)   { elPll.textContent   = syncDbgTotalPll || '—';           elPll.className   = 'vs-dbg-val ' + (syncDbgTotalPll > 0 ? 'pll' : 'dim'); }
+        if (dbgFpsEl)   { dbgFpsEl.textContent   = syncFpsValue;                        dbgFpsEl.className   = 'vs-dbg-val'; }
+        if (dbgRttEl)   { dbgRttEl.textContent   = rtt + 'ms';                         dbgRttEl.className   = 'vs-dbg-val'; }
+        if (dbgAgeEl)   { dbgAgeEl.textContent   = ageStr;                             dbgAgeEl.className   = 'vs-dbg-val ' + ageClass; }
+        if (dbgSyncEl)  { dbgSyncEl.textContent  = Math.round(syncDbgRawSyncMs) + 'ms'; dbgSyncEl.className  = 'vs-dbg-val ' + rawSyncClass; }
+        if (dbgDriftEl) { dbgDriftEl.textContent = Math.round(syncDbgDriftMs) + 'ms';   dbgDriftEl.className = 'vs-dbg-val ' + syncDbgDriftState; }
+        if (dbgRateEl)  { dbgRateEl.textContent  = rateStr;                            dbgRateEl.className  = 'vs-dbg-val ' + rateClass; }
+        if (dbgFlushEl) { dbgFlushEl.textContent = flushStr;                           dbgFlushEl.className = 'vs-dbg-val ' + flushClass; }
+        if (dbgBufEl)   { dbgBufEl.textContent   = bufSec.toFixed(1) + 's';            dbgBufEl.className   = 'vs-dbg-val ' + bufClass; }
+        if (dbgDropEl)  { dbgDropEl.textContent  = dropNow || '—';                     dbgDropEl.className  = 'vs-dbg-val ' + (dropNow > 0 ? 'seek' : 'dim'); }
+        if (dbgSeeksEl) { dbgSeeksEl.textContent = syncDbgTotalSeeks || '—';           dbgSeeksEl.className = 'vs-dbg-val ' + (syncDbgTotalSeeks > 0 ? 'seek' : 'dim'); }
+        if (dbgPllEl)   { dbgPllEl.textContent   = syncDbgTotalPll || '—';             dbgPllEl.className   = 'vs-dbg-val ' + (syncDbgTotalPll > 0 ? 'pll' : 'dim'); }
     }
 
     // ── Control auto-fade ────────────────────────────────────────────────────
