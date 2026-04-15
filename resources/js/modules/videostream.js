@@ -128,19 +128,20 @@ export function setupVideoStream() {
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
     const POLL_MS         = 200;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
-    const DRIFT_THRESH       = 0.25;    // drift threshold before forcing a hard re-seek
-    const DRIFT_CHECK_MS     = 3000;    // ms between drift checks
-    const DRIFT_COOL_MS      = 3000;    // ms cooldown after a drift correction
-    const SEEK_DEBOUNCE      = 225;     // ms debounce for rapid scrub (H.265 keyframe protection)
+    const DRIFT_THRESH       = 0.20;    // drift threshold before forcing a hard re-seek
+    const DRIFT_CHECK_MS     = 1000;    // ms between drift checks
+    const DRIFT_COOL_MS      = 2000;    // ms cooldown after a drift correction
+    const SEEK_DEBOUNCE      = 300;     // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT      = 15.0;    // seconds of no-video before entering standby
     const PLAY_SEEK_THRESH   = 0.500;   // min drift (sec) required to force a seek when unpausing (smooth startup)
 
     // Slew-Rate PLL constants
     const DRIFT_PLL_ENABLED  = true;    // slew-rate PLL on/off feature flag
-    const DRIFT_PLL_THRESH   = 0.100;   // min drift (sec) to activate PLL
-    const DRIFT_PLL_GAIN     = 0.2;     // proportion of gap closed per second
-    const DRIFT_PLL_MAX      = 1.05;    // max speed-up/down multiplier
+    const DRIFT_PLL_THRESH   = 0.080;   // min drift (sec) to activate PLL
+    const DRIFT_PLL_GAIN     = 0.3;     // proportion of gap closed per second
+    const DRIFT_PLL_MAX      = 1.10;    // max speed-up/down multiplier
     const DRIFT_PLL_COOL_MS  = 1000;    // ms after play-start/hard-seek before PLL may fire (shorter than DRIFT_COOL_MS)
+    const DROP_SUPPRESS_THRESH = 30;   // max dropped frames per drift-check interval before PLL is suppressed (999 = disabled)
 
     let syncActive         = false;
     let syncPollTimer      = null;
@@ -149,11 +150,7 @@ export function setupVideoStream() {
     let syncLastPollTime   = 0;
     let syncLastHardSeek   = 0;    // timestamp of last hard seek or play-start; gates both hard seeks and PLL
     let syncSeekDebounce   = null;
-    // Sync perf stats — accumulated per 30s period, logged once to console
-    let _sRttSum = 0, _sRttN = 0;
-    let _sPllCount = 0, _sHardSeekCount = 0;
-    let _sFlushMs = -1;  // last decoder flush time from seeked-event measurement (-1 = none this period)
-    let _sStatsTimer = null;
+    let _dropCheckLast     = 0;    // last droppedVideoFrames at checkDrift time (for PLL drop-suppression)
     let syncCurrentFile    = null;
     let syncNoVideoSince   = 0;
     let syncBlackHandled   = false;
@@ -234,12 +231,6 @@ export function setupVideoStream() {
         doPoll();                                          // immediate first poll
         syncPollTimer  = setInterval(doPoll,       POLL_MS);
         syncDriftTimer = setInterval(checkDrift, DRIFT_CHECK_MS);
-        _sStatsTimer   = setInterval(() => {
-            const rttAvg  = _sRttN > 0 ? Math.round(_sRttSum / _sRttN) : -1;
-            const flushStr = _sFlushMs >= 0 ? (_sFlushMs + 'ms') : 'n/a';
-            console.info(`[VideoStream Sync] rtt_avg=${rttAvg}ms  pll=${_sPllCount}  hard_seeks=${_sHardSeekCount}  decoder_flush=${flushStr}`);
-            _sRttSum = 0; _sRttN = 0; _sPllCount = 0; _sHardSeekCount = 0; _sFlushMs = -1;
-        }, 30000);
     }
 
     function stopSync() {
@@ -247,7 +238,6 @@ export function setupVideoStream() {
         if (syncPollTimer)      { clearInterval(syncPollTimer);               syncPollTimer      = null; }
         if (syncDriftTimer)     { clearInterval(syncDriftTimer);               syncDriftTimer     = null; }
         if (syncSeekDebounce)   { clearTimeout(syncSeekDebounce);              syncSeekDebounce   = null; }
-        if (_sStatsTimer)       { clearInterval(_sStatsTimer);                _sStatsTimer       = null; }
         // Cancel any in-flight file-change transition
         if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
         if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
@@ -264,7 +254,6 @@ export function setupVideoStream() {
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
             .then(data => {
                 const rtt = Date.now() - fetchStart;
-                _sRttSum += rtt; _sRttN++;
                 // Compute precise data age: how old is this data right now?
                 // server_time = when Python generated the response
                 // received_at = when Python last got a UDP packet from REAPER
@@ -277,8 +266,6 @@ export function setupVideoStream() {
                 handlePlaybackState(data);
             })
             .catch(() => {
-                // Streamer unreachable - enter standby so the UI doesn't show a stale frame
-                console.warn('[VideoStream] /playback unreachable - entering standby');
                 queueStandby();
             });
     }
@@ -296,7 +283,6 @@ export function setupVideoStream() {
 
         // ── Companion script not running ────────────────────────────────────────
         if (!data.companion_alive) {
-            console.info('[VideoStream] Waiting for REAPER companion script...');
             video.pause();
             queueStandby();
             syncLastState = data;
@@ -419,7 +405,11 @@ export function setupVideoStream() {
         // REAPER state flags: 0=Stopped, 1=Playing, 2=Paused, 4=Recording (bitfield)
         // isPlayingNow was computed above (for latency comp mode check) — reuse it here.
         if (isPlayingNow) {
-            video.playbackRate = safeRate;
+            const rateChanged = !syncLastState || Math.abs(data.rate - syncLastState.rate) > 0.001;
+            const transitionToPlay = prevPlaying !== 1 && prevPlaying !== 5;
+            if (rateChanged || transitionToPlay) {
+                video.playbackRate = safeRate;
+            }
             if (prevPlaying !== 1 && prevPlaying !== 5) {
                 // Transition to play
                 if (Math.abs(video.currentTime - compTime) > PLAY_SEEK_THRESH) {
@@ -432,7 +422,6 @@ export function setupVideoStream() {
                     video.addEventListener('seeked', function _onPlayStartSeekDone() {
                         video.removeEventListener('seeked', _onPlayStartSeekDone);
                         const flushMs = Date.now() - seekStart;
-                        _sFlushMs = flushMs;  // record for 30s stats
                         video.currentTime = seekTarget + (flushMs / 1000.0) * seekRate;
                         video.play().catch(() => {});
                         syncLastHardSeek = Date.now();  // Fix C: reset from when flush completed
@@ -503,6 +492,20 @@ export function setupVideoStream() {
         const actual = video.currentTime;
         const diff = expected - actual; // positive if video is behind (needs to speed up)
         const absDrift = Math.abs(diff);
+
+        // Drop-aware PLL suppression: if the decoder is dropping frames, restore normal rate
+        // and skip PLL for this cycle — demanding faster playback worsens decoder stress.
+        // Hard seeks are still permitted (they flush to a clean keyframe position).
+        let _dropNow = 0;
+        try { const _q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null; if (_q) _dropNow = _q.droppedVideoFrames || 0; } catch(e) {}
+        const _dropDelta = Math.max(0, _dropNow - _dropCheckLast);
+        _dropCheckLast = _dropNow;
+        if (_dropDelta > DROP_SUPPRESS_THRESH) {
+            if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
+                video.playbackRate = syncLastState.rate;
+            }
+            if (absDrift <= DRIFT_THRESH) return; // no hard seek needed; skip PLL
+        }
 
         if (absDrift > DRIFT_THRESH) {
             // Hard seek: only fires after DRIFT_COOL_MS has elapsed since last hard seek or play-start.
