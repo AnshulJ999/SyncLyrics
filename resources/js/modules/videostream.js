@@ -128,12 +128,17 @@ export function setupVideoStream() {
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
     const POLL_MS         = 250;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
-    const DRIFT_THRESH    = 0.25;    // drift threshold before forcing a re-seek
-    const DRIFT_CHECK_MS  = 3000;   // ms between drift checks
-    const DRIFT_COOL_MS   = 3000;   // ms cooldown after a drift correction
-    const SEEK_DEBOUNCE   = 225;    // ms debounce for rapid scrub (H.265 keyframe protection)
-    const BLACK_TIMEOUT   = 15.0;   // seconds of no-video before entering standby
-    const STOPPED_SEEK_THRESH = 0.04; // only re-seek when stopped/paused if delta > this (sec, ≈1 frame @25fps)
+    const DRIFT_THRESH       = 0.25;    // drift threshold before forcing a hard re-seek
+    const DRIFT_CHECK_MS     = 3000;    // ms between drift checks
+    const DRIFT_COOL_MS      = 3000;    // ms cooldown after a drift correction
+    const SEEK_DEBOUNCE      = 225;     // ms debounce for rapid scrub (H.265 keyframe protection)
+    const BLACK_TIMEOUT      = 15.0;    // seconds of no-video before entering standby
+
+    // Slew-Rate PLL constants
+    const DRIFT_PLL_ENABLED  = true;    // slew-rate PLL on/off feature flag
+    const DRIFT_PLL_THRESH   = 0.100;   // min drift (sec) to activate PLL
+    const DRIFT_PLL_GAIN     = 0.2;     // proportion of gap closed per second
+    const DRIFT_PLL_MAX      = 1.05;    // max speed-up/down multiplier
 
     let syncActive         = false;
     let syncPollTimer      = null;
@@ -269,7 +274,7 @@ export function setupVideoStream() {
         // At 250ms poll intervals, two in-flight fetches can resolve in reversed order.
         // An older response arriving late would snap the video backward, causing thrash.
         if (data.server_time) {
-            if (data.server_time < syncLatestServerTime) return; // stale — discard
+            if (data.server_time <= syncLatestServerTime) return; // stale or duplicate — discard
             syncLatestServerTime = data.server_time;
         }
 
@@ -421,11 +426,16 @@ export function setupVideoStream() {
             }
         } else {
             // Paused (2) or Stopped (0) — use src_time directly, no data_age offset.
-            // Fix B: Delta guard — only re-seek if position moved by more than STOPPED_SEEK_THRESH.
-            // Repeatedly setting video.currentTime to the same frame saturates the HTML5 decoder
-            // (each assignment triggers a keyframe hunt and buffer flush).
+            // Fix B: Zero-Thrashing Stopped Seek
+            // We only seek if REAPER's time changed since the last poll. We NEVER compare against
+            // video.currentTime because it is slow/asynchronous to update mid-seek and causes thrashing.
+            //
+            // P1: Cancel any pending play-scrub debounce timer. A 255ms timer created during a
+            // large jump while playing could fire AFTER stop and seek to a stale playing-state position.
+            if (syncSeekDebounce) { clearTimeout(syncSeekDebounce); syncSeekDebounce = null; }
             video.pause();
-            if (compTime !== null && Math.abs(video.currentTime - compTime) > STOPPED_SEEK_THRESH) {
+            var reaperTimeChanged = !syncLastState || Math.abs(compTime - syncLastState.src_time) > 0.001;
+            if (compTime !== null && reaperTimeChanged) {
                 video.currentTime = compTime;
             }
         }
@@ -453,11 +463,27 @@ export function setupVideoStream() {
         const wallElapsed = (Date.now() - syncLastPollTime) / 1000;
         const latSec   = latencyCompMs / 1000.0;
         const expected = syncLastState.src_time + (wallElapsed + syncLastDataAgeSec) * syncLastState.rate + latSec;
-        const drift    = Math.abs(video.currentTime - expected);
+        
+        const actual = video.currentTime;
+        const diff = expected - actual; // positive if video is behind (needs to speed up)
+        const absDrift = Math.abs(diff);
 
-        if (drift > DRIFT_THRESH) {
+        if (absDrift > DRIFT_THRESH) {
+            // Hard jar jump for massive drift
             video.currentTime  = expected;
+            video.playbackRate = syncLastState.rate;
             syncLastCorrection = Date.now();
+        } else if (DRIFT_PLL_ENABLED && absDrift > DRIFT_PLL_THRESH) {
+            // Slew-Rate PLL: smoothly bend playback speed to close small drift gaps.
+            const pllRate = syncLastState.rate + (diff * DRIFT_PLL_GAIN);
+            const maxRate = syncLastState.rate * DRIFT_PLL_MAX;
+            const minRate = syncLastState.rate / DRIFT_PLL_MAX;
+            video.playbackRate = Math.max(minRate, Math.min(maxRate, pllRate));
+        } else {
+            // Drift within acceptable range: restore normal rate cleanly.
+            if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
+                video.playbackRate = syncLastState.rate;
+            }
         }
     }
 
