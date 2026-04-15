@@ -168,6 +168,43 @@ export function setupVideoStream() {
     let syncLastDataAgeSec = 0;      // precise age of data at last poll (RTT-based)
     let syncLatestServerTime = 0;    // Fix A: monotonic guard — drop out-of-order fetch responses
 
+    // ── Phase 10.1: Auto Blend detection state ──
+    let autoBlendDetecting    = false;
+    let autoBlendUserOverride = false;
+    let autoBlendSampleTimers = [];
+    const TAB_VARIANCE_THRESHOLD = 500;
+
+    // ── Phase 10.2: Debug HUD state ──
+    let syncDbgVisible      = localStorage.getItem('vs_debug_overlay') === '1';
+    let syncDbgFlushDisplay = -1;
+    let syncDbgFlushClearAt = 0;
+    let syncDbgLastRtt      = 0;
+    let syncDbgTotalSeeks   = 0;
+    let syncDbgTotalPll     = 0;
+    let syncDbgLastDrop     = 0;
+    let syncDbgRawSyncMs    = 0;
+    let syncDbgDriftMs      = 0;
+    let syncDbgDriftState   = 'dim';
+    let syncFpsLastFrames   = 0;
+    let syncFpsLastTime     = 0;
+    let syncFpsValue        = 0;
+    const syncDbgEl         = document.getElementById('vs-dbg');
+    if (syncDbgVisible && syncDbgEl) syncDbgEl.classList.add('vs-dbg-on');
+    const dbgToggleBtn      = document.getElementById('vs-dbg-toggle');
+
+    if (dbgToggleBtn) {
+        dbgToggleBtn.addEventListener('click', (e) => {
+            syncDbgVisible = !syncDbgVisible;
+            localStorage.setItem('vs_debug_overlay', syncDbgVisible ? '1' : '0');
+            if (syncDbgEl) syncDbgEl.classList.toggle('vs-dbg-on', syncDbgVisible);
+            dbgToggleBtn.textContent = syncDbgVisible ? 'On' : 'Off';
+            dbgToggleBtn.classList.toggle('active', syncDbgVisible);
+            e.stopPropagation();
+        });
+        dbgToggleBtn.textContent = syncDbgVisible ? 'On' : 'Off';
+        dbgToggleBtn.classList.toggle('active', syncDbgVisible);
+    }
+
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
     const getStatusUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/status`;
@@ -252,6 +289,11 @@ export function setupVideoStream() {
         syncLastDisruption   = 0; // reset so PLL/hard-seek gates don't carry over to next session
         syncCooldownTarget   = 0;
         syncPllWasActive     = false; // reset PLL hysteresis state for fresh session
+        
+        syncFpsLastTime   = 0;
+        syncFpsLastFrames = 0;
+        syncDbgTotalSeeks = 0;
+        syncDbgTotalPll   = 0;
     }
 
     function doPoll() {
@@ -270,6 +312,8 @@ export function setupVideoStream() {
                 } else {
                     syncLastDataAgeSec = rtt / 2000.0;
                 }
+                syncDbgLastRtt = rtt;
+                if (typeof _updateSyncDbg === 'function') _updateSyncDbg(rtt);
                 handlePlaybackState(data);
             })
             .catch(() => {
@@ -332,6 +376,12 @@ export function setupVideoStream() {
             if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
             if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);                              syncFadeInTimer    = null; }
 
+            // Phase 10.1: Reset auto-blend state for the new file
+            autoBlendDetecting    = true;
+            autoBlendUserOverride = false;
+            autoBlendSampleTimers.forEach(clearTimeout);
+            autoBlendSampleTimers = [];
+
             // Instant hide — no CSS transition on fade-out.
             // The animated 300ms window lets the src-change loading placeholder bleed through
             // at non-zero opacity; in Screen+Invert mode that thin black placeholder → white bar.
@@ -368,6 +418,7 @@ export function setupVideoStream() {
                     syncFileLoading   = false; // fade-in done; self-heal polling can resume
                     video.style.transition = ''; // restore CSS transition from stylesheet
                     requestAnimationFrame(() => { video.style.opacity = targetOpacity; });
+                    if (typeof _startAutoBlendSampling === 'function') _startAutoBlendSampling();
                 };
                 // Safety: if 'seeked' never fires (error, seek clamped past duration, etc.)
                 // fade in anyway so opacity doesn't stay stuck at 0 permanently.
@@ -425,6 +476,8 @@ export function setupVideoStream() {
             clearTimeout(_flushTimeout);
             video.removeEventListener('seeked', _onSeekDone);
             const flushMs = Date.now() - seekStart;
+            syncDbgFlushDisplay = flushMs;
+            syncDbgFlushClearAt = Date.now() + 8000;
             video.currentTime = seekTarget + (flushMs / 1000.0) * seekRate;
             if (isPlayStart) video.play().catch(() => {});
             syncLastDisruption = Date.now();
@@ -542,6 +595,23 @@ export function setupVideoStream() {
         const diff = expected - actual; // positive if video is behind (needs to speed up)
         const absDrift = Math.abs(diff);
 
+        syncDbgRawSyncMs = (actual - syncLastState.src_time) * 1000; // raw, no comp
+        syncDbgDriftMs   = diff * 1000; // system error with comp+dataAge
+        
+        if (absDrift > DRIFT_THRESH) syncDbgDriftState = 'seek';
+        else if (syncPllWasActive)    syncDbgDriftState = 'pll';
+        else if (absDrift < DRIFT_PLL_EXIT_THRESH) syncDbgDriftState = 'locked';
+        else                           syncDbgDriftState = 'dim';
+
+        const nowPerf  = performance.now();
+        const nowFrames = video.getVideoPlaybackQuality ? (video.getVideoPlaybackQuality().totalVideoFrames || 0) : 0;
+        if (syncFpsLastTime > 0 && nowFrames > syncFpsLastFrames) {
+            const elapsed = (nowPerf - syncFpsLastTime) / 1000;
+            syncFpsValue = Math.round((nowFrames - syncFpsLastFrames) / Math.max(0.001, elapsed));
+        }
+        syncFpsLastTime   = nowPerf;
+        syncFpsLastFrames = nowFrames;
+
         // Drop-aware PLL suppression: if the decoder is dropping frames, restore normal rate
         // and skip PLL for this cycle — demanding faster playback worsens decoder stress.
         // Hard seeks are still permitted (they flush to a clean keyframe position).
@@ -573,6 +643,7 @@ export function setupVideoStream() {
             video.playbackRate = syncLastState.rate;
             syncLastDisruption = Date.now();
             syncCooldownTarget = DRIFT_PLL_COOL_MS;
+            syncDbgTotalSeeks++;
         } else if (DRIFT_PLL_ENABLED && syncPllWasActive) {
             // PLL: freely fires every DRIFT_CHECK_MS as long as sinceLastDisruption clears syncCooldownTarget.
             // Target is 1000ms for hard-seeks to protect decoder, 200ms for gentle manual scrubs/play-starts.
@@ -581,12 +652,124 @@ export function setupVideoStream() {
             const maxRate = syncLastState.rate * DRIFT_PLL_MAX;
             const minRate = syncLastState.rate / DRIFT_PLL_MAX;
             video.playbackRate = Math.max(minRate, Math.min(maxRate, pllRate));
+            syncDbgTotalPll++;
         } else {
             // Drift in dead zone (or PLL disabled): restore normal rate cleanly.
             if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
                 video.playbackRate = syncLastState.rate;
             }
         }
+    }
+
+    // ── Phase 10.1: Auto Blend Detection ──
+    function _sampleFrameVariance() {
+        const SAMPLE_W = 50, SAMPLE_H = 50;
+        const canvas = document.createElement('canvas');
+        canvas.width = SAMPLE_W; canvas.height = SAMPLE_H;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        try {
+            ctx.drawImage(video, 0, 0, SAMPLE_W, SAMPLE_H);
+            const data = ctx.getImageData(0, 0, SAMPLE_W, SAMPLE_H).data;
+            let sum = 0, n = SAMPLE_W * SAMPLE_H;
+            for (let i = 0; i < data.length; i += 4) {
+                sum += (data[i] + data[i+1] + data[i+2]) / 3;
+            }
+            const mean = sum / n;
+            let varSum = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const b = (data[i] + data[i+1] + data[i+2]) / 3;
+                varSum += (b - mean) * (b - mean);
+            }
+            return varSum / n;
+        } catch(e) {
+            return 0; // fallback
+        }
+    }
+
+    function _applyAutoBlend(type) {
+        if (autoBlendUserOverride) return;
+        if (type === 'tab') {
+            applyBlendMode('screen');
+        } else {
+            applyBlendMode('off');
+        }
+    }
+
+    function _startAutoBlendSampling() {
+        if (!autoBlendDetecting) return; // cancelled or already ran
+        const variances = [];
+        function takeSample(delay) {
+            const t = setTimeout(() => {
+                if (!autoBlendDetecting) return;
+                try { variances.push(_sampleFrameVariance()); } catch(e) {}
+                if (variances.length === 3) {
+                    autoBlendDetecting = false;
+                    const avgVar = variances.reduce((a,b) => a+b, 0) / variances.length;
+                    _applyAutoBlend(avgVar < TAB_VARIANCE_THRESHOLD ? 'tab' : 'video');
+                }
+            }, delay);
+            autoBlendSampleTimers.push(t);
+        }
+        takeSample(300);
+        takeSample(600);
+        takeSample(900);
+    }
+
+    // ── Phase 10.2: Debug HUD Update ──
+    function _updateSyncDbg(rtt) {
+        if (!syncDbgVisible || !syncDbgEl) return;
+        
+        let flushStr = '—';
+        let flushClass = 'dim';
+        if (syncDbgFlushDisplay >= 0) {
+            flushStr = syncDbgFlushDisplay + 'ms';
+            if (Date.now() < syncDbgFlushClearAt) flushClass = ''; // highlight mode
+        }
+
+        let rateStr = (syncLastState ? syncLastState.rate.toFixed(2) : '1.00') + 'x';
+        let rateClass = 'dim';
+        let actRate = video.playbackRate;
+        if (syncLastState && Math.abs(actRate - syncLastState.rate) > 0.001) {
+            rateStr = actRate.toFixed(2) + 'x';
+            rateClass = 'pll';
+        }
+
+        let ageStr = Math.round(syncLastDataAgeSec * 1000) + 'ms';
+        let ageClass = (syncLastDataAgeSec * 1000 > 80) ? 'seek' : 'dim';
+
+        const rawSyncClass = Math.abs(syncDbgRawSyncMs) >= 150 ? 'seek' 
+                           : Math.abs(syncDbgRawSyncMs) >= 50 ? 'pll' 
+                           : 'locked';
+
+        const bufSec = video.readyState < 3 ? 0 : (video.buffered.length > 0 ? (video.buffered.end(video.buffered.length - 1) - video.currentTime) : 0);
+        let bufClass = bufSec >= 5 ? 'locked' : (bufSec >= 2 ? 'pll' : 'seek');
+
+        let dropNow = 0;
+        try { dropNow = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().droppedVideoFrames : 0; } catch (e) {}
+
+        const elFps   = document.getElementById('vs-dbg-fps');
+        const elRtt   = document.getElementById('vs-dbg-rtt');
+        const elAge   = document.getElementById('vs-dbg-age');
+        const elSync  = document.getElementById('vs-dbg-sync');
+        const elDrift = document.getElementById('vs-dbg-drift');
+        const elRate  = document.getElementById('vs-dbg-rate');
+        const elFlush = document.getElementById('vs-dbg-flush');
+        const elBuf   = document.getElementById('vs-dbg-buf');
+        const elDrop  = document.getElementById('vs-dbg-drop');
+        const elSeeks = document.getElementById('vs-dbg-seeks');
+        const elPll   = document.getElementById('vs-dbg-pll');
+
+        if (elFps)   { elFps.textContent   = syncFpsValue;                     elFps.className   = 'vs-dbg-val'; }
+        if (elRtt)   { elRtt.textContent   = rtt + 'ms';                       elRtt.className   = 'vs-dbg-val'; }
+        if (elAge)   { elAge.textContent   = ageStr;                           elAge.className   = 'vs-dbg-val ' + ageClass; }
+        if (elSync)  { elSync.textContent  = Math.round(syncDbgRawSyncMs) + 'ms'; elSync.className  = 'vs-dbg-val ' + rawSyncClass; }
+        if (elDrift) { elDrift.textContent = Math.round(syncDbgDriftMs) + 'ms';   elDrift.className = 'vs-dbg-val ' + syncDbgDriftState; }
+        if (elRate)  { elRate.textContent  = rateStr;                          elRate.className  = 'vs-dbg-val ' + rateClass; }
+        if (elFlush) { elFlush.textContent = flushStr;                         elFlush.className = 'vs-dbg-val ' + flushClass; }
+        if (elBuf)   { elBuf.textContent   = bufSec.toFixed(1) + 's';          elBuf.className   = 'vs-dbg-val ' + bufClass; }
+        if (elDrop)  { elDrop.textContent  = dropNow || '—';                   elDrop.className  = 'vs-dbg-val ' + (dropNow > 0 ? 'seek' : 'dim'); }
+        if (elSeeks) { elSeeks.textContent = syncDbgTotalSeeks || '—';         elSeeks.className = 'vs-dbg-val ' + (syncDbgTotalSeeks > 0 ? 'seek' : 'dim'); }
+        if (elPll)   { elPll.textContent   = syncDbgTotalPll || '—';           elPll.className   = 'vs-dbg-val ' + (syncDbgTotalPll > 0 ? 'pll' : 'dim'); }
     }
 
     // ── Control auto-fade ────────────────────────────────────────────────────
@@ -1093,6 +1276,7 @@ export function setupVideoStream() {
 
     if (transparencyBtn) {
         transparencyBtn.addEventListener('click', () => {
+            autoBlendUserOverride = true;
             const idx = BLEND_MODES.indexOf(currentBlendMode);
             applyBlendMode(BLEND_MODES[(idx + 1) % BLEND_MODES.length]);
         });

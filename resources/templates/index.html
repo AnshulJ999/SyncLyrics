@@ -560,6 +560,21 @@
 <div id="video-stream-overlay" class="video-stream-overlay hidden">
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
     <video id="video-stream-video" class="vs-video" playsinline preload="auto" muted style="display: none;"></video>
+    <div id="vs-dbg" class="vs-dbg">
+        <div class="vs-dbg-row">
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">FPS</div><div id="vs-dbg-fps"  class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">RTT</div><div id="vs-dbg-rtt"  class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">AGE</div><div id="vs-dbg-age"  class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell vs-dbg-wide"><div class="vs-dbg-lbl">SYNC</div><div id="vs-dbg-sync" class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell vs-dbg-wide"><div class="vs-dbg-lbl">DRIFT</div><div id="vs-dbg-drift" class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">RATE</div><div id="vs-dbg-rate"  class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">FLUSH</div><div id="vs-dbg-flush" class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">BUF</div><div id="vs-dbg-buf"   class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">DROP</div><div id="vs-dbg-drop"  class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">SEEKS</div><div id="vs-dbg-seeks" class="vs-dbg-val dim">—</div></div>
+            <div class="vs-dbg-cell"><div class="vs-dbg-lbl">PLL</div><div id="vs-dbg-pll"   class="vs-dbg-val dim">—</div></div>
+        </div>
+    </div>
 </div>
 
 <!-- Native Fullscreen Iframe (Dormant until handoff) -->
@@ -635,6 +650,12 @@
         <div class="vs-lyrics-mode-btns">
             <button id="vs-bg-mode-auto"     class="vs-mode-btn active" title="Inherit visually native blur saturation">Auto</button>
             <button id="vs-bg-mode-override" class="vs-mode-btn"        title="Full control over blur and saturation override">Override</button>
+        </div>
+    </div>
+    <div class="vs-slider-row vs-lyrics-mode-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:6px; padding-top:6px;">
+        <span class="vs-slider-label"><i class="bi bi-bug"></i> Debug HUD</span>
+        <div class="vs-lyrics-mode-btns">
+            <button id="vs-dbg-toggle" class="vs-mode-btn" title="Toggle sync debug overlay">Off</button>
         </div>
     </div>
     <div class="vs-slider-row vs-zindex-row">
