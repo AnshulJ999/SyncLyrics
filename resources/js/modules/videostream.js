@@ -378,7 +378,9 @@ export function setupVideoStream() {
                     syncFileLoading   = false; // fade-in done via safety path
                     video.style.transition = '';
                     video.style.opacity = targetOpacity;
-                }, 1500);
+                }, 500); // 500ms: safe margin over H.265 flush worst-case (~300ms). Also fires fast
+                         // for the no-seek edge case (REAPER near pos 0) instead of waiting 1.5s.
+                         // If wrong-frame flashes appear on slow seeks, raise toward 1000-1200ms.
                 syncSeekedHandler = onSeeked;
                 video.addEventListener('seeked', onSeeked, { once: true });
             };
@@ -401,10 +403,18 @@ export function setupVideoStream() {
     // Shared helper for Fix 2 compensated seeks
     function performCompensatedSeek(seekTarget, seekRate, isPlayStart) {
         if (SEEK_FLUSH_COMP === 'off') {
+            // 'off' mode: full old-behavior rollback — 1000ms cooldown intentional
             video.currentTime = seekTarget;
             if (isPlayStart) video.play().catch(() => {});
             syncLastDisruption = Date.now();
             syncCooldownTarget = DRIFT_PLL_COOL_MS;
+            return;
+        }
+        if (!isPlayStart && SEEK_FLUSH_COMP === 'start') {
+            // 'start' mode scrub: no flush measured — fast 200ms recovery is correct
+            video.currentTime = seekTarget;
+            syncLastDisruption = Date.now();
+            syncCooldownTarget = DRIFT_PLL_EVENT_COOL_MS;
             return;
         }
         syncLastDisruption = Date.now();
