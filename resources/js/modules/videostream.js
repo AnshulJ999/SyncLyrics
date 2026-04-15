@@ -137,7 +137,8 @@ export function setupVideoStream() {
 
     // Slew-Rate PLL constants
     const DRIFT_PLL_ENABLED  = true;    // slew-rate PLL on/off feature flag
-    const DRIFT_PLL_THRESH   = 0.080;   // min drift (sec) to activate PLL
+    const DRIFT_PLL_THRESH      = 0.050;   // min drift (sec) to activate PLL (hysteresis enter)
+    const DRIFT_PLL_EXIT_THRESH = 0.020;   // drift below which active PLL deactivates (hysteresis exit)
     const DRIFT_PLL_GAIN     = 0.3;     // proportion of gap closed per second
     const DRIFT_PLL_MAX      = 1.10;    // max speed-up/down multiplier
     const DRIFT_PLL_COOL_MS  = 1000;    // ms after play-start/hard-seek before PLL may fire (shorter than DRIFT_COOL_MS)
@@ -151,6 +152,7 @@ export function setupVideoStream() {
     let syncLastHardSeek   = 0;    // timestamp of last hard seek or play-start; gates both hard seeks and PLL
     let syncSeekDebounce   = null;
     let _dropCheckLast     = 0;    // last droppedVideoFrames at checkDrift time (for PLL drop-suppression)
+    let syncPllWasActive   = false; // PLL hysteresis state: true = PLL is currently active
     let syncCurrentFile    = null;
     let syncNoVideoSince   = 0;
     let syncBlackHandled   = false;
@@ -245,6 +247,7 @@ export function setupVideoStream() {
         syncFileLoading      = false;
         syncLatestServerTime = 0; // Fix D: reset monotonic guard so fresh sessions are not blocked
         syncLastHardSeek     = 0; // reset so PLL/hard-seek gates don't carry over to next session
+        syncPllWasActive     = false; // reset PLL hysteresis state for fresh session
     }
 
     function doPoll() {
@@ -504,25 +507,34 @@ export function setupVideoStream() {
             if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
                 video.playbackRate = syncLastState.rate;
             }
-            if (absDrift <= DRIFT_THRESH) return; // no hard seek needed; skip PLL
+            syncPllWasActive = false; // suppress PLL during drop storm; re-evaluate from scratch next cycle
+            if (absDrift <= DRIFT_THRESH) return;
+        }
+
+        // PLL hysteresis: activate at DRIFT_PLL_THRESH (50ms), stay active until DRIFT_PLL_EXIT_THRESH (20ms).
+        // Prevents rapid toggling near the activation boundary — PLL "sticks" until well into dead zone.
+        if (syncPllWasActive) {
+            syncPllWasActive = (absDrift > DRIFT_PLL_EXIT_THRESH && absDrift < DRIFT_THRESH);
+        } else {
+            syncPllWasActive = (absDrift > DRIFT_PLL_THRESH && absDrift < DRIFT_THRESH);
         }
 
         if (absDrift > DRIFT_THRESH) {
             // Hard seek: only fires after DRIFT_COOL_MS has elapsed since last hard seek or play-start.
             if (sinceLastHardSeek < DRIFT_COOL_MS) return;
+            syncPllWasActive   = false; // reset PLL state — hard seek displaces video
             video.currentTime  = expected;
             video.playbackRate = syncLastState.rate;
             syncLastHardSeek   = Date.now();
-        } else if (DRIFT_PLL_ENABLED && absDrift > DRIFT_PLL_THRESH) {
-            // PLL: only gated by the shorter DRIFT_PLL_COOL_MS.
-            // After that, fires freely every DRIFT_CHECK_MS interval — no cooldown reset on PLL.
+        } else if (DRIFT_PLL_ENABLED && syncPllWasActive) {
+            // PLL: gated by shorter DRIFT_PLL_COOL_MS. Fires freely every DRIFT_CHECK_MS after that.
             if (sinceLastHardSeek < DRIFT_PLL_COOL_MS) return;
             const pllRate = syncLastState.rate + (diff * DRIFT_PLL_GAIN);
             const maxRate = syncLastState.rate * DRIFT_PLL_MAX;
             const minRate = syncLastState.rate / DRIFT_PLL_MAX;
             video.playbackRate = Math.max(minRate, Math.min(maxRate, pllRate));
         } else {
-            // Drift within acceptable range: restore normal rate cleanly.
+            // Drift in dead zone (or PLL disabled): restore normal rate cleanly.
             if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
                 video.playbackRate = syncLastState.rate;
             }
