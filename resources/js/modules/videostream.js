@@ -126,6 +126,12 @@ export function setupVideoStream() {
 
     if (!btn || !overlay || !img) return;
 
+    // CORS: the video is served from port 9062 while this page is on port 9012 — cross-origin.
+    // Without crossOrigin='anonymous', ctx.getImageData() on a canvas with this video drawn into
+    // it throws SecurityError (tainted canvas), even though the server sends ACAO:*. Must be set
+    // BEFORE video.src is ever assigned, so set it once here at init time.
+    if (video) video.crossOrigin = 'anonymous';
+
     // ── Runtime state ─────────────────────────────────────────────────────────
     let isOpen          = false;
     let sliderPopupOpen = false;
@@ -183,7 +189,8 @@ export function setupVideoStream() {
 
     // ── Phase 10.1: Auto Blend detection state ──
     let autoBlendDetecting    = false;
-    let autoBlendUserOverride = false;
+    let autoBlendUserOverride = false;  // true = user manually chose blend for this file; skip auto until next file change
+    let autoBlendEnabled      = localStorage.getItem('vs_auto_blend') !== '0'; // on by default; user can disable
     let autoBlendSampleTimers = [];
     const TAB_VARIANCE_THRESHOLD = 500;
 
@@ -216,6 +223,20 @@ export function setupVideoStream() {
         });
         dbgToggleBtn.textContent = syncDbgVisible ? 'On' : 'Off';
         dbgToggleBtn.classList.toggle('active', syncDbgVisible);
+    }
+
+    // ── Auto Blend toggle ────────────────────────────────────────────────────
+    const autoBlendToggleBtn = document.getElementById('vs-auto-blend-toggle');
+    if (autoBlendToggleBtn) {
+        autoBlendToggleBtn.addEventListener('click', (e) => {
+            autoBlendEnabled = !autoBlendEnabled;
+            localStorage.setItem('vs_auto_blend', autoBlendEnabled ? '1' : '0');
+            autoBlendToggleBtn.textContent = autoBlendEnabled ? 'On' : 'Off';
+            autoBlendToggleBtn.classList.toggle('active', autoBlendEnabled);
+            e.stopPropagation();
+        });
+        autoBlendToggleBtn.textContent = autoBlendEnabled ? 'On' : 'Off';
+        autoBlendToggleBtn.classList.toggle('active', autoBlendEnabled);
     }
 
     // ── URL helper ───────────────────────────────────────────────────────────
@@ -706,12 +727,12 @@ export function setupVideoStream() {
     }
 
     function _applyAutoBlend(type) {
-        if (autoBlendUserOverride) return;
-        if (type === 'tab') {
-            applyBlendMode('screen');
-        } else {
-            applyBlendMode('off');
-        }
+        if (!autoBlendEnabled) return;        // feature disabled by user
+        if (autoBlendUserOverride) return;    // user manually chose blend for this file
+        if (currentBlendMode === 'off') return; // user explicitly has blending off — never force it on
+        // Only switch between screen and off based on content type.
+        // 'multiply' is also treated as a blend preference → follows the same auto logic.
+        applyBlendMode(type === 'tab' ? 'screen' : 'off');
     }
 
     function _startAutoBlendSampling() {

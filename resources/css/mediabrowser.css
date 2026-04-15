@@ -1033,11 +1033,11 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     color-scheme: light; /* Force HA to resolve prefers-color-scheme as light */
 }
 
-/* Debug HUD — positioned inside overlay, bottom-left, moves with overlay */
+/* Debug HUD — positioned inside overlay, top-left directly below edit-bar buttons, moves with overlay */
 .vs-dbg {
     display: none;
     position: absolute;
-    bottom: 6px;
+    top: 6px;  /* 6px overlay padding + 32px edit-bar button height = directly below buttons */
     left: 6px;
     background: rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(6px);
