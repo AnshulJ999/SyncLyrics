@@ -641,8 +641,11 @@ export function setupVideoStream() {
             }
         }
 
-        syncDbgDriftMs = diff * -1000;
-        syncDbgRawSyncMs = (actual - syncLastState.src_time) * 1000;
+        syncDbgDriftMs = diff * 1000;
+        
+        // Compute raw sync (video vs true REAPER, including dataAge but no latency comp) for SYNC HUD cell
+        const _rawReaperNow = syncLastState.src_time + (wallElapsed + syncLastDataAgeSec) * syncLastState.rate;
+        syncDbgRawSyncMs = (actual - _rawReaperNow) * 1000; // + = video ahead
     }
 
     // ── Phase 10.2: Debug HUD Update ──
@@ -656,11 +659,11 @@ export function setupVideoStream() {
             if (Date.now() < syncDbgFlushClearAt) flushClass = ''; // highlight mode
         }
 
-        let rateStr = (syncLastState ? syncLastState.rate.toFixed(2) : '1.00') + 'x';
+        let rateStr = (syncLastState ? syncLastState.rate.toFixed(4) : '1.0000') + 'x';
         let rateClass = 'dim';
         let actRate = video.playbackRate;
-        if (syncLastState && Math.abs(actRate - syncLastState.rate) > 0.001) {
-            rateStr = actRate.toFixed(2) + 'x';
+        if (syncLastState && Math.abs(actRate - syncLastState.rate) > 0.0005) {
+            rateStr = actRate.toFixed(4) + 'x';
             rateClass = 'pll';
         }
 
@@ -691,7 +694,7 @@ export function setupVideoStream() {
     }
 
     // ── Control auto-fade ────────────────────────────────────────────────────
-    const FADE_DELAY_MS = 5000; //
+    const FADE_DELAY_MS = 2500; //
 
     function showControls() {
         controlsBar?.classList.remove('faded');
@@ -1958,7 +1961,7 @@ export function setupVideoStream() {
     if (savedLatency !== null) {
         latencyCompMs = parseInt(savedLatency, 10);
     } else {
-        latencyCompMs = 100; // Default
+        latencyCompMs = 0; // Default
     }
     updateLatencyDisplay();
 

@@ -1037,8 +1037,9 @@ body:not(.hide-nav) .media-browser-toggle-btn {
 .vs-dbg {
     display: none;
     position: absolute;
-    top: 42px; /* right below edit bar */
-    left: 6px;
+    top: 4px; /* Tuck perfectly against the top, between edit & control bars */
+    left: 50%;
+    transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.12);
