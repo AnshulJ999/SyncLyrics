@@ -1033,6 +1033,52 @@ body:not(.hide-nav) .media-browser-toggle-btn {
     color-scheme: light; /* Force HA to resolve prefers-color-scheme as light */
 }
 
+/* Debug HUD — positioned inside overlay, top-left, moves with overlay */
+.vs-dbg {
+    display: none;
+    position: absolute;
+    top: 42px; /* right below edit bar */
+    left: 6px;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 4px 6px;
+    pointer-events: none;
+    z-index: 9998;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    white-space: nowrap;
+    user-select: none;
+}
+.vs-dbg.vs-dbg-on { display: block; }
+
+/* Transparent HUD styling when overlay has transparency blend mode */
+.video-stream-overlay.vs-multiply .vs-dbg,
+.video-stream-overlay.vs-screen .vs-dbg {
+    background: transparent;
+    backdrop-filter: none;
+    border: 1px solid transparent; /* invisible border keeps spacing */
+}
+
+.vs-dbg-row { display: flex; gap: 8px; align-items: center; }
+.vs-dbg-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+
+/* Fixed widths to prevent jitter */
+.vs-dbg-val {
+    color: rgba(255,255,255,0.9);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    min-width: 36px;
+}
+.vs-dbg-cell.vs-dbg-wide .vs-dbg-val { min-width: 52px; }
+
+.vs-dbg-lbl { color: rgba(255,255,255,0.4); font-size: 8px; text-transform: uppercase; }
+.vs-dbg-val.dim    { color: rgba(255,255,255,0.3); }
+.vs-dbg-val.locked { color: #4ade80; }  /* green */
+.vs-dbg-val.pll    { color: #fbbf24; }  /* yellow */
+.vs-dbg-val.seek   { color: #f87171; }  /* red */
+
 /* ========== MOBILE LAYOUT ========== */
 @media (max-width: 825px) {
     .media-browser-toggle-btn {

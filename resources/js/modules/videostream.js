@@ -108,6 +108,21 @@ export function setupVideoStream() {
     const zindexPlusBtn     = document.getElementById('vs-zindex-plus');
     const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
     const bgBlurSlider      = document.getElementById('vs-bg-blur-slider');
+    
+    // Debug HUD elements
+    const dbgToggleBtn    = document.getElementById('vs-dbg-toggle');
+    const dbgEl           = document.getElementById('vs-dbg');
+    const dbgFpsEl        = document.getElementById('vs-dbg-fps');
+    const dbgRttEl        = document.getElementById('vs-dbg-rtt');
+    const dbgAgeEl        = document.getElementById('vs-dbg-age');
+    const dbgSyncEl       = document.getElementById('vs-dbg-sync');
+    const dbgDriftEl      = document.getElementById('vs-dbg-drift');
+    const dbgRateEl       = document.getElementById('vs-dbg-rate');
+    const dbgFlushEl      = document.getElementById('vs-dbg-flush');
+    const dbgBufEl        = document.getElementById('vs-dbg-buf');
+    const dbgDropEl       = document.getElementById('vs-dbg-drop');
+    const dbgSeeksEl      = document.getElementById('vs-dbg-seeks');
+    const dbgPllEl        = document.getElementById('vs-dbg-pll');
 
     const iframe          = document.getElementById('vs-native-iframe');
 
@@ -167,6 +182,21 @@ export function setupVideoStream() {
     let syncFadeInTimer    = null;
     let syncLastDataAgeSec = 0;      // precise age of data at last poll (RTT-based)
     let syncLatestServerTime = 0;    // Fix A: monotonic guard — drop out-of-order fetch responses
+
+    // Phase 10.2 state
+    let syncDbgTotalSeeks = 0;
+    let syncDbgTotalPll = 0;
+    let syncDbgDriftMs = 0;
+    let syncDbgRawSyncMs = 0;
+    let syncDbgFlushDisplay = -1;
+    let syncDbgFlushClearAt = 0;
+    let syncDbgDriftState = 'dim';
+    let syncFpsLastFrames = 0;
+    let syncFpsLastTime = Date.now();
+    let syncFpsValue = '0';
+    let syncDbgVisible = localStorage.getItem('vs_debug_overlay') === 'true';
+    if (dbgEl) dbgEl.classList.toggle('vs-dbg-on', syncDbgVisible);
+    if (dbgToggleBtn) dbgToggleBtn.textContent = syncDbgVisible ? 'On' : 'Off';
 
     // ── URL helper ───────────────────────────────────────────────────────────
     const getStreamUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/stream`;
@@ -252,6 +282,10 @@ export function setupVideoStream() {
         syncLastDisruption   = 0; // reset so PLL/hard-seek gates don't carry over to next session
         syncCooldownTarget   = 0;
         syncPllWasActive     = false; // reset PLL hysteresis state for fresh session
+        syncDbgTotalSeeks    = 0;
+        syncDbgTotalPll      = 0;
+        syncFpsLastFrames    = 0;
+        syncFpsLastTime      = Date.now();
     }
 
     function doPoll() {
@@ -271,6 +305,7 @@ export function setupVideoStream() {
                     syncLastDataAgeSec = rtt / 2000.0;
                 }
                 handlePlaybackState(data);
+                if (typeof _updateSyncDbg === 'function') _updateSyncDbg(rtt);
             })
             .catch(() => {
                 queueStandby();
@@ -425,6 +460,8 @@ export function setupVideoStream() {
             clearTimeout(_flushTimeout);
             video.removeEventListener('seeked', _onSeekDone);
             const flushMs = Date.now() - seekStart;
+            syncDbgFlushDisplay = flushMs;
+            syncDbgFlushClearAt = Date.now() + 8000;
             video.currentTime = seekTarget + (flushMs / 1000.0) * seekRate;
             if (isPlayStart) video.play().catch(() => {});
             syncLastDisruption = Date.now();
@@ -549,6 +586,17 @@ export function setupVideoStream() {
         try { const _q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null; if (_q) _dropNow = _q.droppedVideoFrames || 0; } catch(e) {}
         const _dropDelta = Math.max(0, _dropNow - _dropCheckLast);
         _dropCheckLast = _dropNow;
+        
+        // FPS computation
+        let _parsedNow = 0;
+        try { const _q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null; if (_q) _parsedNow = _q.totalVideoFrames || 0; } catch(e) {}
+        if (_parsedNow > 0 && syncFpsLastFrames > 0) {
+            const elap = (Date.now() - syncFpsLastTime) / 1000.0;
+            if (elap > 0) syncFpsValue = Math.round((_parsedNow - syncFpsLastFrames) / elap);
+        }
+        syncFpsLastFrames = _parsedNow;
+        syncFpsLastTime = Date.now();
+
         if (_dropDelta > DROP_SUPPRESS_THRESH) {
             if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
                 video.playbackRate = syncLastState.rate;
@@ -566,6 +614,7 @@ export function setupVideoStream() {
         }
 
         if (absDrift > DRIFT_THRESH) {
+            syncDbgDriftState = 'seek';
             // Hard seek: only fires after DRIFT_COOL_MS has elapsed since last hard seek or play-start.
             if (sinceLastDisruption < DRIFT_COOL_MS) return;
             syncPllWasActive   = false; // reset PLL state — hard seek displaces video
@@ -573,7 +622,9 @@ export function setupVideoStream() {
             video.playbackRate = syncLastState.rate;
             syncLastDisruption = Date.now();
             syncCooldownTarget = DRIFT_PLL_COOL_MS;
+            syncDbgTotalSeeks++;
         } else if (DRIFT_PLL_ENABLED && syncPllWasActive) {
+            syncDbgDriftState = 'pll';
             // PLL: freely fires every DRIFT_CHECK_MS as long as sinceLastDisruption clears syncCooldownTarget.
             // Target is 1000ms for hard-seeks to protect decoder, 200ms for gentle manual scrubs/play-starts.
             if (sinceLastDisruption < syncCooldownTarget) return;
@@ -581,12 +632,62 @@ export function setupVideoStream() {
             const maxRate = syncLastState.rate * DRIFT_PLL_MAX;
             const minRate = syncLastState.rate / DRIFT_PLL_MAX;
             video.playbackRate = Math.max(minRate, Math.min(maxRate, pllRate));
+            syncDbgTotalPll++;
         } else {
+            syncDbgDriftState = 'dim';
             // Drift in dead zone (or PLL disabled): restore normal rate cleanly.
             if (Math.abs(video.playbackRate - syncLastState.rate) > 0.001) {
                 video.playbackRate = syncLastState.rate;
             }
         }
+
+        syncDbgDriftMs = diff * -1000;
+        syncDbgRawSyncMs = (actual - syncLastState.src_time) * 1000;
+    }
+
+    // ── Phase 10.2: Debug HUD Update ──
+    function _updateSyncDbg(rtt) {
+        if (!syncDbgVisible || !dbgEl) return;
+        
+        let flushStr = '—';
+        let flushClass = 'dim';
+        if (syncDbgFlushDisplay >= 0) {
+            flushStr = syncDbgFlushDisplay + 'ms';
+            if (Date.now() < syncDbgFlushClearAt) flushClass = ''; // highlight mode
+        }
+
+        let rateStr = (syncLastState ? syncLastState.rate.toFixed(2) : '1.00') + 'x';
+        let rateClass = 'dim';
+        let actRate = video.playbackRate;
+        if (syncLastState && Math.abs(actRate - syncLastState.rate) > 0.001) {
+            rateStr = actRate.toFixed(2) + 'x';
+            rateClass = 'pll';
+        }
+
+        let ageStr = Math.round(syncLastDataAgeSec * 1000) + 'ms';
+        let ageClass = (syncLastDataAgeSec * 1000 > 80) ? 'seek' : 'dim';
+
+        const rawSyncClass = Math.abs(syncDbgRawSyncMs) >= 150 ? 'seek' 
+                           : Math.abs(syncDbgRawSyncMs) >= 50 ? 'pll' 
+                           : 'locked';
+
+        const bufSec = video.readyState < 3 ? 0 : (video.buffered.length > 0 ? (video.buffered.end(video.buffered.length - 1) - video.currentTime) : 0);
+        let bufClass = bufSec >= 5 ? 'locked' : (bufSec >= 2 ? 'pll' : 'seek');
+
+        let dropNow = 0;
+        try { dropNow = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().droppedVideoFrames : 0; } catch (e) {}
+
+        if (dbgFpsEl)   { dbgFpsEl.textContent   = syncFpsValue;                     dbgFpsEl.className   = 'vs-dbg-val'; }
+        if (dbgRttEl)   { dbgRttEl.textContent   = rtt + 'ms';                       dbgRttEl.className   = 'vs-dbg-val'; }
+        if (dbgAgeEl)   { dbgAgeEl.textContent   = ageStr;                           dbgAgeEl.className   = 'vs-dbg-val ' + ageClass; }
+        if (dbgSyncEl)  { dbgSyncEl.textContent  = Math.round(syncDbgRawSyncMs) + 'ms'; dbgSyncEl.className  = 'vs-dbg-val ' + rawSyncClass; }
+        if (dbgDriftEl) { dbgDriftEl.textContent = Math.round(syncDbgDriftMs) + 'ms';   dbgDriftEl.className = 'vs-dbg-val ' + syncDbgDriftState; }
+        if (dbgRateEl)  { dbgRateEl.textContent  = rateStr;                          dbgRateEl.className  = 'vs-dbg-val ' + rateClass; }
+        if (dbgFlushEl) { dbgFlushEl.textContent = flushStr;                         dbgFlushEl.className = 'vs-dbg-val ' + flushClass; }
+        if (dbgBufEl)   { dbgBufEl.textContent   = bufSec.toFixed(1) + 's';          dbgBufEl.className   = 'vs-dbg-val ' + bufClass; }
+        if (dbgDropEl)  { dbgDropEl.textContent  = dropNow || '—';                   dbgDropEl.className  = 'vs-dbg-val ' + (dropNow > 0 ? 'seek' : 'dim'); }
+        if (dbgSeeksEl) { dbgSeeksEl.textContent = syncDbgTotalSeeks || '—';         dbgSeeksEl.className = 'vs-dbg-val ' + (syncDbgTotalSeeks > 0 ? 'seek' : 'dim'); }
+        if (dbgPllEl)   { dbgPllEl.textContent   = syncDbgTotalPll || '—';           dbgPllEl.className   = 'vs-dbg-val ' + (syncDbgTotalPll > 0 ? 'pll' : 'dim'); }
     }
 
     // ── Control auto-fade ────────────────────────────────────────────────────
@@ -1170,6 +1271,16 @@ export function setupVideoStream() {
     if (opacitySlider) {
         opacitySlider.addEventListener('input', () => {
             applyOpacity(parseInt(opacitySlider.value, 10));
+        });
+    }
+
+    if (dbgToggleBtn) {
+        dbgToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // prevent closing popup
+            syncDbgVisible = !syncDbgVisible;
+            if (dbgEl) dbgEl.classList.toggle('vs-dbg-on', syncDbgVisible);
+            dbgToggleBtn.textContent = syncDbgVisible ? 'On' : 'Off';
+            localStorage.setItem('vs_debug_overlay', syncDbgVisible);
         });
     }
 
