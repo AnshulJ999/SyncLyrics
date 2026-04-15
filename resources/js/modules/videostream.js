@@ -127,7 +127,7 @@ export function setupVideoStream() {
     let latencyCompMs   = 100;    // Latency compensation in milliseconds (default 100ms)
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
-    const POLL_MS         = 250;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
+    const POLL_MS         = 200;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
     const DRIFT_THRESH       = 0.25;    // drift threshold before forcing a hard re-seek
     const DRIFT_CHECK_MS     = 3000;    // ms between drift checks
     const DRIFT_COOL_MS      = 3000;    // ms cooldown after a drift correction
@@ -140,14 +140,20 @@ export function setupVideoStream() {
     const DRIFT_PLL_THRESH   = 0.100;   // min drift (sec) to activate PLL
     const DRIFT_PLL_GAIN     = 0.2;     // proportion of gap closed per second
     const DRIFT_PLL_MAX      = 1.05;    // max speed-up/down multiplier
+    const DRIFT_PLL_COOL_MS  = 1000;    // ms after play-start/hard-seek before PLL may fire (shorter than DRIFT_COOL_MS)
 
     let syncActive         = false;
     let syncPollTimer      = null;
     let syncDriftTimer     = null;
     let syncLastState      = null;
     let syncLastPollTime   = 0;
-    let syncLastCorrection = 0;
+    let syncLastHardSeek   = 0;    // timestamp of last hard seek or play-start; gates both hard seeks and PLL
     let syncSeekDebounce   = null;
+    // Sync perf stats — accumulated per 30s period, logged once to console
+    let _sRttSum = 0, _sRttN = 0;
+    let _sPllCount = 0, _sHardSeekCount = 0;
+    let _sFlushMs = -1;  // last decoder flush time from seeked-event measurement (-1 = none this period)
+    let _sStatsTimer = null;
     let syncCurrentFile    = null;
     let syncNoVideoSince   = 0;
     let syncBlackHandled   = false;
@@ -228,6 +234,12 @@ export function setupVideoStream() {
         doPoll();                                          // immediate first poll
         syncPollTimer  = setInterval(doPoll,       POLL_MS);
         syncDriftTimer = setInterval(checkDrift, DRIFT_CHECK_MS);
+        _sStatsTimer   = setInterval(() => {
+            const rttAvg  = _sRttN > 0 ? Math.round(_sRttSum / _sRttN) : -1;
+            const flushStr = _sFlushMs >= 0 ? (_sFlushMs + 'ms') : 'n/a';
+            console.info(`[VideoStream Sync] rtt_avg=${rttAvg}ms  pll=${_sPllCount}  hard_seeks=${_sHardSeekCount}  decoder_flush=${flushStr}`);
+            _sRttSum = 0; _sRttN = 0; _sPllCount = 0; _sHardSeekCount = 0; _sFlushMs = -1;
+        }, 30000);
     }
 
     function stopSync() {
@@ -235,12 +247,14 @@ export function setupVideoStream() {
         if (syncPollTimer)      { clearInterval(syncPollTimer);               syncPollTimer      = null; }
         if (syncDriftTimer)     { clearInterval(syncDriftTimer);               syncDriftTimer     = null; }
         if (syncSeekDebounce)   { clearTimeout(syncSeekDebounce);              syncSeekDebounce   = null; }
+        if (_sStatsTimer)       { clearInterval(_sStatsTimer);                _sStatsTimer       = null; }
         // Cancel any in-flight file-change transition
         if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
         if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
         if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);               syncFadeInTimer    = null; }
         syncFileLoading      = false;
         syncLatestServerTime = 0; // Fix D: reset monotonic guard so fresh sessions are not blocked
+        syncLastHardSeek     = 0; // reset so PLL/hard-seek gates don't carry over to next session
     }
 
     function doPoll() {
@@ -250,6 +264,7 @@ export function setupVideoStream() {
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
             .then(data => {
                 const rtt = Date.now() - fetchStart;
+                _sRttSum += rtt; _sRttN++;
                 // Compute precise data age: how old is this data right now?
                 // server_time = when Python generated the response
                 // received_at = when Python last got a UDP packet from REAPER
@@ -406,15 +421,28 @@ export function setupVideoStream() {
         if (isPlayingNow) {
             video.playbackRate = safeRate;
             if (prevPlaying !== 1 && prevPlaying !== 5) {
-                // Transition to play — only seek if wildly out of place (smooth startup)
+                // Transition to play
                 if (Math.abs(video.currentTime - compTime) > PLAY_SEEK_THRESH) {
-                    video.currentTime = compTime;
+                    // Fix 2: Large seek needed (e.g. pre-roll jump). Attach one-shot seeked
+                    // listener to measure actual decoder flush time and compensate before play().
+                    syncLastHardSeek = Date.now();  // immediately suppress checkDrift during flush
+                    const seekTarget = compTime;
+                    const seekStart  = Date.now();
+                    const seekRate   = safeRate;
+                    video.addEventListener('seeked', function _onPlayStartSeekDone() {
+                        video.removeEventListener('seeked', _onPlayStartSeekDone);
+                        const flushMs = Date.now() - seekStart;
+                        _sFlushMs = flushMs;  // record for 30s stats
+                        video.currentTime = seekTarget + (flushMs / 1000.0) * seekRate;
+                        video.play().catch(() => {});
+                        syncLastHardSeek = Date.now();  // Fix C: reset from when flush completed
+                    });
+                    video.currentTime = seekTarget;
+                } else {
+                    // Close enough — play on warm decoder, no seek needed.
+                    video.play().catch(() => {});
+                    syncLastHardSeek = Date.now();  // Fix C
                 }
-                video.play().catch(() => {});
-                // Fix C: Reset drift cooldown at play-start.
-                // Gives the decoder a grace period before checkDrift fires while
-                // hardware is still spooling up; prevents the initial-jitter "snap".
-                syncLastCorrection = Date.now();
             } else if (syncLastState && Math.abs(data.src_time - syncLastState.src_time) > 1.0) {
                 // Large position jump while playing = timeline scrub — debounce to avoid stalls
                 if (syncSeekDebounce) clearTimeout(syncSeekDebounce);
@@ -458,26 +486,34 @@ export function setupVideoStream() {
             return; // Skip position correction this cycle; next cycle will assess drift
         }
 
-        if (Date.now() - syncLastCorrection < DRIFT_COOL_MS)    return;
-        if (syncSeekDebounce)                                    return;
+        if (syncSeekDebounce) return;
+
+        // Split cooldown gates: PLL and hard seeks have independent timers.
+        // Both are reset by Fix C (play-start) and by hard seeks.
+        // PLL uses the shorter DRIFT_PLL_COOL_MS so it can start correcting early.
+        // Hard seeks use the longer DRIFT_COOL_MS to protect against decoder hammer.
+        const sinceLastHardSeek = Date.now() - syncLastHardSeek;
 
         // Precise drift computation using data age from RTT measurement.
         // checkDrift only runs when isPlaying is true, so data_age compensation is always safe here.
         const wallElapsed = (Date.now() - syncLastPollTime) / 1000;
         const latSec   = latencyCompMs / 1000.0;
         const expected = syncLastState.src_time + (wallElapsed + syncLastDataAgeSec) * syncLastState.rate + latSec;
-        
+
         const actual = video.currentTime;
         const diff = expected - actual; // positive if video is behind (needs to speed up)
         const absDrift = Math.abs(diff);
 
         if (absDrift > DRIFT_THRESH) {
-            // Hard jar jump for massive drift
+            // Hard seek: only fires after DRIFT_COOL_MS has elapsed since last hard seek or play-start.
+            if (sinceLastHardSeek < DRIFT_COOL_MS) return;
             video.currentTime  = expected;
             video.playbackRate = syncLastState.rate;
-            syncLastCorrection = Date.now();
+            syncLastHardSeek   = Date.now();
         } else if (DRIFT_PLL_ENABLED && absDrift > DRIFT_PLL_THRESH) {
-            // Slew-Rate PLL: smoothly bend playback speed to close small drift gaps.
+            // PLL: only gated by the shorter DRIFT_PLL_COOL_MS.
+            // After that, fires freely every DRIFT_CHECK_MS interval — no cooldown reset on PLL.
+            if (sinceLastHardSeek < DRIFT_PLL_COOL_MS) return;
             const pllRate = syncLastState.rate + (diff * DRIFT_PLL_GAIN);
             const maxRate = syncLastState.rate * DRIFT_PLL_MAX;
             const minRate = syncLastState.rate / DRIFT_PLL_MAX;
