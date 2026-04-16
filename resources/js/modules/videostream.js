@@ -143,7 +143,7 @@ export function setupVideoStream() {
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
     const POLL_MS         = 200;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
-    const DRIFT_THRESH       = 0.20;    // drift threshold before forcing a hard re-seek
+    const DRIFT_THRESH       = 0.30;    // drift threshold before forcing a hard re-seek
     const DRIFT_CHECK_MS     = 1000;    // ms between drift checks
     const DRIFT_COOL_MS      = 2000;    // ms cooldown after a drift correction
     const SEEK_DEBOUNCE      = 300;     // ms debounce for rapid scrub (H.265 keyframe protection)
@@ -157,7 +157,7 @@ export function setupVideoStream() {
     const DRIFT_PLL_GAIN     = 0.3;     // proportion of gap closed per second
     const DRIFT_PLL_MAX      = 1.10;    // max speed-up/down multiplier
     const DRIFT_PLL_COOL_MS  = 1000;    // ms after play-start/hard-seek before PLL may fire (shorter than DRIFT_COOL_MS)
-    const DRIFT_PLL_EVENT_COOL_MS = 200; // ms after manual event (play, scrub, switch) before PLL may fire
+    const DRIFT_PLL_EVENT_COOL_MS = 500; // ms after manual event (play, scrub, switch) before PLL may fire
     const DROP_SUPPRESS_THRESH = 30;   // max dropped frames per drift-check interval before PLL is suppressed (999 = disabled)
     const SEEK_FLUSH_COMP    = 'always';// 'off': standard seeks. 'start': apply Fix 2 on play-start. 'always': apply Fix 2 on scrubs too.
 
