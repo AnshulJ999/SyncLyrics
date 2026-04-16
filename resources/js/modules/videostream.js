@@ -51,11 +51,27 @@ const LS_CROP_BOTTOM        = 'reaper_video_crop_bottom_pct';
 const LS_LYRICS_MODE        = 'reaper_video_lyrics_mode';
 const LS_BG_BLUR            = 'reaper_video_bg_blur';
 const LS_IS_OPEN            = 'reaper_video_is_open';
+const LS_AUTO_BLEND         = 'reaper_video_auto_blend';  // boolean: auto-blend heuristic enabled
 
 // Defaults
 const DEFAULT_FILTERS = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
 const DEFAULT_ZINDEX  = 950;
 const ZINDEX_STEP     = 50;
+
+// ── Auto-Blend: Manual overrides ─────────────────────────────────────────────
+// Filenames listed here override the heuristic. AI-maintained: update when edge cases are found.
+// Keys are basenames only (no path). Values: 'tab' | 'not-tab'.
+// 'tab'     → treat as TAB video regardless of filename pattern (keep blend)
+// 'not-tab' → treat as non-TAB video regardless of filename pattern (revert blend)
+const VIDEO_TYPE_OVERRIDES = {
+    // --- Known TABs that don't follow the "TAB Video" naming convention ---
+    'ERRA - GunGrave Only Riff TAB.mp4': 'tab',
+    'ERRA - Glimpse 2 (Intro TABS tablet).mp4': 'tab',
+    'Intervals - Lock and Key Part 1.mp4': 'tab',
+    'Intervals - Lock and Key Part 2.mp4': 'tab',
+    // --- Known non-TABs that might otherwise be ambiguous ---
+    // (add entries here if a video is incorrectly classified)
+};
 
 export function setupVideoStream() {
     // --- GHOST CLICK SUPPRESSOR FOR TAP PASSTHROUGH ---
@@ -360,6 +376,8 @@ export function setupVideoStream() {
         if (data.file !== syncCurrentFile) {
             syncCurrentFile = data.file;
             syncFileLoading = true;
+            // Auto-blend: evaluate video type for the new file (runs once per distinct path)
+            _runAutoBlendHeuristic(data.file);
 
             // Cancel any in-flight transition from the previous file load so stale handlers
             // can't fire during this load (safety timer → wrong opacity, seeked → phantom fade-in).
@@ -1211,8 +1229,80 @@ export function setupVideoStream() {
 
     if (transparencyBtn) {
         transparencyBtn.addEventListener('click', () => {
+            // Manual override: user explicitly chose a blend mode.
+            // Clear any saved auto-blend revert so the restored blend
+            // on the next TAB file doesn't overwrite the user's choice.
+            _autoBlendSavedMode = null;
             const idx = BLEND_MODES.indexOf(currentBlendMode);
             applyBlendMode(BLEND_MODES[(idx + 1) % BLEND_MODES.length]);
+        });
+    }
+
+    // ── Auto-Blend Heuristic ─────────────────────────────────────────────────
+    // Detects TAB vs non-TAB videos by filename and temporarily reverts blend
+    // mode when a non-TAB video is playing. Runs once per file change only.
+
+    let _autoBlendEnabled   = localStorage.getItem(LS_AUTO_BLEND) === 'true';
+    let _autoBlendSavedMode = null;   // non-null only while currently reverted for a non-TAB
+    let _autoBlendLastFile  = null;   // guard: only run once per unique filepath
+
+    /** Returns 'tab', 'not-tab', or null (genuinely uncertain — do not act). */
+    function _isTabVideo(filepath) {
+        const basename = (filepath || '').replace(/.*[\\/]/, ''); // strip path, keep filename
+        // Check manual override table first (exact basename match)
+        if (Object.prototype.hasOwnProperty.call(VIDEO_TYPE_OVERRIDES, basename)) {
+            return VIDEO_TYPE_OVERRIDES[basename];
+        }
+        const n = basename.toLowerCase();
+        // TAB signals: Anshul's strict naming convention — exact phrase match only
+        if (n.includes('tab video') || n.includes('tabs video')) return 'tab';
+        // Non-TAB signals: strong indicators of full-color performance/cover video
+        if (n.includes('playthrough')) return 'not-tab';
+        // Everything else: genuinely uncertain — do nothing
+        return null;
+    }
+
+    /** Called once per file change. Adjusts blend mode based on video type. */
+    function _runAutoBlendHeuristic(filepath) {
+        if (!_autoBlendEnabled) return;
+        if (filepath === _autoBlendLastFile) return;  // already handled this file
+        _autoBlendLastFile = filepath;
+
+        const type = _isTabVideo(filepath);
+        if (type === 'tab') {
+            // Confirmed TAB: if we were previously reverted, restore the saved blend
+            if (_autoBlendSavedMode !== null) {
+                applyBlendMode(_autoBlendSavedMode);
+                _autoBlendSavedMode = null;
+            }
+            // else: blend is already what the user wants — do nothing
+        } else if (type === 'not-tab') {
+            // Confirmed non-TAB: if blend is active, revert to off and save the mode
+            if (currentBlendMode !== 'off') {
+                _autoBlendSavedMode = currentBlendMode;
+                applyBlendMode('off');
+            }
+            // else: blend is already off — do nothing
+        }
+        // type === null (uncertain): do nothing — never touch blend mode
+    }
+
+    // Auto-blend toggle button (in slider popup, below Debug HUD row)
+    const autoBlendToggleBtn = document.getElementById('vs-auto-blend-toggle');
+    if (autoBlendToggleBtn) {
+        autoBlendToggleBtn.textContent = _autoBlendEnabled ? 'On' : 'Off';
+        autoBlendToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _autoBlendEnabled = !_autoBlendEnabled;
+            localStorage.setItem(LS_AUTO_BLEND, _autoBlendEnabled);
+            autoBlendToggleBtn.textContent = _autoBlendEnabled ? 'On' : 'Off';
+            // If turning OFF while currently reverted: restore the saved blend
+            if (!_autoBlendEnabled && _autoBlendSavedMode !== null) {
+                applyBlendMode(_autoBlendSavedMode);
+                _autoBlendSavedMode = null;
+            }
+            // Reset last-file guard so the heuristic re-evaluates on next poll
+            _autoBlendLastFile = null;
         });
     }
 
