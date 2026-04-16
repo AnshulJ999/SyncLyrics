@@ -462,10 +462,24 @@ export function setupVideoStream() {
             const flushMs = Date.now() - seekStart;
             syncDbgFlushDisplay = flushMs;
             syncDbgFlushClearAt = Date.now() + 8000;
-            video.currentTime = seekTarget + (flushMs / 1000.0) * seekRate;
-            if (isPlayStart) video.play().catch(() => {});
-            syncLastDisruption = Date.now();
-            syncCooldownTarget = DRIFT_PLL_EVENT_COOL_MS;
+            
+            const secondSeekTarget = seekTarget + (flushMs / 1000.0) * seekRate;
+            let secondSeekFired = false;
+            
+            const _onSecondSeekDone = () => {
+                if (secondSeekFired) return;
+                secondSeekFired = true;
+                clearTimeout(_secondFlushTimeout);
+                video.removeEventListener('seeked', _onSecondSeekDone);
+                if (isPlayStart) video.play().catch(() => {});
+                syncLastDisruption = Date.now();
+                syncCooldownTarget = DRIFT_PLL_EVENT_COOL_MS;
+            };
+            
+            const _secondFlushTimeout = setTimeout(_onSecondSeekDone, 1000);
+            video.addEventListener('seeked', _onSecondSeekDone);
+            
+            video.currentTime = secondSeekTarget;
         }
 
         const _flushTimeout = setTimeout(() => {
