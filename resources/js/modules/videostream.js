@@ -1259,9 +1259,11 @@ export function setupVideoStream() {
     function _isTabVideo(filepath) {
         const basename = (filepath || '').replace(/.*[\\/]/, ''); // strip path, keep filename
 
-        // 1. Check manual override table first (exact basename match)
-        if (Object.prototype.hasOwnProperty.call(VIDEO_TYPE_OVERRIDES, basename)) {
-            return VIDEO_TYPE_OVERRIDES[basename];
+        // 1. Check manual override table first (case-insensitive match)
+        for (const key of Object.keys(VIDEO_TYPE_OVERRIDES)) {
+            if (key.toLowerCase() === basename.toLowerCase()) {
+                return VIDEO_TYPE_OVERRIDES[key];
+            }
         }
 
         const n = basename.toLowerCase();
