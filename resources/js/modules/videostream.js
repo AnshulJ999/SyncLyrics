@@ -1200,15 +1200,22 @@ export function setupVideoStream() {
     const BLEND_MODES = ['off', 'multiply', 'screen'];
     let currentBlendMode = 'off';
 
-    function applyBlendMode(mode) {
+    // ── Helper: Apply blend mode CSS only (no localStorage save)
+    // Used by auto-blend heuristic to change runtime state without persisting preference.
+    function _setBlendCSS(mode) {
         currentBlendMode = mode;
         overlay.classList.remove('vs-multiply', 'vs-screen');
         if (mode === 'multiply') overlay.classList.add('vs-multiply');
         if (mode === 'screen')   overlay.classList.add('vs-screen');
-        localStorage.setItem(LS_BLEND_MODE, mode);
         updateBlendBtn(mode);
         restoreFiltersForMode();
         restoreOpacityForMode();
+    }
+
+    function applyBlendMode(mode) {
+        // Apply CSS changes + persist preference to localStorage
+        _setBlendCSS(mode);
+        localStorage.setItem(LS_BLEND_MODE, mode);
     }
 
     function updateBlendBtn(mode) {
@@ -1246,45 +1253,70 @@ export function setupVideoStream() {
     let _autoBlendSavedMode = null;   // non-null only while currently reverted for a non-TAB
     let _autoBlendLastFile  = null;   // guard: only run once per unique filepath
 
-    /** Returns 'tab', 'not-tab', or null (genuinely uncertain — do not act). */
+    /** Returns 'tab', 'not-tab', or null (genuinely uncertain — default to OFF).
+     *  Priority: Manual overrides > TAB signals > Non-TAB signals > default to 'not-tab'
+     */
     function _isTabVideo(filepath) {
         const basename = (filepath || '').replace(/.*[\\/]/, ''); // strip path, keep filename
-        // Check manual override table first (exact basename match)
+
+        // 1. Check manual override table first (exact basename match)
         if (Object.prototype.hasOwnProperty.call(VIDEO_TYPE_OVERRIDES, basename)) {
             return VIDEO_TYPE_OVERRIDES[basename];
         }
+
         const n = basename.toLowerCase();
-        // TAB signals: Anshul's strict naming convention — exact phrase match only
+
+        // 2. TAB signals: Anshul's strict naming convention
         if (n.includes('tab video') || n.includes('tabs video')) return 'tab';
-        // Non-TAB signals: strong indicators of full-color performance/cover video
-        if (n.includes('playthrough')) return 'not-tab';
-        // Everything else: genuinely uncertain — do nothing
-        return null;
+
+        // 3. Non-TAB signals: strong indicators of full-color performance/cover video
+        // YouTube ID pattern: [11 alphanumeric chars in brackets]
+        if (/\[[a-zA-Z0-9_-]{11}\]/.test(n)) return 'not-tab';
+        // Prefixes and keywords indicating non-TAB
+        const nonTabPatterns = [
+            'playthrough',
+            'guitar cover',
+            '(cover)',
+            'jackson guitars',
+            'y2mate',
+            'youtube_',
+            'lesson',
+            'tutorial'
+        ];
+        if (nonTabPatterns.some(pat => n.includes(pat))) return 'not-tab';
+
+        // 4. Uncertain: default to 'not-tab' (safer for full-color videos)
+        // Better to briefly lose blend on a weird-named TAB than show blend on full-color video
+        return 'not-tab';
     }
 
-    /** Called once per file change. Adjusts blend mode based on video type. */
+    /** Called once per file change. Adjusts blend mode CSS based on video type.
+     *  Only changes runtime CSS, never persists to localStorage.
+     *  User's preference is preserved in background and restored when TAB video loads.
+     */
     function _runAutoBlendHeuristic(filepath) {
         if (!_autoBlendEnabled) return;
         if (filepath === _autoBlendLastFile) return;  // already handled this file
         _autoBlendLastFile = filepath;
 
         const type = _isTabVideo(filepath);
+
         if (type === 'tab') {
-            // Confirmed TAB: if we were previously reverted, restore the saved blend
-            if (_autoBlendSavedMode !== null) {
-                applyBlendMode(_autoBlendSavedMode);
-                _autoBlendSavedMode = null;
-            }
-            // else: blend is already what the user wants — do nothing
+            // Confirmed TAB: restore user's desired preference (from localStorage)
+            const savedPreference = localStorage.getItem(LS_BLEND_MODE);
+            const desiredMode = BLEND_MODES.includes(savedPreference)
+                ? savedPreference
+                : (savedPreference === 'true' ? 'multiply' : 'off');
+            _setBlendCSS(desiredMode);
+            _autoBlendSavedMode = null;  // clear any previous revert state
         } else if (type === 'not-tab') {
-            // Confirmed non-TAB: if blend is active, revert to off and save the mode
+            // Confirmed non-TAB or uncertain: suppress blend (safer default)
+            // Only revert if blend is currently active
             if (currentBlendMode !== 'off') {
-                _autoBlendSavedMode = currentBlendMode;
-                applyBlendMode('off');
+                _setBlendCSS('off');
+                // User's preference remains saved in localStorage; restore it later if a TAB loads
             }
-            // else: blend is already off — do nothing
         }
-        // type === null (uncertain): do nothing — never touch blend mode
     }
 
     // Auto-blend toggle button (in slider popup, below Debug HUD row)
@@ -1296,13 +1328,12 @@ export function setupVideoStream() {
             _autoBlendEnabled = !_autoBlendEnabled;
             localStorage.setItem(LS_AUTO_BLEND, _autoBlendEnabled);
             autoBlendToggleBtn.textContent = _autoBlendEnabled ? 'On' : 'Off';
-            // If turning OFF while currently reverted: restore the saved blend
-            if (!_autoBlendEnabled && _autoBlendSavedMode !== null) {
-                applyBlendMode(_autoBlendSavedMode);
-                _autoBlendSavedMode = null;
-            }
-            // Reset last-file guard so the heuristic re-evaluates on next poll
+            // Reset last-file guard so heuristic re-evaluates
             _autoBlendLastFile = null;
+            // Immediately evaluate current video to reflect toggle change
+            if (syncCurrentFile) {
+                _runAutoBlendHeuristic(syncCurrentFile);
+            }
         });
     }
 
