@@ -109,8 +109,9 @@ class ReaperDAWSource(BaseMetadataSource):
 
     @classmethod
     def capabilities(cls) -> SourceCapability:
-        return (SourceCapability.METADATA | 
-                SourceCapability.PLAYBACK_CONTROL)
+        return (SourceCapability.METADATA |
+                SourceCapability.PLAYBACK_CONTROL |
+                SourceCapability.SEEK)
 
     def _load_json(self, path: str, default: Any) -> Any:
         try:
@@ -234,6 +235,23 @@ class ReaperDAWSource(BaseMetadataSource):
             self._cmd_sock.sendto(payload, ("127.0.0.1", COMMAND_UDP_PORT))
         except Exception as e:
             logger.error(f"Failed to send REAPER seek: {e}")
+
+    async def seek(self, position_ms: int) -> bool:
+        """
+        Called by the generic seek router in server.py when the progress bar is dragged.
+        position_ms is in song-time milliseconds (relative to song start, not raw REAPER timeline).
+        Converts to raw REAPER timeline position by adding the current offset and sends via UDP.
+        """
+        try:
+            song_time_sec = position_ms / 1000.0
+            reaper_pos = song_time_sec + self._current_offset_sec
+            if reaper_pos < 0:
+                reaper_pos = 0.0
+            self._send_seek(reaper_pos)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to seek REAPER to {position_ms}ms: {e}")
+            return False
 
     def _get_project_key(self, filepath: str) -> str:
         if not filepath:
