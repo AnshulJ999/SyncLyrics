@@ -66,7 +66,8 @@ import {
     toggleArtOnlyMode,
     setupControlsMenu,
     setupVolumePopup,
-    updatePlaybackState
+    updatePlaybackState,
+    setReaperSeekFn
 } from './modules/controls.js';
 
 // Background (Level 2)
@@ -133,12 +134,15 @@ import { setupVideoStream } from './modules/videostream.js';
 import { setupHomeAssistant } from './modules/habrowser.js';
 
 // REAPER DAW Integration (Level 2)
-import { setupReaperUI, isReaperConnected } from './modules/reaper.js';
+import { setupReaperUI, isReaperConnected, seekReaper } from './modules/reaper.js';
 
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
 setSlideshowFunctions(startSlideshow, stopSlideshow);
+
+// Connect seekReaper into controls (avoids circular import)
+setReaperSeekFn(seekReaper);
 
 // Connect pause function to artZoom for manual browsing
 setPauseSlideshowFn(pauseSlideshow);

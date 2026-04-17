@@ -445,7 +445,7 @@ class MusicAssistantSource(BaseMetadataSource):
                 global _last_no_player_log
                 now = time.time()
                 if now - _last_no_player_log >= LOG_THROTTLE_INTERVAL:
-                    logger.debug("No Music Assistant player available")
+                #   logger.debug("No Music Assistant player available")
                     _last_no_player_log = now
                 return None
             

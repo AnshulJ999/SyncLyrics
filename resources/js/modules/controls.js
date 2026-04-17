@@ -55,6 +55,17 @@ let previewPositionMs = null;
 let seekTooltip = null;
 const SEEK_DEBOUNCE_MS = 150;  // Match waveform (faster since drag prevents spam)
 
+// Injected by main.js to avoid circular import (controls -> reaper -> controls)
+let _reaperSeekFn = null;
+
+/**
+ * Injected by main.js at startup. Called with seekReaper from reaper.js.
+ * @param {Function} fn - async function(songTimeSec: number)
+ */
+export function setReaperSeekFn(fn) {
+    _reaperSeekFn = fn;
+}
+
 // ========== VISUAL MODE CALLBACKS ==========
 // Stored during attachControlHandlers for use by toggleArtOnlyMode
 let _enterVisualModeFn = null;
@@ -100,6 +111,11 @@ function debouncedSeek(positionMs) {
     seekTimeout = setTimeout(async () => {
         console.log(`[ProgressBar] Seeking to ${formatTime(positionMs / 1000)} (${positionMs}ms)`);
         try {
+            // REAPER uses a dedicated seek endpoint (song-time in seconds, not ms)
+            if (lastTrackInfo?.source === 'reaper_daw' && _reaperSeekFn) {
+                await _reaperSeekFn(positionMs / 1000);
+                return;
+            }
             const result = await seekToPosition(positionMs);
             if (result.error) {
                 showToast('Seek failed', 'error');

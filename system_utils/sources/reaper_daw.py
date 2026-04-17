@@ -225,6 +225,16 @@ class ReaperDAWSource(BaseMetadataSource):
         self._send_command(PREV_MARKER_ACTION)
         return True
 
+    def _send_seek(self, reaper_pos: float):
+        """Send a seek command to the companion script.
+        reaper_pos is the raw REAPER timeline position (song_time + offset_sec).
+        """
+        try:
+            payload = json.dumps({"seek": round(reaper_pos, 4)}).encode("utf-8")
+            self._cmd_sock.sendto(payload, ("127.0.0.1", COMMAND_UDP_PORT))
+        except Exception as e:
+            logger.error(f"Failed to send REAPER seek: {e}")
+
     def _get_project_key(self, filepath: str) -> str:
         if not filepath:
             return ""

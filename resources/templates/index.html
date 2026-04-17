@@ -605,6 +605,10 @@
                     <span class="status-value" id="reaper-bpm">—</span>
                 </div>
                 <div class="status-row">
+                    <span class="status-label">Time Sig</span>
+                    <span class="status-value" id="reaper-time-sig">—</span>
+                </div>
+                <div class="status-row">
                     <span class="status-label">Key</span>
                     <span class="status-value" id="reaper-key">—</span>
                 </div>
@@ -627,9 +631,12 @@
             <!-- Offset Nudging Controls -->
             <div class="audio-source-section">
                 <h4>Offset Nudging</h4>
-                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
-                    <button class="quick-start-btn" id="reaper-offset-minus" style="flex: 1; background: rgba(255,255,255,0.1);">-0.5s</button>
-                    <button class="quick-start-btn" id="reaper-offset-plus" style="flex: 1; background: rgba(255,255,255,0.1);">+0.5s</button>
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                    <button class="quick-start-btn" id="reaper-offset-minus" style="background: rgba(255,255,255,0.1);" title="Nudge -0.5s">-0.5s</button>
+                    <button class="quick-start-btn" id="reaper-offset-minus-fine" style="background: rgba(255,255,255,0.07);" title="Nudge -0.1s">-0.1s</button>
+                    <span id="reaper-offset-nudge-value" style="font-size: 0.95rem; font-weight: 600; color: #1db954; min-width: 60px; text-align: center;">0.00s</span>
+                    <button class="quick-start-btn" id="reaper-offset-plus-fine" style="background: rgba(255,255,255,0.07);" title="Nudge +0.1s">+0.1s</button>
+                    <button class="quick-start-btn" id="reaper-offset-plus" style="background: rgba(255,255,255,0.1);" title="Nudge +0.5s">+0.5s</button>
                 </div>
             </div>
 

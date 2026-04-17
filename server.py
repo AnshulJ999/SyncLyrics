@@ -3708,6 +3708,9 @@ async def get_reaper_status():
     proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("project", ""))
     cache_entry = reaper_src._metadata_cache.get(proj_key, {}) if proj_key else {}
     _state_names = {0: "Stopped", 1: "Playing", 2: "Paused", 4: "Recording"}
+    # Prefer live values from companion telemetry; fall back to static metadata-cache
+    live_bpm = reaper_src._telemetry.get("live_bpm") or cache_entry.get("songBPM")
+    live_time_sig = reaper_src._telemetry.get("live_time_sig") or cache_entry.get("projectTimeSig")
     return jsonify({
         "connected": reaper_src._last_heartbeat > 0 and (time.time() - reaper_src._last_heartbeat) < 5.0,
         "project": proj_key,
@@ -3718,11 +3721,13 @@ async def get_reaper_status():
         "is_playing": state in (1, 4),
         "pos": reaper_src._telemetry.get("pos", 0.0),
         "state_text": _state_names.get(state, "Unknown"),
-        "bpm": cache_entry.get("songBPM"),
+        "bpm": live_bpm,
         "key": cache_entry.get("songKey"),
+        "time_sig": live_time_sig,
         "calibration_enabled": not DISABLE_CALIBRATION_PIPELINE,
         "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done(),
     })
+
 
 @app.route('/api/reaper/calibrate', methods=['POST'])
 async def trigger_reaper_calibration():
@@ -3810,3 +3815,24 @@ async def send_reaper_command():
         return jsonify({"error": "Unknown command"}), 400
         
     return jsonify({"success": True})
+
+@app.route('/api/reaper/seek', methods=['POST'])
+async def seek_reaper():
+    from system_utils.sources import get_source
+    reaper_src = get_source("reaper_daw")
+    if not reaper_src:
+        return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+
+    data = await request.get_json()
+    song_time = data.get("song_time")
+    if song_time is None:
+        return jsonify({"error": "Missing song_time"}), 400
+
+    # Convert song-time back to raw REAPER timeline position
+    reaper_pos = float(song_time) + reaper_src._current_offset_sec
+    if reaper_pos < 0:
+        reaper_pos = 0.0
+
+    reaper_src._send_seek(reaper_pos)
+    return jsonify({"success": True, "reaper_pos": reaper_pos})
+

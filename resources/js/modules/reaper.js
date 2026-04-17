@@ -87,6 +87,8 @@ export function setupReaperUI() {
 
     // Offset nudging
     document.getElementById('reaper-offset-minus')?.addEventListener('click', () => adjustOffset(-0.5));
+    document.getElementById('reaper-offset-minus-fine')?.addEventListener('click', () => adjustOffset(-0.1));
+    document.getElementById('reaper-offset-plus-fine')?.addEventListener('click', () => adjustOffset(0.1));
     document.getElementById('reaper-offset-plus')?.addEventListener('click', () => adjustOffset(0.5));
 
     // Auto-calibration
@@ -121,8 +123,10 @@ async function updateStatus() {
             document.getElementById('reaper-album-name').textContent = '—';
             document.getElementById('reaper-state-text').textContent = '—';
             document.getElementById('reaper-offset-value').textContent = '0.00s';
+            document.getElementById('reaper-offset-nudge-value').textContent = '0.00s';
             document.getElementById('reaper-raw-pos').textContent = '—';
             document.getElementById('reaper-bpm').textContent = '—';
+            document.getElementById('reaper-time-sig').textContent = '—';
             document.getElementById('reaper-key').textContent = '—';
             return;
         }
@@ -137,8 +141,10 @@ async function updateStatus() {
         document.getElementById('reaper-album-name').textContent = data.album || '—';
         document.getElementById('reaper-state-text').textContent = data.state_text || '—';
         document.getElementById('reaper-offset-value').textContent = `${(data.offset ?? 0).toFixed(2)}s`;
+        document.getElementById('reaper-offset-nudge-value').textContent = `${(data.offset ?? 0).toFixed(2)}s`;
         document.getElementById('reaper-raw-pos').textContent = data.pos != null ? `${data.pos.toFixed(2)}s` : '—';
         document.getElementById('reaper-bpm').textContent = data.bpm != null ? Math.round(data.bpm) : '—';
+        document.getElementById('reaper-time-sig').textContent = data.time_sig || '—';
         document.getElementById('reaper-key').textContent = data.key || '—';
 
         const calibratingRow = document.getElementById('reaper-calibrating-row');
@@ -168,12 +174,31 @@ async function adjustOffset(delta) {
         });
         const data = await res.json();
         if (data.success) {
-            document.getElementById('reaper-offset-value').textContent = `${data.new_offset.toFixed(2)}s`;
+            const offsetStr = `${data.new_offset.toFixed(2)}s`;
+            document.getElementById('reaper-offset-value').textContent = offsetStr;
+            document.getElementById('reaper-offset-nudge-value').textContent = offsetStr;
         } else {
             console.warn('REAPER offset nudge failed:', data.error);
         }
     } catch (e) {
         console.error(e);
+    }
+}
+
+/**
+ * Seek REAPER to a specific song-time position (seconds).
+ * Converts from song-time back to REAPER timeline position by adding the current offset.
+ * @param {number} songTimeSec - desired position in song time (not raw REAPER timeline)
+ */
+export async function seekReaper(songTimeSec) {
+    try {
+        await fetch('/api/reaper/seek', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ song_time: songTimeSec })
+        });
+    } catch (e) {
+        console.error('REAPER seek error:', e);
     }
 }
 
