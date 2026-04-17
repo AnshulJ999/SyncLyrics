@@ -3704,7 +3704,7 @@ async def get_reaper_status():
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
         
     return jsonify({
-        "project": reaper_src._get_project_key(reaper_src._telemetry.get("file", "")),
+        "project": reaper_src._get_project_key(reaper_src._telemetry.get("project", "")),
         "song": reaper_src._current_song_meta.get("title", ""),
         "artist": reaper_src._current_song_meta.get("artist", ""),
         "offset": reaper_src._current_offset_sec,
@@ -3720,7 +3720,7 @@ async def trigger_reaper_calibration():
     if not reaper_src:
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
         
-    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("file", ""))
+    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("project", ""))
     pos = reaper_src._telemetry.get("pos", 0.0)
     
     if not proj_key:
@@ -3742,7 +3742,7 @@ async def adjust_reaper_offset():
     data = await request.get_json()
     delta = data.get("delta", 0.0)
     
-    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("file", ""))
+    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("project", ""))
     song_title = reaper_src._current_song_meta.get("title", "")
     
     if not proj_key or not song_title:
