@@ -3699,6 +3699,7 @@ async def get_random_slideshow_images():
 @app.route('/api/reaper/status', methods=['GET'])
 async def get_reaper_status():
     from system_utils.sources import get_source
+    from system_utils.sources.reaper_daw import DISABLE_CALIBRATION_PIPELINE
     reaper_src = get_source("reaper_daw")
     if not reaper_src:
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
@@ -3719,15 +3720,23 @@ async def get_reaper_status():
         "state_text": _state_names.get(state, "Unknown"),
         "bpm": cache_entry.get("songBPM"),
         "key": cache_entry.get("songKey"),
+        "calibration_enabled": not DISABLE_CALIBRATION_PIPELINE,
         "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done(),
     })
 
 @app.route('/api/reaper/calibrate', methods=['POST'])
 async def trigger_reaper_calibration():
     from system_utils.sources import get_source
+    from system_utils.sources.reaper_daw import DISABLE_CALIBRATION_PIPELINE
     reaper_src = get_source("reaper_daw")
     if not reaper_src:
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+
+    if DISABLE_CALIBRATION_PIPELINE:
+        return jsonify({
+            "success": False,
+            "message": "Calibration is disabled in REAPER DAW mode",
+        }), 400
         
     proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("project", ""))
     pos = reaper_src._telemetry.get("pos", 0.0)

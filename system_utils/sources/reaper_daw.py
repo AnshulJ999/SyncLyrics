@@ -171,6 +171,13 @@ class ReaperDAWSource(BaseMetadataSource):
             self._current_song_meta = {}
             return
 
+        if DISABLE_CALIBRATION_PIPELINE:
+            # Keep the old calibration path inert: no lingering task and no new
+            # task scheduling from telemetry updates.
+            if self._calibration_task and not self._calibration_task.done():
+                self._calibration_task.cancel()
+            self._calibration_task = None
+
         self._telemetry = payload
         self._last_heartbeat = time.time()
 
@@ -188,7 +195,8 @@ class ReaperDAWSource(BaseMetadataSource):
             logger.info(f"REAPER project changed -> '{incoming_project}': cleared offset/meta")
 
         # Check if we need to auto-calibrate offsets
-        self._check_auto_calibration()
+        if not DISABLE_CALIBRATION_PIPELINE:
+            self._check_auto_calibration()
 
     def _send_command(self, cmd_val: int):
         try:
@@ -227,6 +235,9 @@ class ReaperDAWSource(BaseMetadataSource):
 
     def _check_auto_calibration(self):
         """Determines if we need to run Audio Recognition to find the timeline offset."""
+        if DISABLE_CALIBRATION_PIPELINE:
+            return
+
         # NOTE: "project" is the REAPER project basename (e.g. "505 New.rpp").
         # "file" is the currently active *video* file path and is None for audio-only projects.
         if not self._telemetry.get("project"):

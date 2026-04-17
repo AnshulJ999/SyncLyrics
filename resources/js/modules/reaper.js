@@ -117,6 +117,13 @@ async function updateStatus() {
         if (!response.ok) {
             document.getElementById('reaper-project-name').textContent = 'Not Connected';
             document.getElementById('reaper-song-name').textContent = '—';
+            document.getElementById('reaper-artist-name').textContent = '—';
+            document.getElementById('reaper-album-name').textContent = '—';
+            document.getElementById('reaper-state-text').textContent = '—';
+            document.getElementById('reaper-offset-value').textContent = '0.00s';
+            document.getElementById('reaper-raw-pos').textContent = '—';
+            document.getElementById('reaper-bpm').textContent = '—';
+            document.getElementById('reaper-key').textContent = '—';
             return;
         }
         const data = await response.json();
@@ -137,6 +144,13 @@ async function updateStatus() {
         const calibratingRow = document.getElementById('reaper-calibrating-row');
         if (calibratingRow) {
             calibratingRow.style.display = data.calibrating ? 'flex' : 'none';
+        }
+
+        const calibrateBtn = document.getElementById('reaper-btn-calibrate');
+        if (calibrateBtn) {
+            const enabled = data.calibration_enabled !== false;
+            calibrateBtn.disabled = !enabled;
+            calibrateBtn.title = enabled ? 'Force auto-calibration' : 'Calibration disabled in REAPER DAW mode';
         }
     } catch (e) {
         console.error('REAPER UI Error:', e);
@@ -165,7 +179,12 @@ async function adjustOffset(delta) {
 
 async function triggerCalibration() {
     try {
-        await fetch('/api/reaper/calibrate', { method: 'POST' });
+        const res = await fetch('/api/reaper/calibrate', { method: 'POST' });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            console.warn('REAPER calibration request rejected:', data.message || data.error || `HTTP ${res.status}`);
+            return;
+        }
         updateStatus();
     } catch (e) {
         console.error(e);
