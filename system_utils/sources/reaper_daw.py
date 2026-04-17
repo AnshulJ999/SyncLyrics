@@ -17,7 +17,7 @@ COMMAND_UDP_PORT = 9065          # Port we send transport commands to
 SAFETY_TIMEOUT = 2.5             # Seconds without heartbeat before we consider REAPER gone
 
 # ─── Auto-Calibration ─────────────────────────────────────────────────────────
-AUTO_CALIBRATION_CYCLES = 3                      # Number of Shazam cycles to average
+AUTO_CALIBRATION_CYCLES = 1                      # Number of Shazam cycles to average
 CALIBRATION_AGREEMENT_TOLERANCE_SEC = 1.0        # Max spread of offsets (seconds) to accept
 CALIBRATION_FAIL_COOLDOWN_SEC = 300              # Re-attempt failed calibrations after this many seconds
 CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles must agree on song identity
@@ -276,7 +276,7 @@ class ReaperDAWSource(BaseMetadataSource):
         - On failure, adds proj_key to negative cache to prevent hammering.
         """
         if DISABLE_CALIBRATION_PIPELINE:
-            logger.debug("Calibration pipeline disabled (DISABLE_CALIBRATION_PIPELINE=True) — skipping recognition")
+            # logger.debug("Calibration pipeline disabled (DISABLE_CALIBRATION_PIPELINE=True) — skipping recognition")
             return
 
         logger.info(f"Starting auto-calibration for '{proj_key}' at REAPER pos {initial_pos:.2f}s")
