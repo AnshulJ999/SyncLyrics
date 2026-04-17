@@ -71,7 +71,7 @@
     "media_source.music_assistant.enabled": true,
     "media_source.music_assistant.priority": -1,
     "media_source.reaper_daw.enabled": true,
-    "media_source.reaper_daw.priority": 0,
+    "media_source.reaper_daw.priority": -1,
     "media_source.spicetify.enabled": true,
     "media_source.spicetify.priority": 0,
     "media_source.spotify.enabled": true,
