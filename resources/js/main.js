@@ -133,7 +133,7 @@ import { setupVideoStream } from './modules/videostream.js';
 import { setupHomeAssistant } from './modules/habrowser.js';
 
 // REAPER DAW Integration (Level 2)
-import { setupReaperUI } from './modules/reaper.js';
+import { setupReaperUI, isReaperConnected } from './modules/reaper.js';
 
 // ========== CONNECT MODULES ==========
 
@@ -627,10 +627,11 @@ async function updateLoop() {
             resetSpectrum();
         }
 
-        // Toggle REAPER DAW button visibility based on source
+        // Toggle REAPER DAW button visibility: show whenever the companion heartbeat is
+        // active (Option B), not just when reaper_daw is the winning source.
         const reaperBtn = document.getElementById('btn-reaper-daw');
         if (reaperBtn) {
-            if (currentSource === 'reaper_daw') {
+            if (isReaperConnected()) {
                 reaperBtn.style.display = 'flex';
                 const haBtn = document.getElementById('btn-home-assistant');
                 if (haBtn && haBtn.style.display === 'none') {

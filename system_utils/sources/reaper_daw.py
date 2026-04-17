@@ -23,7 +23,7 @@ CALIBRATION_FAIL_COOLDOWN_SEC = 300              # Re-attempt failed calibration
 CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles must agree on song identity
 
 # ─── REAPER Actions (editable) ────────────────────────────────────────────────
-PLAY_PAUSE_ACTION = 40044
+PLAY_PAUSE_ACTION = 40044 # 40044 is Play/Stop. 40073 is Play/Pause.
 NEXT_MARKER_ACTION = 40173
 PREV_MARKER_ACTION = 40172
 
@@ -79,6 +79,8 @@ class ReaperDAWSource(BaseMetadataSource):
 
         self._current_offset_sec = 0.0
         self._current_song_meta: Dict[str, Any] = {}
+        # B2: Track project to detect switches and clear stale state immediately.
+        self._last_seen_project: str = ""
 
     @classmethod
     def get_config(cls) -> SourceConfig:
@@ -134,10 +136,26 @@ class ReaperDAWSource(BaseMetadataSource):
         # Companion cleanup payload: state=0 AND no project. Clear state.
         if payload.get("state") == 0 and not payload.get("project"):
             self._telemetry = {}
+            self._last_seen_project = ""
+            self._current_offset_sec = 0.0
+            self._current_song_meta = {}
             return
 
         self._telemetry = payload
         self._last_heartbeat = time.time()
+
+        # B2: Detect project change — clear stale offset/meta immediately so we don't
+        # serve lyrics from the previous project while calibration runs for the new one.
+        incoming_project = self._get_project_key(payload.get("project", ""))
+        if incoming_project and incoming_project != self._last_seen_project:
+            self._last_seen_project = incoming_project
+            self._current_offset_sec = 0.0
+            self._current_song_meta = {}
+            # Also cancel any in-flight calibration for the old project.
+            if self._calibration_task and not self._calibration_task.done():
+                self._calibration_task.cancel()
+                self._calibration_task = None
+            logger.info(f"REAPER project changed -> '{incoming_project}': cleared offset/meta")
 
         # Check if we need to auto-calibrate offsets
         self._check_auto_calibration()
@@ -214,16 +232,20 @@ class ReaperDAWSource(BaseMetadataSource):
             self._current_song_meta = active_song
             return
 
-        # 2. No offset found. Do we have cached metadata? Use with offset=0 as a starting guess.
+        # 2. No offset found in DB. Check metadata cache for artist/title identity.
+        # IMPORTANT: We do NOT return here. The cache gives us artist/title for immediate display,
+        # but calibration MUST still run to find the real timeline offset. Assuming 0.0 is wrong
+        # for any project where the song doesn't start at the very beginning of the timeline.
         if proj_key in self._metadata_cache:
             cache_data = self._metadata_cache[proj_key]
             if cache_data.get("matchedArtist") and cache_data.get("matchedTitle"):
-                self._current_offset_sec = 0.0
-                self._current_song_meta = {
-                    "artist": cache_data.get("matchedArtist"),
-                    "title": cache_data.get("matchedTitle"),
-                }
-                return
+                # Only update meta if not already set (avoid re-creating dict every 50ms)
+                if not self._current_song_meta.get("title"):
+                    self._current_song_meta = {
+                        "artist": cache_data.get("matchedArtist"),
+                        "title": cache_data.get("matchedTitle"),
+                    }
+                # Fall through to calibration — offset still unknown
 
         # 3. No offset and no metadata. Trigger Audio Recognition (with cooldown + single-flight guard).
         if self._calibration_task is not None and not self._calibration_task.done():

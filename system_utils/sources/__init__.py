@@ -36,6 +36,7 @@ from logging_config import get_logger
 from . import linux            # noqa: F401
 from . import macos            # noqa: F401
 from . import music_assistant  # noqa: F401
+from . import reaper_daw       # noqa: F401
 
 logger = get_logger(__name__)
 

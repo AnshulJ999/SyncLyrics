@@ -3704,11 +3704,12 @@ async def get_reaper_status():
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
         
     return jsonify({
+        "connected": reaper_src._last_heartbeat > 0 and (time.time() - reaper_src._last_heartbeat) < 5.0,
         "project": reaper_src._get_project_key(reaper_src._telemetry.get("project", "")),
         "song": reaper_src._current_song_meta.get("title", ""),
         "artist": reaper_src._current_song_meta.get("artist", ""),
         "offset": reaper_src._current_offset_sec,
-        "is_playing": reaper_src._telemetry.get("state") == 1,
+        "is_playing": reaper_src._telemetry.get("state") in (1, 4),
         "pos": reaper_src._telemetry.get("pos", 0.0),
         "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done()
     })
@@ -3749,14 +3750,28 @@ async def adjust_reaper_offset():
         return jsonify({"error": "No active project/song"}), 400
         
     new_offset = reaper_src._current_offset_sec + delta
-    
-    if proj_key in reaper_src._projects_db and "songs" in reaper_src._projects_db[proj_key] and song_title in reaper_src._projects_db[proj_key]["songs"]:
-        reaper_src._projects_db[proj_key]["songs"][song_title]["offset_sec"] = new_offset
-        reaper_src._save_json(reaper_src._projects_db_path, reaper_src._projects_db)
-        reaper_src._current_offset_sec = new_offset
-        return jsonify({"success": True, "new_offset": new_offset})
+
+    # B3: Auto-create the DB entry if this song was matched via metadata-cache
+    # (it won't be in reaper_projects.json yet, so nudging would 404 without this).
+    if proj_key not in reaper_src._projects_db:
+        reaper_src._projects_db[proj_key] = {"songs": {}}
+    if "songs" not in reaper_src._projects_db[proj_key]:
+        reaper_src._projects_db[proj_key]["songs"] = {}
+
+    songs = reaper_src._projects_db[proj_key]["songs"]
+    if song_title not in songs:
+        # First nudge for this song: create entry from current meta.
+        songs[song_title] = {
+            "artist": reaper_src._current_song_meta.get("artist", "Unknown Artist"),
+            "offset_sec": new_offset,
+        }
+        logger.info(f"REAPER: created new DB entry for '{proj_key}' / '{song_title}' with offset {new_offset:.2f}s")
     else:
-        return jsonify({"error": "Song not found in DB"}), 404
+        songs[song_title]["offset_sec"] = new_offset
+
+    reaper_src._save_json(reaper_src._projects_db_path, reaper_src._projects_db)
+    reaper_src._current_offset_sec = new_offset
+    return jsonify({"success": True, "new_offset": new_offset})
         
 @app.route('/api/reaper/command', methods=['POST'])
 async def send_reaper_command():
