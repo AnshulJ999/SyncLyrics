@@ -14,12 +14,12 @@ logger = get_logger("reaper_daw")
 # ─── UDP / Timing ─────────────────────────────────────────────────────────────
 REAPER_UDP_PORT = 9064           # Port we listen on for telemetry from companion
 COMMAND_UDP_PORT = 9065          # Port we send transport commands to
-SAFETY_TIMEOUT = 2.5             # Seconds without heartbeat before we consider REAPER gone
+SAFETY_TIMEOUT = 10             # Seconds without heartbeat before we consider REAPER gone
 
 # ─── Auto-Calibration ─────────────────────────────────────────────────────────
 AUTO_CALIBRATION_CYCLES = 1                      # Number of Shazam cycles to average
-CALIBRATION_AGREEMENT_TOLERANCE_SEC = 1.0        # Max spread of offsets (seconds) to accept
-CALIBRATION_FAIL_COOLDOWN_SEC = 300              # Re-attempt failed calibrations after this many seconds
+CALIBRATION_AGREEMENT_TOLERANCE_SEC = 5.0        # Max spread of offsets (seconds) to accept
+CALIBRATION_FAIL_COOLDOWN_SEC = 60              # Re-attempt failed calibrations after this many seconds
 CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles must agree on song identity
 
 # ─── Feature Flag ─────────────────────────────────────────────────────────────
