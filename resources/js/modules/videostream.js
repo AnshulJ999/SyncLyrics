@@ -21,7 +21,7 @@
 
 const STREAM_PORT           = 9062;
 const STREAM_STATUS_POLL_MS = 3000;
-const STANDBY_DELAY_MS      = 20000;
+const STANDBY_DELAY_MS      = 15000;
 // Hold-to-drag: how long finger must be down before drag activates.
 // Taps shorter than this pass through to underlying elements.
 // Increase to 250 if accidental drags occur; decrease to 150 for snappier dragging.
@@ -163,7 +163,7 @@ export function setupVideoStream() {
     const DRIFT_CHECK_MS     = 1000;    // ms between drift checks
     const DRIFT_COOL_MS      = 2000;    // ms cooldown after a drift correction
     const SEEK_DEBOUNCE      = 300;     // ms debounce for rapid scrub (H.265 keyframe protection)
-    const BLACK_TIMEOUT      = 15.0;    // seconds of no-video before entering standby
+    const BLACK_TIMEOUT      = 5.0;    // seconds of no-video before entering standby
     const PLAY_SEEK_THRESH   = 0.500;   // min drift (sec) required to force a seek when unpausing (smooth startup)
 
     // Slew-Rate PLL constants
@@ -356,6 +356,7 @@ export function setupVideoStream() {
             if (!syncBlackHandled && (Date.now() - syncNoVideoSince) / 1000 >= BLACK_TIMEOUT) {
                 syncBlackHandled = true;
                 video.pause();
+                video.style.opacity = '0'; // instantly hide the frozen end-frame to reveal lyrics smoothly
                 queueStandby();
             }
             syncLastState = data;
@@ -584,6 +585,10 @@ export function setupVideoStream() {
     function checkDrift() {
         const isPlaying = syncLastState && ((syncLastState.state & 1) || (syncLastState.state & 4));
         if (!syncActive || !syncLastState || !isPlaying)    return;
+        
+        // Guard: Do not attempt to force playback if we intentionally have no active video
+        if (!syncLastState.file || syncLastState.src_time === null) return;
+        
         if (video.readyState < 2)                           return; // not enough data yet
 
         // Self-heal: REAPER is playing but video.play() was silently aborted (swallowed by
