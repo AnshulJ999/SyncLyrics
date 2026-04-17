@@ -22,6 +22,13 @@ CALIBRATION_AGREEMENT_TOLERANCE_SEC = 1.0        # Max spread of offsets (second
 CALIBRATION_FAIL_COOLDOWN_SEC = 300              # Re-attempt failed calibrations after this many seconds
 CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles must agree on song identity
 
+# ─── Feature Flag ─────────────────────────────────────────────────────────────
+# Master kill-switch for the audio recognition calibration pipeline.
+# Set True to disable ALL calibration (auto AND manual HUD button).
+# Identity still resolves from metadata-cache.json; offset via nudge buttons only.
+# Flip to False when ready to re-enable and debug calibration.
+DISABLE_CALIBRATION_PIPELINE = True
+
 # ─── REAPER Actions (editable) ────────────────────────────────────────────────
 PLAY_PAUSE_ACTION = 40044 # 40044 is Play/Stop. 40073 is Play/Pause.
 NEXT_MARKER_ACTION = 40173
@@ -268,6 +275,10 @@ class ReaperDAWSource(BaseMetadataSource):
         - Requires offset spread within CALIBRATION_AGREEMENT_TOLERANCE_SEC.
         - On failure, adds proj_key to negative cache to prevent hammering.
         """
+        if DISABLE_CALIBRATION_PIPELINE:
+            logger.debug("Calibration pipeline disabled (DISABLE_CALIBRATION_PIPELINE=True) — skipping recognition")
+            return
+
         logger.info(f"Starting auto-calibration for '{proj_key}' at REAPER pos {initial_pos:.2f}s")
 
         from audio_recognition.engine import RecognitionEngine
@@ -394,8 +405,8 @@ class ReaperDAWSource(BaseMetadataSource):
             
         artist = self._current_song_meta.get("artist")
         title = self._current_song_meta.get("title")
-        
-        # 3. Fallback: Filename Splitting
+
+        # Fallback: parse "Artist - Title" from project filename (opt-in, default off)
         from config import conf
         if conf("reaper_daw.split_filename", False) and (not artist or not title):
             if " - " in proj_key:
@@ -403,16 +414,22 @@ class ReaperDAWSource(BaseMetadataSource):
                 artist = parts[0].strip()
                 title = parts[1].strip()
 
-        # Final Fallbacks
-        if not artist: artist = "Unknown Artist"
-        if not title: title = proj_key
+        # If identity still not resolved, stay silent — don't spam providers with garbage queries.
+        # Identity is populated by _check_auto_calibration from metadata-cache.json or calibration.
+        if not artist or not title:
+            return None
+
+        # Duration from metadata-cache.json (written by ReaLauncher, exact song length)
+        cache_entry = self._metadata_cache.get(proj_key, {})
+        duration_sec = cache_entry.get("duration", 0.0)
+        duration_ms = int(duration_sec * 1000) if duration_sec else 0
 
         return {
             "artist": artist,
             "title": title,
             "is_playing": is_playing,
             "position": song_time,
-            "duration_ms": 0,  # REAPER doesn't provide track duration inherently
+            "duration_ms": duration_ms,
             "source": self.name,
             "track_id": _normalize_track_id(artist, title),
             "_reaper_project": proj_key,
