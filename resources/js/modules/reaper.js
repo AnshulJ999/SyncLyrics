@@ -125,8 +125,14 @@ async function updateStatus() {
         _reaper_connected = !!data.connected;
 
         document.getElementById('reaper-project-name').textContent = data.project || 'None';
+        document.getElementById('reaper-artist-name').textContent = data.artist || '—';
         document.getElementById('reaper-song-name').textContent = data.song || 'Unknown';
+        document.getElementById('reaper-album-name').textContent = data.album || '—';
+        document.getElementById('reaper-state-text').textContent = data.state_text || '—';
         document.getElementById('reaper-offset-value').textContent = `${(data.offset ?? 0).toFixed(2)}s`;
+        document.getElementById('reaper-raw-pos').textContent = data.pos != null ? `${data.pos.toFixed(2)}s` : '—';
+        document.getElementById('reaper-bpm').textContent = data.bpm != null ? Math.round(data.bpm) : '—';
+        document.getElementById('reaper-key').textContent = data.key || '—';
 
         const calibratingRow = document.getElementById('reaper-calibrating-row');
         if (calibratingRow) {

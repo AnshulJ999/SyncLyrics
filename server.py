@@ -3703,15 +3703,23 @@ async def get_reaper_status():
     if not reaper_src:
         return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
         
+    state = reaper_src._telemetry.get("state", 0)
+    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("project", ""))
+    cache_entry = reaper_src._metadata_cache.get(proj_key, {}) if proj_key else {}
+    _state_names = {0: "Stopped", 1: "Playing", 2: "Paused", 4: "Recording"}
     return jsonify({
         "connected": reaper_src._last_heartbeat > 0 and (time.time() - reaper_src._last_heartbeat) < 5.0,
-        "project": reaper_src._get_project_key(reaper_src._telemetry.get("project", "")),
+        "project": proj_key,
         "song": reaper_src._current_song_meta.get("title", ""),
         "artist": reaper_src._current_song_meta.get("artist", ""),
+        "album": reaper_src._current_song_meta.get("album", ""),
         "offset": reaper_src._current_offset_sec,
-        "is_playing": reaper_src._telemetry.get("state") in (1, 4),
+        "is_playing": state in (1, 4),
         "pos": reaper_src._telemetry.get("pos", 0.0),
-        "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done()
+        "state_text": _state_names.get(state, "Unknown"),
+        "bpm": cache_entry.get("songBPM"),
+        "key": cache_entry.get("songKey"),
+        "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done(),
     })
 
 @app.route('/api/reaper/calibrate', methods=['POST'])

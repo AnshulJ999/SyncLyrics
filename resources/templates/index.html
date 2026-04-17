@@ -564,7 +564,7 @@
 
 <!-- REAPER DAW Modal -->
 <div id="reaper-daw-modal" class="audio-source-modal hidden" style="z-index: 10000;">
-    <div class="audio-source-modal-content" style="max-width: 450px;">
+    <div class="audio-source-modal-content" style="max-width: 520px;">
         <div class="audio-source-header">
             <h3>🎛️ REAPER Integration</h3>
             <button id="reaper-daw-close" class="audio-source-close">×</button>
@@ -577,12 +577,36 @@
                     <span class="status-value" id="reaper-project-name">—</span>
                 </div>
                 <div class="status-row">
+                    <span class="status-label">Artist</span>
+                    <span class="status-value" id="reaper-artist-name">—</span>
+                </div>
+                <div class="status-row">
                     <span class="status-label">Active Song</span>
                     <span class="status-value" id="reaper-song-name">—</span>
                 </div>
                 <div class="status-row">
+                    <span class="status-label">Album</span>
+                    <span class="status-value" id="reaper-album-name">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">State</span>
+                    <span class="status-value" id="reaper-state-text">—</span>
+                </div>
+                <div class="status-row">
                     <span class="status-label">Timeline Offset</span>
                     <span class="status-value" id="reaper-offset-value">0.00s</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">REAPER Pos</span>
+                    <span class="status-value" id="reaper-raw-pos">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">BPM</span>
+                    <span class="status-value" id="reaper-bpm">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Key</span>
+                    <span class="status-value" id="reaper-key">—</span>
                 </div>
                 <div class="status-row" id="reaper-calibrating-row" style="display: none;">
                     <span class="status-label" style="color: #1db954;">Status</span>

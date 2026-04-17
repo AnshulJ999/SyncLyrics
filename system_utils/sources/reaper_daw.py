@@ -238,13 +238,18 @@ class ReaperDAWSource(BaseMetadataSource):
             return
 
         proj_key = self._get_project_key(self._telemetry.get("project"))
+        pos = self._telemetry.get("pos", 0.0)
 
-        # 1. Check if we already have an offset mapped in reaper_projects.json
+        # 1. Check if we already have an offset mapped in reaper_projects.json.
+        # Position-based check: skip calibration only if THIS position is already covered.
+        # Supports multi-song album projects where Song 1 exists but Song 2 may not yet.
         proj_data = self._projects_db.get(proj_key, {"songs": {}})
-        if proj_data.get("songs"):
-            return  # Offset exists
+        for song_data in sorted(proj_data.get("songs", {}).values(),
+                                key=lambda x: x.get("offset_sec", 0.0), reverse=True):
+            if pos >= song_data.get("offset_sec", 0.0):
+                return  # Current position already has a calibrated offset
 
-        # 3. No offset. Trigger Audio Recognition (with cooldown + single-flight guard).
+        # 3. No offset for current position. Trigger Audio Recognition (with cooldown + single-flight guard).
         if self._calibration_task is not None and not self._calibration_task.done():
             return  # Already calibrating
 
@@ -252,7 +257,6 @@ class ReaperDAWSource(BaseMetadataSource):
         if time.time() - last_fail < CALIBRATION_FAIL_COOLDOWN_SEC:
             return  # In cooldown window after prior failure
 
-        pos = self._telemetry.get("pos", 0.0)
         self._calibration_task = asyncio.create_task(self._run_auto_calibration(proj_key, pos))
 
     async def _run_auto_calibration(self, proj_key: str, initial_pos: float):
@@ -442,10 +446,12 @@ class ReaperDAWSource(BaseMetadataSource):
         if not artist or not title:
             return None
 
-        # Duration from metadata-cache.json (written by ReaLauncher, exact song length)
+        # Additional fields from metadata-cache.json
         cache_entry = self._metadata_cache.get(proj_key, {})
         duration_sec = cache_entry.get("duration", 0.0)
         duration_ms = int(duration_sec * 1000) if duration_sec else 0
+        song_bpm = cache_entry.get("songBPM")
+        song_key = cache_entry.get("songKey")
 
         meta = {
             "artist": artist,
@@ -455,12 +461,17 @@ class ReaperDAWSource(BaseMetadataSource):
             "duration_ms": duration_ms,
             "source": self.name,
             "track_id": _normalize_track_id(artist, title),
-            "_reaper_project": proj_key,
-            "_reaper_pos": pos,
-            "_reaper_offset": self._current_offset_sec,
-            "_reaper_state": self._telemetry.get("state")
+            "_debug": {
+                "reaper_project": proj_key,
+                "reaper_pos": pos,
+                "reaper_offset": self._current_offset_sec,
+                "reaper_state": self._telemetry.get("state"),
+            },
         }
         if album:
             meta["album"] = album
-            
+        if song_bpm is not None:
+            meta["song_bpm"] = song_bpm
+        if song_key:
+            meta["song_key"] = song_key
         return meta
