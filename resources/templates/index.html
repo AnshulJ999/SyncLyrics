@@ -401,6 +401,12 @@
     <i class="bi bi-house-fill"></i>
 </button>
 
+<!-- NEW: REAPER DAW Control Button -->
+<button id="btn-reaper-daw" class="reaper-toggle-btn" title="REAPER Control Panel">
+    <i class="bi bi-sliders"></i>
+</button>
+
+
 <!-- NEW: Discreet Lyric/Visual Mode Toggle (Bottom Left) -->
 <button id="btn-lyrics-toggle" class="lyrics-toggle-btn" title="Toggle Visual Mode">
     <i class="bi bi-music-note"></i>
@@ -553,6 +559,63 @@
             </button>
         </div>
         <iframe id="ha-frame" class="ha-frame" src="" allow="autoplay"></iframe>
+    </div>
+</div>
+
+<!-- REAPER DAW Modal -->
+<div id="reaper-daw-modal" class="audio-source-modal hidden" style="z-index: 10000;">
+    <div class="audio-source-modal-content" style="max-width: 450px;">
+        <div class="audio-source-header">
+            <h3>🎛️ REAPER Integration</h3>
+            <button id="reaper-daw-close" class="audio-source-close">×</button>
+        </div>
+
+        <div class="audio-source-body">
+            <div class="audio-source-status">
+                <div class="status-row">
+                    <span class="status-label">Project</span>
+                    <span class="status-value" id="reaper-project-name">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Active Song</span>
+                    <span class="status-value" id="reaper-song-name">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Timeline Offset</span>
+                    <span class="status-value" id="reaper-offset-value">0.00s</span>
+                </div>
+                <div class="status-row" id="reaper-calibrating-row" style="display: none;">
+                    <span class="status-label" style="color: #1db954;">Status</span>
+                    <span class="status-value" style="color: #1db954;">Auto-Calibrating... 🎧</span>
+                </div>
+            </div>
+
+            <!-- Transport Controls -->
+            <div class="quick-start-section">
+                <h4>Transport</h4>
+                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                    <button class="quick-start-btn" id="reaper-btn-prev" style="flex: 1; padding: 12px; font-size: 1.2rem;">⏮️</button>
+                    <button class="quick-start-btn" id="reaper-btn-play" style="flex: 1; padding: 12px; font-size: 1.2rem;">⏯️</button>
+                    <button class="quick-start-btn" id="reaper-btn-next" style="flex: 1; padding: 12px; font-size: 1.2rem;">⏭️</button>
+                </div>
+            </div>
+
+            <!-- Offset Nudging Controls -->
+            <div class="audio-source-section">
+                <h4>Offset Nudging</h4>
+                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                    <button class="quick-start-btn" id="reaper-offset-minus" style="flex: 1; background: rgba(255,255,255,0.1);">-0.5s</button>
+                    <button class="quick-start-btn" id="reaper-offset-plus" style="flex: 1; background: rgba(255,255,255,0.1);">+0.5s</button>
+                </div>
+            </div>
+
+            <!-- Auto-Calibration -->
+            <div class="audio-source-controls" style="margin-top: 15px;">
+                <button id="reaper-btn-calibrate" class="control-btn-audio start">
+                    🎤 Force Auto-Calibrate
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 

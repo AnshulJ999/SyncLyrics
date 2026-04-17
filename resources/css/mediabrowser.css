@@ -139,6 +139,51 @@ body:not(.hide-nav) .ha-toggle-btn {
     mask-position: center;
 }
 
+/* ========== REAPER DAW TOGGLE BUTTON ========== */
+/* Row 2 — rightmost of the four */
+.reaper-toggle-btn {
+    position: fixed;
+    bottom: 76px; /* same row */
+    left: 180px;  /* 128 + 40 + 12 */
+    z-index: 140;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.reaper-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.05);
+}
+
+.reaper-toggle-btn i {
+    font-size: 1.2rem;
+}
+
+.reaper-toggle-btn.active {
+    color: #1db954; /* Spotify Green */
+    background: rgba(29, 185, 84, 0.15);
+    border-color: rgba(29, 185, 84, 0.3);
+}
+
+body[data-minimal="true"] .reaper-toggle-btn {
+    display: none !important;
+}
+
+body:not(.hide-nav) .reaper-toggle-btn {
+    bottom: 108px;
+}
+
 /* ========== VIDEO STREAM OVERLAY ========== */
 /*
  * A floating full-width panel — NOT a modal.

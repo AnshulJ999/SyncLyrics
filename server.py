@@ -3693,3 +3693,88 @@ async def get_random_slideshow_images():
     except Exception as e:
         logger.error(f"Error generating random slideshow: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# --- REAPER DAW API Routes ---
+@app.route('/api/reaper/status', methods=['GET'])
+async def get_reaper_status():
+    from system_utils.sources import get_source
+    reaper_src = get_source("reaper_daw")
+    if not reaper_src:
+        return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+        
+    return jsonify({
+        "project": reaper_src._get_project_key(reaper_src._telemetry.get("file", "")),
+        "song": reaper_src._current_song_meta.get("title", ""),
+        "artist": reaper_src._current_song_meta.get("artist", ""),
+        "offset": reaper_src._current_offset_sec,
+        "is_playing": reaper_src._telemetry.get("state") == 1,
+        "pos": reaper_src._telemetry.get("pos", 0.0),
+        "calibrating": reaper_src._calibration_task is not None and not reaper_src._calibration_task.done()
+    })
+
+@app.route('/api/reaper/calibrate', methods=['POST'])
+async def trigger_reaper_calibration():
+    from system_utils.sources import get_source
+    reaper_src = get_source("reaper_daw")
+    if not reaper_src:
+        return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+        
+    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("file", ""))
+    pos = reaper_src._telemetry.get("pos", 0.0)
+    
+    if not proj_key:
+        return jsonify({"error": "No REAPER project active"}), 400
+    
+    if reaper_src._calibration_task is None or reaper_src._calibration_task.done():
+        reaper_src._calibration_task = asyncio.create_task(reaper_src._run_auto_calibration(proj_key, pos))
+        return jsonify({"success": True, "message": "Calibration started"})
+    else:
+        return jsonify({"success": False, "message": "Calibration already running"})
+
+@app.route('/api/reaper/offset', methods=['POST'])
+async def adjust_reaper_offset():
+    from system_utils.sources import get_source
+    reaper_src = get_source("reaper_daw")
+    if not reaper_src:
+        return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+        
+    data = await request.get_json()
+    delta = data.get("delta", 0.0)
+    
+    proj_key = reaper_src._get_project_key(reaper_src._telemetry.get("file", ""))
+    song_title = reaper_src._current_song_meta.get("title", "")
+    
+    if not proj_key or not song_title:
+        return jsonify({"error": "No active project/song"}), 400
+        
+    new_offset = reaper_src._current_offset_sec + delta
+    
+    if proj_key in reaper_src._projects_db and "songs" in reaper_src._projects_db[proj_key] and song_title in reaper_src._projects_db[proj_key]["songs"]:
+        reaper_src._projects_db[proj_key]["songs"][song_title]["offset_sec"] = new_offset
+        reaper_src._save_json(reaper_src._projects_db_path, reaper_src._projects_db)
+        reaper_src._current_offset_sec = new_offset
+        return jsonify({"success": True, "new_offset": new_offset})
+    else:
+        return jsonify({"error": "Song not found in DB"}), 404
+        
+@app.route('/api/reaper/command', methods=['POST'])
+async def send_reaper_command():
+    from system_utils.sources import get_source
+    reaper_src = get_source("reaper_daw")
+    if not reaper_src:
+        return jsonify({"error": "REAPER DAW plugin not loaded"}), 404
+        
+    data = await request.get_json()
+    cmd = data.get("command")
+    
+    if cmd == "play_pause":
+        await reaper_src.toggle_playback()
+    elif cmd == "next":
+        await reaper_src.next_track()
+    elif cmd == "prev":
+        await reaper_src.previous_track()
+    else:
+        return jsonify({"error": "Unknown command"}), 400
+        
+    return jsonify({"success": True})

@@ -132,6 +132,9 @@ import { setupVideoStream } from './modules/videostream.js';
 // Home Assistant Browser (Level 2)
 import { setupHomeAssistant } from './modules/habrowser.js';
 
+// REAPER DAW Integration (Level 2)
+import { setupReaperUI } from './modules/reaper.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -447,6 +450,7 @@ async function updateLoop() {
                         'windows': 'Windows',
                         'windows_media': 'Windows',
                         'reaper': 'Reaper',
+                        'reaper_daw': 'REAPER DAW',
                         'music_assistant': 'Music Assistant',
                         'linux': 'Linux',
                         'macos': 'Mac'
@@ -623,6 +627,22 @@ async function updateLoop() {
             resetSpectrum();
         }
 
+        // Toggle REAPER DAW button visibility based on source
+        const reaperBtn = document.getElementById('btn-reaper-daw');
+        if (reaperBtn) {
+            if (currentSource === 'reaper_daw') {
+                reaperBtn.style.display = 'flex';
+                const haBtn = document.getElementById('btn-home-assistant');
+                if (haBtn && haBtn.style.display === 'none') {
+                    reaperBtn.style.left = '128px';
+                } else {
+                    reaperBtn.style.left = '180px';
+                }
+            } else {
+                reaperBtn.style.display = 'none';
+            }
+        }
+
         // Update track info (must happen before icon update)
         setLastTrackInfo(trackInfo);
         
@@ -774,6 +794,10 @@ async function main() {
     if (config?.haEnabled) {
         setupHomeAssistant();
     }
+
+    // Initialize REAPER DAW Control UI
+    setupReaperUI();
+
     // Note: HA button is hidden by default in HTML (style="display:none").
     // setupHomeAssistant() removes that hide when called.
 
