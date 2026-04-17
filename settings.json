@@ -107,7 +107,7 @@
     "providers.spotify.retries": 3,
     "providers.spotify.timeout": 10,
     "providers.spotify.token_refresh_buffer": 300,
-    "reaper_daw.split_filename": false,
+    "reaper_daw.split_filename": true,
     "server.debug": false,
     "server.host": "0.0.0.0",
     "server.https.auto_generate": true,

@@ -21,6 +21,7 @@ homeassistant-addons/
 backups/
 .agent/
 blacklist.json
+scratch
 
 # share_project.py
 .cursor
