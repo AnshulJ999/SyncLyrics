@@ -414,6 +414,9 @@ class ReaperDAWSource(BaseMetadataSource):
         if active_song is not None:
             self._current_offset_sec = active_song.get("offset_sec", 0.0)
             self._current_song_meta = active_song
+            # Still fetch album from cache even if we have an offset entry
+            if proj_key in self._metadata_cache:
+                self._current_song_meta["album"] = self._metadata_cache[proj_key].get("album")
         else:
             # Fallback to cache if no DB entry exists
             if proj_key in self._metadata_cache:
@@ -452,6 +455,9 @@ class ReaperDAWSource(BaseMetadataSource):
         duration_ms = int(duration_sec * 1000) if duration_sec else 0
         song_bpm = cache_entry.get("songBPM")
         song_key = cache_entry.get("songKey")
+        project_bpm = cache_entry.get("projectBPM")
+        project_time_sig = cache_entry.get("projectTimeSig")
+        time_sig = cache_entry.get("timeSig")
 
         meta = {
             "artist": artist,
@@ -474,4 +480,10 @@ class ReaperDAWSource(BaseMetadataSource):
             meta["song_bpm"] = song_bpm
         if song_key:
             meta["song_key"] = song_key
+        if project_bpm is not None:
+            meta["project_bpm"] = project_bpm
+        if project_time_sig:
+            meta["project_time_sig"] = project_time_sig
+        if time_sig is not None:
+            meta["time_sig"] = time_sig
         return meta

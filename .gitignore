@@ -139,3 +139,4 @@ certs/server.crt
 certs/server.key
 spicylyrics full_project_code.txt
 .cache backup
+reaper_integration/reaper_projects.json
