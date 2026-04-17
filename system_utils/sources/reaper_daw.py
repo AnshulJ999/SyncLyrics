@@ -29,6 +29,10 @@ CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles mus
 # Flip to False when ready to re-enable and debug calibration.
 DISABLE_CALIBRATION_PIPELINE = True
 
+# Set True to check metadata-cache.json and reaper_projects.json for modifications every 100ms.
+# Usually False because metadata-cache only updates every few days, and reaper_projects is mutated in-memory.
+HOT_RELOAD_CACHES = False
+
 # ─── REAPER Actions (editable) ────────────────────────────────────────────────
 PLAY_PAUSE_ACTION = 40044 # 40044 is Play/Stop. 40073 is Play/Pause.
 NEXT_MARKER_ACTION = 40173
@@ -77,8 +81,11 @@ class ReaperDAWSource(BaseMetadataSource):
         self._projects_db_path = os.path.join(base_dir, "reaper_integration", "reaper_projects.json")
         self._metadata_cache_path = METADATA_CACHE_PATH
 
-        self._projects_db = self._load_json(self._projects_db_path, {})
-        self._metadata_cache = self._load_json(self._metadata_cache_path, {})
+        self._projects_db_mtime = 0.0
+        self._metadata_cache_mtime = 0.0
+        self._projects_db = {}
+        self._metadata_cache = {}
+        self._reload_caches_if_needed()
 
         self._calibration_task: Optional[asyncio.Task] = None
         # Negative cache: proj_key -> last-failure timestamp. Prevents hammering failed projects.
@@ -113,6 +120,22 @@ class ReaperDAWSource(BaseMetadataSource):
         except Exception:
             pass
         return default
+
+    def _reload_caches_if_needed(self):
+        try:
+            if os.path.exists(self._projects_db_path):
+                mtime = os.path.getmtime(self._projects_db_path)
+                if mtime > self._projects_db_mtime:
+                    self._projects_db = self._load_json(self._projects_db_path, {})
+                    self._projects_db_mtime = mtime
+            
+            if os.path.exists(self._metadata_cache_path):
+                mtime = os.path.getmtime(self._metadata_cache_path)
+                if mtime > self._metadata_cache_mtime:
+                    self._metadata_cache = self._load_json(self._metadata_cache_path, {})
+                    self._metadata_cache_mtime = mtime
+        except Exception as e:
+            logger.debug(f"Error reloading caches: {e}")
 
     def _save_json(self, path: str, data: Any):
         try:
@@ -215,46 +238,13 @@ class ReaperDAWSource(BaseMetadataSource):
             return
 
         proj_key = self._get_project_key(self._telemetry.get("project"))
-        pos = self._telemetry.get("pos", 0.0)
 
         # 1. Check if we already have an offset mapped in reaper_projects.json
         proj_data = self._projects_db.get(proj_key, {"songs": {}})
+        if proj_data.get("songs"):
+            return  # Offset exists
 
-        active_song = None
-        # Sort by offset descending to find the section we're currently in
-        sorted_songs = sorted(
-            proj_data.get("songs", {}).items(),
-            key=lambda x: x[1].get("offset_sec", 0.0),
-            reverse=True,
-        )
-        for song_title, song_data in sorted_songs:
-            if pos >= song_data.get("offset_sec", 0.0):
-                active_song = dict(song_data)  # copy — don't mutate DB
-                active_song["title"] = song_title
-                break
-
-        if active_song is not None:
-            # We have a valid offset mapped
-            self._current_offset_sec = active_song.get("offset_sec", 0.0)
-            self._current_song_meta = active_song
-            return
-
-        # 2. No offset found in DB. Check metadata cache for artist/title identity.
-        # IMPORTANT: We do NOT return here. The cache gives us artist/title for immediate display,
-        # but calibration MUST still run to find the real timeline offset. Assuming 0.0 is wrong
-        # for any project where the song doesn't start at the very beginning of the timeline.
-        if proj_key in self._metadata_cache:
-            cache_data = self._metadata_cache[proj_key]
-            if cache_data.get("matchedArtist") and cache_data.get("matchedTitle"):
-                # Only update meta if not already set (avoid re-creating dict every 50ms)
-                if not self._current_song_meta.get("title"):
-                    self._current_song_meta = {
-                        "artist": cache_data.get("matchedArtist"),
-                        "title": cache_data.get("matchedTitle"),
-                    }
-                # Fall through to calibration — offset still unknown
-
-        # 3. No offset and no metadata. Trigger Audio Recognition (with cooldown + single-flight guard).
+        # 3. No offset. Trigger Audio Recognition (with cooldown + single-flight guard).
         if self._calibration_task is not None and not self._calibration_task.done():
             return  # Already calibrating
 
@@ -262,6 +252,7 @@ class ReaperDAWSource(BaseMetadataSource):
         if time.time() - last_fail < CALIBRATION_FAIL_COOLDOWN_SEC:
             return  # In cooldown window after prior failure
 
+        pos = self._telemetry.get("pos", 0.0)
         self._calibration_task = asyncio.create_task(self._run_auto_calibration(proj_key, pos))
 
     async def _run_auto_calibration(self, proj_key: str, initial_pos: float):
@@ -383,6 +374,10 @@ class ReaperDAWSource(BaseMetadataSource):
         # Lazy start of UDP listener on first poll (safe from any event-loop context)
         await self._ensure_listener_started()
 
+        if HOT_RELOAD_CACHES:
+            # Always check for cache file updates
+            self._reload_caches_if_needed()
+
         # 1. Safety Timeout: If REAPER hasn't sent data, it's likely closed or stopped
         if time.time() - self._last_heartbeat > SAFETY_TIMEOUT:
             return None
@@ -398,6 +393,34 @@ class ReaperDAWSource(BaseMetadataSource):
         is_playing = self._telemetry.get("state") in (1, 4)  # 1=play, 4=record
         pos = self._telemetry.get("pos", 0.0)
         
+        # Update identity and offset unconditionally
+        proj_data = self._projects_db.get(proj_key, {"songs": {}})
+        active_song = None
+        sorted_songs = sorted(
+            proj_data.get("songs", {}).items(),
+            key=lambda x: x[1].get("offset_sec", 0.0),
+            reverse=True,
+        )
+        for song_title, song_data in sorted_songs:
+            if pos >= song_data.get("offset_sec", 0.0):
+                active_song = dict(song_data)
+                active_song["title"] = song_title
+                break
+
+        if active_song is not None:
+            self._current_offset_sec = active_song.get("offset_sec", 0.0)
+            self._current_song_meta = active_song
+        else:
+            # Fallback to cache if no DB entry exists
+            if proj_key in self._metadata_cache:
+                cache_data = self._metadata_cache[proj_key]
+                if cache_data.get("matchedArtist") and cache_data.get("matchedTitle"):
+                    self._current_song_meta = {
+                        "artist": cache_data.get("matchedArtist"),
+                        "title": cache_data.get("matchedTitle"),
+                        "album": cache_data.get("album")
+                    }
+
         # 2. Offset Math
         song_time = pos - self._current_offset_sec
         if song_time < 0:
@@ -405,6 +428,7 @@ class ReaperDAWSource(BaseMetadataSource):
             
         artist = self._current_song_meta.get("artist")
         title = self._current_song_meta.get("title")
+        album = self._current_song_meta.get("album")
 
         # Fallback: parse "Artist - Title" from project filename (opt-in, default off)
         from config import conf
@@ -414,8 +438,7 @@ class ReaperDAWSource(BaseMetadataSource):
                 artist = parts[0].strip()
                 title = parts[1].strip()
 
-        # If identity still not resolved, stay silent — don't spam providers with garbage queries.
-        # Identity is populated by _check_auto_calibration from metadata-cache.json or calibration.
+        # If identity still not resolved, stay silent
         if not artist or not title:
             return None
 
@@ -424,7 +447,7 @@ class ReaperDAWSource(BaseMetadataSource):
         duration_sec = cache_entry.get("duration", 0.0)
         duration_ms = int(duration_sec * 1000) if duration_sec else 0
 
-        return {
+        meta = {
             "artist": artist,
             "title": title,
             "is_playing": is_playing,
@@ -437,3 +460,7 @@ class ReaperDAWSource(BaseMetadataSource):
             "_reaper_offset": self._current_offset_sec,
             "_reaper_state": self._telemetry.get("state")
         }
+        if album:
+            meta["album"] = album
+            
+        return meta

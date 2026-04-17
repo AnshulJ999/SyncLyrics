@@ -286,7 +286,7 @@ export function updateControlState(trackInfo) {
     const playPauseBtn = document.getElementById('btn-play-pause');
     const nextBtn = document.getElementById('btn-next');
 
-    // Enable controls for Spotify, Spotify Hybrid, Spicetify, Windows Media, or plugin sources
+    // Enable controls for Spotify, Spotify Hybrid, Spicetify, Windows Media, REAPER, or plugin sources
     // Note: Audio Recognition source does not support playback controls
     const canControl =
         trackInfo.source === 'spotify' ||
@@ -294,6 +294,7 @@ export function updateControlState(trackInfo) {
         trackInfo.source === 'spicetify' ||
         trackInfo.source === 'windows_media' ||
         trackInfo.source === 'music_assistant' ||
+        trackInfo.source === 'reaper_daw' ||
         trackInfo.source === 'linux';
 
     if (prevBtn) prevBtn.disabled = !canControl;
