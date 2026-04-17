@@ -269,6 +269,11 @@ class SettingsManager:
             "system.music_assistant.paused_timeout": Setting("MA Paused Timeout", int, 600, False, "Music Assistant", "Accept paused MA for N seconds (0=forever)", "number"),
             "lyrics.display.music_assistant_latency_compensation": Setting("Music Assistant Latency", float, 0.0, False, "Lyrics", "Music Assistant sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
 
+            # REAPER DAW Plugin Source
+            "media_source.reaper_daw.enabled": Setting("REAPER DAW", bool, False, True, "Media", "Enable REAPER DAW source (receives telemetry from companion script via UDP)", "switch"),
+            "media_source.reaper_daw.priority": Setting("REAPER Priority", int, 5, False, "Media", "Source priority (lower = first, 5 = high)", "number"),
+            "reaper_daw.split_filename": Setting("REAPER Filename Split", bool, False, False, "Media", "Split 'Artist - Title' from project filename as fallback (disabled by default)", "switch"),
+
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
