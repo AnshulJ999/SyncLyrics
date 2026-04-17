@@ -454,7 +454,7 @@ async function updateLoop() {
                         'windows': 'Windows',
                         'windows_media': 'Windows',
                         'reaper': 'Reaper',
-                        'reaper_daw': 'REAPER DAW',
+                        'reaper_daw': 'REAPER',
                         'music_assistant': 'Music Assistant',
                         'linux': 'Linux',
                         'macos': 'Mac'

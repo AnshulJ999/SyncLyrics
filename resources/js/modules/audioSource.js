@@ -453,6 +453,7 @@ function updateStatusDisplay(status) {
                 'acrcloud': 'ACRCloud',
                 'local_fingerprint': 'Local',
                 'reaper': 'Reaper',
+                'reaper_daw': 'REAPER',
                 'music_assistant': 'Music Assistant',
                 'linux': 'Linux',
                 'macos': 'Mac'
