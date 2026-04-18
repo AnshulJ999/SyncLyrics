@@ -975,12 +975,12 @@ function initDebugOverlay() {
         enableDebugOverlay();
     }
     
-    // Setup triple-tap gesture on lyrics container
+    // Setup 5-tap gesture on lyrics container for debug overlay
     const lyricsContainer = document.querySelector('.lyrics-container');
     if (lyricsContainer) {
         let tapCount = 0;
         let lastTapTime = 0;
-        const TAP_THRESHOLD = 500; // 500ms window for triple-tap
+        const TAP_THRESHOLD = 700; // 500ms window between taps
         
         lyricsContainer.addEventListener('click', (e) => {
             // Don't trigger on control buttons
@@ -994,7 +994,7 @@ function initDebugOverlay() {
             }
             lastTapTime = now;
             
-            if (tapCount === 3) {
+            if (tapCount === 5) {
                 toggleDebugOverlay();
                 tapCount = 0;
             }
