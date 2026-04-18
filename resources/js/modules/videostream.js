@@ -856,12 +856,51 @@ export function setupVideoStream() {
         if (el) el.textContent = String(z);
     }
 
-    if (zindexMinusBtn) {
-        zindexMinusBtn.addEventListener('click', () => applyZIndex(Math.max(100, currentZIndex - ZINDEX_STEP)));
+    function setupZIndexButton(zbtn, direction) {
+        if (!zbtn) return;
+        let holdTimer = null;
+        let accelTimer = null;
+        let holdStart = 0;
+
+        function doStep() {
+            const held = Date.now() - holdStart;
+            const step = held > 1500 ? ZINDEX_STEP * 5 : ZINDEX_STEP; // Accelerate after 1.5s
+            
+            let newZ = currentZIndex + direction * step;
+            newZ = Math.max(100, Math.min(15000, newZ));
+            applyZIndex(newZ);
+        }
+
+        function startHold(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            holdStart = Date.now();
+            
+            // Immediate first step
+            let newZ = currentZIndex + direction * ZINDEX_STEP;
+            newZ = Math.max(100, Math.min(15000, newZ));
+            applyZIndex(newZ);
+            
+            holdTimer = setTimeout(() => {
+                accelTimer = setInterval(doStep, 100);
+            }, 400);
+        }
+
+        function stopHold(e) {
+            if (e) e.preventDefault();
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+            if (accelTimer) { clearInterval(accelTimer); accelTimer = null; }
+        }
+
+        zbtn.addEventListener('pointerdown', startHold);
+        zbtn.addEventListener('pointerup', stopHold);
+        zbtn.addEventListener('pointerleave', stopHold);
+        zbtn.addEventListener('pointercancel', stopHold);
+        zbtn.addEventListener('click', (e) => e.stopPropagation());
     }
-    if (zindexPlusBtn) {
-        zindexPlusBtn.addEventListener('click', () => applyZIndex(Math.min(15000, currentZIndex + ZINDEX_STEP)));
-    }
+
+    setupZIndexButton(zindexMinusBtn, -1);
+    setupZIndexButton(zindexPlusBtn, 1);
 
     // ── Stream load/unload ───────────────────────────────────────────────────
 
@@ -1077,7 +1116,36 @@ export function setupVideoStream() {
     }
 
     let lastBtnClick = 0;
+    let mainBtnHoldTimer = null;
+    let mainBtnHasHeld = false;
+
+    btn.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return; // Only left click or touch
+        mainBtnHasHeld = false;
+        mainBtnHoldTimer = setTimeout(() => {
+            mainBtnHasHeld = true;
+            if (overlay.classList.contains('hidden')) open();
+            if (fullscreenBtn) fullscreenBtn.click();
+        }, 600); // 600ms hold triggers fullscreen
+    });
+
+    const stopMainBtnHold = () => {
+        if (mainBtnHoldTimer) {
+            clearTimeout(mainBtnHoldTimer);
+            mainBtnHoldTimer = null;
+        }
+    };
+
+    btn.addEventListener('pointerup', stopMainBtnHold);
+    btn.addEventListener('pointerleave', stopMainBtnHold);
+    btn.addEventListener('pointercancel', stopMainBtnHold);
+
     btn.addEventListener('click', (e) => {
+        if (mainBtnHasHeld) {
+            e.preventDefault();
+            e.stopPropagation();
+            return; // Skip normal toggle if hold triggered fullscreen
+        }
         // Prevent double-clicks (e.g. native touch click arriving after synthetic click wrapper)
         if (e.timeStamp - lastBtnClick < 400) return;
         lastBtnClick = e.timeStamp;
