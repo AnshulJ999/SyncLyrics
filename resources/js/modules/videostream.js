@@ -864,7 +864,7 @@ export function setupVideoStream() {
 
         function doStep() {
             const held = Date.now() - holdStart;
-            const step = held > 1500 ? ZINDEX_STEP * 5 : ZINDEX_STEP; // Accelerate after 1.5s
+            const step = held > 2000 ? ZINDEX_STEP * 5 : ZINDEX_STEP; // Accelerate after 1.5s
             
             let newZ = currentZIndex + direction * step;
             newZ = Math.max(100, Math.min(15000, newZ));
@@ -1899,6 +1899,9 @@ export function setupVideoStream() {
 
     document.addEventListener('fullscreenchange', () => {
         updateFullscreenBtn();
+        
+        mainBtnHasHeld = false;
+        if (mainBtnHoldTimer) { clearTimeout(mainBtnHoldTimer); mainBtnHoldTimer = null; }
         
         // Flush phantom pointers that were swallowed by the native iframe transition (both enter & exit)
         activePointers.clear();
