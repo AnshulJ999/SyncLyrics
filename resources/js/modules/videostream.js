@@ -1737,7 +1737,9 @@ export function setupVideoStream() {
             // Released before threshold: was a tap
             clearTimeout(tapTimer);
             tapTimer = null;
-            if (dragActive) overlay.releasePointerCapture(e.pointerId);
+            if (dragActive) {
+                try { overlay.releasePointerCapture(e.pointerId); } catch(err) {}
+            }
             isDragging = false;
             dragActive = false;
             
@@ -1764,6 +1766,9 @@ export function setupVideoStream() {
             return;
         }
         if (!isDragging) return;
+        if (dragActive) {
+            try { overlay.releasePointerCapture(e.pointerId); } catch(err) {}
+        }
         isDragging = false;
         dragActive = false;
         document.body.classList.remove('vs-dragging');
@@ -1773,6 +1778,9 @@ export function setupVideoStream() {
     overlay.addEventListener('pointercancel', (e) => {
         activePointers.delete(e.pointerId);
         if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+        if (dragActive) {
+            try { overlay.releasePointerCapture(e.pointerId); } catch(err) {}
+        }
         isDragging = false;
         dragActive = false;
         document.body.classList.remove('vs-dragging');
@@ -1892,14 +1900,19 @@ export function setupVideoStream() {
     document.addEventListener('fullscreenchange', () => {
         updateFullscreenBtn();
         
+        // Flush phantom pointers that were swallowed by the native iframe transition (both enter & exit)
+        activePointers.clear();
+        pinchPointers.clear();
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+        if (dragActive) {
+            try { overlay.releasePointerCapture(dragStartPointerId); } catch(e) {}
+        }
+        isDragging = false;
+        dragActive = false;
+        document.body.classList.remove('vs-dragging');
+        
         // Handoff Return: when exiting fullscreen, swap streams back
         if (document.fullscreenElement === null) {
-            // Flush phantom pointers that were swallowed by the native iframe transition
-            activePointers.clear();
-            isDragging = false;
-            dragActive = false;
-            document.body.classList.remove('vs-dragging');
-            
             if (iframe && !iframe.classList.contains('hidden')) {
                 iframe.src = '';
                 iframe.classList.add('hidden');
