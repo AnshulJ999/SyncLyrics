@@ -305,6 +305,8 @@ export function setupVideoStream() {
         if (syncCanplayHandler) { video.removeEventListener('canplay', syncCanplayHandler); syncCanplayHandler = null; }
         if (syncSeekedHandler)  { video.removeEventListener('seeked',  syncSeekedHandler);  syncSeekedHandler  = null; }
         if (syncFadeInTimer)    { clearTimeout(syncFadeInTimer);               syncFadeInTimer    = null; }
+        // Cancel any in-flight compensated seek (phase 1 or phase 2 timeouts/listeners)
+        if (_inFlightSeekCleanup) { _inFlightSeekCleanup(); _inFlightSeekCleanup = null; }
         syncFileLoading      = false;
         syncLatestServerTime = 0; // Fix D: reset monotonic guard so fresh sessions are not blocked
         syncLastDisruption   = 0; // reset so PLL/hard-seek gates don't carry over to next session
