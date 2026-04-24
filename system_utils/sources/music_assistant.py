@@ -516,14 +516,38 @@ class MusicAssistantSource(BaseMetadataSource):
             # Handle case where title is empty but name exists on current_item
             if not title and current_item.name:
                 title = current_item.name
-            
-            # Get image URL
-            album_art_url = None
-            try:
-                # Try to get image from the client's helper
-                album_art_url = _client.get_media_item_image_url(current_item, size=640)
-            except Exception:
-                pass
+
+            # Radio/live stream enrichment: for radio items (e.g. RadioBrowser), the
+            # media_item describes the station (name = station name, no artists), while
+            # the *currently playing track* comes from ICY metadata stored in
+            # streamdetails.stream_metadata.  This is the canonical pattern confirmed by
+            # the MA client library itself (see players.py::add_currently_playing_to_favorites).
+            _stream_meta = (
+                current_item.streamdetails.stream_metadata
+                if current_item.streamdetails else None
+            )
+            if _stream_meta:
+                if _stream_meta.title:
+                    title = _stream_meta.title
+                if _stream_meta.artist:
+                    artist = _stream_meta.artist
+                # Use stream-provided album name when available — helps lyrics providers
+                # (LRCLib, Musixmatch) narrow their search and gives ensure_album_art_db
+                # the correct folder key.  Falls back to None → title-based path.
+                if _stream_meta.album:
+                    album = _stream_meta.album
+
+            # Get image URL — prefer track art from ICY metadata over station logo.
+            # The enrichment pipeline (ensure_album_art_db) will replace this with
+            # high-res art from iTunes/Spotify/LastFM regardless, so this only
+            # affects the brief placeholder shown before enrichment completes.
+            album_art_url = _stream_meta.image_url if (_stream_meta and _stream_meta.image_url) else None
+            if not album_art_url:
+                try:
+                    # Fallback: station logo / MA image helper
+                    album_art_url = _client.get_media_item_image_url(current_item, size=640)
+                except Exception:
+                    pass
             
             # Calculate position
             # IMPORTANT: Only use corrected_elapsed_time when PLAYING
