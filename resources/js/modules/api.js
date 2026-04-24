@@ -262,7 +262,7 @@ export async function getCurrentTrack() {
         // RTT MEASUREMENT: Record time before request for position time correction
         const startTime = performance.now();
         
-        const response = await fetch('/current-track');
+        const response = await fetch('/current-track', { signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS) });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -369,7 +369,7 @@ export async function getCurrentTrack() {
  */
 export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updateProviderDisplayFn) {
     try {
-        let response = await fetch('/lyrics');
+        let response = await fetch('/lyrics', { signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS) });
         let data = await response.json();
 
         // Update background if colors are present

@@ -510,27 +510,37 @@ export function setupVideoStream() {
         function _onSeekDone() {
             clearTimeout(_flushTimeout);
             video.removeEventListener('seeked', _onSeekDone);
-            _inFlightSeekCleanup = null; // Cleared — phase 1 is done
+            // Phase 1 done — clear guard before re-arming for phase 2
+            _inFlightSeekCleanup = null;
             const flushMs = Date.now() - seekStart;
             syncDbgFlushDisplay = flushMs;
             syncDbgFlushClearAt = Date.now() + 8000;
-            
+
             const secondSeekTarget = seekTarget + (flushMs / 1000.0) * seekRate;
             let secondSeekFired = false;
-            
+
             const _onSecondSeekDone = () => {
                 if (secondSeekFired) return;
                 secondSeekFired = true;
                 clearTimeout(_secondFlushTimeout);
                 video.removeEventListener('seeked', _onSecondSeekDone);
+                _inFlightSeekCleanup = null; // Phase 2 done cleanly
                 if (isPlayStart) video.play().catch(() => {});
                 syncLastDisruption = Date.now();
                 syncCooldownTarget = DRIFT_PLL_EVENT_COOL_MS;
             };
-            
+
             const _secondFlushTimeout = setTimeout(_onSecondSeekDone, 1000);
             video.addEventListener('seeked', _onSecondSeekDone);
-            
+
+            // Re-arm cleanup guard to cover phase 2 — a new performCompensatedSeek
+            // arriving now can cancel the stale second seek before it fires.
+            _inFlightSeekCleanup = () => {
+                clearTimeout(_secondFlushTimeout);
+                video.removeEventListener('seeked', _onSecondSeekDone);
+                _inFlightSeekCleanup = null;
+            };
+
             video.currentTime = secondSeekTarget;
         }
 
