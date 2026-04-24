@@ -158,9 +158,10 @@ export function setupVideoStream() {
     let latencyCompMs   = 0;    // Latency compensation in milliseconds (default 100ms)
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
-    const POLL_MS         = 200;    // ms between /playback polls (matches SYNC_POLL_INTERVAL_MS in streamer)
-    const DRIFT_THRESH       = 0.30;    // drift threshold before forcing a hard re-seek
-    const DRIFT_CHECK_MS     = 1000;    // ms between drift checks
+    const POLL_MS              = 200;    // ms between /playback polls when companion is alive
+    const POLL_MS_STANDBY      = 2000;   // ms between polls when companion is unreachable (backoff)
+    const DRIFT_THRESH         = 0.30;   // drift threshold before forcing a hard re-seek
+    const DRIFT_CHECK_MS       = 1000;   // ms between drift checks
     const DRIFT_COOL_MS      = 2000;    // ms cooldown after a drift correction
     const SEEK_DEBOUNCE      = 300;     // ms debounce for rapid scrub (H.265 keyframe protection)
     const BLACK_TIMEOUT      = 5.0;    // seconds of no-video before entering standby
@@ -193,10 +194,13 @@ export function setupVideoStream() {
     let syncFileLoading    = false; // true while a new video src is loading (guards opacity self-heal)
     // Outer refs so a new file-change can cancel any in-flight transition from the previous load:
     // prevents stale safety timers / seeked handlers from contaminating the new load.
-    let syncCanplayHandler = null;
-    let syncSeekedHandler  = null;
-    let syncFadeInTimer    = null;
-    let syncLastDataAgeSec = 0;      // precise age of data at last poll (RTT-based)
+    let syncCanplayHandler    = null;
+    let syncSeekedHandler     = null;
+    let syncFadeInTimer       = null;
+    let syncLastDataAgeSec    = 0;    // precise age of data at last poll (RTT-based)
+    let syncConsecFailures    = 0;    // consecutive network failures for adaptive poll backoff
+    let syncCurrentPollMs     = POLL_MS; // current active poll interval (may be slowed to POLL_MS_STANDBY)
+    let _inFlightSeekCleanup  = null; // cancels prior in-flight performCompensatedSeek if a new one starts
     let syncLatestServerTime = 0;    // Fix A: monotonic guard — drop out-of-order fetch responses
 
     // Phase 10.2 state
@@ -272,6 +276,12 @@ export function setupVideoStream() {
     // Polls /playback every 500ms, loads video on file change, seeks/plays/pauses
     // to match REAPER transport state, and corrects drift every 2 seconds.
 
+    function _restartPollAt(intervalMs) {
+        if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+        syncCurrentPollMs = intervalMs;
+        syncPollTimer = setInterval(doPoll, intervalMs);
+    }
+
     function startSync() {
         if (syncActive) return;
         syncActive         = true;
@@ -279,6 +289,8 @@ export function setupVideoStream() {
         syncCurrentFile    = null;
         syncNoVideoSince   = 0;
         syncBlackHandled   = false;
+        syncConsecFailures = 0;
+        syncCurrentPollMs  = POLL_MS;
         doPoll();                                          // immediate first poll
         syncPollTimer  = setInterval(doPoll,       POLL_MS);
         syncDriftTimer = setInterval(checkDrift, DRIFT_CHECK_MS);
@@ -307,9 +319,14 @@ export function setupVideoStream() {
     function doPoll() {
         if (!syncActive) return;
         const fetchStart = Date.now();
-        fetch(getPlaybackUrl())
+        fetch(getPlaybackUrl(), { signal: AbortSignal.timeout(500) })
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
             .then(data => {
+                // Companion responded — reset failure counter and restore fast poll if needed.
+                if (syncConsecFailures > 0) {
+                    syncConsecFailures = 0;
+                    if (syncCurrentPollMs !== POLL_MS) _restartPollAt(POLL_MS);
+                }
                 const rtt = Date.now() - fetchStart;
                 // Compute precise data age: how old is this data right now?
                 // server_time = when Python generated the response
@@ -324,6 +341,12 @@ export function setupVideoStream() {
                 if (typeof _updateSyncDbg === 'function') _updateSyncDbg(rtt);
             })
             .catch(() => {
+                // Companion unreachable (or fetch timed out). Back off poll rate after X
+                // consecutive failures so we don't hammer a dead port at 200ms.
+                syncConsecFailures++;
+                if (syncConsecFailures === 15 && syncCurrentPollMs !== POLL_MS_STANDBY) {
+                    _restartPollAt(POLL_MS_STANDBY);
+                }
                 queueStandby();
             });
     }
@@ -456,6 +479,15 @@ export function setupVideoStream() {
 
     // Shared helper for Fix 2 compensated seeks
     function performCompensatedSeek(seekTarget, seekRate, isPlayStart) {
+        // Cancel any prior in-flight seek before starting a new one.
+        // Without this guard, rapid calls stack 'seeked' listeners on the video element
+        // (each call adds _onSeekDone without removing the previous one), causing stale
+        // closures to fire their second-phase seeks after the new seek has already landed.
+        if (_inFlightSeekCleanup) {
+            _inFlightSeekCleanup();
+            _inFlightSeekCleanup = null;
+        }
+
         if (SEEK_FLUSH_COMP === 'off') {
             // 'off' mode: full old-behavior rollback — 1000ms cooldown intentional
             video.currentTime = seekTarget;
@@ -474,10 +506,11 @@ export function setupVideoStream() {
         syncLastDisruption = Date.now();
         syncCooldownTarget = 86400000; // Block PLL completely while measuring flush
         const seekStart = Date.now();
-        
+
         function _onSeekDone() {
             clearTimeout(_flushTimeout);
             video.removeEventListener('seeked', _onSeekDone);
+            _inFlightSeekCleanup = null; // Cleared — phase 1 is done
             const flushMs = Date.now() - seekStart;
             syncDbgFlushDisplay = flushMs;
             syncDbgFlushClearAt = Date.now() + 8000;
@@ -503,10 +536,17 @@ export function setupVideoStream() {
 
         const _flushTimeout = setTimeout(() => {
             video.removeEventListener('seeked', _onSeekDone);
+            _inFlightSeekCleanup = null; // Safety timeout fired — no longer in-flight
             if (isPlayStart) video.play().catch(() => {});
             syncLastDisruption = Date.now();
             syncCooldownTarget = DRIFT_PLL_EVENT_COOL_MS;
         }, 1000); // 1s max wait if seek hangs; call play() if needed so video doesn't stay paused
+
+        // Register the cleanup fn so a subsequent call can cancel this in-flight seek.
+        _inFlightSeekCleanup = () => {
+            clearTimeout(_flushTimeout);
+            video.removeEventListener('seeked', _onSeekDone);
+        };
 
         video.addEventListener('seeked', _onSeekDone);
         video.currentTime = seekTarget;
@@ -1032,7 +1072,7 @@ export function setupVideoStream() {
             // Don't poll /status or call loadStream() — that would re-set img.src.
             if (directMode) return;
 
-            fetch(getStatusUrl())
+            fetch(getStatusUrl(), { signal: AbortSignal.timeout(3000) })
                 .then(r => {
                     if (!r.ok) {
                         handleSocketDeath();

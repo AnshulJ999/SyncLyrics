@@ -53,19 +53,25 @@ const BAD_RTT_MULTIPLIER = 3.5;           // RTT > avg * 3.5 is suspicious (was 
 
 // ========== CORE FETCH WRAPPER ==========
 
+// Default timeout for all SyncLyrics API calls. Prevents the main update loop
+// from hanging indefinitely if the server is slow or unresponsive.
+const API_FETCH_TIMEOUT_MS = 8000;
+
 /**
- * Base fetch wrapper with error handling
- * 
+ * Base fetch wrapper with error handling and timeout.
+ *
  * @param {string} url - URL to fetch
  * @param {Object} options - Fetch options
  * @returns {Promise<Object>} JSON response or error object
  */
 async function apiFetch(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
     try {
-        const response = await fetch(url, options);
+        const response = await fetch(url, { signal: controller.signal, ...options });
         // Always try to parse JSON (even on non-2xx) to get server error messages
         const data = await response.json().catch(() => null);
-        
+
         if (!response.ok) {
             // Return parsed JSON if available (contains status/message), else generic error
             if (data && (data.status || data.message || data.error)) {
@@ -75,8 +81,14 @@ async function apiFetch(url, options = {}) {
         }
         return data || {};
     } catch (error) {
+        if (error.name === 'AbortError') {
+            console.warn(`API timeout [${url}] after ${API_FETCH_TIMEOUT_MS}ms`);
+            return { status: 'error', message: 'Request timeout', error: 'timeout' };
+        }
         console.error(`API Error [${url}]:`, error);
         return { status: 'error', message: error.message, error: error.message };
+    } finally {
+        clearTimeout(timer);
     }
 }
 

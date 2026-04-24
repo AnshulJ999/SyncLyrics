@@ -29,8 +29,13 @@ CALIBRATION_MIN_AGREEING_CYCLES = 2              # At least this many cycles mus
 # Flip to False when ready to re-enable and debug calibration.
 DISABLE_CALIBRATION_PIPELINE = True
 
-# Set True to check metadata-cache.json and reaper_projects.json for modifications every 100ms.
+# Set True to check metadata-cache.json and reaper_projects.json for modifications on every get_metadata() call.
 # Usually False because metadata-cache only updates every few days, and reaper_projects is mutated in-memory.
+# WARNING: If you re-enable this, _reload_caches_if_needed() performs synchronous os.path.getmtime() disk I/O
+# inside get_metadata() which runs on the asyncio event loop. This can introduce latency jitter.
+# To fix before enabling: wrap the os.path.getmtime() calls with
+#   await loop.run_in_executor(None, os.path.getmtime, path)
+# and make _reload_caches_if_needed() async.
 HOT_RELOAD_CACHES = False
 
 # ─── REAPER Actions (editable) ────────────────────────────────────────────────

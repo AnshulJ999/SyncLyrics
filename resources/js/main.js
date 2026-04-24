@@ -404,6 +404,7 @@ async function updateLoop() {
     let idleStartTime = null;
 
     while (true) {
+      try {
         const now = Date.now();
         const timeSinceLastCheck = now - lastCheckTime;
 
@@ -738,6 +739,12 @@ async function updateLoop() {
         updateMainLatencyVisibility();
 
         await sleep(currentPollInterval);
+      } catch (err) {
+        // Safety net: log and continue rather than letting an unhandled exception
+        // kill the polling loop permanently.
+        console.error('[updateLoop] Unhandled error, recovering:', err);
+        await sleep(currentPollInterval);
+      }
     }
 }
 
