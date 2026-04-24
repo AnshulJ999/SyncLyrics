@@ -48,6 +48,8 @@ _listener_task: Optional[asyncio.Task] = None  # Track listener to prevent dupli
 # State cache (updated by WebSocket events)
 _current_player_id: Optional[str] = None
 _current_queue_id: Optional[str] = None
+_last_queue_check_time: float = 0
+_cached_player_id: Optional[str] = None
 _last_active_time: float = 0
 _last_active_player_id: Optional[str] = None  # Track player that was last playing/paused
 _metadata_cache: Optional[Dict[str, Any]] = None
@@ -336,15 +338,25 @@ def _get_target_player_id() -> Optional[str]:
 
 async def _get_active_queue_id(player_id: str) -> Optional[str]:
     """Get the active queue ID for a player."""
-    global _current_queue_id
+    global _current_queue_id, _last_queue_check_time, _cached_player_id
     
     if not _client:
         return None
+        
+    now = time.time()
+    
+    # TTL Cache: Only ask the MA server for the active queue every 2 seconds.
+    # Prevents spamming WebSocket requests on every poll cycle (10x/sec).
+    if (_current_queue_id and _cached_player_id == player_id and 
+        (now - _last_queue_check_time < 2.0)):
+        return _current_queue_id
     
     try:
         queue = await _client.player_queues.get_active_queue(player_id)
         if queue:
             _current_queue_id = queue.queue_id
+            _cached_player_id = player_id
+            _last_queue_check_time = now
             return queue.queue_id
     except Exception as e:
         # Rate limit queue error log
