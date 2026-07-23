@@ -20,6 +20,8 @@ homeassistant-addons/
 .claude
 backups/
 .agent/
+blacklist.json
+scratch
 
 # share_project.py
 .cursor
@@ -138,3 +140,8 @@ certs/server.crt
 certs/server.key
 spicylyrics full_project_code.txt
 .cache backup
+reaper_integration/reaper_projects.json
+SyncLyrics-Project-Memory.md
+synclyrics-session-log.md
+AGENTS.md
+subtopics-memory
