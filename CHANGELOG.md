@@ -18,6 +18,23 @@ Spotify has begun enforcing a 6-month expiration on refresh tokens for existing 
 - **Test connection** button for an on-demand real check against Spotify
 - **Disconnect** button to remove the saved local Spotify login (does not revoke access on Spotify's side - remove SyncLyrics from your Spotify account's connected apps for that)
 
+## [2.2.0] - 2026-03-27
+
+- Stability release with several bug fixes since 2.0.5.
+
+## [2.1.1-beta] - 2026-03-02
+
+- Fixed audio recognition in frozen (packaged) builds.
+
+## [2.1.0-beta] - 2026-02-22
+
+- Initial code for local audio fingerprinting support via the SoundFingerprinting library (not yet exposed to general users).
+- Bug fixes and better error logging.
+
+## [2.0.5] - 2026-01-28
+
+- Small bug fixes and stability improvements, including some Linux-specific fixes.
+
 ## [2.0.0] - 2026-01-17
 
 ### ⚠️ Breaking Changes
@@ -96,6 +113,26 @@ Spotify has begun enforcing a 6-month expiration on refresh tokens for existing 
 
 ---
 
-## [1.9.0] - Previous Release
+## [1.9.0] - 2026-01-13
+
+- Added Music Assistant and Linux support.
+- UI customization: custom fonts, adjustable lyrics sizing, and more.
+- Multiple bug fixes and stability improvements.
+- Note at the time: macOS and AppImage builds were temporarily broken (fixed in a later release).
+
+## [1.8.0] - 2026-01-07
+
+- Stable release after 2+ weeks of stability testing, with multiple new features since 1.3.0.
+
+## [1.3.0] - 2025-12-14
+
+- Added the audio recognition engine (Shazam-based track detection).
+- Many bug fixes; first release considered stable enough for regular use.
+
+## [1.0.0] - 2025-12-13
+
+- First release candidate. Stable for general use.
+
+---
 
 See [GitHub Releases](https://github.com/AnshulJ999/SyncLyrics/releases) for earlier versions.
