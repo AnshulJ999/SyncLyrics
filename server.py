@@ -15,7 +15,7 @@ from settings import settings
 from logging_config import get_logger
 
 # Import shared Spotify singleton for controls - ensures all stats are consolidated
-from providers.spotify_api import get_shared_spotify_client
+from providers.spotify_api import get_shared_spotify_client, reset_shared_spotify_client
 
 import os
 from pathlib import Path
@@ -3313,8 +3313,9 @@ async def settings_page():
     ordered_settings = {}
     for cat in sorted(settings_by_category.keys(), key=lambda x: (x == 'Deprecated', x)):
         ordered_settings[cat] = settings_by_category[cat]
-    
-    return await render_template('settings.html', settings=ordered_settings, theme=get_attribute_js_notation(get_state(), 'theme'))
+
+    return await render_template('settings.html', settings=ordered_settings,
+                                theme=get_attribute_js_notation(get_state(), 'theme'))
 
 @app.route('/reset-defaults')
 async def reset_defaults():
@@ -3460,6 +3461,48 @@ async def spotify_callback():
         </body>
         </html>
         """, 500
+
+@app.route('/api/spotify/status', methods=['GET'])
+async def spotify_status():
+    """
+    Passive Spotify connection status for the settings page monitor card.
+    Reads only in-memory state - makes no calls to Spotify's API, so this
+    is safe to poll on an interval.
+    """
+    client = get_shared_spotify_client()
+    if not client:
+        return jsonify({
+            'state': 'not_configured',
+            'last_success_ago_seconds': None,
+            'consecutive_errors': 0,
+            'backoff_remaining_seconds': 0.0,
+            'stats': {}
+        })
+    return jsonify(client.get_connection_status())
+
+@app.route('/api/spotify/test-connection', methods=['POST'])
+async def spotify_test_connection():
+    """
+    Actively verify the Spotify connection with a real API call.
+    Button-triggered only - not meant to be polled.
+    """
+    client = get_shared_spotify_client()
+    if not client:
+        return jsonify({'success': False, 'state': 'not_configured', 'message': 'Spotify is not configured.'})
+    result = await client.test_connection()
+    return jsonify(result)
+
+@app.route('/api/spotify/disconnect', methods=['POST'])
+async def spotify_disconnect():
+    """
+    Remove the locally saved Spotify login. Clears the cached token and
+    resets the shared client so the next access starts fresh, unauthenticated.
+    """
+    client = get_shared_spotify_client()
+    if client:
+        client.disconnect()
+    reset_shared_spotify_client()
+    return jsonify({'status': 'disconnected'})
 
 # --- Media Browser Routes ---
 # Serves embedded Spotify UI client and Music Assistant iframe

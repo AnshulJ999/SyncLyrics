@@ -88,6 +88,44 @@
                         </div>
                         {% endif %}
 
+                        {% if category == 'Spotify API' %}
+                        <div class="settings-card mb-4" id="spotify-status-card">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong><i class="bi bi-spotify me-2"></i>Spotify connection</strong>
+                                <span class="badge" id="spotify-status-badge">Checking&hellip;</span>
+                            </div>
+                            <p class="mb-3 text-muted small" id="spotify-status-message"></p>
+                            <div class="row g-2 mb-3" id="spotify-status-stats" style="display:none;">
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Requests</small>
+                                    <span id="spotify-stat-requests">-</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Cache hit rate</small>
+                                    <span id="spotify-stat-cache">-</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Errors</small>
+                                    <span id="spotify-stat-errors">-</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    id="spotify-test-btn" style="display:none;">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Test connection
+                                </button>
+                                <a href="#" class="btn btn-sm btn-success" id="spotify-connect-btn"
+                                    style="display:none;">
+                                    <i class="bi bi-spotify me-1"></i>Connect to Spotify
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                    id="spotify-disconnect-btn" style="display:none;">
+                                    Disconnect
+                                </button>
+                            </div>
+                        </div>
+                        {% endif %}
+
                         <div class="settings-card">
                             {% for key, setting in category_settings.items() %}
                             {% if not setting.advanced %}
@@ -759,7 +797,139 @@
         if (el) el.textContent = value + 's';
     }
 
+    // ===== Spotify connection status card =====
+    function setupSpotifyStatusCard() {
+        const card = document.getElementById('spotify-status-card');
+        if (!card) return;
+
+        const badge = document.getElementById('spotify-status-badge');
+        const message = document.getElementById('spotify-status-message');
+        const statsRow = document.getElementById('spotify-status-stats');
+        const statRequests = document.getElementById('spotify-stat-requests');
+        const statCache = document.getElementById('spotify-stat-cache');
+        const statErrors = document.getElementById('spotify-stat-errors');
+        const testBtn = document.getElementById('spotify-test-btn');
+        const connectBtn = document.getElementById('spotify-connect-btn');
+        const disconnectBtn = document.getElementById('spotify-disconnect-btn');
+
+        function formatAgo(seconds) {
+            if (seconds === null || seconds === undefined) return null;
+            seconds = Math.max(0, seconds);
+            if (seconds < 60) return Math.round(seconds) + 's ago';
+            if (seconds < 3600) return Math.round(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.round(seconds / 3600) + 'h ago';
+            return Math.round(seconds / 86400) + 'd ago';
+        }
+
+        const STATE_BADGE = {
+            connected: ['badge bg-success', 'Connected'],
+            degraded: ['badge bg-warning text-dark', 'Degraded'],
+            needs_reconnect: ['badge bg-danger', 'Needs reconnect'],
+            not_configured: ['badge bg-secondary', 'Not configured']
+        };
+
+        function render(data) {
+            const state = data.state || 'not_configured';
+            const [badgeClass, badgeLabel] = STATE_BADGE[state] || STATE_BADGE.not_configured;
+            badge.className = badgeClass;
+            badge.textContent = badgeLabel;
+
+            testBtn.style.display = 'none';
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = 'none';
+            statsRow.style.display = 'none';
+
+            if (state === 'not_configured') {
+                message.textContent = 'Set a client ID and secret below to enable Spotify.';
+                return;
+            }
+
+            if (state === 'needs_reconnect') {
+                message.textContent = 'Not connected. Click below to log in to Spotify.';
+                connectBtn.href = data.auth_url || '#';
+                connectBtn.style.display = 'inline-block';
+                return;
+            }
+
+            // connected or degraded both have a live token
+            testBtn.style.display = 'inline-block';
+            disconnectBtn.style.display = 'inline-block';
+
+            const lastAgo = formatAgo(data.last_success_ago_seconds);
+
+            if (state === 'degraded') {
+                const retryIn = Math.round(data.backoff_remaining_seconds || 0);
+                message.textContent = data.consecutive_errors + ' consecutive error(s)' +
+                    (lastAgo ? ', last success ' + lastAgo : '') +
+                    (retryIn > 0 ? '. Retrying automatically in ' + retryIn + 's.' : '. Retrying automatically.');
+            } else {
+                message.textContent = lastAgo ? 'Last successful check: ' + lastAgo : 'Connected.';
+            }
+
+            if (data.stats && Object.keys(data.stats).length) {
+                statsRow.style.display = 'flex';
+                statRequests.textContent = data.stats['Total Requests'] ?? '-';
+                statCache.textContent = data.stats['Cache Hit Rate'] ?? '-';
+                const errors = data.stats['Errors'] || {};
+                const totalErrors = Object.values(errors).reduce((a, b) => a + b, 0);
+                statErrors.textContent = totalErrors;
+            }
+        }
+
+        function refreshStatus() {
+            fetch('/api/spotify/status')
+                .then(r => r.json())
+                .then(render)
+                .catch(() => {
+                    badge.className = 'badge bg-secondary';
+                    badge.textContent = 'Unknown';
+                    message.textContent = 'Could not load Spotify status.';
+                });
+        }
+
+        const testBtnDefaultHTML = testBtn.innerHTML;
+        const disconnectBtnDefaultText = disconnectBtn.textContent;
+
+        // No page reload here on purpose - it would reset Bootstrap's active
+        // tab back to whichever category renders first, kicking the user off
+        // the Spotify API tab they were just on. refreshStatus() re-renders
+        // the card in place instead, including a fresh auth_url if needed.
+        testBtn.addEventListener('click', () => {
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
+            fetch('/api/spotify/test-connection', { method: 'POST' })
+                .then(() => refreshStatus())
+                .catch(() => {
+                    message.textContent = 'Test connection failed - check your network and try again.';
+                })
+                .finally(() => {
+                    testBtn.disabled = false;
+                    testBtn.innerHTML = testBtnDefaultHTML;
+                });
+        });
+
+        disconnectBtn.addEventListener('click', () => {
+            if (!confirm('Disconnect Spotify? This removes the saved login from SyncLyrics.')) return;
+            disconnectBtn.disabled = true;
+            disconnectBtn.textContent = 'Disconnecting...';
+            fetch('/api/spotify/disconnect', { method: 'POST' })
+                .then(() => refreshStatus())
+                .catch(() => {
+                    message.textContent = 'Disconnect failed - check your network and try again.';
+                })
+                .finally(() => {
+                    disconnectBtn.disabled = false;
+                    disconnectBtn.textContent = disconnectBtnDefaultText;
+                });
+        });
+
+        refreshStatus();
+        setInterval(refreshStatus, 15000);
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        setupSpotifyStatusCard();
+
         // Initialize tooltips
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) {

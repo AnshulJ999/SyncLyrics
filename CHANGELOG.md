@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.3.0] - 2026-07-23
+
+### ⚠️ Important
+
+Spotify has begun enforcing a 6-month expiration on refresh tokens for existing apps (rolling out from 2026-07-20). If you were logged into Spotify before this release, you may have hit a "Refresh token revoked" login error that couldn't be cleared no matter how many times you re-authorized. This release fixes that.
+
+### 🐛 Bug Fixes
+
+- **Fixed Spotify re-login being permanently stuck after a refresh token expires/is revoked.** A fresh login was being silently discarded in favor of retrying the old, already-dead cached token, so re-authorizing never actually worked. Logging in now always uses the fresh authorization code.
+- Fixed the app silently looping on backoff forever (instead of prompting re-login) when a Spotify refresh token is revoked mid-session.
+
+### ✨ New Features
+
+#### Spotify Connection Monitor
+- New status card in **Settings → Spotify API** showing live connection health (connected / degraded / needs reconnect / not configured)
+- **Test connection** button for an on-demand real check against Spotify
+- **Disconnect** button to remove the saved local Spotify login (does not revoke access on Spotify's side - remove SyncLyrics from your Spotify account's connected apps for that)
+
 ## [2.0.0] - 2026-01-17
 
 ### ⚠️ Breaking Changes

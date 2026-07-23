@@ -388,6 +388,11 @@ class SpotifyAPI:
         self._consecutive_errors = 0
         self._last_valid_response_time = time.time()
         self._last_force_refresh_failure_time = 0
+        # Tracks whether get_current_track/test_connection has EVER succeeded,
+        # so status reporting can distinguish "just started, no real data yet"
+        # from "actually succeeded N seconds ago" (both would otherwise look
+        # identical since _last_valid_response_time defaults to construction time)
+        self._has_had_success = False
         
         # Artist Image Cache
         # Key: artist_id, Value: list of image URLs
@@ -668,6 +673,7 @@ class SpotifyAPI:
             self._consecutive_errors = 0
             self._backoff_until = 0
             self._last_valid_response_time = current_time
+            self._has_had_success = True
             
             # Process response
             if not current or not current.get('item'):
@@ -744,12 +750,23 @@ class SpotifyAPI:
         except spotipy.exceptions.SpotifyException as e:
             self._handle_error(e, e.http_status)
             return self._calculate_progress(self._metadata_cache)
-            
+
+        except spotipy.oauth2.SpotifyOauthError as e:
+            # Refresh token is invalid/revoked (e.g. Spotify's 6-month refresh token
+            # expiration policy). This is NOT a transient error - backing off and
+            # retrying will just hit the same failure forever. Mark uninitialized so
+            # the frontend shows the re-auth login button again instead of silently
+            # looping.
+            self.request_stats['errors']['auth'] += 1
+            logger.error(f"Spotify refresh token invalid/revoked, re-authentication required: {e}")
+            self.initialized = False
+            return None
+
         except ReadTimeout as e:
             self.request_stats['errors']['timeout'] += 1
             self._handle_error(e)
             return self._calculate_progress(self._metadata_cache)
-            
+
         except Exception as e:
             self._handle_error(e)
             return self._calculate_progress(self._metadata_cache)
@@ -919,6 +936,111 @@ class SpotifyAPI:
             'Cache Age': f"{time.time() - self._last_metadata_check:.1f}s",
             'Cache Hit Rate': f"{cache_hit_rate:.1f}%"  # Percentage of calls that hit cache
         }
+
+    def get_connection_status(self) -> Dict[str, Any]:
+        """
+        Passive Spotify connection status derived entirely from state already
+        tracked during normal operation. Makes NO network calls - safe to
+        poll frequently (e.g. from a settings page UI).
+
+        For an active, real-time check that actually calls the Spotify API,
+        use test_connection() instead (should only run on explicit user
+        action, e.g. a button click).
+        """
+        if not hasattr(self, 'auth_manager') or not self.auth_manager:
+            return {
+                'state': 'not_configured',
+                'auth_url': None,
+                'last_success_ago_seconds': None,
+                'consecutive_errors': 0,
+                'backoff_remaining_seconds': 0.0,
+                'stats': self.get_request_stats()
+            }
+
+        now = time.time()
+        if not self.initialized:
+            state = 'needs_reconnect'
+        elif now < self._backoff_until:
+            state = 'degraded'
+        else:
+            state = 'connected'
+
+        # Included on every poll (not just when needed) because it's cheap:
+        # get_auth_url() only builds a URL locally, no network call. This lets
+        # the frontend keep a live "Connect" link without a page reload, even
+        # right after a test-connection/disconnect flips the state.
+        auth_url = self.get_auth_url() if state == 'needs_reconnect' else None
+
+        return {
+            'state': state,
+            'auth_url': auth_url,
+            'last_success_ago_seconds': (now - self._last_valid_response_time) if self._has_had_success else None,
+            'consecutive_errors': self._consecutive_errors,
+            'backoff_remaining_seconds': max(0.0, self._backoff_until - now),
+            'stats': self.get_request_stats()
+        }
+
+    async def test_connection(self) -> Dict[str, Any]:
+        """
+        Actively verify the Spotify connection with a real API call.
+        Unlike get_connection_status(), this hits the network - only call
+        this in response to an explicit user action, not on a poll interval.
+        """
+        if not hasattr(self, 'auth_manager') or not self.auth_manager:
+            return {'success': False, 'state': 'not_configured', 'message': 'Spotify is not configured.'}
+
+        if not self.initialized:
+            return {'success': False, 'state': 'needs_reconnect', 'message': 'Not connected to Spotify.'}
+
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.sp.current_user)
+
+            # A successful manual check proves the connection works right now -
+            # clear any stale backoff/error state so the passive status agrees.
+            self._consecutive_errors = 0
+            self._backoff_until = 0
+            self._last_valid_response_time = time.time()
+            self._has_had_success = True
+
+            return {'success': True, 'state': 'connected', 'message': 'Spotify connection is working.'}
+
+        except spotipy.oauth2.SpotifyOauthError as e:
+            logger.error(f"Spotify test connection: refresh token invalid/revoked: {e}")
+            self.initialized = False
+            return {'success': False, 'state': 'needs_reconnect', 'message': 'Your Spotify login has expired. Reconnect to continue.'}
+
+        except Exception as e:
+            # Reuse the normal failure handling so consecutive_errors/backoff
+            # match what get_current_track() would have recorded - keeps the
+            # passive status card consistent with this active check's result.
+            self._handle_error(e)
+            logger.error(f"Spotify test connection failed: {e}")
+            return {'success': False, 'state': 'error', 'message': str(e)}
+
+    def disconnect(self) -> bool:
+        """
+        Remove the locally saved Spotify login.
+
+        Note: Spotify's Web API has no token-revocation endpoint, so this
+        only clears our local cached token - it does not remove SyncLyrics
+        from the user's "Apps" list on Spotify's own account settings.
+
+        Returns True if a client existed to disconnect, False if Spotify
+        was never configured in the first place.
+        """
+        if not hasattr(self, 'auth_manager') or not self.auth_manager:
+            return False
+
+        try:
+            cache_path = Path(self.auth_manager.cache_handler.cache_path)
+            cache_path.unlink(missing_ok=True)
+            logger.info(f"Deleted Spotify token cache: {cache_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete Spotify token cache: {e}")
+
+        self.initialized = False
+        return True
 
     # Playback Control Methods
     
@@ -1281,10 +1403,16 @@ class SpotifyAPI:
             logger.info("Completing Spotify authentication...")
             
             # Exchange the code for tokens (this is a blocking operation, so run in executor)
+            # CRITICAL FIX: check_cache=False forces spotipy to use the fresh authorization
+            # code we just received. With the default check_cache=True, spotipy prioritizes
+            # any existing cached token and tries to refresh it first - if that cached
+            # refresh token is expired/revoked (e.g. Spotify's 6-month refresh token
+            # expiration policy), it raises "invalid_grant: Refresh token revoked" and
+            # never even attempts to use the fresh code, permanently blocking re-login.
             loop = asyncio.get_event_loop()
             token_info = await loop.run_in_executor(
-                None, 
-                lambda: self.auth_manager.get_access_token(code)
+                None,
+                lambda: self.auth_manager.get_access_token(code, check_cache=False)
             )
             
             if not token_info:
