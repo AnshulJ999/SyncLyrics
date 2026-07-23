@@ -744,12 +744,23 @@ class SpotifyAPI:
         except spotipy.exceptions.SpotifyException as e:
             self._handle_error(e, e.http_status)
             return self._calculate_progress(self._metadata_cache)
-            
+
+        except spotipy.oauth2.SpotifyOauthError as e:
+            # Refresh token is invalid/revoked (e.g. Spotify's 6-month refresh token
+            # expiration policy). This is NOT a transient error - backing off and
+            # retrying will just hit the same failure forever. Mark uninitialized so
+            # the frontend shows the re-auth login button again instead of silently
+            # looping.
+            self.request_stats['errors']['auth'] += 1
+            logger.error(f"Spotify refresh token invalid/revoked, re-authentication required: {e}")
+            self.initialized = False
+            return None
+
         except ReadTimeout as e:
             self.request_stats['errors']['timeout'] += 1
             self._handle_error(e)
             return self._calculate_progress(self._metadata_cache)
-            
+
         except Exception as e:
             self._handle_error(e)
             return self._calculate_progress(self._metadata_cache)
@@ -1281,10 +1292,16 @@ class SpotifyAPI:
             logger.info("Completing Spotify authentication...")
             
             # Exchange the code for tokens (this is a blocking operation, so run in executor)
+            # CRITICAL FIX: check_cache=False forces spotipy to use the fresh authorization
+            # code we just received. With the default check_cache=True, spotipy prioritizes
+            # any existing cached token and tries to refresh it first - if that cached
+            # refresh token is expired/revoked (e.g. Spotify's 6-month refresh token
+            # expiration policy), it raises "invalid_grant: Refresh token revoked" and
+            # never even attempts to use the fresh code, permanently blocking re-login.
             loop = asyncio.get_event_loop()
             token_info = await loop.run_in_executor(
-                None, 
-                lambda: self.auth_manager.get_access_token(code)
+                None,
+                lambda: self.auth_manager.get_access_token(code, check_cache=False)
             )
             
             if not token_info:
