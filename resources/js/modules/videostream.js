@@ -10,7 +10,7 @@
  *  - Per-filter sliders: contrast, brightness, saturation, hue, opacity
  *  - Per-blend-mode filter + opacity persistence in localStorage
  *  - Drag (touch + mouse) to reposition, pinch-to-resize (aspect ratio preserved)
- *  - Lock button: freezes position/size + enables passthrough; long-press = snap to center
+ *  - Pointer cycle button: switches passive, Move/Size, and Interact; long-press = snap to center
  *  - Pointer routing: passive passthrough, Move/Size glass, and Interact iframe ownership
  *  - Z-index stepper (configurable via popup)
  *  - Fullscreen via native requestFullscreen() API
@@ -75,9 +75,9 @@ const VIDEO_TYPE_OVERRIDES = {
 };
 
 // Pure decision helper: the browser lifecycle and the DAW are not needed to
-// test the Auto ordering or its manual/permanent override guards.
-export function resolveAutoSource({ sourcePreference, manualSourceOverride, willLoad, videoFile }) {
-    if (sourcePreference !== 'auto' || manualSourceOverride !== null) return null;
+// test the Auto ordering or its permanent preference guard.
+export function resolveAutoSource({ sourcePreference, willLoad, videoFile }) {
+    if (sourcePreference !== 'auto') return null;
     if (willLoad !== true && willLoad !== false) return null;
     if (willLoad === true) return 'tabs';
     if (videoFile !== null) return 'direct';
@@ -114,7 +114,6 @@ export function setupVideoStream() {
     const cropBtn         = document.getElementById('vs-crop-btn');
 
     // Mode toggle buttons
-    const modeCapturBtn   = document.getElementById('vs-mode-capture'); // legacy DOM hook; Capture stays code-only
     const modeAutoBtn     = document.getElementById('vs-mode-auto');
     const modeDirectBtn   = document.getElementById('vs-mode-direct');
     const modeTabsBtn     = document.getElementById('vs-mode-tabs');
@@ -137,9 +136,6 @@ export function setupVideoStream() {
     const zindexPlusBtn     = document.getElementById('vs-zindex-plus');
     const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
     const bgBlurSlider      = document.getElementById('vs-bg-blur-slider');
-    const sourcePrefAutoBtn  = document.getElementById('vs-source-pref-auto');
-    const sourcePrefVideoBtn = document.getElementById('vs-source-pref-video');
-    const sourcePrefTabsBtn  = document.getElementById('vs-source-pref-tabs');
     
     // Debug HUD elements
     const dbgToggleBtn    = document.getElementById('vs-dbg-toggle');
@@ -160,6 +156,7 @@ export function setupVideoStream() {
     const tabsGlass       = document.getElementById('vs-tabs-glass');
     const tabsStatus      = document.getElementById('vs-tabs-status');
     const cropPresets     = document.getElementById('vs-crop-presets');
+    const videoOnlySettingRows = document.querySelectorAll('.vs-video-only-row');
 
     if (!btn || !overlay || !img) return;
 
@@ -175,8 +172,6 @@ export function setupVideoStream() {
     let sourcePreference = 'auto'; // auto | video | tabs | capture (capture is code-only)
     let activeSource     = 'capture'; // capture | direct | tabs
     let sourceInitialized = false;
-    let manualSourceOverride = null; // one-project override: direct | tabs | capture
-    let manualOverrideProjectKey = null;
     let pointerMode      = 'interact'; // passive | move | interact
     let fullscreenHandoffActive = false;
     let latencyCompMs   = 0;    // Latency compensation in milliseconds (default 100ms)
@@ -325,14 +320,9 @@ export function setupVideoStream() {
 
     function updateSourcePreferenceButtons() {
         const preference = normalizeSourcePreference(sourcePreference);
-        sourcePrefAutoBtn?.classList.toggle('active', preference === 'auto');
-        sourcePrefVideoBtn?.classList.toggle('active', preference === 'video');
-        sourcePrefTabsBtn?.classList.toggle('active', preference === 'tabs');
-
-        modeAutoBtn?.classList.toggle('active', preference === 'auto' && manualSourceOverride === null);
-        modeDirectBtn?.classList.toggle('active', activeSource === 'direct');
-        modeTabsBtn?.classList.toggle('active', activeSource === 'tabs');
-        if (modeCapturBtn) modeCapturBtn.classList.toggle('active', activeSource === 'capture');
+        modeAutoBtn?.classList.toggle('active', preference === 'auto');
+        modeDirectBtn?.classList.toggle('active', preference === 'video');
+        modeTabsBtn?.classList.toggle('active', preference === 'tabs');
         if (latencyCtrl) latencyCtrl.style.display = activeSource === 'direct' ? 'block' : 'none';
     }
 
@@ -362,6 +352,8 @@ export function setupVideoStream() {
     function applyPointerMode() {
         if (!POINTER_MODES.includes(pointerMode)) pointerMode = 'interact';
         const effectivePointerMode = getEffectivePointerMode();
+        const wasInteract = controlsBar?.classList.contains('vs-interact-hidden')
+            || editBar?.classList.contains('vs-interact-hidden');
 
         overlay.classList.remove('vs-pointer-passive', 'vs-pointer-move', 'vs-pointer-interact');
         overlay.classList.add(`vs-pointer-${effectivePointerMode}`);
@@ -372,6 +364,10 @@ export function setupVideoStream() {
         overlay.style.pointerEvents = isMove ? 'auto' : 'none';
         if (iframe) iframe.style.pointerEvents = isTabs && isInteract ? 'auto' : 'none';
         if (tabsGlass) tabsGlass.style.pointerEvents = isTabs && isMove ? 'auto' : 'none';
+        controlsBar?.classList.toggle('vs-interact-hidden', isInteract);
+        editBar?.classList.toggle('vs-interact-hidden', isInteract);
+        if (isInteract) toggleSliderPopup(false);
+        else if (wasInteract) showControls();
 
         if (lockBtn) {
             const icon = effectivePointerMode === 'passive' ? 'bi-lock' : (effectivePointerMode === 'move' ? 'bi-unlock' : 'bi-hand-index');
@@ -401,6 +397,15 @@ export function setupVideoStream() {
         if (!iframe) return;
         iframe.src = '';
         iframe.classList.add('hidden');
+        iframe.classList.remove('vs-tabs-iframe');
+        iframe.style.pointerEvents = '';
+        iframe.style.position = '';
+        iframe.style.inset = '';
+        iframe.style.zIndex = '';
+        iframe.style.width = '';
+        iframe.style.height = '';
+        iframe.style.border = '';
+        iframe.style.background = '';
         iframe.classList.remove('vs-standby');
         setTabsStatus('');
     }
@@ -430,18 +435,23 @@ export function setupVideoStream() {
         if (cropBtn) cropBtn.style.display = '';
         if (cropPresets) cropPresets.style.display = '';
         if (dbgEl) dbgEl.style.display = '';
+        videoOnlySettingRows.forEach(row => { row.style.display = ''; });
+        updateBoostBtn();
     }
 
     function hideTabsIncompatibleControls() {
         if (transparencyBtn) transparencyBtn.style.display = 'none';
-        if (boostBtn) boostBtn.style.display = 'none';
         if (cropBtn) cropBtn.style.display = 'none';
         if (cropPresets) cropPresets.style.display = 'none';
+        videoOnlySettingRows.forEach(row => { row.style.display = 'none'; });
         // The sync HUD reports the video element's decoder state - meaningless
         // for the iframe. Hidden here rather than via its own toggle, so the
         // user's debug preference survives a source switch.
         if (dbgEl) dbgEl.style.display = 'none';
-        toggleSliderPopup(false);
+        if (boostBtn) {
+            boostBtn.title = 'Overlay settings';
+            boostBtn.classList.remove('active');
+        }
     }
 
     function setTabsGeometry() {
@@ -467,11 +477,11 @@ export function setupVideoStream() {
             return;
         }
 
+        iframe.classList.add('vs-tabs-iframe');
         if (iframe.src !== viewerUrl) {
             iframe.src = viewerUrl;
         }
         iframe.classList.remove('hidden');
-        iframe.classList.add('vs-tabs-iframe');
         sendTabsChromeMessage();
     }
 
@@ -553,18 +563,9 @@ export function setupVideoStream() {
         applyPointerMode();
     }
 
-    function selectManualSource(source) {
-        if (!ACTIVE_SOURCES.includes(source)) return;
-        manualSourceOverride = source;
-        manualOverrideProjectKey = tabsStableStatus === null ? null : getProjectKey(tabsStableStatus);
-        switchActiveSource(source);
-        updateSourcePreferenceButtons();
-    }
-
     function evaluateAutoDecision() {
         const decision = resolveAutoSource({
             sourcePreference,
-            manualSourceOverride,
             willLoad: tabsStableStatus === null ? null : tabsStableStatus.willLoad,
             videoFile: latestPlaybackFile
         });
@@ -596,8 +597,6 @@ export function setupVideoStream() {
 
     function setSourcePreference(preference) {
         sourcePreference = normalizeSourcePreference(preference);
-        manualSourceOverride = null;
-        manualOverrideProjectKey = null;
         localStorage.setItem(LS_SOURCE_PREFERENCE, sourcePreference);
 
         if (sourcePreference === 'video') {
@@ -753,7 +752,7 @@ export function setupVideoStream() {
 
                 const changed = file !== latestPlaybackFile;
                 latestPlaybackFile = file;
-                if (changed && sourcePreference === 'auto' && manualSourceOverride === null) {
+                if (changed && sourcePreference === 'auto') {
                     evaluateAutoDecision();
                 }
             })
@@ -1544,21 +1543,11 @@ export function setupVideoStream() {
             && previousStatus.willLoad === false
             && status.willLoad === true;
 
-        if (manualSourceOverride !== null) {
-            if (manualOverrideProjectKey === null) {
-                manualOverrideProjectKey = getProjectKey(status);
-            } else if (projectChanged) {
-                manualSourceOverride = null;
-                manualOverrideProjectKey = null;
-                updateSourcePreferenceButtons();
-            }
-        }
-
         if (activeSource === 'tabs') {
             if (status.willLoad === true) {
                 setTabsStatus('');
                 ensureTabsFrame();
-            } else if (sourcePreference === 'tabs' || manualSourceOverride === 'tabs') {
+            } else if (sourcePreference === 'tabs') {
                 setTabsStatus('No ReaTabs score is resolved for this project.');
             }
         }
@@ -2832,12 +2821,8 @@ export function setupVideoStream() {
 
     // ── Source controls ─────────────────────────────────────────────────────
     modeAutoBtn?.addEventListener('click', () => setSourcePreference('auto'));
-    modeDirectBtn?.addEventListener('click', () => selectManualSource('direct'));
-    modeTabsBtn?.addEventListener('click', () => selectManualSource('tabs'));
-    modeCapturBtn?.addEventListener('click', () => selectManualSource('capture'));
-    sourcePrefAutoBtn?.addEventListener('click', () => setSourcePreference('auto'));
-    sourcePrefVideoBtn?.addEventListener('click', () => setSourcePreference('video'));
-    sourcePrefTabsBtn?.addEventListener('click', () => setSourcePreference('tabs'));
+    modeDirectBtn?.addEventListener('click', () => setSourcePreference('video'));
+    modeTabsBtn?.addEventListener('click', () => setSourcePreference('tabs'));
     sourcePreference = loadSourcePreference();
     updateSourcePreferenceButtons();
 

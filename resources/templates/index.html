@@ -655,7 +655,7 @@
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
     <video id="video-stream-video" class="vs-video" playsinline preload="auto" muted style="display: none;"></video>
     <!-- Embedded ReaTabs score. It is mounted only while the active source is Tabs. -->
-    <iframe id="vs-native-iframe" class="hidden vs-tabs-iframe" title="ReaTabs score" allow="fullscreen"></iframe>
+    <iframe id="vs-native-iframe" class="hidden" title="ReaTabs score" allow="fullscreen"></iframe>
     <div id="vs-tabs-glass" class="vs-tabs-glass" aria-hidden="true"></div>
     <div id="vs-tabs-status" class="vs-tabs-status hidden" role="status"></div>
     <div id="vs-dbg" class="vs-dbg">
@@ -699,22 +699,22 @@
 
 <!-- Video Stream Slider Popup (sibling, not inside overlay — unaffected by blend) -->
 <div id="vs-slider-popup" class="vs-slider-popup hidden">
-    <div class="vs-slider-row">
+    <div class="vs-slider-row vs-video-only-row">
         <span class="vs-slider-label"><i class="bi bi-symmetry-vertical"></i> Contrast</span>
         <input id="vs-contrast-slider" type="range" class="vs-slider" min="50" max="400" value="100" step="5">
         <span id="vs-contrast-value" class="vs-slider-value">100%</span>
     </div>
-    <div class="vs-slider-row">
+    <div class="vs-slider-row vs-video-only-row">
         <span class="vs-slider-label"><i class="bi bi-brightness-high"></i> Brightness</span>
         <input id="vs-brightness-slider" type="range" class="vs-slider" min="50" max="200" value="100" step="5">
         <span id="vs-brightness-value" class="vs-slider-value">100%</span>
     </div>
-    <div class="vs-slider-row">
+    <div class="vs-slider-row vs-video-only-row">
         <span class="vs-slider-label"><i class="bi bi-droplet-half"></i> Saturation</span>
         <input id="vs-saturation-slider" type="range" class="vs-slider" min="0" max="200" value="100" step="5">
         <span id="vs-saturation-value" class="vs-slider-value">100%</span>
     </div>
-    <div class="vs-slider-row">
+    <div class="vs-slider-row vs-video-only-row">
         <span class="vs-slider-label"><i class="bi bi-palette"></i> Hue</span>
         <input id="vs-hue-slider" type="range" class="vs-slider" min="-180" max="180" value="0" step="5">
         <span id="vs-hue-value" class="vs-slider-value">0°</span>
@@ -749,24 +749,16 @@
             <button id="vs-bg-mode-override" class="vs-mode-btn"        title="Full control over blur and saturation override">Override</button>
         </div>
     </div>
-    <div class="vs-slider-row vs-lyrics-mode-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:6px; padding-top:6px;">
+    <div class="vs-slider-row vs-lyrics-mode-row vs-video-only-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:6px; padding-top:6px;">
         <span class="vs-slider-label"><i class="bi bi-bug"></i> Debug HUD</span>
         <div class="vs-lyrics-mode-btns">
             <button id="vs-dbg-toggle" class="vs-mode-btn" title="Toggle sync debug overlay">Off</button>
         </div>
     </div>
-    <div class="vs-slider-row vs-lyrics-mode-row">
+    <div class="vs-slider-row vs-lyrics-mode-row vs-video-only-row">
         <span class="vs-slider-label"><i class="bi bi-layers"></i> Auto-Blend</span>
         <div class="vs-lyrics-mode-btns">
             <button id="vs-auto-blend-toggle" class="vs-mode-btn" title="Auto-disable blend mode on non-TAB videos">Off</button>
-        </div>
-    </div>
-    <div class="vs-slider-row vs-lyrics-mode-row">
-        <span class="vs-slider-label"><i class="bi bi-arrow-repeat"></i> Source Preference</span>
-        <div class="vs-lyrics-mode-btns">
-            <button id="vs-source-pref-auto" class="vs-mode-btn active" title="Auto-select the source">Auto</button>
-            <button id="vs-source-pref-video" class="vs-mode-btn" title="Always use Direct video">Video</button>
-            <button id="vs-source-pref-tabs" class="vs-mode-btn" title="Always use ReaTabs">Tabs</button>
         </div>
     </div>
 
@@ -806,15 +798,15 @@
         <button class="vs-control-btn vs-crop-preset-btn" data-preset="3">3</button>
     </div>
 
-    <!-- Video Stream Mode Toggle (source preference / one-project override) -->
+    <!-- Video Stream Mode Toggle (persistent source preference) -->
     <div id="vs-mode-toggle" class="vs-mode-toggle">
-        <button id="vs-mode-auto" class="vs-control-btn vs-mode-btn active" data-mode="auto" title="Return to Auto source preference">
+        <button id="vs-mode-auto" class="vs-control-btn vs-mode-btn active" data-mode="auto" title="Always use Auto source selection">
             <i class="bi bi-magic"></i>
         </button>
-        <button id="vs-mode-direct" class="vs-control-btn vs-mode-btn" data-mode="direct" title="Use video for this project">
+        <button id="vs-mode-direct" class="vs-control-btn vs-mode-btn" data-mode="video" title="Always use Direct video">
             <i class="bi bi-camera-video"></i>
         </button>
-        <button id="vs-mode-tabs" class="vs-control-btn vs-mode-btn" data-mode="tabs" title="Use ReaTabs for this project">
+        <button id="vs-mode-tabs" class="vs-control-btn vs-mode-btn" data-mode="tabs" title="Always use ReaTabs">
             <i class="bi bi-music-note-list"></i>
         </button>
     </div>

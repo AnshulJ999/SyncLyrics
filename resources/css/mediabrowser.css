@@ -237,6 +237,16 @@ body:not(.hide-nav) .reaper-toggle-btn {
     z-index: 9999;
 }
 
+/* The shared iframe also serves the video fullscreen handoff after its Tabs
+ * class is removed. Keep fullscreen geometry independent of that class. */
+#vs-native-iframe:fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+}
+
 /* Move/Size ownership layer. An iframe cannot pass a touch back to its
  * parent, so this sibling owns the whole box only in that pointer state. */
 .vs-tabs-glass {
@@ -291,6 +301,27 @@ body:not(.hide-nav) .reaper-toggle-btn {
 #vs-native-iframe.vs-standby {
     opacity: 0 !important;
     pointer-events: none !important;
+}
+
+/* In Tabs Interact mode ReaTabs owns its own chrome. Keep only the pointer
+ * cycle button reachable so the user can return to our controls. */
+.vs-controls.vs-interact-hidden {
+    visibility: hidden;
+    pointer-events: none !important;
+}
+
+.vs-edit-bar.vs-interact-hidden > *:not(#vs-lock-btn) {
+    visibility: hidden;
+    pointer-events: none !important;
+}
+
+.vs-edit-bar.vs-interact-hidden {
+    opacity: 1 !important;
+}
+
+.vs-edit-bar.vs-interact-hidden #vs-lock-btn {
+    visibility: visible;
+    pointer-events: auto;
 }
 
 /* Partial standby for the edit bar: most controls fade to invisible, but the mode toggle
