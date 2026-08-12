@@ -234,6 +234,8 @@ export function setupVideoStream() {
     const TABS_RECOVERY_MODE = 'unhide';   // 'unhide' | 'reload'
     let tabsStatusTimer       = null;
     let tabsEverReachable     = false;  // has /embed/status answered since Tabs became active
+    const LS_TABS_BLEND_INTERACT = 'reaper_tabs_blend_off_interact';
+    let tabsBlendOffInInteract = localStorage.getItem(LS_TABS_BLEND_INTERACT) === 'true';
     let tabsStatusInFlight    = false;
     let tabsLatestServerTime  = 0;
     let tabsPendingSignature  = null;
@@ -390,6 +392,15 @@ export function setupVideoStream() {
         if (isInteract) toggleSliderPopup(false);
         else if (wasInteract) showControls();
 
+        // Optional: drop the blend while interacting, so ReaTabs' own panels are
+        // read against a solid background instead of multiplied into the lyrics.
+        if (isTabs) {
+            const suppressBlend = tabsBlendOffInInteract && isInteract;
+            overlay.classList.toggle('vs-multiply', !suppressBlend && currentBlendMode === 'multiply');
+            overlay.classList.toggle('vs-screen',   !suppressBlend && currentBlendMode === 'screen');
+            if (iframe) iframe.style.filter = suppressBlend ? '' : (computeFilter() || '');
+        }
+
         if (lockBtn) {
             const icon = effectivePointerMode === 'passive' ? 'bi-lock' : (effectivePointerMode === 'move' ? 'bi-unlock' : 'bi-hand-index');
             lockBtn.innerHTML = `<i class="bi ${icon}"></i>`;
@@ -447,8 +458,10 @@ export function setupVideoStream() {
         if (currentBlendMode === 'multiply' || currentBlendMode === 'screen') {
             overlay.classList.add(currentBlendMode === 'multiply' ? 'vs-multiply' : 'vs-screen');
         }
-        applyFilters();
-        applyOpacity(currentOpacity);
+        // Re-READ rather than re-apply: the storage keys are source-scoped, so a
+        // source change must pick up that source's own saved values.
+        restoreFiltersForMode();
+        restoreOpacityForMode();
     }
 
     function showVideoControls() {
@@ -551,7 +564,8 @@ export function setupVideoStream() {
             // so the blend is exactly what makes a white-backed score see-through.
             if (currentBlendMode === 'multiply') overlay.classList.add('vs-multiply');
             else if (currentBlendMode === 'screen') overlay.classList.add('vs-screen');
-            applyFilters();
+            restoreFiltersForMode();
+            restoreOpacityForMode();
             setTabsGeometry();
             hideTabsIncompatibleControls();
             setTabsStatus('');
@@ -1326,6 +1340,13 @@ export function setupVideoStream() {
         const topPx = (rect.top + 6) + 'px';
         if (controlsBar) controlsBar.style.top = topPx;
         if (editBar)     editBar.style.top     = topPx;
+        // The popup's CSS pins it to the viewport (top: 40px), which only looked
+        // right because the video overlay usually sits near the top. Anchor it
+        // under the control bar instead, so it follows the overlay in any source.
+        if (sliderPopup && controlsBar) {
+            const barRect = controlsBar.getBoundingClientRect();
+            if (barRect.height > 0) sliderPopup.style.top = Math.round(barRect.bottom + 6) + 'px';
+        }
         // Keep crop handles aligned when overlay moves/resizes
         applyCrop();
     }
@@ -1533,7 +1554,7 @@ export function setupVideoStream() {
         fetch(statusUrl, { signal: AbortSignal.timeout(2500) })
             .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
             .then(data => {
-                noteReaTabsReachable();
+                noteReaTabsReachable(data);
                 handleEmbedStatus(data);
             })
             .catch(() => {
@@ -1552,8 +1573,16 @@ export function setupVideoStream() {
     // Any successful response proves ReaTabs is alive, so recovery is handled
     // here rather than in handleEmbedStatus() — that function drops out-of-order
     // and duplicate responses, which say nothing about reachability.
-    function noteReaTabsReachable() {
+    function noteReaTabsReachable(data) {
         if (activeSource !== 'tabs') return;
+        // "The server answered" is NOT "REAPER is feeding it". The ReaTabs tray
+        // runs 24/7, so reachability is always true and says nothing. `alive` is
+        // the companion signal - the same thing the video path reads as
+        // companion_alive. Without this the overlay never idles.
+        if (data?.alive !== true) {
+            queueStandby();
+            return;
+        }
         const hadLiveFrame = tabsEverReachable;
         tabsEverReachable = true;
         cancelStandby();
@@ -1581,6 +1610,7 @@ export function setupVideoStream() {
             projectPath: typeof data.projectPath === 'string' ? data.projectPath : '',
             projectName: typeof data.projectName === 'string' ? data.projectName : '',
             willLoad: data.willLoad,
+            alive: data.alive === true,
             tabName: typeof data.tabName === 'string' ? data.tabName : ''
         };
         const signature = `${getProjectKey(status)}\u0000${status.willLoad}\u0000${status.tabName}`;
@@ -1608,7 +1638,10 @@ export function setupVideoStream() {
                 setTabsStatus('');
                 ensureTabsFrame();
             } else if (sourcePreference === 'tabs') {
-                setTabsStatus('No ReaTabs score is resolved for this project.');
+                // Only when REAPER is actually feeding ReaTabs. With a dead
+                // companion there is no project at all, so this message would be
+                // answering a question nobody asked - that case is standby.
+                if (status.alive) setTabsStatus('No ReaTabs score is resolved for this project.');
             }
         }
 
@@ -1837,14 +1870,22 @@ export function setupVideoStream() {
     const filters = { contrast: 100, brightness: 100, saturation: 100, hue: 0 };
     let currentOpacity = 100;
 
+    // Filters and opacity are stored per blend mode AND per source. Notation and
+    // video want very different contrast/hue, and sharing one slot meant tuning
+    // the tab overlay silently retuned every tab video.
+    function sourceKeySuffix() {
+        return activeSource === 'tabs' ? '_tabs' : '';
+    }
+
     function filtersStorageKey(mode) {
-        if (mode === 'multiply') return LS_FILTERS_MULTIPLY;
-        if (mode === 'screen')   return LS_FILTERS_SCREEN;
+        if (mode === 'multiply') return LS_FILTERS_MULTIPLY + sourceKeySuffix();
+        if (mode === 'screen')   return LS_FILTERS_SCREEN + sourceKeySuffix();
         return null;
     }
 
     function opacityStorageKey(mode) {
-        return (mode === 'multiply' || mode === 'screen') ? LS_OPACITY_BLEND : LS_OPACITY_OFF;
+        const base = (mode === 'multiply' || mode === 'screen') ? LS_OPACITY_BLEND : LS_OPACITY_OFF;
+        return base + sourceKeySuffix();
     }
 
     function clampVal(v, min, max) {
@@ -2142,6 +2183,18 @@ export function setupVideoStream() {
     if (opacitySlider) {
         opacitySlider.addEventListener('input', () => {
             applyOpacity(parseInt(opacitySlider.value, 10));
+        });
+    }
+
+    const tabsBlendInteractBtn = document.getElementById('vs-tabs-blend-interact-toggle');
+    if (tabsBlendInteractBtn) {
+        tabsBlendInteractBtn.textContent = tabsBlendOffInInteract ? 'On' : 'Off';
+        tabsBlendInteractBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tabsBlendOffInInteract = !tabsBlendOffInInteract;
+            localStorage.setItem(LS_TABS_BLEND_INTERACT, String(tabsBlendOffInInteract));
+            tabsBlendInteractBtn.textContent = tabsBlendOffInInteract ? 'On' : 'Off';
+            applyPointerMode();
         });
     }
 
