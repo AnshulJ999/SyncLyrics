@@ -226,7 +226,14 @@ export function setupVideoStream() {
     const TABS_STATUS_POLL_MS = 2500;
     const PLAYBACK_PROBE_MS   = 1000;
     const REATABS_HTTPS_ORIGIN = ''; // Deliberately blank until an HTTPS ReaTabs origin exists.
+    // A/B flag, not a user setting. When ReaTabs comes back after an outage the
+    // iframe may still be showing its pre-outage render, frozen. 'unhide' is
+    // instant and trusts the frame; 'reload' costs a reparse but guarantees a
+    // live score. Testing 'unhide' first — flip to 'reload' if a stale frame
+    // survives an outage in practice, then delete the loser.
+    const TABS_RECOVERY_MODE = 'unhide';   // 'unhide' | 'reload'
     let tabsStatusTimer       = null;
+    let tabsEverReachable     = false;  // has /embed/status answered since Tabs became active
     let tabsStatusInFlight    = false;
     let tabsLatestServerTime  = 0;
     let tabsPendingSignature  = null;
@@ -394,6 +401,7 @@ export function setupVideoStream() {
     }
 
     function clearTabsFrame() {
+        tabsEverReachable = false;
         if (!iframe) return;
         iframe.src = '';
         iframe.classList.add('hidden');
@@ -1499,14 +1507,41 @@ export function setupVideoStream() {
         tabsStatusInFlight = true;
         fetch(statusUrl, { signal: AbortSignal.timeout(2500) })
             .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
-            .then(handleEmbedStatus)
+            .then(data => {
+                noteReaTabsReachable();
+                handleEmbedStatus(data);
+            })
             .catch(() => {
-                // A failed status poll is not a false willLoad value. Keep the
-                // current source and iframe exactly as they are.
+                // A failed poll is not a false willLoad value, so the SOURCE must
+                // not change. But a dead ReaTabs leaves the iframe showing its last
+                // render — frozen, no longer following the playhead, and visually
+                // indistinguishable from a live one. That is worse than blank, so
+                // fade out on the same grace the video path uses.
+                if (activeSource === 'tabs') queueStandby();
             })
             .finally(() => {
                 tabsStatusInFlight = false;
             });
+    }
+
+    // Any successful response proves ReaTabs is alive, so recovery is handled
+    // here rather than in handleEmbedStatus() — that function drops out-of-order
+    // and duplicate responses, which say nothing about reachability.
+    function noteReaTabsReachable() {
+        if (activeSource !== 'tabs') return;
+        const hadLiveFrame = tabsEverReachable;
+        tabsEverReachable = true;
+        cancelStandby();
+        if (!overlay.classList.contains('vs-standby')) return;
+        // Un-hiding assumes there is a real score under there to reveal. If
+        // ReaTabs was never reachable while Tabs was active, the frame holds a
+        // browser error page instead, so reload regardless of the A/B mode -
+        // that is a correctness guard, not the variant being tested.
+        if ((TABS_RECOVERY_MODE === 'reload' || !hadLiveFrame) && iframe) {
+            iframe.src = '';
+            ensureTabsFrame();
+        }
+        exitStandby();
     }
 
     function handleEmbedStatus(data) {
