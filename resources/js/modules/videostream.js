@@ -429,6 +429,7 @@ export function setupVideoStream() {
         if (boostBtn) boostBtn.style.display = '';
         if (cropBtn) cropBtn.style.display = '';
         if (cropPresets) cropPresets.style.display = '';
+        if (dbgEl) dbgEl.style.display = '';
     }
 
     function hideTabsIncompatibleControls() {
@@ -436,6 +437,10 @@ export function setupVideoStream() {
         if (boostBtn) boostBtn.style.display = 'none';
         if (cropBtn) cropBtn.style.display = 'none';
         if (cropPresets) cropPresets.style.display = 'none';
+        // The sync HUD reports the video element's decoder state - meaningless
+        // for the iframe. Hidden here rather than via its own toggle, so the
+        // user's debug preference survives a source switch.
+        if (dbgEl) dbgEl.style.display = 'none';
         toggleSliderPopup(false);
     }
 
@@ -494,6 +499,10 @@ export function setupVideoStream() {
         if (nextSource === 'tabs') {
             stopSync();
             stopCaptureStreamOnly();
+            // stopCaptureStreamOnly() clears src but not display; without this the
+            // previous source stays painted behind the iframe.
+            img.style.display = 'none';
+            if (video) video.style.display = 'none';
             stopPlaybackProbe();
             cancelStandby();
             exitStandby();
@@ -1522,7 +1531,11 @@ export function setupVideoStream() {
             tabsPendingSignature = signature;
             tabsPendingCount = 1;
         }
-        if (tabsPendingCount < 2) return;
+        // Two consecutive identical readings guard against flapping between
+        // sources. There is nothing to flap against on the FIRST reading, and
+        // waiting for a second one costs a whole poll interval before the
+        // overlay can show tabs at all - so seed immediately, debounce after.
+        if (tabsStableStatus !== null && tabsPendingCount < 2) return;
 
         const previousStatus = tabsStableStatus;
         tabsStableStatus = status;
