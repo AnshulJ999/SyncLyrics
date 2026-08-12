@@ -217,6 +217,67 @@ body:not(.hide-nav) .reaper-toggle-btn {
     background: #000;
 }
 
+/* Embedded ReaTabs uses the overlay's box as its viewport. The same iframe is
+ * promoted to the native fullscreen handoff for the existing video path. */
+#vs-native-iframe.vs-tabs-iframe {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: transparent;
+}
+
+#vs-native-iframe.vs-tabs-iframe:fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+}
+
+/* Move/Size ownership layer. An iframe cannot pass a touch back to its
+ * parent, so this sibling owns the whole box only in that pointer state. */
+.vs-tabs-glass {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: none;
+    background: transparent;
+    pointer-events: none;
+    touch-action: none;
+}
+
+.video-stream-overlay.vs-pointer-move .vs-tabs-glass {
+    display: block;
+    pointer-events: auto;
+}
+
+.video-stream-overlay.vs-pointer-interact .vs-tabs-glass,
+.video-stream-overlay.vs-pointer-passive .vs-tabs-glass {
+    display: none;
+    pointer-events: none;
+}
+
+.vs-tabs-status {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: rgba(255, 255, 255, 0.78);
+    text-align: center;
+    font-size: 0.95rem;
+    pointer-events: none;
+}
+
+.vs-tabs-status.hidden {
+    display: none;
+}
+
 .video-stream-overlay.hidden,
 #vs-native-iframe.hidden {
     display: none !important;
@@ -246,7 +307,7 @@ body:not(.hide-nav) .reaper-toggle-btn {
      * #vs-mode-toggle to an unpredictable offset. Instead we fix #vs-mode-toggle
      * directly (see rule below) to break it out of the flex layout entirely. */
 }
-.vs-edit-bar.vs-standby-partial > *:not(#vs-mode-toggle) {
+.vs-edit-bar.vs-standby-partial > *:not(#vs-mode-toggle):not(#vs-lock-btn) {
     opacity: 0 !important;
     pointer-events: none !important;
 }
@@ -270,6 +331,23 @@ body:not(.hide-nav) .reaper-toggle-btn {
     backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
     box-shadow: none;                              /* remove the glow from .active state */
+}
+
+.vs-edit-bar.vs-standby-partial #vs-lock-btn {
+    position: fixed !important;
+    bottom: 124px !important;
+    left: 150px !important;
+    top: auto !important;
+    z-index: 145 !important;
+    opacity: 0.08;
+    pointer-events: auto;
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    box-shadow: none;
 }
 
 /* The MJPEG image — full width, auto height (= exact video frame dimensions) */

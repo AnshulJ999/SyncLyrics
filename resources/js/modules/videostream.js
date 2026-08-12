@@ -11,6 +11,7 @@
  *  - Per-blend-mode filter + opacity persistence in localStorage
  *  - Drag (touch + mouse) to reposition, pinch-to-resize (aspect ratio preserved)
  *  - Lock button: freezes position/size + enables passthrough; long-press = snap to center
+ *  - Pointer routing: passive passthrough, Move/Size glass, and Interact iframe ownership
  *  - Z-index stepper (configurable via popup)
  *  - Fullscreen via native requestFullscreen() API
  *  - Auto-reconnect on stream drop (exponential backoff)
@@ -73,6 +74,16 @@ const VIDEO_TYPE_OVERRIDES = {
     // (add entries here if a video is incorrectly classified)
 };
 
+// Pure decision helper: the browser lifecycle and the DAW are not needed to
+// test the Auto ordering or its manual/permanent override guards.
+export function resolveAutoSource({ sourcePreference, manualSourceOverride, willLoad, videoFile }) {
+    if (sourcePreference !== 'auto' || manualSourceOverride !== null) return null;
+    if (willLoad !== true && willLoad !== false) return null;
+    if (willLoad === true) return 'tabs';
+    if (videoFile !== null) return 'direct';
+    return 'standby';
+}
+
 export function setupVideoStream() {
     // --- GHOST CLICK SUPPRESSOR FOR TAP PASSTHROUGH ---
     // When we synthesize a click via tap passthrough, the browser's native touch 
@@ -103,8 +114,10 @@ export function setupVideoStream() {
     const cropBtn         = document.getElementById('vs-crop-btn');
 
     // Mode toggle buttons
-    const modeCapturBtn   = document.getElementById('vs-mode-capture');
+    const modeCapturBtn   = document.getElementById('vs-mode-capture'); // legacy DOM hook; Capture stays code-only
+    const modeAutoBtn     = document.getElementById('vs-mode-auto');
     const modeDirectBtn   = document.getElementById('vs-mode-direct');
+    const modeTabsBtn     = document.getElementById('vs-mode-tabs');
 
     // Latency control elements
     const latencyCtrl     = document.getElementById('vs-latency-ctrl');
@@ -124,6 +137,9 @@ export function setupVideoStream() {
     const zindexPlusBtn     = document.getElementById('vs-zindex-plus');
     const lyricsOffsetSlider = document.getElementById('vs-lyrics-offset-slider');
     const bgBlurSlider      = document.getElementById('vs-bg-blur-slider');
+    const sourcePrefAutoBtn  = document.getElementById('vs-source-pref-auto');
+    const sourcePrefVideoBtn = document.getElementById('vs-source-pref-video');
+    const sourcePrefTabsBtn  = document.getElementById('vs-source-pref-tabs');
     
     // Debug HUD elements
     const dbgToggleBtn    = document.getElementById('vs-dbg-toggle');
@@ -141,6 +157,9 @@ export function setupVideoStream() {
     const dbgPllEl        = document.getElementById('vs-dbg-pll');
 
     const iframe          = document.getElementById('vs-native-iframe');
+    const tabsGlass       = document.getElementById('vs-tabs-glass');
+    const tabsStatus      = document.getElementById('vs-tabs-status');
+    const cropPresets     = document.getElementById('vs-crop-presets');
 
     if (!btn || !overlay || !img) return;
 
@@ -152,9 +171,14 @@ export function setupVideoStream() {
     let isConnecting    = false;
     let standbyTimer    = null;
     let fadeTimer       = null;
-    let isLocked        = false;
     let currentZIndex   = DEFAULT_ZINDEX;
-    let directMode      = null;   // null = not yet initialized; false = Capture (MJPEG); true = Direct video
+    let sourcePreference = 'auto'; // auto | video | tabs | capture (capture is code-only)
+    let activeSource     = 'capture'; // capture | direct | tabs
+    let sourceInitialized = false;
+    let manualSourceOverride = null; // one-project override: direct | tabs | capture
+    let manualOverrideProjectKey = null;
+    let pointerMode      = 'interact'; // passive | move | interact
+    let fullscreenHandoffActive = false;
     let latencyCompMs   = 0;    // Latency compensation in milliseconds (default 100ms)
 
     // ── Sync Engine state (Direct mode only) ─────────────────────────────────
@@ -203,6 +227,23 @@ export function setupVideoStream() {
     let _inFlightSeekCleanup  = null; // cancels prior in-flight performCompensatedSeek if a new one starts
     let syncLatestServerTime = 0;    // Fix A: monotonic guard — drop out-of-order fetch responses
 
+    // ── ReaTabs embed state ──────────────────────────────────────────────────
+    const TABS_STATUS_POLL_MS = 2500;
+    const PLAYBACK_PROBE_MS   = 1000;
+    const REATABS_HTTPS_ORIGIN = ''; // Deliberately blank until an HTTPS ReaTabs origin exists.
+    let tabsStatusTimer       = null;
+    let tabsStatusInFlight    = false;
+    let tabsLatestServerTime  = 0;
+    let tabsPendingSignature  = null;
+    let tabsPendingCount      = 0;
+    let tabsStableStatus      = null;
+    let playbackProbeTimer    = null;
+    let playbackProbeInFlight = false;
+    let playbackProbeLatestServerTime = 0;
+    let playbackProbePendingFile = undefined;
+    let playbackProbePendingCount = 0;
+    let latestPlaybackFile    = null;
+
     // Phase 10.2 state
     let syncDbgTotalSeeks = 0;
     let syncDbgTotalPll = 0;
@@ -224,50 +265,353 @@ export function setupVideoStream() {
     const getViewerUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/`;
     const getPlaybackUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/playback`;
     const getVideoUrl = () => `http://${window.location.hostname}:${STREAM_PORT}/video?v=${encodeURIComponent(syncCurrentFile || '')}`;
+    const getReaTabsOrigin = () => {
+        if (window.location.protocol === 'http:') {
+            return `http://${window.location.hostname}:9070`;
+        }
+        if (window.location.protocol === 'https:') {
+            return REATABS_HTTPS_ORIGIN.trim().replace(/\/+$/, '');
+        }
+        return '';
+    };
+    const getEmbedStatusUrl = () => {
+        const origin = getReaTabsOrigin();
+        return origin === '' ? '' : `${origin}/embed/status`;
+    };
+    const getEmbedViewerUrl = () => {
+        const origin = getReaTabsOrigin();
+        return origin === '' ? '' : `${origin}/app/viewer/?embed=1`;
+    };
     // Stable path-based URL: the server ignores the query param and always serves companion_state["file"].
     // Using the file path as the cache key (rather than ?t=Date.now()) lets the browser reuse cached
     // range chunks when returning to a previously-loaded project — backward seeks and project revisits
     // cost zero network traffic. Safe because tab videos never change content; ETag (mtime+size) on the
     // server handles the rare case where a file IS replaced at the same path.
 
-    // ── Mode switching (Capture MJPEG vs Direct video file) ──────────────────
+    // ── Source preferences and source switching ─────────────────────────────
     const LS_MODE_KEY = 'reaper_video_mode';
+    const LS_SOURCE_PREFERENCE = 'reaper_video_source_preference';
+    const LS_POINTER_MODE = 'reaper_video_pointer_mode';
+    const LS_TABS_HEIGHT_RATIO = 'reaper_tabs_height_ratio';
+    const LS_TABS_TOP_RATIO = 'reaper_tabs_top_ratio';
     const LS_LATENCY_KEY = 'reaper_video_latency_ms';
+    const SOURCE_PREFERENCES = ['auto', 'video', 'tabs', 'capture'];
+    const ACTIVE_SOURCES = ['capture', 'direct', 'tabs'];
+    const POINTER_MODES = ['passive', 'move', 'interact'];
 
-    function updateModeButtons() {
-        if (modeCapturBtn) modeCapturBtn.classList.toggle('active', !directMode);
-        if (modeDirectBtn) modeDirectBtn.classList.toggle('active', directMode);
-        if (latencyCtrl) latencyCtrl.style.display = directMode ? 'block' : 'none';
+    function normalizeSourcePreference(value) {
+        return SOURCE_PREFERENCES.includes(value) ? value : 'auto';
     }
 
-    function switchSourceMode(mode) {
-        const newDirectMode = (mode === 'direct');
-        // directMode === null means first call (initializing) — always proceed.
-        // Subsequent calls: skip if already in the requested mode.
-        if (directMode !== null && newDirectMode === directMode) return;
+    function loadSourcePreference() {
+        const savedPreference = localStorage.getItem(LS_SOURCE_PREFERENCE);
+        if (SOURCE_PREFERENCES.includes(savedPreference)) return savedPreference;
 
-        directMode = newDirectMode;
-        localStorage.setItem(LS_MODE_KEY, mode);
-        updateModeButtons();
+        // Legacy reaper_video_mode values are intentionally not treated as the
+        // new preference: both old Capture and Direct installs migrate to Auto.
+        if (localStorage.getItem(LS_MODE_KEY) !== null) {
+            localStorage.setItem(LS_SOURCE_PREFERENCE, 'auto');
+            return 'auto';
+        }
+        localStorage.setItem(LS_SOURCE_PREFERENCE, 'auto');
+        return 'auto';
+    }
 
-        if (mode === 'direct') {
-            // Switch to Direct mode: hide MJPEG, keep video hidden until first real canplay
+    function getProjectKey(status) {
+        const projectPath = typeof status?.projectPath === 'string' ? status.projectPath : '';
+        const projectName = typeof status?.projectName === 'string' ? status.projectName : '';
+        return `${projectPath}\u0000${projectName}`;
+    }
+
+    function updateSourcePreferenceButtons() {
+        const preference = normalizeSourcePreference(sourcePreference);
+        sourcePrefAutoBtn?.classList.toggle('active', preference === 'auto');
+        sourcePrefVideoBtn?.classList.toggle('active', preference === 'video');
+        sourcePrefTabsBtn?.classList.toggle('active', preference === 'tabs');
+
+        modeAutoBtn?.classList.toggle('active', preference === 'auto' && manualSourceOverride === null);
+        modeDirectBtn?.classList.toggle('active', activeSource === 'direct');
+        modeTabsBtn?.classList.toggle('active', activeSource === 'tabs');
+        if (modeCapturBtn) modeCapturBtn.classList.toggle('active', activeSource === 'capture');
+        if (latencyCtrl) latencyCtrl.style.display = activeSource === 'direct' ? 'block' : 'none';
+    }
+
+    function setTabsStatus(message) {
+        if (!tabsStatus) return;
+        tabsStatus.textContent = message;
+        tabsStatus.classList.toggle('hidden', message === '');
+    }
+
+    function getEffectivePointerMode() {
+        // Interact is meaningful only when the Tabs iframe owns the source slot.
+        // Keep the stored value so returning to Tabs restores the user's choice,
+        // but present and cycle it as Passive while Video/Capture is active.
+        return activeSource === 'tabs' || pointerMode !== 'interact' ? pointerMode : 'passive';
+    }
+
+    function sendTabsChromeMessage() {
+        if (activeSource !== 'tabs' || !iframe || iframe.contentWindow === null) return;
+        const targetOrigin = getReaTabsOrigin();
+        if (targetOrigin === '') return;
+        iframe.contentWindow.postMessage({
+            type: 'reatabs:chrome',
+            show: getEffectivePointerMode() === 'interact'
+        }, targetOrigin);
+    }
+
+    function applyPointerMode() {
+        if (!POINTER_MODES.includes(pointerMode)) pointerMode = 'interact';
+        const effectivePointerMode = getEffectivePointerMode();
+
+        overlay.classList.remove('vs-pointer-passive', 'vs-pointer-move', 'vs-pointer-interact');
+        overlay.classList.add(`vs-pointer-${effectivePointerMode}`);
+
+        const isTabs = activeSource === 'tabs';
+        const isMove = effectivePointerMode === 'move';
+        const isInteract = effectivePointerMode === 'interact';
+        overlay.style.pointerEvents = isMove ? 'auto' : 'none';
+        if (iframe) iframe.style.pointerEvents = isTabs && isInteract ? 'auto' : 'none';
+        if (tabsGlass) tabsGlass.style.pointerEvents = isTabs && isMove ? 'auto' : 'none';
+
+        if (lockBtn) {
+            const icon = effectivePointerMode === 'passive' ? 'bi-lock' : (effectivePointerMode === 'move' ? 'bi-unlock' : 'bi-hand-index');
+            lockBtn.innerHTML = `<i class="bi ${icon}"></i>`;
+            lockBtn.classList.toggle('vs-locked', effectivePointerMode === 'passive');
+            lockBtn.title = effectivePointerMode === 'passive'
+                ? 'Passive — tap to Move/Size'
+                : (effectivePointerMode === 'move' ? 'Move/Size — tap to Interact' : 'Interact — tap to Passive');
+        }
+        sendTabsChromeMessage();
+    }
+
+    function setPointerMode(mode) {
+        if (!POINTER_MODES.includes(mode)) return;
+        pointerMode = mode;
+        localStorage.setItem(LS_POINTER_MODE, mode);
+        applyPointerMode();
+    }
+
+    function cyclePointerMode() {
+        const currentIndex = POINTER_MODES.indexOf(getEffectivePointerMode());
+        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % POINTER_MODES.length;
+        setPointerMode(POINTER_MODES[nextIndex]);
+    }
+
+    function clearTabsFrame() {
+        if (!iframe) return;
+        iframe.src = '';
+        iframe.classList.add('hidden');
+        iframe.classList.remove('vs-standby');
+        setTabsStatus('');
+    }
+
+    function resetVideoVisualState() {
+        overlay.classList.remove('vs-multiply', 'vs-screen');
+        overlay.style.mixBlendMode = '';
+        img.style.filter = '';
+        img.style.opacity = '';
+        if (video) {
+            video.style.filter = '';
+            video.style.opacity = '';
+        }
+    }
+
+    function applyVideoVisualState() {
+        if (currentBlendMode === 'multiply' || currentBlendMode === 'screen') {
+            overlay.classList.add(currentBlendMode === 'multiply' ? 'vs-multiply' : 'vs-screen');
+        }
+        applyFilters();
+        applyOpacity(currentOpacity);
+    }
+
+    function showVideoControls() {
+        if (transparencyBtn) transparencyBtn.style.display = '';
+        if (boostBtn) boostBtn.style.display = '';
+        if (cropBtn) cropBtn.style.display = '';
+        if (cropPresets) cropPresets.style.display = '';
+    }
+
+    function hideTabsIncompatibleControls() {
+        if (transparencyBtn) transparencyBtn.style.display = 'none';
+        if (boostBtn) boostBtn.style.display = 'none';
+        if (cropBtn) cropBtn.style.display = 'none';
+        if (cropPresets) cropPresets.style.display = 'none';
+        toggleSliderPopup(false);
+    }
+
+    function setTabsGeometry() {
+        const savedHeightRatio = parseFloat(localStorage.getItem(LS_TABS_HEIGHT_RATIO));
+        const heightRatio = Number.isFinite(savedHeightRatio) ? clampVal(savedHeightRatio, 0.15, 1) : 0.5;
+        overlay.style.width = '100%';
+        overlay.style.height = `${Math.max(1, Math.round(window.innerHeight * heightRatio))}px`;
+        overlay.style.left = '0px';
+
+        const savedTopRatio = parseFloat(localStorage.getItem(LS_TABS_TOP_RATIO));
+        const topRatio = Number.isFinite(savedTopRatio) ? clampVal(savedTopRatio, 0, 1) : 0.5;
+        const availableHeight = Math.max(0, window.innerHeight - overlay.offsetHeight);
+        overlay.style.top = `${Math.round(availableHeight * topRatio)}px`;
+    }
+
+    function ensureTabsFrame() {
+        if (!iframe || activeSource !== 'tabs') return;
+        const viewerUrl = getEmbedViewerUrl();
+        if (viewerUrl === '') {
+            iframe.classList.add('hidden');
+            setTabsStatus('Tabs mode is unavailable: configure an HTTPS ReaTabs origin for this HTTPS page.');
+            applyPointerMode();
+            return;
+        }
+
+        if (iframe.src !== viewerUrl) {
+            iframe.src = viewerUrl;
+        }
+        iframe.classList.remove('hidden');
+        iframe.classList.add('vs-tabs-iframe');
+        sendTabsChromeMessage();
+    }
+
+    function switchActiveSource(nextSource) {
+        if (!ACTIVE_SOURCES.includes(nextSource)) return;
+        if (sourceInitialized && activeSource === nextSource) {
+            if (nextSource === 'tabs') ensureTabsFrame();
+            updateSourcePreferenceButtons();
+            applyPointerMode();
+            return;
+        }
+
+        const previousSource = activeSource;
+        activeSource = nextSource;
+        sourceInitialized = true;
+
+        if (previousSource === 'tabs' && nextSource !== 'tabs') {
+            clearTabsFrame();
+            stopPlaybackProbe();
+            overlay.style.clipPath = '';
+            overlay.style.height = '';
+            showVideoControls();
+        }
+
+        if (nextSource === 'tabs') {
+            stopSync();
+            stopCaptureStreamOnly();
+            stopPlaybackProbe();
+            cancelStandby();
+            exitStandby();
+            if (isCropMode) exitCropMode();
+            overlay.style.clipPath = '';
+            resetVideoVisualState();
+            setTabsGeometry();
+            hideTabsIncompatibleControls();
+            setTabsStatus('');
+            ensureTabsFrame();
+            syncBars();
+            startPlaybackProbe();
+        } else if (nextSource === 'direct') {
+            stopPlaybackProbe();
+            stopCaptureStreamOnly();
+            clearTabsFrame();
+            overlay.style.height = '';
+            showVideoControls();
+            applyCrop();
+            applyVideoVisualState();
             img.style.display = 'none';
             img.removeAttribute('src');
             streamOk = false;
             isConnecting = false;
-            video.style.display = 'none'; // revealed in canplay handler, not before
-            cancelStandby();    // clear any pending timer before entering immediately
-            enterStandby();     // immediate standby — no 20s grace on mode entry
-            startSync();        // begin /playback polling; standby lifts on first valid frame
+            video.style.display = 'none';
+            cancelStandby();
+            enterStandby();
+            restorePosition();
+            startSync();
         } else {
-            // Switch to Capture mode: stop sync, hide video, show MJPEG
             stopSync();
+            stopPlaybackProbe();
+            clearTabsFrame();
+            overlay.style.height = '';
+            showVideoControls();
+            applyCrop();
+            applyVideoVisualState();
+            cancelStandby();
+            exitStandby();
             video.pause();
             video.removeAttribute('src');
             video.style.display = 'none';
             img.style.display = 'block';
-            loadStream(); // Start the MJPEG stream
+            loadStream();
+        }
+
+        updateSourcePreferenceButtons();
+        applyPointerMode();
+    }
+
+    function selectManualSource(source) {
+        if (!ACTIVE_SOURCES.includes(source)) return;
+        manualSourceOverride = source;
+        manualOverrideProjectKey = tabsStableStatus === null ? null : getProjectKey(tabsStableStatus);
+        switchActiveSource(source);
+        updateSourcePreferenceButtons();
+    }
+
+    function evaluateAutoDecision() {
+        const decision = resolveAutoSource({
+            sourcePreference,
+            manualSourceOverride,
+            willLoad: tabsStableStatus === null ? null : tabsStableStatus.willLoad,
+            videoFile: latestPlaybackFile
+        });
+        if (decision === 'tabs') {
+            switchActiveSource('tabs');
+            return;
+        }
+        if (decision === 'direct') {
+            switchActiveSource('direct');
+            return;
+        }
+        if (decision === 'standby') {
+            if (activeSource !== 'direct') switchActiveSource('direct');
+            enterStandby();
+        }
+    }
+
+    function reapplySourcePreference() {
+        if (sourcePreference === 'auto') {
+            evaluateAutoDecision();
+        } else if (sourcePreference === 'video') {
+            switchActiveSource('direct');
+        } else if (sourcePreference === 'capture') {
+            switchActiveSource('capture');
+        } else if (sourcePreference === 'tabs' && activeSource !== 'tabs') {
+            switchActiveSource('tabs');
+        }
+    }
+
+    function setSourcePreference(preference) {
+        sourcePreference = normalizeSourcePreference(preference);
+        manualSourceOverride = null;
+        manualOverrideProjectKey = null;
+        localStorage.setItem(LS_SOURCE_PREFERENCE, sourcePreference);
+
+        if (sourcePreference === 'video') {
+            switchActiveSource('direct');
+        } else if (sourcePreference === 'tabs') {
+            switchActiveSource('tabs');
+        } else if (sourcePreference === 'capture') {
+            switchActiveSource('capture');
+        } else {
+            reapplySourcePreference();
+        }
+        updateSourcePreferenceButtons();
+    }
+
+    function startInitialSource() {
+        if (sourcePreference === 'capture') {
+            switchActiveSource('capture');
+        } else if (sourcePreference === 'tabs') {
+            switchActiveSource('tabs');
+        } else {
+            // Auto begins on Direct so the existing video path can report its
+            // first /playback item while the ReaTabs status settles.
+            switchActiveSource('direct');
         }
     }
 
@@ -324,6 +668,7 @@ export function setupVideoStream() {
         fetch(getPlaybackUrl(), { signal: AbortSignal.timeout(500) })
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
             .then(data => {
+                if (!syncActive || activeSource !== 'direct') return;
                 // Companion responded — reset failure counter and restore fast poll if needed.
                 if (syncConsecFailures > 0) {
                     syncConsecFailures = 0;
@@ -343,6 +688,7 @@ export function setupVideoStream() {
                 if (typeof _updateSyncDbg === 'function') _updateSyncDbg(rtt);
             })
             .catch(() => {
+                if (!syncActive || activeSource !== 'direct') return;
                 // Companion unreachable (or fetch timed out). Back off poll rate after X
                 // consecutive failures so we don't hammer a dead port at 200ms.
                 syncConsecFailures++;
@@ -350,6 +696,63 @@ export function setupVideoStream() {
                     _restartPollAt(POLL_MS_STANDBY);
                 }
                 queueStandby();
+            });
+    }
+
+    // Tabs only needs the playback item's availability; it must not drive the
+    // Direct video element while the iframe owns the source slot.
+    function startPlaybackProbe() {
+        stopPlaybackProbe();
+        if (activeSource !== 'tabs' || getReaTabsOrigin() === '') return;
+        playbackProbeLatestServerTime = 0;
+        playbackProbePendingFile = undefined;
+        playbackProbePendingCount = 0;
+        latestPlaybackFile = null;
+        probePlaybackAvailability();
+        playbackProbeTimer = setInterval(probePlaybackAvailability, PLAYBACK_PROBE_MS);
+    }
+
+    function stopPlaybackProbe() {
+        if (playbackProbeTimer) {
+            clearInterval(playbackProbeTimer);
+            playbackProbeTimer = null;
+        }
+        playbackProbeInFlight = false;
+        playbackProbePendingFile = undefined;
+        playbackProbePendingCount = 0;
+    }
+
+    function probePlaybackAvailability() {
+        if (!isOpen || activeSource !== 'tabs' || playbackProbeInFlight) return;
+        playbackProbeInFlight = true;
+        fetch(getPlaybackUrl(), { signal: AbortSignal.timeout(1500) })
+            .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
+            .then(data => {
+                if (!isOpen || activeSource !== 'tabs') return;
+                const serverTime = Number(data.server_time);
+                if (!Number.isFinite(serverTime) || serverTime <= playbackProbeLatestServerTime) return;
+                playbackProbeLatestServerTime = serverTime;
+
+                const file = typeof data.file === 'string' && data.file !== '' ? data.file : null;
+                if (file === playbackProbePendingFile) {
+                    playbackProbePendingCount += 1;
+                } else {
+                    playbackProbePendingFile = file;
+                    playbackProbePendingCount = 1;
+                }
+                if (playbackProbePendingCount < 2) return;
+
+                const changed = file !== latestPlaybackFile;
+                latestPlaybackFile = file;
+                if (changed && sourcePreference === 'auto' && manualSourceOverride === null) {
+                    evaluateAutoDecision();
+                }
+            })
+            .catch(() => {
+                // A failed availability probe is not a false availability result.
+            })
+            .finally(() => {
+                playbackProbeInFlight = false;
             });
     }
 
@@ -362,6 +765,10 @@ export function setupVideoStream() {
         if (data.server_time) {
             if (data.server_time <= syncLatestServerTime) return; // stale or duplicate — discard
             syncLatestServerTime = data.server_time;
+        }
+
+        if (activeSource === 'direct') {
+            latestPlaybackFile = typeof data.file === 'string' && data.file !== '' ? data.file : null;
         }
 
         // ── Companion script not running ────────────────────────────────────────
@@ -827,6 +1234,9 @@ export function setupVideoStream() {
         overlay.style.top   = top + 'px';
         overlay.style.left  = '0px';
         overlay.style.width = '100%';
+        if (activeSource === 'tabs') {
+            localStorage.removeItem(LS_TABS_TOP_RATIO);
+        }
     }
 
     // Position-preserving — only recalculates top from saved proportional y-ratio.
@@ -835,13 +1245,14 @@ export function setupVideoStream() {
     function recalcTopFromRatio() {
         const overlayH = getExpectedOverlayHeight();
         const vh       = window.innerHeight;
-        const savedY   = localStorage.getItem(LS_POS_Y_RATIO);
+        const isTabs = activeSource === 'tabs';
+        const savedY = localStorage.getItem(isTabs ? LS_TABS_TOP_RATIO : LS_POS_Y_RATIO);
         if (savedY !== null) {
             const parsedY = parseFloat(savedY);
             const yRatio = isNaN(parsedY) ? 0.5 : parsedY;
             
-            const cropTopPx    = overlayH * (cropTopPct / 100);
-            const cropBottomPx = overlayH * (cropBottomPct / 100);
+            const cropTopPx    = isTabs ? 0 : overlayH * (cropTopPct / 100);
+            const cropBottomPx = isTabs ? 0 : overlayH * (cropBottomPct / 100);
             const visibleH     = overlayH - cropTopPx - cropBottomPx;
             
             const naturalMinTop = -cropTopPx;
@@ -857,9 +1268,13 @@ export function setupVideoStream() {
 
     function snapToCenter() {
         centerOverlayFull();
-        localStorage.removeItem(LS_POS_Y_RATIO);
-        localStorage.removeItem(LS_POS_LEFT);
-        localStorage.removeItem(LS_WIDTH_PCT);
+        if (activeSource === 'tabs') {
+            localStorage.removeItem(LS_TABS_TOP_RATIO);
+        } else {
+            localStorage.removeItem(LS_POS_Y_RATIO);
+            localStorage.removeItem(LS_POS_LEFT);
+            localStorage.removeItem(LS_WIDTH_PCT);
+        }
         syncBars();
     }
 
@@ -877,7 +1292,8 @@ export function setupVideoStream() {
     window.addEventListener('resize', () => {
         if (!isOpen) return;
         // Recalc top from saved proportional offset — preserves user's pinch width and left position
-        recalcTopFromRatio();
+        if (activeSource === 'tabs') setTabsGeometry();
+        else recalcTopFromRatio();
         // Re-clamp left to new viewport bounds (width unchanged)
         const { left } = clampPosition(getOverlayTop(), getOverlayLeft());
         overlay.style.left = left + 'px';
@@ -957,7 +1373,7 @@ export function setupVideoStream() {
     // ── Stream load/unload ───────────────────────────────────────────────────
 
     function loadStream() {
-        if (!isOpen) return;
+        if (!isOpen || activeSource !== 'capture') return;
         isConnecting = true;
         // The cache-buster forces the browser to open a fresh TCP socket to Python.
         img.src = getStreamUrl() + '?t=' + Date.now(); 
@@ -966,15 +1382,22 @@ export function setupVideoStream() {
         setTimeout(() => { isConnecting = false; }, 8000); 
     }
 
-    function stopStream() {
+    function stopCaptureStreamOnly() {
         img.src = '';
         streamOk = false;
-        cancelStandby();
-        stopSync();           // Stop Direct-mode sync engine if running
+        isConnecting = false;
         if (video) {
             video.pause();
             video.removeAttribute('src');
         }
+    }
+
+    function stopStream() {
+        stopCaptureStreamOnly();
+        cancelStandby();
+        stopSync();           // Stop Direct-mode sync engine if running
+        stopPlaybackProbe();
+        stopTabsStatusPolling();
         if (statusTimer) {
             clearInterval(statusTimer);
             statusTimer = null;
@@ -1036,22 +1459,114 @@ export function setupVideoStream() {
 
     // Forcefully marks the connection dead if the native OS stack catches a TCP drop.
     function handleSocketDeath() {
-        if (!isOpen) return;
+        if (!isOpen || activeSource !== 'capture') return;
         
         isConnecting = false; // Release the loading lock on abort
         streamOk = false;     // Flag for the heartbeat to reconnect safely
         queueStandby();       // Start the fade-out grace period
     }
 
+    function startTabsStatusPolling() {
+        stopTabsStatusPolling();
+        pollEmbedStatus();
+        tabsStatusTimer = setInterval(pollEmbedStatus, TABS_STATUS_POLL_MS);
+    }
+
+    function stopTabsStatusPolling() {
+        if (tabsStatusTimer) {
+            clearInterval(tabsStatusTimer);
+            tabsStatusTimer = null;
+        }
+        tabsStatusInFlight = false;
+    }
+
+    function pollEmbedStatus() {
+        if (!isOpen || tabsStatusInFlight) return;
+        const statusUrl = getEmbedStatusUrl();
+        if (statusUrl === '') {
+            if (activeSource === 'tabs') ensureTabsFrame();
+            return;
+        }
+
+        tabsStatusInFlight = true;
+        fetch(statusUrl, { signal: AbortSignal.timeout(2500) })
+            .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
+            .then(handleEmbedStatus)
+            .catch(() => {
+                // A failed status poll is not a false willLoad value. Keep the
+                // current source and iframe exactly as they are.
+            })
+            .finally(() => {
+                tabsStatusInFlight = false;
+            });
+    }
+
+    function handleEmbedStatus(data) {
+        if (!isOpen) return;
+        const serverTime = Number(data?.serverTime);
+        if (!Number.isFinite(serverTime) || serverTime <= tabsLatestServerTime) return;
+        if (typeof data?.willLoad !== 'boolean') return;
+
+        tabsLatestServerTime = serverTime;
+        const status = {
+            serverTime,
+            projectPath: typeof data.projectPath === 'string' ? data.projectPath : '',
+            projectName: typeof data.projectName === 'string' ? data.projectName : '',
+            willLoad: data.willLoad,
+            tabName: typeof data.tabName === 'string' ? data.tabName : ''
+        };
+        const signature = `${getProjectKey(status)}\u0000${status.willLoad}\u0000${status.tabName}`;
+        if (signature === tabsPendingSignature) {
+            tabsPendingCount += 1;
+        } else {
+            tabsPendingSignature = signature;
+            tabsPendingCount = 1;
+        }
+        if (tabsPendingCount < 2) return;
+
+        const previousStatus = tabsStableStatus;
+        tabsStableStatus = status;
+        const projectChanged = previousStatus === null || getProjectKey(previousStatus) !== getProjectKey(status);
+        const willLoadBecameTrue = previousStatus !== null
+            && previousStatus.willLoad === false
+            && status.willLoad === true;
+
+        if (manualSourceOverride !== null) {
+            if (manualOverrideProjectKey === null) {
+                manualOverrideProjectKey = getProjectKey(status);
+            } else if (projectChanged) {
+                manualSourceOverride = null;
+                manualOverrideProjectKey = null;
+                updateSourcePreferenceButtons();
+            }
+        }
+
+        if (activeSource === 'tabs') {
+            if (status.willLoad === true) {
+                setTabsStatus('');
+                ensureTabsFrame();
+            } else if (sourcePreference === 'tabs' || manualSourceOverride === 'tabs') {
+                setTabsStatus('No ReaTabs score is resolved for this project.');
+            }
+        }
+
+        const tabsBecameUnavailable = previousStatus !== null
+            && previousStatus.willLoad === true
+            && status.willLoad === false;
+        if (projectChanged || willLoadBecameTrue || tabsBecameUnavailable) {
+            reapplySourcePreference();
+        }
+    }
+
     // Immediate fallback: only triggers if OS sends a clean TCP abort before heartbeat polls
     img.addEventListener('error', () => {
-        if (!isOpen) return;
+        if (!isOpen || activeSource !== 'capture') return;
         handleSocketDeath();
     });
 
     // Validates a successful connection
     img.addEventListener('load', () => {
-        if (!isOpen) return;
+        if (!isOpen || activeSource !== 'capture') return;
         isConnecting = false; // Successfully downloaded the first frame
         streamOk = true;
         cancelStandby();      // Rip away the timeout execution
@@ -1067,6 +1582,7 @@ export function setupVideoStream() {
     function startStatusHeartbeat() {
         if (statusTimer) clearInterval(statusTimer);
         lastHeartbeatTime = Date.now();
+        startTabsStatusPolling();
         
         statusTimer = setInterval(() => {
             if (!isOpen) return;
@@ -1075,14 +1591,14 @@ export function setupVideoStream() {
             // Android Chrome silent-suspends TCP sockets when the screen locks, completely bypassing 'onerror'.
             // If more than 15 seconds magically pass between this 2s tick, we mathematically know the tablet was asleep!
             const now = Date.now();
-            if (now - lastHeartbeatTime > 15000) {
+            if (activeSource === 'capture' && now - lastHeartbeatTime > 15000) {
                 handleSocketDeath(); // Instantly flag the UI so the next few lines cleanly rebuild the connection.
             }
             lastHeartbeatTime = now;
 
             // In Direct mode the sync engine handles everything via /playback.
             // Don't poll /status or call loadStream() — that would re-set img.src.
-            if (directMode) return;
+            if (activeSource !== 'capture') return;
 
             fetch(getStatusUrl(), { signal: AbortSignal.timeout(3000) })
                 .then(r => {
@@ -1093,7 +1609,7 @@ export function setupVideoStream() {
                     return r.json();
                 })
                 .then(data => {
-                    if (!data) return;
+                    if (!data || !isOpen || activeSource !== 'capture') return;
 
                     if (data.stream_state === 'active') {
                         cancelStandby();
@@ -1130,9 +1646,16 @@ export function setupVideoStream() {
         editBar?.classList.remove('hidden');
         btn.classList.add('active');
 
-        // Restore saved mode (default to Capture if not found)
-        const savedMode = localStorage.getItem(LS_MODE_KEY) || 'capture';
-        switchSourceMode(savedMode);
+        sourcePreference = loadSourcePreference();
+        tabsLatestServerTime = 0;
+        tabsPendingSignature = null;
+        tabsPendingCount = 0;
+        tabsStableStatus = null;
+        latestPlaybackFile = null;
+        setPointerMode(POINTER_MODES.includes(localStorage.getItem(LS_POINTER_MODE))
+            ? localStorage.getItem(LS_POINTER_MODE)
+            : 'interact');
+        startInitialSource();
 
         startStatusHeartbeat();
         showControls();
@@ -1140,7 +1663,8 @@ export function setupVideoStream() {
 
     function close() {
         isOpen = false;
-        directMode = null; // Reset so open() always fully re-initializes (startSync/loadStream)
+        activeSource = 'capture'; // Reset so open() always fully re-initializes its selected source.
+        sourceInitialized = false;
         localStorage.setItem(LS_IS_OPEN, 'false');
         overlay.classList.add('hidden');
         controlsBar?.classList.add('hidden');
@@ -1154,6 +1678,9 @@ export function setupVideoStream() {
         if (editBar)   { editBar.classList.remove('vs-standby');         // legacy guard
                          editBar.classList.remove('vs-standby-partial'); }
         if (iframe)      iframe.classList.remove('vs-standby');
+        clearTabsFrame();
+        overlay.style.height = '';
+        overlay.classList.remove('vs-pointer-passive', 'vs-pointer-move', 'vs-pointer-interact');
 
         hideControlsImmediate();
         toggleSliderPopup(false);
@@ -1212,7 +1739,7 @@ export function setupVideoStream() {
         refreshBtn.addEventListener('click', () => {
             if (!isOpen) return;
 
-            if (directMode) {
+            if (activeSource === 'direct') {
                 // Direct mode: restart sync engine (re-poll /playback and reload video)
                 stopSync();
                 video.pause();
@@ -1220,7 +1747,7 @@ export function setupVideoStream() {
                 syncCurrentFile = null; // Force file reload on next poll
                 queueStandby();
                 startSync();
-            } else {
+            } else if (activeSource === 'capture') {
                 // Capture mode: clear the current ghost stream to force Chrome to drop the MJPEG decoder
                 img.src = '';
                 // Yield the thread for 50ms so Chrome natively registers the decoder death
@@ -1228,6 +1755,15 @@ export function setupVideoStream() {
                     handleSocketDeath(); // Force standby sequence explicitly
                     loadStream();        // Brutally cache-bust and revive
                 }, 50);
+            } else {
+                // Tabs mode: a manual refresh is allowed to reparse the score.
+                const viewerUrl = getEmbedViewerUrl();
+                if (viewerUrl !== '' && iframe) {
+                    iframe.src = viewerUrl;
+                    iframe.classList.remove('hidden');
+                } else {
+                    ensureTabsFrame();
+                }
             }
         });
     }
@@ -1558,56 +2094,48 @@ export function setupVideoStream() {
         }
     });
 
-    // ── Lock & Passthrough ───────────────────────────────────────────────────
-    // Lock   = freeze position/size + enable passthrough clicks
-    // Unlock = overlay is a drag/pinch target
-    // Long-press (1200ms) on lock btn = snap to center + unlock
+    // ── Pointer routing ─────────────────────────────────────────────────────
+    // Passive = passthrough, Move/Size = transparent glass drag target,
+    // Interact = iframe ownership. The cycle button is a sibling of the
+    // overlay, so it remains reachable in every state.
 
     let lockHoldTimer  = null;
-    let lockPressTime  = 0;
     const LOCK_HOLD_MS = 1200;
 
-    function setLocked(locked) {
-        isLocked = locked;
-        localStorage.setItem(LS_LOCKED, locked ? '1' : '0');
-        if (lockBtn) {
-            lockBtn.innerHTML = locked
-                ? '<i class="bi bi-lock"></i>'
-                : '<i class="bi bi-unlock"></i>';
-            lockBtn.classList.toggle('vs-locked', locked);
-            lockBtn.title = locked
-                ? 'Locked — long-press to snap to center'
-                : 'Unlocked — tap to lock';
-        }
-        // Passthrough: locked = pointer-events none, unlocked = auto (draggable)
-        overlay.style.pointerEvents = locked ? 'none' : 'auto';
-    }
-
     if (lockBtn) {
-        // Touch start — start hold timer
         lockBtn.addEventListener('pointerdown', (e) => {
-            lockPressTime = Date.now();
+            e.preventDefault();
             lockHoldTimer = setTimeout(() => {
-                // Long-press: snap to center
                 snapToCenter();
-                setLocked(false);
+                setPointerMode('move');
                 lockHoldTimer = null;
             }, LOCK_HOLD_MS);
         });
 
-        // Touch end — if not a long-press, toggle lock
         lockBtn.addEventListener('pointerup', (e) => {
             if (lockHoldTimer) {
                 clearTimeout(lockHoldTimer);
                 lockHoldTimer = null;
-                setLocked(!isLocked);
+                cyclePointerMode();
             }
         });
 
+        lockBtn.addEventListener('pointercancel', () => {
+            if (lockHoldTimer) { clearTimeout(lockHoldTimer); lockHoldTimer = null; }
+        });
         lockBtn.addEventListener('pointerleave', () => {
             if (lockHoldTimer) { clearTimeout(lockHoldTimer); lockHoldTimer = null; }
         });
     }
+
+    const savedPointerMode = localStorage.getItem(LS_POINTER_MODE);
+    if (POINTER_MODES.includes(savedPointerMode)) {
+        pointerMode = savedPointerMode;
+    } else {
+        const savedLocked = localStorage.getItem(LS_LOCKED);
+        pointerMode = savedLocked === '1' ? 'passive' : (savedLocked === '0' ? 'move' : 'interact');
+    }
+    applyPointerMode();
 
 
     function clampPosition(top, left) {
@@ -1617,8 +2145,8 @@ export function setupVideoStream() {
         const vh = window.innerHeight;
 
         // Crop-aware bounds: clip-path changes the *visible* region but not the layout box.
-        const cropTopPx    = overlayH * (cropTopPct    / 100);
-        const cropBottomPx = overlayH * (cropBottomPct / 100);
+        const cropTopPx    = activeSource === 'tabs' ? 0 : overlayH * (cropTopPct    / 100);
+        const cropBottomPx = activeSource === 'tabs' ? 0 : overlayH * (cropBottomPct / 100);
         const visibleH     = overlayH - cropTopPx - cropBottomPx;
 
         // Visible region top in viewport = overlay.top + cropTopPx
@@ -1641,6 +2169,15 @@ export function setupVideoStream() {
         const top      = parseInt(overlay.style.top, 10) || 0;
         const vh       = window.innerHeight;
         const overlayH = Math.max(1, overlay.offsetHeight);
+
+        if (activeSource === 'tabs') {
+            const availableHeight = Math.max(1, vh - overlayH);
+            const topRatio = clampVal(top / availableHeight, 0, 1);
+            const heightRatio = clampVal(overlayH / Math.max(1, vh), 0.15, 1);
+            localStorage.setItem(LS_TABS_TOP_RATIO, String(topRatio));
+            localStorage.setItem(LS_TABS_HEIGHT_RATIO, String(heightRatio));
+            return;
+        }
         
         const cropTopPx    = overlayH * (cropTopPct / 100);
         const cropBottomPx = overlayH * (cropBottomPct / 100);
@@ -1662,8 +2199,12 @@ export function setupVideoStream() {
     }
 
     function getExpectedOverlayHeight() {
+        // Tabs owns an explicit height; the iframe has no intrinsic media size.
+        if (activeSource === 'tabs') {
+            return Math.max(1, overlay.offsetHeight || Math.round(window.innerHeight * 0.5));
+        }
         // Direct mode: use video's intrinsic dimensions once loaded
-        if (directMode && video && video.videoWidth && video.videoHeight) {
+        if (activeSource === 'direct' && video && video.videoWidth && video.videoHeight) {
             return Math.max(1, Math.round(overlay.offsetWidth * (video.videoHeight / video.videoWidth)));
         }
         // Capture mode: use img's intrinsic dimensions
@@ -1675,6 +2216,12 @@ export function setupVideoStream() {
     }
 
     function restorePosition() {
+        if (activeSource === 'tabs') {
+            setTabsGeometry();
+            syncBars();
+            return;
+        }
+
         const savedY    = localStorage.getItem(LS_POS_Y_RATIO);
         const savedLeft = localStorage.getItem(LS_POS_LEFT);
         const savedW    = localStorage.getItem(LS_WIDTH_PCT);
@@ -1744,8 +2291,14 @@ export function setupVideoStream() {
         activePointers.set(e.pointerId, true);
         showControls(); // Unconditionally wake up controls on any tap
         
-        if (isLocked) return;
-        if (activePointers.size > 1) { isDragging = false; dragActive = false; return; }
+        if (pointerMode !== 'move') return;
+        if (activePointers.size > 1) {
+            if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+            isDragging = false;
+            dragActive = false;
+            document.body.classList.remove('vs-dragging');
+            return;
+        }
 
         isDragging        = true;
         dragActive        = false;
@@ -1763,7 +2316,7 @@ export function setupVideoStream() {
     });
 
     overlay.addEventListener('pointermove', (e) => {
-        if (!isDragging || isLocked) return;
+        if (!isDragging || pointerMode !== 'move') return;
         e.preventDefault();
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
@@ -1839,12 +2392,13 @@ export function setupVideoStream() {
     });
 
     // ── Pinch-to-resize ──────────────────────────────────────────────────────
-    // Track two touch pointers; scale overlay width based on pinch distance ratio.
-    // Clamps to [30%, 100%]. Height adjusts automatically (img height: auto).
+    // Track two touch pointers; video scales width, while Tabs keeps full width
+    // and scales the iframe height. Video width remains clamped to [30%, 100%].
 
     let pinchPointers    = new Map(); // pointerId → {x, y}
     let pinchStartDist   = 0;
     let pinchStartWidthPct = 100;
+    let pinchStartHeight  = 0;
 
     function getPinchDistance(map) {
         const pts = [...map.values()];
@@ -1855,7 +2409,7 @@ export function setupVideoStream() {
     }
 
     overlay.addEventListener('touchstart', (e) => {
-        if (isLocked) return;
+        if (pointerMode !== 'move') return;
         for (const t of e.changedTouches) {
             pinchPointers.set(t.identifier, { x: t.clientX, y: t.clientY });
         }
@@ -1865,12 +2419,13 @@ export function setupVideoStream() {
             document.body.classList.remove('vs-dragging');
             pinchStartDist      = getPinchDistance(pinchPointers);
             pinchStartWidthPct  = getOverlayWidthPct();
+            pinchStartHeight    = overlay.offsetHeight;
             e.preventDefault();
         }
     }, { passive: false });
 
     overlay.addEventListener('touchmove', (e) => {
-        if (isLocked || pinchPointers.size < 2) return;
+        if (pointerMode !== 'move' || pinchPointers.size < 2) return;
 
         for (const t of e.changedTouches) {
             if (pinchPointers.has(t.identifier)) {
@@ -1881,10 +2436,19 @@ export function setupVideoStream() {
         const currentDist = getPinchDistance(pinchPointers);
         if (pinchStartDist === 0) return;
         const scale = currentDist / pinchStartDist;
-        const newPct = clampVal(pinchStartWidthPct * scale, 30, 100);
-        overlay.style.width = newPct + '%';
-        // Re-center left if back to full width
-        if (newPct >= 99.5) overlay.style.left = '0px';
+        if (activeSource === 'tabs') {
+            const minHeight = Math.max(120, Math.round(window.innerHeight * 0.15));
+            const maxHeight = Math.max(minHeight, window.innerHeight);
+            const newHeight = clampVal(Math.round(pinchStartHeight * scale), minHeight, maxHeight);
+            overlay.style.width = '100%';
+            overlay.style.height = newHeight + 'px';
+            overlay.style.left = '0px';
+        } else {
+            const newPct = clampVal(pinchStartWidthPct * scale, 30, 100);
+            overlay.style.width = newPct + '%';
+            // Re-center left if back to full width
+            if (newPct >= 99.5) overlay.style.left = '0px';
+        }
         syncBars();
         e.preventDefault();
     }, { passive: false });
@@ -1898,6 +2462,7 @@ export function setupVideoStream() {
                 // Pinch just ended — save
                 savePosition();
                 pinchStartDist = 0;
+                pinchStartHeight = 0;
             }
         }
     });
@@ -1905,9 +2470,8 @@ export function setupVideoStream() {
     // ── Position restore (on first load) ─────────────────────────────────────
     // Called after img.onload to ensure offsetHeight is correct
 
-    // ── Lock restore ─────────────────────────────────────────────────────────
-    const savedLocked = localStorage.getItem(LS_LOCKED);
-    setLocked(savedLocked === '1');
+    // ── Pointer routing restore ─────────────────────────────────────────────
+    applyPointerMode();
 
     // ── Z-Index restore ──────────────────────────────────────────────────────
     const savedZ = parseInt(localStorage.getItem(LS_ZINDEX), 10);
@@ -1924,26 +2488,53 @@ export function setupVideoStream() {
         fullscreenBtn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
     }
 
+    if (iframe) {
+        iframe.addEventListener('load', () => {
+            if (activeSource !== 'tabs') return;
+            if (tabsStableStatus === null || tabsStableStatus.willLoad === true) {
+                setTabsStatus('');
+            }
+            sendTabsChromeMessage();
+            applyPointerMode();
+            restorePosition();
+            showControls();
+            syncBars();
+        });
+    }
+
     if (fullscreenBtn) {
         fullscreenBtn.addEventListener('click', () => {
             if (document.fullscreenElement === iframe) {
                 document.exitFullscreen().catch(() => {});
             } else {
                 if (!iframe) return;
-                
-                if (isCropMode) exitCropMode();
-                
-                // Iframe handoff: streamer's native UI handles both Capture and Direct modes
-                img.src = '';
-                iframe.src = getViewerUrl();
-                iframe.classList.remove('hidden');
+
+                if (activeSource === 'tabs') {
+                    ensureTabsFrame();
+                    if (iframe.classList.contains('hidden')) return;
+                } else {
+                    if (isCropMode) exitCropMode();
+
+                    // Iframe handoff: streamer's native UI handles both Capture and Direct modes.
+                    fullscreenHandoffActive = true;
+                    if (activeSource === 'capture') img.src = '';
+                    if (activeSource === 'direct') video.style.visibility = 'hidden';
+                    iframe.src = getViewerUrl();
+                    iframe.classList.remove('hidden');
+                }
 
                 iframe.requestFullscreen({ navigationUI: 'hide' }).catch((err) => {
                     console.warn('[VideoStream] Fullscreen request failed:', err);
-                    // Revert handoff on failure
-                    iframe.src = '';
-                    iframe.classList.add('hidden');
-                    if (isOpen && !directMode) loadStream(); // Restore MJPEG stream (Capture mode only)
+                    if (fullscreenHandoffActive) {
+                        fullscreenHandoffActive = false;
+                        iframe.src = '';
+                        iframe.classList.add('hidden');
+                        if (activeSource === 'capture') {
+                            if (isOpen) loadStream();
+                        } else if (activeSource === 'direct') {
+                            video.style.visibility = '';
+                        }
+                    }
                 });
             }
         });
@@ -1966,12 +2557,18 @@ export function setupVideoStream() {
         dragActive = false;
         document.body.classList.remove('vs-dragging');
         
-        // Handoff Return: when exiting fullscreen, swap streams back
-        if (document.fullscreenElement === null) {
-            if (iframe && !iframe.classList.contains('hidden')) {
+        // Handoff Return: when exiting video fullscreen, swap the source back.
+        // Tabs fullscreen keeps the embedded iframe mounted in its overlay slot.
+        if (document.fullscreenElement === null && fullscreenHandoffActive) {
+            fullscreenHandoffActive = false;
+            if (iframe) {
                 iframe.src = '';
                 iframe.classList.add('hidden');
-                if (isOpen && !directMode) loadStream(); // Restore MJPEG stream (Capture mode only)
+            }
+            if (activeSource === 'capture') {
+                if (isOpen) loadStream();
+            } else if (activeSource === 'direct') {
+                video.style.visibility = '';
             }
         }
     });
@@ -1994,6 +2591,10 @@ export function setupVideoStream() {
 
     // Apply clip-path to overlay and reposition handle divs in viewport coords
     function applyCrop() {
+        if (activeSource === 'tabs') {
+            overlay.style.clipPath = '';
+            return;
+        }
         overlay.style.clipPath = (cropTopPct === 0 && cropRightPct === 0 && cropBottomPct === 0 && cropLeftPct === 0)
             ? ''
             : `inset(${cropTopPct.toFixed(2)}% ${cropRightPct.toFixed(2)}% ${cropBottomPct.toFixed(2)}% ${cropLeftPct.toFixed(2)}%)`;
@@ -2064,6 +2665,7 @@ export function setupVideoStream() {
     }
 
     function enterCropMode() {
+        if (activeSource === 'tabs') return;
         isCropMode = true;
         if (cropBtn) {
             cropBtn.classList.add('active');
@@ -2177,6 +2779,7 @@ export function setupVideoStream() {
     // Crop button toggle
     if (cropBtn) {
         cropBtn.addEventListener('click', () => {
+            if (activeSource === 'tabs') return;
             if (isCropMode) exitCropMode();
             else            enterCropMode();
         });
@@ -2214,11 +2817,16 @@ export function setupVideoStream() {
     // Restore saved crop on load
     restoreCrop();
 
-    // ── Mode Toggle (Stream vs Direct video) ──────────────────────────────────
-    if (modeCapturBtn && modeDirectBtn) {
-        modeCapturBtn.addEventListener('click', () => switchSourceMode('capture'));
-        modeDirectBtn.addEventListener('click', () => switchSourceMode('direct'));
-    }
+    // ── Source controls ─────────────────────────────────────────────────────
+    modeAutoBtn?.addEventListener('click', () => setSourcePreference('auto'));
+    modeDirectBtn?.addEventListener('click', () => selectManualSource('direct'));
+    modeTabsBtn?.addEventListener('click', () => selectManualSource('tabs'));
+    modeCapturBtn?.addEventListener('click', () => selectManualSource('capture'));
+    sourcePrefAutoBtn?.addEventListener('click', () => setSourcePreference('auto'));
+    sourcePrefVideoBtn?.addEventListener('click', () => setSourcePreference('video'));
+    sourcePrefTabsBtn?.addEventListener('click', () => setSourcePreference('tabs'));
+    sourcePreference = loadSourcePreference();
+    updateSourcePreferenceButtons();
 
     // ── Latency Compensation Control (Direct mode only) ───────────────────────
     function updateLatencyDisplay() {

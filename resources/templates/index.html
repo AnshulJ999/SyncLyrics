@@ -654,6 +654,10 @@
 <div id="video-stream-overlay" class="video-stream-overlay hidden">
     <img id="video-stream-img" class="vs-img" src="" alt="REAPER Video">
     <video id="video-stream-video" class="vs-video" playsinline preload="auto" muted style="display: none;"></video>
+    <!-- Embedded ReaTabs score. It is mounted only while the active source is Tabs. -->
+    <iframe id="vs-native-iframe" class="hidden vs-tabs-iframe" title="ReaTabs score" allow="fullscreen"></iframe>
+    <div id="vs-tabs-glass" class="vs-tabs-glass" aria-hidden="true"></div>
+    <div id="vs-tabs-status" class="vs-tabs-status hidden" role="status"></div>
     <div id="vs-dbg" class="vs-dbg">
         <div class="vs-dbg-row">
             <div class="vs-dbg-cell"><div class="vs-dbg-lbl">FPS</div><div id="vs-dbg-fps"  class="vs-dbg-val dim">—</div></div>
@@ -671,8 +675,7 @@
     </div>
 </div>
 
-<!-- Native Fullscreen Iframe (Dormant until handoff) -->
-<iframe id="vs-native-iframe" class="hidden" allow="fullscreen" style="width:100%; height:100%; border:none; position:fixed; z-index:9999; top:0; left:0;"></iframe>
+<!-- Native Fullscreen Iframe (Dormant until handoff; also used by the embedded ReaTabs source above) -->
 
 
 <!-- Video Stream Controls (sibling — outside overlay so blend modes don't affect buttons) -->
@@ -758,6 +761,14 @@
             <button id="vs-auto-blend-toggle" class="vs-mode-btn" title="Auto-disable blend mode on non-TAB videos">Off</button>
         </div>
     </div>
+    <div class="vs-slider-row vs-lyrics-mode-row">
+        <span class="vs-slider-label"><i class="bi bi-arrow-repeat"></i> Source Preference</span>
+        <div class="vs-lyrics-mode-btns">
+            <button id="vs-source-pref-auto" class="vs-mode-btn active" title="Auto-select the source">Auto</button>
+            <button id="vs-source-pref-video" class="vs-mode-btn" title="Always use Direct video">Video</button>
+            <button id="vs-source-pref-tabs" class="vs-mode-btn" title="Always use ReaTabs">Tabs</button>
+        </div>
+    </div>
 
     <div class="vs-slider-row vs-zindex-row">
         <span class="vs-slider-label"><i class="bi bi-stack"></i> Z-Index</span>
@@ -781,7 +792,7 @@
 
 <!-- Video Stream Edit Bar (top-left) — Lock and Crop buttons -->
 <div id="vs-edit-bar" class="vs-edit-bar hidden">
-    <button id="vs-lock-btn" class="vs-control-btn" title="Lock position (long-press to snap to center)">
+    <button id="vs-lock-btn" class="vs-control-btn" title="Cycle pointer mode (long-press to snap to center)">
         <i class="bi bi-unlock"></i>
     </button>
     <button id="vs-crop-btn" class="vs-control-btn" title="Edit / Crop">
@@ -795,13 +806,16 @@
         <button class="vs-control-btn vs-crop-preset-btn" data-preset="3">3</button>
     </div>
 
-    <!-- Video Stream Mode Toggle (Stream vs Direct) -->
+    <!-- Video Stream Mode Toggle (source preference / one-project override) -->
     <div id="vs-mode-toggle" class="vs-mode-toggle">
-        <button id="vs-mode-capture" class="vs-control-btn vs-mode-btn active" data-mode="capture" title="Capture mode (MJPEG stream)">
-            <i class="bi bi-image"></i>
+        <button id="vs-mode-auto" class="vs-control-btn vs-mode-btn active" data-mode="auto" title="Return to Auto source preference">
+            <i class="bi bi-magic"></i>
         </button>
-        <button id="vs-mode-direct" class="vs-control-btn vs-mode-btn" data-mode="direct" title="Direct mode (video file sync)">
+        <button id="vs-mode-direct" class="vs-control-btn vs-mode-btn" data-mode="direct" title="Use video for this project">
             <i class="bi bi-camera-video"></i>
+        </button>
+        <button id="vs-mode-tabs" class="vs-control-btn vs-mode-btn" data-mode="tabs" title="Use ReaTabs for this project">
+            <i class="bi bi-music-note-list"></i>
         </button>
     </div>
 </div>
