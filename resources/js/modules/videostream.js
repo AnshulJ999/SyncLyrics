@@ -239,6 +239,8 @@ export function setupVideoStream() {
     // Transient, never persisted: fullscreen OVERRIDES the stored pointer mode
     // rather than changing it, so exiting hands control straight back.
     let tabsFullscreenActive  = false;
+    const LS_TABS_INVERT_SOURCE = 'reaper_tabs_invert_source';
+    let tabsInvertSource = localStorage.getItem(LS_TABS_INVERT_SOURCE) === 'true';
     let tabsStatusInFlight    = false;
     let tabsLatestServerTime  = 0;
     let tabsPendingSignature  = null;
@@ -1946,12 +1948,19 @@ export function setupVideoStream() {
         const s = (filters.saturation / 100).toFixed(2);
         const h = filters.hue;
 
-        if (currentBlendMode === 'screen') {
-            return `saturate(${s}) hue-rotate(${h}deg) invert(1) contrast(${c}) brightness(${b})`;
-        } else if (currentBlendMode === 'multiply') {
-            return `saturate(${s}) hue-rotate(${h}deg) contrast(${c}) brightness(${b})`;
-        }
-        return '';
+        if (currentBlendMode !== 'screen' && currentBlendMode !== 'multiply') return '';
+
+        // invert(1) is not really a property of Screen mode - it is a property of
+        // WHICH background is being removed. Multiply removes white, Screen
+        // removes black, so a light-backed source needs the invert for Screen and
+        // a dark-backed one needs it for Multiply. It was welded to Screen only
+        // because tab videos are always light-backed.
+        //   invert OFF (default): light source. multiply -> dark ink, screen -> light ink
+        //   invert ON:            dark source.  multiply -> dark ink, screen -> light ink
+        // Tabs-only: videos are always light-backed, so never disturb that path.
+        const flip = activeSource === 'tabs' && tabsInvertSource;
+        const inv = ((currentBlendMode === 'screen') !== flip) ? 'invert(1) ' : '';
+        return `saturate(${s}) hue-rotate(${h}deg) ${inv}contrast(${c}) brightness(${b})`;
     }
 
     function applyFilters() {
@@ -2195,6 +2204,18 @@ export function setupVideoStream() {
     if (opacitySlider) {
         opacitySlider.addEventListener('input', () => {
             applyOpacity(parseInt(opacitySlider.value, 10));
+        });
+    }
+
+    const tabsInvertSourceBtn = document.getElementById('vs-tabs-invert-source-toggle');
+    if (tabsInvertSourceBtn) {
+        tabsInvertSourceBtn.textContent = tabsInvertSource ? 'On' : 'Off';
+        tabsInvertSourceBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tabsInvertSource = !tabsInvertSource;
+            localStorage.setItem(LS_TABS_INVERT_SOURCE, String(tabsInvertSource));
+            tabsInvertSourceBtn.textContent = tabsInvertSource ? 'On' : 'Off';
+            applyFilters();
         });
     }
 
