@@ -236,6 +236,9 @@ export function setupVideoStream() {
     let tabsEverReachable     = false;  // has /embed/status answered since Tabs became active
     const LS_TABS_BLEND_INTERACT = 'reaper_tabs_blend_off_interact';
     let tabsBlendOffInInteract = localStorage.getItem(LS_TABS_BLEND_INTERACT) === 'true';
+    // Transient, never persisted: fullscreen OVERRIDES the stored pointer mode
+    // rather than changing it, so exiting hands control straight back.
+    let tabsFullscreenActive  = false;
     let tabsStatusInFlight    = false;
     let tabsLatestServerTime  = 0;
     let tabsPendingSignature  = null;
@@ -354,7 +357,7 @@ export function setupVideoStream() {
         if (targetOrigin === '') return;
         iframe.contentWindow.postMessage({
             type: 'reatabs:chrome',
-            show: getEffectivePointerMode() === 'interact'
+            show: tabsFullscreenActive || getEffectivePointerMode() === 'interact'
         }, targetOrigin);
     }
 
@@ -368,7 +371,10 @@ export function setupVideoStream() {
         if (targetOrigin === '') return;
         iframe.contentWindow.postMessage({
             type: 'reatabs:backdrop',
-            alpha: clampVal(currentOpacity, 10, 100) / 100
+            // Fullscreen is "ReaTabs as normal, filling the screen": blend is off,
+            // so a transparent backdrop would fall through to the browser's white
+            // base - fine in light theme, unreadable in dark. Force it opaque.
+            alpha: tabsFullscreenActive ? 1 : clampVal(currentOpacity, 10, 100) / 100
         }, targetOrigin);
     }
 
@@ -385,7 +391,10 @@ export function setupVideoStream() {
         const isMove = effectivePointerMode === 'move';
         const isInteract = effectivePointerMode === 'interact';
         overlay.style.pointerEvents = isMove ? 'auto' : 'none';
-        if (iframe) iframe.style.pointerEvents = isTabs && isInteract ? 'auto' : 'none';
+        // Fullscreen always owns its own pointer events, whatever the stored mode
+        // says - in Passive the iframe refuses taps, and a fullscreen frame that
+        // refuses taps is simply a dead screen.
+        if (iframe) iframe.style.pointerEvents = isTabs && (isInteract || tabsFullscreenActive) ? 'auto' : 'none';
         if (tabsGlass) tabsGlass.style.pointerEvents = isTabs && isMove ? 'auto' : 'none';
         controlsBar?.classList.toggle('vs-interact-hidden', isInteract);
         editBar?.classList.toggle('vs-interact-hidden', isInteract);
@@ -395,7 +404,10 @@ export function setupVideoStream() {
         // Optional: drop the blend while interacting, so ReaTabs' own panels are
         // read against a solid background instead of multiplied into the lyrics.
         if (isTabs) {
-            const suppressBlend = tabsBlendOffInInteract && isInteract;
+            // Fullscreen suppresses unconditionally: there is nothing behind the
+            // tab to blend WITH, so multiply would composite against the
+            // fullscreen backdrop rather than the lyrics.
+            const suppressBlend = tabsFullscreenActive || (tabsBlendOffInInteract && isInteract);
             overlay.classList.toggle('vs-multiply', !suppressBlend && currentBlendMode === 'multiply');
             overlay.classList.toggle('vs-screen',   !suppressBlend && currentBlendMode === 'screen');
             if (iframe) iframe.style.filter = suppressBlend ? '' : (computeFilter() || '');
@@ -2666,7 +2678,20 @@ export function setupVideoStream() {
 
     document.addEventListener('fullscreenchange', () => {
         updateFullscreenBtn();
-        
+
+        // Tabs fullscreen = "ReaTabs as normal, filling the screen": its own
+        // controls visible, no blend, fully interactive. One flag, consulted by
+        // applyPointerMode() and both bridge messages.
+        // ⚠️ Exit is by page reload for now - the gesture that would let ReaTabs
+        // ask the parent to exit is deferred; see [O3] in the SyncLyrics backlog.
+        const nowFullscreen = iframe !== null && document.fullscreenElement === iframe;
+        const tabsFullscreenNext = nowFullscreen && activeSource === 'tabs';
+        if (tabsFullscreenNext !== tabsFullscreenActive) {
+            tabsFullscreenActive = tabsFullscreenNext;
+            applyPointerMode();          // pointer-events, blend, and the chrome message
+            sendTabsBackdropMessage();   // opaque while fullscreen, restored on exit
+        }
+
         mainBtnHasHeld = false;
         if (mainBtnHoldTimer) { clearTimeout(mainBtnHoldTimer); mainBtnHoldTimer = null; }
         
