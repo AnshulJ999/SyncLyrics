@@ -356,6 +356,20 @@ export function setupVideoStream() {
         }, targetOrigin);
     }
 
+    // ReaTabs' own backdrop alpha, for comparing TRUE alpha transparency against
+    // the blend-mode route. Desktop pixel tests said blend crosses the
+    // cross-origin boundary and alpha does not; this exists so that can be
+    // confirmed on the actual Android tablet rather than inferred from desktop.
+    function sendTabsBackdropMessage() {
+        if (activeSource !== 'tabs' || !iframe || iframe.contentWindow === null) return;
+        const targetOrigin = getReaTabsOrigin();
+        if (targetOrigin === '') return;
+        iframe.contentWindow.postMessage({
+            type: 'reatabs:backdrop',
+            alpha: clampVal(currentOpacity, 10, 100) / 100
+        }, targetOrigin);
+    }
+
     function applyPointerMode() {
         if (!POINTER_MODES.includes(pointerMode)) pointerMode = 'interact';
         const effectivePointerMode = getEffectivePointerMode();
@@ -448,7 +462,11 @@ export function setupVideoStream() {
     }
 
     function hideTabsIncompatibleControls() {
-        if (transparencyBtn) transparencyBtn.style.display = 'none';
+        // Blend stays available in Tabs: mix-blend-mode is set on the overlay,
+        // which now contains the iframe, and multiply IS honoured across the
+        // cross-origin boundary (verified by pixel sample) even though alpha
+        // transparency is not. Light-theme ReaTabs + multiply drops the white
+        // and leaves only notation - the same trick the tab videos use.
         if (cropBtn) cropBtn.style.display = 'none';
         if (cropPresets) cropPresets.style.display = 'none';
         videoOnlySettingRows.forEach(row => { row.style.display = 'none'; });
@@ -527,6 +545,13 @@ export function setupVideoStream() {
             if (isCropMode) exitCropMode();
             overlay.style.clipPath = '';
             resetVideoVisualState();
+            // Then put the blend back. resetVideoVisualState() clears the video
+            // element's own filters and opacity, which Tabs does not want, but
+            // mix-blend-mode lives on the OVERLAY and the iframe sits inside it -
+            // so the blend is exactly what makes a white-backed score see-through.
+            if (currentBlendMode === 'multiply') overlay.classList.add('vs-multiply');
+            else if (currentBlendMode === 'screen') overlay.classList.add('vs-screen');
+            applyFilters();
             setTabsGeometry();
             hideTabsIncompatibleControls();
             setTabsStatus('');
@@ -1880,6 +1905,10 @@ export function setupVideoStream() {
         const f = computeFilter() || '';
         img.style.filter   = f;
         if (video) video.style.filter = f; // Apply to video element too (Direct mode)
+        // Screen mode is blend + invert(1), and the invert half lives in the
+        // filter. Without this the iframe would get the blend but not the
+        // inversion, so Screen would look wrong in Tabs while Multiply worked.
+        if (iframe) iframe.style.filter = f;
         updateSliders();
         updateBoostBtn();
     }
@@ -1889,6 +1918,10 @@ export function setupVideoStream() {
         const opacity  = currentOpacity / 100;
         img.style.opacity   = opacity;
         if (video) video.style.opacity = opacity; // Apply to video element too (Direct mode)
+        // In Tabs the slider drives ReaTabs' OWN backdrop alpha over the bridge,
+        // not element opacity - dimming the whole iframe would fade the notation
+        // too, which is the thing blend mode exists to avoid.
+        if (activeSource === 'tabs') sendTabsBackdropMessage();
         localStorage.setItem(opacityStorageKey(currentBlendMode), String(currentOpacity));
         updateOpacitySlider();
     }
@@ -2532,6 +2565,7 @@ export function setupVideoStream() {
                 setTabsStatus('');
             }
             sendTabsChromeMessage();
+            sendTabsBackdropMessage();  // a fresh document starts at its own default
             applyPointerMode();
             restorePosition();
             showControls();
