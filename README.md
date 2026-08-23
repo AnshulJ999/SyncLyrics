@@ -75,6 +75,14 @@ _Video demo showcasing the app's main features_
 
 ---
 
+## ☕ Support This Project
+
+SyncLyrics started as a small hobby project so I could get lyrics on my tablet, and somehow grew into this. More people are using it every month, which is honestly amazing to see. If it's earned a permanent spot in your setup, a small contribution would really help me keep building it :)
+
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-blue?logo=paypal)](https://paypal.me/AnshulJain99)
+
+---
+
 ## Quick Start: 
 
 1) Install the app using your preferred method. 
@@ -335,12 +343,6 @@ The extensible plugin system makes it easy to add new metadata sources, so I wel
 This project was built with AI assistance (I spent over 300+ hours on it myself). It works great for my use case, but if you find rough edges, PRs and feedback are always welcome!
 
 ---
-
-## ☕ Support This Project
-
-If this project has been useful to you, consider supporting its development: 
-
-[![PayPal](https://img.shields.io/badge/PayPal-Donate-blue?logo=paypal)](https://paypal.me/AnshulJain99)
 
 ## ❤️ Credits
 

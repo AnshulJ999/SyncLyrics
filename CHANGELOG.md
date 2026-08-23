@@ -1,8 +1,22 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.0] - 2026-08-24
+
+### ⚠️ Important
+
+**Keep Screen Awake is enabled by default and changes how your display behaves.** After upgrading, any phone or tablet showing SyncLyrics over HTTPS will stay awake while a track is playing, rather than dimming and locking on its usual timeout. The lock is released as soon as playback stops.
+
+That's the point of the feature, but it does mean more battery drain on a device that isn't plugged in, and it can look like the device has stopped sleeping properly. To change it: **Settings > UI > Keep Screen Awake** (`always` / `playback` / `off`), or add `?keepAwake=off` to the URL for a single display.
+
+Nothing changes over plain HTTP - the browser API requires a secure context, so the feature is inactive there.
 
 ### ✨ New Features
+
+#### Pear Desktop (YouTube Music) Source
+
+SyncLyrics can now read the currently playing track from [Pear Desktop](https://github.com/pear-devs/pear-desktop), giving YouTube Music users synced lyrics. Enable it under Media settings (off by default) and make sure Pear Desktop's API server plugin is running - the default URL is `http://127.0.0.1:26538`.
+
+Thanks to [@webbrain-one](https://github.com/webbrain-one) for the implementation in [#24](https://github.com/AnshulJ999/SyncLyrics/pull/24), and [@1upbyte](https://github.com/1upbyte) for the original request and API research in [#20](https://github.com/AnshulJ999/SyncLyrics/issues/20).
 
 #### Keep Screen Awake
 

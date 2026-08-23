@@ -275,6 +275,11 @@ class SettingsManager:
             "media_source.reaper_daw.priority": Setting("REAPER Priority", int, 5, False, "Media", "Source priority (lower = first, 5 = high)", "number"),
             "reaper_daw.split_filename": Setting("REAPER Filename Split", bool, False, False, "Media", "Split 'Artist - Title' from project filename as fallback (disabled by default)", "switch"),
 
+            # Pear Desktop Plugin (YouTube Music)
+            "media_source.pear_desktop.enabled": Setting("Pear Desktop", bool, False, True, "Media", "Enable Pear Desktop source (YouTube Music)", "switch"),
+            "media_source.pear_desktop.priority": Setting("Pear Priority", int, 5, False, "Media", "Source priority (lower = first)", "number"),
+            "media_source.pear_desktop.base_url": Setting("Pear API URL", str, "http://127.0.0.1:26538", True, "Media", "Pear Desktop API server URL (API plugin must be enabled in Pear)", "text"),
+
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
