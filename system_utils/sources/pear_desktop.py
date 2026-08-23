@@ -2,18 +2,33 @@
 Pear Desktop (YouTube Music) Metadata Source
 
 Fetches currently playing track info from Pear Desktop's API server.
-Supports authentication via Bearer token and polls the song-info endpoint.
+Authenticates with a Bearer token and polls the song-info endpoint.
+
+Pear Desktop's API plugin must be enabled and reachable (default
+http://localhost:26538). Disabled by default - enable it under Media settings.
 """
+import asyncio
 import time
 from typing import Optional
 
-import httpx
+import requests
 
 from .base import BaseMetadataSource, SourceConfig, SourceCapability
+from ..helpers import _normalize_track_id
 from config import conf
+from logging_config import get_logger
 
-import logging
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# Connect fast, read patiently. A closed port on Windows is dropped rather
+# than refused, so the connect timeout is what we actually pay when Pear
+# isn't running - keep it short.
+_TIMEOUT = (0.5, 5.0)
+
+# metadata.py calls plugin.get_metadata() with no timeout around it, so a
+# stalled source blocks the whole dispatch. Back off after a failure instead
+# of paying the connect timeout on every single poll.
+_RETRY_BACKOFF = 5.0
 
 
 class PearDesktopSource(BaseMetadataSource):
@@ -31,66 +46,62 @@ class PearDesktopSource(BaseMetadataSource):
 
     @classmethod
     def capabilities(cls) -> SourceCapability:
-        return SourceCapability.METADATA
+        return (SourceCapability.METADATA |
+                SourceCapability.ALBUM_ART |
+                SourceCapability.DURATION)
 
     def __init__(self):
         super().__init__()
-        self.base_url = conf("media_source.pear_desktop.base_url", "http://localhost:26538")
+        # 127.0.0.1 rather than localhost: localhost resolves to both ::1 and
+        # 127.0.0.1, and a failed connect pays the timeout once per family.
+        base = conf("media_source.pear_desktop.base_url", "http://127.0.0.1:26538")
+        self.base_url = str(base).rstrip("/")
         self.client_id = "SyncLyrics-pear"
         self.token: Optional[str] = None
-        self._last_active_time = 0.0
-        self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(5.0),
-            limits=httpx.Limits(max_connections=5)
-        )
-
-    async def close(self):
-        """Cleanup async resources."""
-        await self._http_client.aclose()
+        self._next_attempt = 0.0
+        # Session keeps the connection alive across polls
+        self._session = requests.Session()
 
     def is_available(self) -> bool:
-        """Check if the source is available on this platform."""
-        # Pear Desktop runs locally, so we assume available if configured.
-        # Actual connectivity is verified during fetch.
+        """Pear Desktop runs locally; real connectivity is verified during fetch."""
         return True
 
-    async def _get_token(self) -> Optional[str]:
-        """Authenticate with Pear Desktop API and return the JWT token."""
+    def _get_token(self) -> Optional[str]:
+        """Authenticate and cache the bearer token. Blocking."""
         try:
-            resp = await self._http_client.post(f"{self.base_url}/auth/{self.client_id}")
+            resp = self._session.post(
+                f"{self.base_url}/auth/{self.client_id}", timeout=_TIMEOUT
+            )
             if resp.status_code == 200:
-                data = resp.json()
-                self.token = data.get("accessToken")
+                self.token = resp.json().get("accessToken")
                 return self.token
             logger.warning(f"Pear Desktop auth failed: {resp.status_code}")
         except Exception as e:
             logger.debug(f"Pear Desktop auth request failed: {e}")
         return None
 
-    async def _fetch_song_info(self) -> Optional[dict]:
-        """Fetch current song info from Pear Desktop API."""
-        if not self.token:
-            if not await self._get_token():
-                return None
+    def _fetch_song_info(self) -> Optional[dict]:
+        """Fetch current song info, refreshing the token once on 401. Blocking."""
+        if not self.token and not self._get_token():
+            return None
 
         try:
-            resp = await self._http_client.get(
+            resp = self._session.get(
                 f"{self.base_url}/api/v1/song-info",
-                headers={"Authorization": f"Bearer {self.token}"}
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=_TIMEOUT,
             )
+            if resp.status_code == 401:
+                self.token = None
+                if not self._get_token():
+                    return None
+                resp = self._session.get(
+                    f"{self.base_url}/api/v1/song-info",
+                    headers={"Authorization": f"Bearer {self.token}"},
+                    timeout=_TIMEOUT,
+                )
             if resp.status_code == 200:
                 return resp.json()
-            elif resp.status_code == 401:
-                self.token = None
-                # Retry once with a fresh token
-                if not await self._get_token():
-                    return None
-                resp = await self._http_client.get(
-                    f"{self.base_url}/api/v1/song-info",
-                    headers={"Authorization": f"Bearer {self.token}"}
-                )
-                if resp.status_code == 200:
-                    return resp.json()
             return None
         except Exception as e:
             logger.debug(f"Pear Desktop fetch failed: {e}")
@@ -98,38 +109,42 @@ class PearDesktopSource(BaseMetadataSource):
 
     async def get_metadata(self) -> Optional[dict]:
         """Get current track metadata from Pear Desktop."""
-        data = await self._fetch_song_info()
+        if time.time() < self._next_attempt:
+            return None
+
+        data = await asyncio.to_thread(self._fetch_song_info)
         if not data:
+            self._next_attempt = time.time() + _RETRY_BACKOFF
+            return None
+        self._next_attempt = 0.0
+
+        title = data.get("title") or data.get("alternativeTitle", "")
+        artist = data.get("artist", "")
+
+        # No title and no artist means nothing is loaded
+        if not title and not artist:
             return None
 
         is_playing = not data.get("isPaused", True)
         if is_playing:
             self._last_active_time = time.time()
 
-        title = data.get("title") or data.get("alternativeTitle", "")
-        artist = data.get("artist", "")
-
-        # If no title or artist, treat as no track
-        if not title and not artist:
-            return None
-
-        track_id = f"{artist}_{title}"
-
         metadata = {
+            "track_id": _normalize_track_id(artist, title),
             "artist": artist,
+            "artist_name": artist,  # For display consistency with other sources
             "title": title,
+            "album": data.get("album", ""),
+            "album_art_url": data.get("imageSrc"),
             "is_playing": is_playing,
-            "track_id": track_id,
             "source": "pear_desktop",
+            "colors": ("#24273a", "#363b54"),  # Default, will be enriched
             "last_active_time": self._last_active_time,
         }
 
-        # Map optional fields from API response
-        if "imageSrc" in data:
-            metadata["album_art_url"] = data["imageSrc"]
-        if "songDuration" in data:
+        if data.get("songDuration") is not None:
             metadata["duration_ms"] = int(data["songDuration"] * 1000)
-        if "elapsedSeconds" in data and "songDuration" in data:
+        if data.get("elapsedSeconds") is not None:
             metadata["position"] = data["elapsedSeconds"]
 
         return metadata

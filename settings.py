@@ -270,6 +270,11 @@ class SettingsManager:
             "system.music_assistant.paused_timeout": Setting("MA Paused Timeout", int, 600, False, "Music Assistant", "Accept paused MA for N seconds (0=forever)", "number"),
             "lyrics.display.music_assistant_latency_compensation": Setting("Music Assistant Latency", float, 0.0, False, "Lyrics", "Music Assistant sync (+early, -late)", "slider", min_val=-2.0, max_val=2.0),
 
+            # Pear Desktop Plugin (YouTube Music)
+            "media_source.pear_desktop.enabled": Setting("Pear Desktop", bool, False, True, "Media", "Enable Pear Desktop source (YouTube Music)", "switch"),
+            "media_source.pear_desktop.priority": Setting("Pear Priority", int, 5, False, "Media", "Source priority (lower = first)", "number"),
+            "media_source.pear_desktop.base_url": Setting("Pear API URL", str, "http://127.0.0.1:26538", True, "Media", "Pear Desktop API server URL (API plugin must be enabled in Pear)", "text"),
+
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),

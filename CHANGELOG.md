@@ -4,6 +4,12 @@
 
 ### ✨ New Features
 
+#### Pear Desktop (YouTube Music) Source
+
+SyncLyrics can now read the currently playing track from [Pear Desktop](https://github.com/pear-devs/pear-desktop), giving YouTube Music users synced lyrics. Enable it under Media settings (off by default) and make sure Pear Desktop's API server plugin is running - the default URL is `http://localhost:26538`.
+
+Thanks to [@webbrain-one](https://github.com/webbrain-one) for the implementation in [#24](https://github.com/AnshulJ999/SyncLyrics/pull/24), and [@1upbyte](https://github.com/1upbyte) for the original request and API research in [#20](https://github.com/AnshulJ999/SyncLyrics/issues/20).
+
 #### Keep Screen Awake
 
 Phones and tablets used as a lyrics display no longer dim and lock mid-song. A new **Keep Screen Awake** setting (Settings > UI) uses the Screen Wake Lock API to hold the display on - `always`, only during `playback` (default), or `off`. Override it per display with `?keepAwake=always|playback|off`.
