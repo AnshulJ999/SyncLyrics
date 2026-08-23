@@ -353,6 +353,8 @@ export async function getCurrentTrack() {
         return data;
     } catch (error) {
         console.error('Error fetching current track:', error);
+        // Don't keep the screen awake through a server/network outage.
+        setWakeLockPlaying(false);
         return { error: error.message };
     }
 }
