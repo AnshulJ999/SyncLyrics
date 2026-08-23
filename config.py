@@ -7,17 +7,6 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Import the settings manager instance which holds the loaded JSON values
-# We use a try-except block to handle circular imports if any,
-# though settings.py should be independent.
-try:
-    from settings import settings
-except ImportError:
-    # Fallback if something goes wrong during boot
-    class MockSettings:
-        def get(self, k): return None
-    settings = MockSettings()
-
 # ==========================================
 # Path Configuration
 # ==========================================
@@ -62,6 +51,22 @@ from version import VERSION
 env_file = ROOT_DIR / '.env'
 if env_file.exists():
     load_dotenv(env_file, override=True)
+
+# Import the settings manager instance which holds the loaded JSON values
+# We use a try-except block to handle circular imports if any,
+# though settings.py should be independent.
+#
+# MUST stay below load_dotenv(): settings.py resolves SYNCLYRICS_SETTINGS_FILE
+# at module level, and it pulls in logging_config which resolves
+# SYNCLYRICS_LOGS_DIR the same way. Importing it any earlier means those two
+# .env overrides are read before .env has been loaded, and silently do nothing.
+try:
+    from settings import settings
+except ImportError:
+    # Fallback if something goes wrong during boot
+    class MockSettings:
+        def get(self, k): return None
+    settings = MockSettings()
 
 # Helper to prefer Env Var > Settings JSON > Default
 def conf(key, default=None):
