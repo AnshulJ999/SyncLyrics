@@ -7,6 +7,8 @@
  * Level 1 - Imports: state
  */
 
+import { setWakeLockMode, setWakeLockPlaying } from './wakeLock.js';
+
 import {
     displayConfig,
     visualModeConfig,
@@ -119,6 +121,10 @@ export async function getConfig() {
         const config = await response.json();
         setUpdateInterval(config.updateInterval);
         console.log(`Update interval set to: ${config.updateInterval}ms`);
+
+        if (config.keepScreenAwake !== undefined) {
+            setWakeLockMode(config.keepScreenAwake);
+        }
 
         if (config.overlayOpacity !== undefined) {
             document.documentElement.style.setProperty('--overlay-opacity', config.overlayOpacity);
@@ -270,6 +276,11 @@ export async function getCurrentTrack() {
         
         // RTT MEASUREMENT: Record time after response
         const endTime = performance.now();
+
+        // Wake lock 'playback' mode needs playback state on every poll.
+        // An absent track yields {error: ...}; a source that omits is_playing
+        // is treated as playing, matching the word-sync convention below.
+        setWakeLockPlaying(Boolean(data && !data.error && data.is_playing !== false));
         
         // Update word-sync interpolation anchor on each successful poll
         // This enables smooth 60-144fps animation between 100ms poll intervals

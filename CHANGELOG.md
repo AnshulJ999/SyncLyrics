@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ New Features
+
+#### Keep Screen Awake
+
+Phones and tablets used as a lyrics display no longer dim and lock mid-song. A new **Keep Screen Awake** setting (Settings > UI) uses the Screen Wake Lock API to hold the display on - `always`, only during `playback` (default), or `off`. Override it per display with `?keepAwake=always|playback|off`.
+
+Requires a secure context (HTTPS or localhost). In an iframe the parent must set `allow="screen-wake-lock"`, which the Home Assistant Lovelace iframe card does not - those users still need the direct URL or Fully Kiosk.
+
+Thanks to [@Ayce45](https://github.com/Ayce45) for contributing this feature in [#25](https://github.com/AnshulJ999/SyncLyrics/pull/25).
+
 ## [2.3.0] - 2026-07-23
 
 ### ⚠️ Important
