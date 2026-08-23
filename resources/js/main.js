@@ -49,6 +49,9 @@ import { setLyricsInDom, updateThemeColor } from './modules/dom.js';
 // Settings (Level 2)
 import { initializeDisplay, toggleMinimalMode } from './modules/settings.js';
 
+// Wake Lock (Level 1)
+import { initWakeLock } from './modules/wakeLock.js';
+
 // Controls (Level 2)
 import {
     attachControlHandlers,
@@ -896,6 +899,7 @@ async function main() {
 // ========== EVENT LISTENERS ==========
 
 document.addEventListener('DOMContentLoaded', () => {
+    initWakeLock();
     main();
 });
 

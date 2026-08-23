@@ -122,6 +122,7 @@ class SettingsManager:
             "ui.overlay_opacity": Setting("Overlay Opacity", float, 0.4, False, "UI", "Background overlay opacity", "slider", min_val=0.0, max_val=1.0),
             "ui.sharp_album_art": Setting("Sharp Album Art", bool, False, False, "UI", "Disable background blur & scaling", "switch"),
             "ui.soft_album_art": Setting("Soft Album Art", bool, False, False, "UI", "Medium blur album art background", "switch"),
+            "ui.keep_screen_awake": Setting("Keep Screen Awake", bool, True, False, "UI", "Prevent the display from sleeping while lyrics are shown (requires HTTPS)", "switch"),
             
             # UI - Deprecated (handled by frontend CSS/JS, not backend)
             "ui.themes.default.bg_start": Setting("Default Start", str, "#24273a", False, "Deprecated", "Default gradient start", "color", deprecated=True),

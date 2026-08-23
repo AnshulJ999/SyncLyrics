@@ -7,6 +7,8 @@
  * Level 1 - Imports: state
  */
 
+import { setWakeLockEnabled } from './wakeLock.js';
+
 import {
     displayConfig,
     visualModeConfig,
@@ -107,6 +109,10 @@ export async function getConfig() {
         const config = await response.json();
         setUpdateInterval(config.updateInterval);
         console.log(`Update interval set to: ${config.updateInterval}ms`);
+
+        if (config.keepScreenAwake !== undefined) {
+            setWakeLockEnabled(config.keepScreenAwake);
+        }
 
         if (config.overlayOpacity !== undefined) {
             document.documentElement.style.setProperty('--overlay-opacity', config.overlayOpacity);
