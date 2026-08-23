@@ -231,8 +231,25 @@ Append these to the URL for custom displays (e.g., `http://localhost:9012/?minim
 | `artBackground` | `true/false` | Blurred album art background |
 | `hideControls` | `true/false` | Hide playback controls |
 | `hideProgress` | `true/false` | Hide progress bar |
+| `keepAwake` | `always/playback/off` | Override the Keep Screen Awake setting for this display |
 
 These can easily be configured via the on-screen settings panel and the URL can be copied. 
+
+#### Keep Screen Awake
+
+Phones and tablets used as a lyrics display normally dim and lock on the OS timeout. The **Keep Screen Awake** setting (Settings > UI) prevents that:
+
+| Value | Behaviour |
+|-------|-----------|
+| `always` | Hold the screen on whenever the page is visible |
+| `playback` | Hold it only while a track is playing (default) |
+| `off` | Never hold it |
+
+Use `?keepAwake=` to override it per display - handy for OBS sources or a secondary screen where you don't want the lock. The URL value always wins over the saved setting.
+
+> **Requires a secure context**, so `https://...:9013`, `localhost`, or a reverse proxy with a real certificate. Over plain HTTP on a LAN IP the browser API is unavailable and the feature silently does nothing.
+>
+> **In an iframe**, the parent page must set `allow="screen-wake-lock"`. The Home Assistant Lovelace iframe card does not expose that attribute, so HA dashboard users still need the direct URL or Fully Kiosk Browser.
 
 ### HTTPS (Required for Browser Microphone)
 

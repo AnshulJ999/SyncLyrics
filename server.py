@@ -3350,7 +3350,7 @@ async def get_client_config():
         "overlayOpacity": settings.get("ui.overlay_opacity"),
         "sharpAlbumArt": settings.get("ui.sharp_album_art"),
         "softAlbumArt": settings.get("ui.soft_album_art"),
-        "keepScreenAwake": settings.get("ui.keep_screen_awake", True),
+        "keepScreenAwake": settings.get("ui.keep_screen_awake", "playback"),
         # Visual Mode settings
         "visualModeEnabled": settings.get("visual_mode.enabled"),
         "visualModeDelaySeconds": settings.get("visual_mode.delay_seconds"),
