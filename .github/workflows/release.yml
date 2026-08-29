@@ -450,10 +450,30 @@ jobs:
     if: always() && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        # Needed only so the next step can read CHANGELOG.md at this ref.
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Build release body from CHANGELOG
+        run: |
+          # Pull the section for this version out of CHANGELOG.md.
+          # Heading format is: ## [X.Y.Z] - YYYY-MM-DD
+          awk -v v="${{ needs.prepare.outputs.version_clean }}" '
+            $0 ~ "^## \\[" v "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-body.md
+
+          if [ ! -s release-body.md ]; then
+            echo "::warning::No CHANGELOG.md section found for ${{ needs.prepare.outputs.version_clean }} - release body will be auto-generated notes only"
+          fi
+
+          cat release-body.md
 
       - name: Consolidate checksums
         run: |
@@ -502,11 +522,14 @@ jobs:
             artifacts/macos-intel-build/*.zip
             artifacts/macos-arm-build/*.zip
             checksums.txt
+          body_path: release-body.md
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # Must be the `token` INPUT, not env:GITHUB_TOKEN. The input defaults to
+          # github.token and a non-empty input always overrides the env var, so an
+          # env-only PAT is silently ignored and releases get authored by the bot.
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Build Summary
         run: |
