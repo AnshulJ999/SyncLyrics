@@ -277,7 +277,7 @@ class SettingsManager:
 
             # Pear Desktop Plugin (YouTube Music)
             "media_source.pear_desktop.enabled": Setting("Pear Desktop", bool, False, True, "Media", "Enable Pear Desktop source (YouTube Music)", "switch"),
-            "media_source.pear_desktop.priority": Setting("Pear Priority", int, 5, False, "Media", "Source priority (lower = first)", "number"),
+            "media_source.pear_desktop.priority": Setting("Pear Priority", int, 6, False, "Media", "Source priority (lower = first)", "number"),
             "media_source.pear_desktop.base_url": Setting("Pear API URL", str, "http://127.0.0.1:26538", True, "Media", "Pear Desktop API server URL (API plugin must be enabled in Pear)", "text"),
 
 
