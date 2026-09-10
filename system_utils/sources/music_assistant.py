@@ -745,7 +745,7 @@ class MusicAssistantSource(BaseMetadataSource):
                 # Get album art
                 art_url = None
                 try:
-                    art_url = _client.get_media_item_image_url(item, size=64)
+                    art_url = _client.get_media_item_image_url(item, size=80)
                 except Exception:
                     pass
                 
