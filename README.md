@@ -113,7 +113,7 @@ Then extract the new version and replace any old files. This should maintain you
 ### Option 2: Linux (AppImage or Tarball)
 1. Go to **[Releases](../../releases)**
 2. Download either:
-   - `SyncLyrics-vX.X.X-linux-x64.AppImage` (recommended - single file, no install)
+   - `SyncLyrics-vX.X.X-x86_64.AppImage` (recommended - single file, no install)
    - `SyncLyrics-vX.X.X-linux-x64.tar.gz` (for developers)
 3. For AppImage:
    ```bash

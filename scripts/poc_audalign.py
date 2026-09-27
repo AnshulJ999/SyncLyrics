@@ -7,7 +7,7 @@ This script tests whether audalign can:
 2. Recognize 5-second clips extracted from those songs
 3. Return the correct song name and offset position
 
-Run with: python scripts/test_audalign_poc.py
+Run with: python scripts/poc_audalign.py
 
 Requirements:
 - audalign (already installed)

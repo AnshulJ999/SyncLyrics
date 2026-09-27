@@ -150,7 +150,8 @@ jobs:
   # ============================================
   build-linux:
     needs: prepare
-    runs-on: ubuntu-latest
+    # Oldest supported LTS: the bundled Python links against the build host's glibc.
+    runs-on: ubuntu-22.04
     outputs:
       smoke_test: ${{ steps.smoke.outputs.smoke_test }}
     steps:
@@ -222,7 +223,7 @@ jobs:
           
           # Rename output (linuxdeploy names it based on desktop file)
           if [ -f SyncLyrics*.AppImage ]; then
-            mv SyncLyrics*.AppImage "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage"
+            mv SyncLyrics*.AppImage "SyncLyrics-${{ needs.prepare.outputs.version }}-x86_64.AppImage"
           else
             echo "::warning::AppImage creation failed, only tarball will be available"
           fi
@@ -230,8 +231,8 @@ jobs:
       - name: Generate checksums
         run: |
           sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.tar.gz" > checksum-linux.txt
-          if [ -f "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" ]; then
-            sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage" >> checksum-linux.txt
+          if [ -f "SyncLyrics-${{ needs.prepare.outputs.version }}-x86_64.AppImage" ]; then
+            sha256sum "SyncLyrics-${{ needs.prepare.outputs.version }}-x86_64.AppImage" >> checksum-linux.txt
           fi
 
       - name: Smoke test
@@ -257,7 +258,7 @@ jobs:
           name: linux-build
           path: |
             SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.tar.gz
-            SyncLyrics-${{ needs.prepare.outputs.version }}-linux-x64.AppImage
+            SyncLyrics-${{ needs.prepare.outputs.version }}-x86_64.AppImage
             checksum-linux.txt
           if-no-files-found: warn
 
