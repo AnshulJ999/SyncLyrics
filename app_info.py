@@ -89,27 +89,22 @@ def _heading_text(text: str) -> str:
     return re.sub(r"^[^\w(]+", "", text).strip()
 
 
-def _render_section(lines: list) -> str:
-    parts, bullets, para = [], [], []
+def _blocks(lines: list) -> list:
+    """Group body lines into ("p", text) and ("ul", [items]) blocks."""
+    blocks, bullets, para = [], [], []
 
     def flush():
         if para:
-            parts.append(f"<p>{_inline(' '.join(para))}</p>")
+            blocks.append(("p", " ".join(para)))
             para.clear()
         if bullets:
-            parts.append("<ul>" + "".join(f"<li>{_inline(b)}</li>" for b in bullets) + "</ul>")
+            blocks.append(("ul", list(bullets)))
             bullets.clear()
 
     for raw in lines:
         line = raw.strip()
         if not line:
             flush()
-        elif line.startswith("#### "):
-            flush()
-            parts.append(f"<h6>{_inline(_heading_text(line[5:]))}</h6>")
-        elif line.startswith("### "):
-            flush()
-            parts.append(f"<h5>{_inline(_heading_text(line[4:]))}</h5>")
         elif line.startswith(("- ", "* ")):
             if para:
                 flush()
@@ -121,7 +116,77 @@ def _render_section(lines: list) -> str:
                 flush()
             para.append(line)
     flush()
-    return "".join(parts)
+    return blocks
+
+
+def _render_blocks(blocks: list) -> str:
+    return "".join(
+        f"<p>{_inline(body)}</p>" if kind == "p"
+        else "<ul>" + "".join(f"<li>{_inline(item)}</li>" for item in body) + "</ul>"
+        for kind, body in blocks
+    )
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\[*`])")
+
+
+def _render_feature(title: str, lines: list) -> str:
+    """A #### entry: title + first sentence, the rest behind a native disclosure."""
+    blocks = _blocks(lines)
+    summary, rest = "", blocks
+    if blocks and blocks[0][0] == "p":
+        summary, remainder = _split_first_sentence(blocks[0][1])
+        rest = ([("p", remainder)] if remainder else []) + blocks[1:]
+    head = f'<span class="cl-title">{_inline(title)}</span>'
+    if summary:
+        head += f'<span class="cl-sum">{_inline(summary)}</span>'
+    if not rest:
+        return f'<div class="cl-item">{head}</div>'
+    return (f'<details class="cl-item"><summary>{head}'
+            f'<i class="bi bi-chevron-down cl-chevron" aria-hidden="true"></i></summary>'
+            f'<div class="cl-more">{_render_blocks(rest)}</div></details>')
+
+
+def _split_first_sentence(text: str) -> tuple:
+    parts = _SENTENCE_END.split(text, maxsplit=1)
+    return parts[0], (parts[1] if len(parts) > 1 else "")
+
+
+_SECTION_ICONS = [
+    ("important", "bi-exclamation-triangle"), ("breaking", "bi-exclamation-triangle"),
+    ("feature", "bi-stars"), ("fix", "bi-wrench"), ("home assistant", "bi-house-door"),
+    ("document", "bi-journal-text"), ("technical", "bi-tools"),
+]
+
+
+def _render_section(lines: list) -> str:
+    """One version's body: ### sections, each with optional #### feature entries."""
+    sections, current = [], None
+    for line in lines:
+        if line.startswith("### "):
+            current = {"title": _heading_text(line[4:]), "intro": [], "features": []}
+            sections.append(current)
+        elif line.startswith("#### ") and current is not None:
+            current["features"].append({"title": _heading_text(line[5:]), "lines": []})
+        elif current is None:
+            continue
+        elif current["features"]:
+            current["features"][-1]["lines"].append(line)
+        else:
+            current["intro"].append(line)
+
+    out = []
+    for sec in sections:
+        key = sec["title"].lower()
+        icon = next((i for word, i in _SECTION_ICONS if word in key), "bi-dot")
+        callout = "important" in key or "breaking" in key
+        body = _render_blocks(_blocks(sec["intro"]))
+        if callout:
+            body = f'<div class="cl-callout">{body}</div>'
+        body += "".join(_render_feature(f["title"], f["lines"]) for f in sec["features"])
+        out.append(f'<section class="cl-section"><h5 class="cl-label">'
+                   f'<i class="bi {icon}" aria-hidden="true"></i>{html.escape(sec["title"])}</h5>{body}</section>')
+    return "".join(out)
 
 
 def get_changelog_html(version: str = VERSION) -> Optional[str]:

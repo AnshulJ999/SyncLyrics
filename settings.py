@@ -297,7 +297,7 @@ class SettingsManager:
 
             # Updates and usage stats (daily check-in, see docs/Usage Stats.md)
             "updates.check_enabled": Setting("Check for Updates", bool, True, False, "Updates", "Once a day, ask the SyncLyrics server for the latest version", "switch"),
-            "updates.usage_stats": Setting("Anonymous Usage Stats", bool, True, False, "Updates", "Include anonymous stats in the daily check: version, install type, OS, and which sources and lyrics providers are on. Never songs or settings values", "switch"),
+            "updates.usage_stats": Setting("Anonymous Usage Stats", bool, True, False, "Updates", "Include anonymous stats in the daily check: version, install type, OS, which sources and lyrics providers are on and used, and whether anything played. Never songs or settings values", "switch"),
 
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),

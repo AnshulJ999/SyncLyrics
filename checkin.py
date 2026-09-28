@@ -45,6 +45,47 @@ def _enabled_names(prefix: str) -> list:
     return sorted(names)
 
 
+# --- Playback since the last check-in (usage stats only) ---
+# Only names leave the app (which sources played, which providers served lyrics,
+# the most used of each) - never counts or song details.
+_MAX_TRACKS = 500
+_usage: dict = {"played": False, "tracks": {}}  # track_id -> [source, provider]
+
+
+def note_playback(metadata: dict, provider: Optional[str]) -> None:
+    """Called on each /current-track poll."""
+    if not metadata or not metadata.get("is_playing") or not stats_enabled():
+        return
+    track_id = metadata.get("track_id") or f"{metadata.get('artist')}_{metadata.get('title')}"
+    tracks = _usage["tracks"]
+    if track_id not in tracks:
+        if len(tracks) >= _MAX_TRACKS:
+            return
+        tracks[track_id] = ["", ""]
+    _usage["played"] = True
+    entry = tracks[track_id]
+    entry[0] = metadata.get("source") or entry[0]
+    entry[1] = provider or entry[1]
+
+
+def _usage_summary() -> dict:
+    from collections import Counter
+    sources = Counter(s for s, _ in _usage["tracks"].values() if s)
+    providers = Counter(p for _, p in _usage["tracks"].values() if p)
+    return {
+        "played": _usage["played"],
+        "sources_used": sorted(sources),
+        "providers_used": sorted(providers),
+        "top_source": sources.most_common(1)[0][0] if sources else None,
+        "top_provider": providers.most_common(1)[0][0] if providers else None,
+    }
+
+
+def _reset_usage() -> None:
+    _usage["played"] = False
+    _usage["tracks"] = {}
+
+
 def build_payload(include_stats: bool) -> dict:
     payload = {
         "schema": 1,
@@ -64,6 +105,7 @@ def build_payload(include_stats: bool) -> dict:
             python=platform.python_version(),
             sources=sources,
             providers=_enabled_names("providers."),
+            **_usage_summary(),
         )
     return payload
 
@@ -102,6 +144,8 @@ async def check_now() -> bool:
         "checked_at": now,
     }
     state_manager.update_state_values({"last_checkin_at": now, "checkin_retry_at": 0, "update_info": update_info})
+    if want_stats:
+        _reset_usage()
     return True
 
 

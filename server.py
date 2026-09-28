@@ -444,7 +444,12 @@ async def current_track() -> dict:
             # Add per-song word-sync offset (user adjustment)
             song_offset = lyrics_module.get_song_word_sync_offset(artist, title)
             metadata["song_word_sync_offset"] = song_offset
-            
+
+            try:
+                checkin.note_playback(metadata, lyrics_module.get_current_provider())
+            except Exception:
+                pass
+
             return metadata
         return {"error": "No track playing"}
     except Exception as e:
@@ -3455,10 +3460,21 @@ async def app_status_route():
                      'state': ma_row[0], 'value': ma_row[1],
                      'detail': conf("system.music_assistant.server_url", "") or None})
 
-    from system_utils.metadata import _get_audio_rec_enabled
-    audio_on = _get_audio_rec_enabled()
-    rows.append({'id': 'audio_recognition', 'label': 'Audio recognition', 'tab': 'audio-recognition',
-                 'state': 'ok' if audio_on else 'off', 'value': 'On' if audio_on else 'Off'})
+    # Audio recognition is started on demand, so only show it while in use.
+    # The module is imported only once audio recognition has been used (see audio_recognition_status).
+    import sys
+    if 'system_utils.reaper' in sys.modules:
+        try:
+            from system_utils.reaper import get_reaper_source
+            audio = get_reaper_source().get_status()
+            if audio.get('active'):
+                rows.append({'id': 'audio_recognition', 'label': 'Audio recognition', 'tab': 'audio-recognition',
+                             'state': 'ok', 'value': 'Listening'})
+            elif audio.get('auto_detect'):
+                rows.append({'id': 'audio_recognition', 'label': 'Audio recognition', 'tab': 'audio-recognition',
+                             'state': 'idle', 'value': 'Waiting for REAPER'})
+        except Exception:
+            pass
 
     provider_keys = [k for k in settings._definitions if k.startswith('providers.') and k.endswith('.enabled')]
     providers_on = sum(1 for k in provider_keys if _safe_bool(conf(k), False))

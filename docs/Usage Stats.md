@@ -23,20 +23,23 @@ Both are on by default and both can be turned off in **Settings > Updates**. Wit
 | Python version | `3.12.4` |
 | Enabled sources | `spotify`, `music_assistant`, ... (names only) |
 | Enabled lyrics providers | `lrclib`, `musixmatch`, ... (names only) |
+| Played since the last check | `true` or `false`: whether anything played while SyncLyrics was open |
+| Sources and providers used | Which sources actually played and which providers served lyrics since the last check, plus the most used of each (names only, no counts) |
 
 The server also records the **country** the request came from (worked out by Cloudflare), but only when usage stats are on.
 
 ## What's never sent
 
 - What you're listening to: songs, artists, albums, lyrics, album art
+- How much you listen: no song counts or listening time
 - Your settings values, API keys, tokens or server addresses
 - Anything about your network or other devices
 
 ## What's stored
 
 - Your IP address is **not** stored.
-- With usage stats on: one row per install (the fields above, plus the first and last day it checked in). An install that hasn't checked in for 90 days is deleted.
-- Daily totals: how many checks came in per version, install type and OS.
+- With usage stats on: one row per install (the fields above, the first and last day it checked in, and how many days something played). An install that hasn't checked in for 90 days is deleted.
+- Daily totals: how many checks came in per version, install type and OS, and how many installs played something that day.
 
 ## Turning it off
 
