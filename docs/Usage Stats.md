@@ -18,7 +18,7 @@ Both are on by default and both can be turned off in **Settings > Updates**. Wit
 
 | Field | Example |
 |---|---|
-| Install ID | A random ID created by SyncLyrics, stored in `state.json`. It isn't tied to you, your device or any account; it only lets us count an install once instead of once per day. |
+| Install ID | A random ID created by SyncLyrics, stored in `state.json`. It identifies this installation so it's counted once instead of once per day, but it isn't linked to you, your device or any account. Deleting `state.json` creates a new one. |
 | CPU architecture | `x86_64`, `aarch64` |
 | Python version | `3.12.4` |
 | Enabled sources | `spotify`, `music_assistant`, ... (names only) |
@@ -38,7 +38,7 @@ The server also records the **country** the request came from (worked out by Clo
 ## What's stored
 
 - Your IP address is **not** stored.
-- With usage stats on: one row per install (the fields above, the first and last day it checked in, and how many days something played). An install that hasn't checked in for 90 days is deleted.
+- With usage stats on: one row per install (the fields above, the first and last day it checked in, and how many days something played). "Played" is counted on the day of the check-in that reports it, so it's approximate. An install that hasn't checked in for 90 days is deleted.
 - Daily totals: how many checks came in per version, install type and OS, and how many installs played something that day.
 
 ## Turning it off

@@ -102,13 +102,27 @@ docker-compose up -d
 
 > **Note:** If running Docker on the same host as Music Assistant, you may need `--network=host` for the container to reach MA at a local IP address.
 
+### Music From Other Devices
+
+A container can't see what's playing on your PC or phone. To show lyrics for those, either:
+- **Push** it: `MEDIA_SOURCE_NOW_PLAYING_INPUT_ENABLED=true`, then send what's playing from a phone, Home Assistant or a script. See [Now Playing Input](Now%20Playing%20Input.md).
+- **Pull** it from a desktop app's API: Pear Desktop, tidal-hifi or smtc-now-playing, with the source's URL pointing at that computer (e.g. `MEDIA_SOURCE_TIDAL_HIFI_ENABLED=true`, `MEDIA_SOURCE_TIDAL_HIFI_BASE_URL=http://192.168.1.20:47836`).
+
+### Updates
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UPDATES_CHECK_ENABLED` | `true` | Daily check for a newer image version |
+| `UPDATES_USAGE_STATS` | `true` | Anonymous usage stats with that check, see [Usage Stats](Usage%20Stats.md) |
+
 ## Persistent Data
 
-Mount `/data` to persist:
+Mount `/data` to persist (without it, everything is lost when the container is recreated):
 - Lyrics database
 - Album art cache
 - Spotify tokens
 - Settings and preferences
+- App state (`state.json`: install ID, update check, panels seen)
 
 ```bash
 -v /path/to/your/data:/data

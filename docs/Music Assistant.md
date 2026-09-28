@@ -71,6 +71,18 @@ Leave empty to auto-detect (uses first playing/paused player).
 | Queue display | ✅ |
 | Like/Favorites | ✅ |
 | Multi-player auto-detect | ✅ |
+| Music started outside Music Assistant | ✅ (see below) |
+
+## Music Started Outside Music Assistant
+
+Music Assistant also sees music it didn't start: the Sonos app, Spotify Connect on a speaker, AirPlay, a radio preset. SyncLyrics shows lyrics for these too, using the song info the speaker itself reports (title, artist, album, cover, position).
+
+In this mode:
+- Play, pause, skip and seek go straight to the speaker.
+- The **Up Next** queue is hidden, because Music Assistant's queue doesn't know what the other app will play next.
+- What's shown depends on what the speaker reports to Music Assistant. If a speaker doesn't report position, lyrics can't stay in sync.
+
+For a player Music Assistant can't see at all, Home Assistant can send SyncLyrics what's playing instead: see [Now Playing Input](Now%20Playing%20Input.md#home-assistant).
 
 ## Latency Tuning
 

@@ -15,6 +15,7 @@ import {
 } from './api.js';
 
 import { showToast } from './dom.js';
+import { sourceDisplayName } from './utils.js';
 import audioCapture from './audioCapture.js';
 
 // =============================================================================
@@ -26,7 +27,7 @@ let pollInterval = null;
 let currentConfig = null;
 let isActive = false;
 let isFrontendCapture = false; // True if currently using frontend mic capture
-let currentTrackSource = null; // Default: no source (shows Idle)
+let currentTrackInfo = null; // Latest track from /current-track (null shows Idle)
 let lastKnownProvider = null; // Last known recognition provider (prevents flashing)
 
 // DOM Elements (cached on init)
@@ -321,7 +322,7 @@ async function refreshStatus() {
                 const response = await fetch('/current-track');
                 const trackData = await response.json();
                 if (trackData && trackData.source) {
-                    currentTrackSource = trackData.source;
+                    currentTrackInfo = trackData;
                 }
             } catch (e) {
                 // Ignore errors fetching track
@@ -438,28 +439,7 @@ function updateStatusDisplay(status) {
             // Audio recognition not active - reset provider tracking
             lastKnownProvider = null;
             
-            // Show current track source
-            const sourceMap = {
-                'spotify': 'Spotify',
-                'spotify_hybrid': 'Hybrid',
-                'spotifyhybrid': 'Hybrid',
-                'spicetify': 'Spicetify',
-                'windows': 'Windows',
-                'windows_media': 'Windows',
-                'windowsmedia': 'Windows',
-                'audio_recognition': 'Shazam',
-                'audiorecognition': 'Shazam',
-                'shazam': 'Shazam',
-                'acrcloud': 'ACRCloud',
-                'local_fingerprint': 'Local',
-                'reaper': 'Reaper',
-                'reaper_daw': 'REAPER',
-                'music_assistant': 'Music Assistant',
-                'linux': 'Linux',
-                'macos': 'Mac'
-            };
-            const displaySource = sourceMap[currentTrackSource] || 'Idle';
-            elements.sourceName.textContent = displaySource;
+            elements.sourceName.textContent = sourceDisplayName(currentTrackInfo);
         }
     }
 

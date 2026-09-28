@@ -33,7 +33,7 @@
 .app-panel {
     position: relative;
     width: 100%;
-    max-width: 720px;
+    max-width: 840px;
     max-height: min(86vh, 760px);
     display: flex;
     flex-direction: column;

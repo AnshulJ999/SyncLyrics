@@ -10,7 +10,9 @@ sync_lyrics.py          ← Entry point, main loop
 ├── lyrics.py           ← Lyrics fetching, caching, multi-provider
 ├── config.py           ← Configuration loader
 ├── settings.py         ← Settings schema and manager
-├── state_manager.py    ← Thread-safe application state
+├── state_manager.py    ← Thread-safe application state (state.json)
+├── app_info.py         ← Install type, changelog rendering, What's New/Welcome state
+├── checkin.py          ← Daily update check + anonymous usage stats
 │
 ├── providers/          ← Lyrics providers
 │   ├── base.py         ← Abstract base class
@@ -29,12 +31,14 @@ sync_lyrics.py          ← Entry point, main loop
 │   ├── album_art.py    ← Album art database
 │   ├── artist_image.py ← Artist image database
 │   ├── reaper.py       ← Audio recognition (Shazam)
-│   └── session_config.py ← Runtime overrides
+│   ├── session_config.py ← Runtime overrides
+│   └── sources/        ← Plugin sources (Music Assistant, Linux, macOS, Pear,
+│                         tidal-hifi, smtc-now-playing, Now Playing Input, ...)
 │
 ├── resources/
 │   ├── js/
 │   │   ├── main.js     ← Frontend entry point
-│   │   └── modules/    ← 19 JS modules
+│   │   └── modules/    ← 24 JS modules
 │   ├── css/
 │   └── templates/
 │
@@ -57,10 +61,10 @@ All providers inherit from `LyricsProvider` base class:
 - First result wins, background saves others
 
 ### Metadata Orchestration
-`system_utils/metadata.py` coordinates sources:
-1. Check Spicetify (if connected)
-2. Check Windows SMTC
-3. Fallback to Spotify API
+`system_utils/metadata.py` coordinates sources by priority (`media_source.<name>.priority`, lower first):
+1. The first enabled source that's playing wins
+2. If none are playing, the most recently active paused source shows, until its paused timeout
+3. Plugin sources in `system_utils/sources/` are discovered automatically; see [Adding Metadata Sources](Adding%20Metadata%20Sources.md)
 
 ### Frontend Flywheel Clock
 `wordSync.js` implements smooth position interpolation:
@@ -159,6 +163,14 @@ All providers inherit from `LyricsProvider` base class:
 | `/api/audio-recognition/config` | GET | Current recognition config with session overrides |
 | `/api/audio-recognition/configure` | POST | Set session-level config overrides |
 
+### Now Playing Input and App Info
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/now-playing` | POST | Other devices push what's playing (see [Now Playing Input](Now%20Playing%20Input.md)) |
+| `/api/app/info` | GET | Version, install type, update status, panel state, changelog, donation links |
+| `/api/app/status` | GET | Status rows for the settings Overview and Welcome panel |
+| `/api/app/panel-seen` | POST | Mark the Welcome or What's New panel as seen |
+
 ## WebSocket Endpoints
 
 ### `/ws/spicetify`
@@ -181,6 +193,7 @@ Frontend microphone audio streaming for audio recognition.
 | `spicetify_database/` | Audio analysis cache |
 | `cache/` | Temporary files |
 | `certs/` | SSL certificates |
+| `state.json` | App state: install ID, update check, panels seen, last-used values |
 
 ## Configuration Priority
 

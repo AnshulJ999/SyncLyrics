@@ -8,7 +8,7 @@ This started as a hobby project where I just wanted real-time lyrics on any of m
 
 **Supported Platforms:** Windows, Home Assistant, Docker, Linux, macOS (unsigned)
 
-**Supported Audio Sources:** Spotify, Windows Media (SMTC), Music Assistant, Audio Recognition (Shazam), Linux, macOS, and Spicetify. 
+**Supported Audio Sources:** Spotify, Spicetify, Windows Media (SMTC), Linux, macOS, Music Assistant (including Sonos, AirPlay and Spotify Connect speakers), YouTube Music (Pear Desktop), TIDAL (tidal-hifi), Audio Recognition (Shazam), and anything else through [Now Playing Input](docs/Now%20Playing%20Input.md). 
 
 ![Main UI](<screenshots/SyncLyrics Main UI.png>)
 
@@ -67,8 +67,12 @@ _Video demo showcasing the app's main features_
 - **Queue with Autoplay:** Full queue including suggested tracks
 - See [Spicetify Integration](docs/Spicetify%20Integration.md) for setup
 
+### 🔌 Integrations
+- **Now Playing Input:** Phones (Tasker, MacroDroid), Home Assistant automations or your own scripts can tell SyncLyrics what's playing. See [Now Playing Input](docs/Now%20Playing%20Input.md)
+- **Lyrics server for other apps:** Everything is available over a REST API, so custom displays, overlays and dashboards can read the current lyrics. See [Use SyncLyrics as a lyrics server](docs/API%20Reference.md#use-synclyrics-as-a-lyrics-server)
+
 ### ⚙️ Configuration
-- **Web Settings Page:** Full configuration UI at `/settings`
+- **Web Settings Page:** Full configuration UI at `/settings`, opening on an Overview of your version, what's new and what's working
 - **URL Parameters:** Customize display for embedding/OBS
 - **Environment Variables:** Docker/HASS-friendly configuration
 - **Modular Settings:** See [Configuration Reference](docs/Configuration%20Reference.md)
@@ -89,6 +93,8 @@ SyncLyrics started as a small hobby project so I could get lyrics on my tablet, 
 2) Visit `http://synclyrics.local:9012` or `http://localhost:9012` in your browser.
 3) Login to Spotify if needed (optional)
 4) Play music from a supported source and watch the lyrics on screen!
+
+**Setting it up with an AI assistant?** Point it at [AI-SETUP.md](AI-SETUP.md).
 
 **Tip:** Embed it as an iFrame in any existing dashboard or run it standalone inside Fully Kiosk Browser. Make sure the app is fullscreen for the best experience; and keep your device plugged-in as running it continuously can be a battery drain.
 
@@ -240,6 +246,7 @@ Append these to the URL for custom displays (e.g., `http://localhost:9012/?minim
 | `hideControls` | `true/false` | Hide playback controls |
 | `hideProgress` | `true/false` | Hide progress bar |
 | `keepAwake` | `always/playback/off` | Override the Keep Screen Awake setting for this display |
+| `preview` | `whats-new/welcome` | Show the What's New or Welcome panel again, without marking it as seen |
 
 These can easily be configured via the on-screen settings panel and the URL can be copied. 
 
@@ -270,6 +277,10 @@ HTTPS is **enabled by default** for browser microphone access:
 
 The app auto-generates a self-signed certificate. You'll need to accept the browser's security warning on first use.
 
+### Update Checks and Usage Stats
+
+Once a day, SyncLyrics checks whether a newer version is out and, by default, sends a few anonymous usage stats (version, install type, OS, which sources and providers are used). It never sends what you listen to or your settings. Turn either off in **Settings > Updates**, or with `UPDATES_CHECK_ENABLED=false` / `UPDATES_USAGE_STATS=false`. Full details: [Usage Stats](docs/Usage%20Stats.md).
+
 ---
 
 ## 🛠️ Build
@@ -297,12 +308,18 @@ Detailed guides for all features:
 - [Word Sync and Karaoke](docs/Word%20Sync%20and%20Karaoke.md)
 - [Visual Modes and Slideshow](docs/Visual%20Modes%20and%20Slideshow.md)
 - [Audio Recognition](docs/Audio%20Recognition.md)
+- [Music Assistant](docs/Music%20Assistant.md) - Including Sonos and other speakers
+- [Now Playing Input](docs/Now%20Playing%20Input.md) - Phones, Home Assistant and scripts
 - [Spicetify Integration](docs/Spicetify%20Integration.md)
 - [Docker Reference](docs/Docker%20Reference.md)
 - [Configuration Reference](docs/Configuration%20Reference.md)
 - [Latency Tuning Guide](docs/Latency%20Tuning%20Guide.md) - Calibrate lyrics timing
 - [Troubleshooting](docs/Troubleshooting.md)
+- [Usage Stats](docs/Usage%20Stats.md) - What the daily update check sends
+- [API Reference](docs/API%20Reference.md) - REST API, including using SyncLyrics as a lyrics server
+- [Adding Metadata Sources](docs/Adding%20Metadata%20Sources.md) - Write a new source plugin
 - [Development Reference](docs/Development%20Reference.md)
+- [AI Setup Guide](AI-SETUP.md) - For AI assistants installing SyncLyrics
 
 ---
 

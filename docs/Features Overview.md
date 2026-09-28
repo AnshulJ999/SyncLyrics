@@ -12,14 +12,19 @@ Displays synchronized lyrics in a 6-line view with smooth scrolling:
 ### 📡 Media Sources
 SyncLyrics can get track info from:
 - **Spotify API**: Direct Spotify polling (requires API credentials)
-- **Windows Media**: System Media Transport Controls (SMTC)
 - **Spicetify**: Real-time WebSocket bridge (see [Spicetify Integration](Spicetify%20Integration.md))
+- **Windows Media**: System Media Transport Controls (SMTC)
+- **Linux / macOS**: MPRIS and Now Playing (see [Linux Support](Linux%20Support.md), [macOS Support](macOS%20Support.md))
+- **Music Assistant**: Any Music Assistant player, including music started from other apps like the Sonos app or AirPlay (see [Music Assistant](Music%20Assistant.md))
+- **Pear Desktop** (YouTube Music), **tidal-hifi** (TIDAL) and **smtc-now-playing** (any Windows player over the network)
+- **Now Playing Input**: phones, Home Assistant or your own scripts send what's playing (see [Now Playing Input](Now%20Playing%20Input.md))
+- **Audio Recognition**: Shazam identifies whatever is playing nearby (see [Audio Recognition](Audio%20Recognition.md))
 
 ### 🎤 Lyrics Providers
 Queries multiple providers in parallel for fastest results:
 | Provider | Type | Word-Sync |
 |----------|------|-----------|
-| Spotify | Hosted proxy | ✅ |
+| Spotify | Hosted proxy | ❌ |
 | LRCLIB | Community | ❌ |
 | Musixmatch | Desktop API | ✅ (RichSync) |
 | NetEase | Chinese | ✅ (YRC) |
@@ -102,6 +107,12 @@ Embedded library browser accessible via the Spotify button:
 - Music Assistant library support (if configured)
 - Toggle between sources without leaving the lyrics view
 - Selected tracks play on your active device
+
+### 🔔 Updates and What's New
+- Settings opens on an **Overview** page: your version, what's new, a quick status check and how to update
+- A small dot on the settings icon means a new version is out
+- After an update, a **What's New** panel shows once
+- The daily update check and anonymous usage stats can be turned off (see [Usage Stats](Usage%20Stats.md))
 
 ---
 

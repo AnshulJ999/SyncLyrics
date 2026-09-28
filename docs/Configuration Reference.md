@@ -30,12 +30,29 @@ Below list may be outdated. Use the built-in settings menu for updated reference
 
 ## Media Sources
 
+Each source has `media_source.<name>.enabled` and `media_source.<name>.priority` (lower = checked first). The first source that's playing wins; if none are, the most recently active paused one shows.
+
+| Source (`<name>`) | Enabled by default | Priority | Notes |
+|---|---|---|---|
+| `spicetify` | true | 0 | Spicetify WebSocket bridge |
+| `windows_media` | true | 1 | Windows SMTC |
+| `linux` | true | 1 | MPRIS via playerctl |
+| `macos` | true | 1 | Now Playing (nowplaying-cli recommended) |
+| `music_assistant` | true | 1 | Needs a server URL and token, see [Music Assistant](Music%20Assistant.md) |
+| `spotify` | true | 2 | Spotify API polling |
+| `pear_desktop` | false | 6 | `base_url` default `http://127.0.0.1:26538` |
+| `tidal_hifi` | false | 7 | `base_url` default `http://127.0.0.1:47836` |
+| `smtc_now_playing` | false | 8 | `base_url` default `http://127.0.0.1:11451` |
+| `now_playing_input` | false | 9 | Push endpoint; optional `token`. See [Now Playing Input](Now%20Playing%20Input.md) |
+
+Most sources also have `system.<name>.paused_timeout` (default 600 seconds, `0` = forever): how long a paused source can still be shown.
+
+## Updates
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `media_source.spicetify.enabled` | true | Spicetify WebSocket bridge |
-| `media_source.spicetify.priority` | 0 | Priority (0 = highest) |
-| `media_source.windows_media.enabled` | true | Windows SMTC |
-| `media_source.spotify.enabled` | true | Spotify API polling |
+| `updates.check_enabled` | true | Once a day, check for a newer version |
+| `updates.usage_stats` | true | Include anonymous usage stats in that check. See [Usage Stats](Usage%20Stats.md) |
 
 ## Lyrics
 
@@ -55,7 +72,7 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 
 | Provider | Default Priority | Has Word-Sync |
 |----------|-----------------|---------------|
-| Spotify | 1 | ✅ |
+| Spotify | 1 | ❌ |
 | LRCLib | 2 | ❌ |
 | Musixmatch | 3 | ✅ (RichSync) |
 | NetEase | 4 | ✅ (YRC) |
@@ -150,5 +167,9 @@ Key environment variables for Docker/HASS:
 | `SERVER_PORT` | Override server port |
 | `DEBUG_ENABLED` | Enable debug mode |
 | `DEBUG_LOG_LEVEL` | Log level (DEBUG/INFO/WARNING/ERROR) |
+| `UPDATES_CHECK_ENABLED` | `false` turns off the daily update check |
+| `UPDATES_USAGE_STATS` | `false` turns off anonymous usage stats |
+
+Any setting can be set this way: uppercase the key and replace dots with underscores, e.g. `media_source.now_playing_input.enabled` becomes `MEDIA_SOURCE_NOW_PLAYING_INPUT_ENABLED`.
 
 See [Docker Reference](Docker%20Reference.md) for complete Docker configuration.

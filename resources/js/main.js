@@ -38,7 +38,7 @@ import {
 } from './modules/state.js';
 
 // Utils (Level 1)
-import { normalizeTrackId, sleep, areLyricsDifferent } from './modules/utils.js';
+import { normalizeTrackId, sleep, areLyricsDifferent, sourceDisplayName } from './modules/utils.js';
 
 // API (Level 1)
 import { getConfig, getCurrentTrack, getLyrics, fetchArtistImages, fetchQueue } from './modules/api.js';
@@ -136,7 +136,7 @@ import { setupMediaBrowser, updateMediaBrowserIcon } from './modules/mediabrowse
 import { setupHomeAssistant } from './modules/habrowser.js';
 
 // REAPER DAW Integration (Level 2)
-import { setupReaperUI, isReaperConnected, seekReaper } from './modules/reaper.js';
+import { setupReaperUI, updateReaperButton, seekReaper } from './modules/reaper.js';
 
 // App panels (What's New / Welcome) + update dot
 import { initAppPanels } from './modules/appPanels.js';
@@ -452,25 +452,7 @@ async function updateLoop() {
                         sourceBtn.textContent = 'Audio';
                     }
                 } else {
-                    // Standard source mapping
-                    const sourceMap = {
-                        'spotify': 'Spotify',
-                        'spotify_hybrid': 'Hybrid',
-                        'spicetify': 'Spicetify',
-                        'windows': 'Windows',
-                        'windows_media': 'Windows',
-                        'reaper': 'Reaper',
-                        'reaper_daw': 'REAPER',
-                        'music_assistant': 'Music Assistant',
-                        'linux': 'Linux',
-                        'macos': 'Mac',
-                        'pear_desktop': 'Pear',
-                        'tidal_hifi': 'TIDAL',
-                        'smtc_now_playing': 'Windows',
-                        'now_playing_input': 'Remote'
-                    };
-                    sourceBtn.textContent = (trackInfo.source === 'now_playing_input' && trackInfo.source_label)
-                        || sourceMap[trackInfo.source] || 'Idle';
+                    sourceBtn.textContent = sourceDisplayName(trackInfo);
                 }
             }
         }
@@ -642,22 +624,7 @@ async function updateLoop() {
             resetSpectrum();
         }
 
-        // Toggle REAPER DAW button visibility: show whenever the companion heartbeat is
-        // active (Option B), not just when reaper_daw is the winning source.
-        const reaperBtn = document.getElementById('btn-reaper-daw');
-        if (reaperBtn) {
-            if (isReaperConnected()) {
-                reaperBtn.style.display = 'flex';
-                const haBtn = document.getElementById('btn-home-assistant');
-                if (haBtn && haBtn.style.display === 'none') {
-                    reaperBtn.style.left = '128px';
-                } else {
-                    reaperBtn.style.left = '180px';
-                }
-            } else {
-                reaperBtn.style.display = 'none';
-            }
-        }
+        updateReaperButton();
 
         // Update track info (must happen before icon update)
         setLastTrackInfo(trackInfo);

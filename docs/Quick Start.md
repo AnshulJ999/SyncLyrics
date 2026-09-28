@@ -40,12 +40,14 @@ docker run -d -p 9012:9012 -v synclyrics_data:/data ghcr.io/anshulj999/synclyric
 ## 4. Launch & Authenticate
 
 1. Open `http://localhost:9012` (or `https://<IP>:9013` for remote)
-2. Click "Login with Spotify"
-3. Authorize the app
+2. A **Welcome** panel shows on first launch: what's already working, what still needs setting up, and the address to open on your tablet or phone
+3. If you added Spotify credentials, click "Login with Spotify" and authorize the app
+
+The full settings page (the gear icon, then the sliders button, or `/settings`) opens on an **Overview** page with the same status check, so you can come back to it anytime.
 
 ## 5. Play Music
 
-Start playing on Spotify and watch the lyrics appear!
+Start playing on Spotify or any supported source and watch the lyrics appear! Music on a phone or another device can be sent in with [Now Playing Input](Now%20Playing%20Input.md).
 
 ---
 

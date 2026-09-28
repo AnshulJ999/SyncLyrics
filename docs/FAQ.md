@@ -9,14 +9,14 @@ No, but some features work better with Premium:
 - Free accounts have limited API access
 - Playback controls require an active Spotify device
 
-### Can I use Apple Music / YouTube Music?
-Not directly. However, you can use **Audio Recognition** to identify songs from any source playing through your speakers or microphone.
+### Can I use Apple Music / YouTube Music / TIDAL?
+Yes, in a few ways:
 
-However any music playing on your Windows device can be recognized via the SMTC integration.
-
-I can consider adding native support for these sources based on requests. 
-
-**Apple Music**: Use Audio Recognition to identify songs playing through your speakers.
+- **Any player on the same Windows PC or Mac** is picked up through Windows Media (SMTC) or macOS Now Playing.
+- **YouTube Music**: the [Pear Desktop](https://github.com/pear-devs/pear-desktop) app has its own source (Settings > Media).
+- **TIDAL**: the [tidal-hifi](https://github.com/Mastermindzh/tidal-hifi) desktop app has its own source (Settings > Media).
+- **Music on a phone or another device**: [Now Playing Input](Now%20Playing%20Input.md) lets a phone automation, Home Assistant or a script tell SyncLyrics what's playing.
+- **Anything else**: **Audio Recognition** identifies whatever is playing through your speakers or microphone.
 
 **YouTube Music (browser)**: Windows Media detection works, but has limitations:
 - Position updates are unreliable (lyrics may drift out of sync)
@@ -63,6 +63,9 @@ Partially. Cached lyrics and album art work offline, but:
 
 Full offline support may work once the lyrics/art have been cached and if you use an offline music source. This is untested but I plan to add support for full offline usage. 
 
+### Does SyncLyrics contact the internet by itself?
+Besides fetching lyrics and art, once a day it checks whether a newer version is out, and by default includes a few anonymous usage stats. It never sends what you listen to or your settings. Both can be turned off in **Settings > Updates**. Details: [Usage Stats](Usage%20Stats.md).
+
 ### Can I use this on a tablet dashboard?
 Yes! Common setups:
 - HASS addon with iframe card
@@ -88,6 +91,7 @@ Add a Browser Source with:
 | Lyrics | `lyrics_database/` |
 | Album art | `album_art_database/` |
 | Settings | `settings.json` |
+| App state (install ID, update check, panels seen) | `state.json` |
 | Spotify tokens | `.cache` or configured path |
 
 ### Can I migrate my lyrics database?

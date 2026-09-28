@@ -21,6 +21,9 @@ SyncLyrics exposes a full HTTP REST API and two WebSocket endpoints. Any app tha
 9. [Audio Recognition](#audio-recognition)
 10. [WebSockets](#websockets)
 11. [System](#system)
+12. [Now Playing Input](#now-playing-input)
+13. [App Info and Updates](#app-info-and-updates)
+14. [Use SyncLyrics as a lyrics server](#use-synclyrics-as-a-lyrics-server)
 
 ---
 
@@ -98,7 +101,8 @@ Returns full metadata for the currently playing track. Polled by the frontend al
 }
 ```
 
-- `source` — one of: `spicetify`, `spotify`, `spotify_hybrid`, `windows_media`, `audio_recognition`, `music_assistant`
+- `source` — the active source, e.g. `spicetify`, `spotify`, `spotify_hybrid`, `windows_media`, `audio_recognition`, `music_assistant`, `linux`, `macos`, `pear_desktop`, `tidal_hifi`, `smtc_now_playing`, `now_playing_input`
+- `source_label` — only for `now_playing_input`: the pushing device's `device_name`, if it sent one
 - `latency_compensation` — seconds to offset lyric display (source-dependent, can be negative)
 - `background_style` — per-album saved preference: `blur`, `soft`, `sharp`, or `null`
 
@@ -1042,15 +1046,101 @@ Resets all settings to their schema defaults and redirects to `/settings`.
 
 ---
 
-## Building a Custom Client
+## Now Playing Input
 
-The minimum polling loop for a custom lyrics client:
+### `POST /api/now-playing`
 
-1. `GET /current-track` — get track identity and position
-2. `GET /lyrics` — get lyric lines
-3. Use `position_ms` + `latency_compensation` from `/current-track` to find the current line in the `lyrics` array
-4. Display. Repeat at the `updateInterval` from `GET /config` (default: 500ms)
+Lets another device tell SyncLyrics what's playing (a phone, a Home Assistant automation, a script). Off by default: enable **Settings > Media > Now Playing Input**. Full guide with examples: [Now Playing Input](Now%20Playing%20Input.md).
 
-For album art, use the `album_art_url` from `/current-track` (direct Spotify CDN URL) or `GET /cover-art` for the locally cached version.
+**Headers:** `Content-Type: application/json`, plus `Authorization: Bearer <token>` if a token is set in settings.
+
+**Request:**
+```json
+{
+  "device_id": "pixel-8",
+  "device_name": "Anshul's Phone",
+  "title": "Blinding Lights",
+  "artist": "The Weeknd",
+  "album": "After Hours",
+  "album_art_url": "https://...",
+  "position": 42.5,
+  "duration": 200,
+  "is_playing": true
+}
+```
+
+- Required: `device_id`, `title`, `is_playing`.
+- `position` / `duration` are seconds; send `position_ms` / `duration_ms` instead for milliseconds.
+- `{"device_id": "pixel-8", "stopped": true}` removes a device.
+- Unknown fields are ignored.
+
+**Responses:** `200 {"ok": true}` · `400 {"error": "..."}` for invalid data · `401` wrong or missing token · `403` input switched off.
+
+Send on every change plus about every 5 seconds while playing. A playing device that goes quiet for 30 seconds counts as paused; a paused device drops out after the paused timeout (10 minutes).
+
+---
+
+## App Info and Updates
+
+Used by the web UI for the What's New and Welcome panels, the update dot and the settings Overview page.
+
+### `GET /api/app/info`
+
+**Response (shortened):**
+```json
+{
+  "version": "2.5.0",
+  "install_type": "docker",
+  "os": "linux",
+  "update": {
+    "checks_enabled": true, "stats_enabled": true,
+    "available": true, "latest": "2.6.0", "url": "https://github.com/...",
+    "notice": null, "checked_at": 1790000000
+  },
+  "panel": { "welcome": false, "whats_new_scope": "install", "whats_new_unseen": true, "updated_recently": true },
+  "changelog_html": "<section>...</section>",
+  "donations": [ { "id": "github", "label": "GitHub Sponsors", "url": "https://...", "icon": "bi-github" } ],
+  "lan_ip": "192.168.1.50",
+  "links": { "repo": "...", "changelog": "...", "docs": "...", "discussions": "...", "usage_stats": "..." }
+}
+```
+
+- `install_type` — `ha_addon`, `docker`, `appimage`, `exe` or `source`
+- `update` — from the daily update check; `available` is false until a check has succeeded
+- `changelog_html` — this version's `CHANGELOG.md` section, rendered for the panel
+
+### `GET /api/app/status`
+
+Short status rows for the Overview page and Welcome panel: now playing, Spotify API, Music Assistant, audio recognition (only while in use) and lyrics providers.
+
+```json
+{ "rows": [ { "id": "spotify", "label": "Spotify API", "tab": "spotify-api", "state": "ok", "value": "Connected" } ] }
+```
+
+`state` is `ok`, `warn`, `idle` or `off`. `tab` is the settings tab the row links to.
+
+### `POST /api/app/panel-seen`
+
+Marks a panel as seen so it doesn't show again. Body: `{"panel": "welcome"}` or `{"panel": "whats_new"}`.
+
+The daily update check itself runs in the background; what it sends is documented in [Usage Stats](Usage%20Stats.md).
+
+---
+
+## Use SyncLyrics as a lyrics server
+
+SyncLyrics works out what's playing, finds the lyrics and keeps them in time. Any other app can read that back: a custom display, an OBS overlay, a Home Assistant card, a smartwatch app. Combined with [Now Playing Input](Now%20Playing%20Input.md), another app can send SyncLyrics what's playing and read the lyrics back, without SyncLyrics' own web page.
+
+**Simplest client:** poll `GET /lyrics` about every 500 ms (the `updateInterval` from `GET /config`) and show `lyrics[2]`, the current line. SyncLyrics already accounts for position and latency when it picks the lines, so the client does no timing.
+
+**Richer client:**
+
+1. `GET /current-track` — title, artist, album art, `position_ms`, `duration_ms`, `is_playing`, source
+2. `GET /lyrics` — the 6-line window (`[prev2, prev1, current, next1, next2, next3]`), plus `word_synced_lyrics` for karaoke-style highlighting
+3. For word sync, advance your own clock from `position_ms` between polls, and apply `latency_compensation` + `word_sync_latency_compensation` (positive = earlier)
+
+For album art, use `album_art_url` from `/current-track`, or `GET /cover-art` for the locally cached image.
 
 For playback controls, all `/api/playback/*` routes work regardless of the active source — routing to Windows SMTC, Spicetify, Spotify API, or Music Assistant is handled server-side automatically.
+
+There is no login on the API. If SyncLyrics is reachable from the internet, put it behind a reverse proxy with authentication.

@@ -104,6 +104,48 @@ export function timeoutSignal(ms) {
     return controller.signal;
 }
 
+// ========== SOURCE LABELS ==========
+
+// Single list of source display names. Every place that shows the source name must use
+// sourceDisplayName(), so a new source only needs adding here.
+const SOURCE_NAMES = {
+    'spotify': 'Spotify',
+    'spotify_hybrid': 'Hybrid',
+    'spotifyhybrid': 'Hybrid',
+    'spicetify': 'Spicetify',
+    'windows': 'Windows',
+    'windows_media': 'Windows',
+    'windowsmedia': 'Windows',
+    'audio_recognition': 'Shazam',
+    'audiorecognition': 'Shazam',
+    'shazam': 'Shazam',
+    'acrcloud': 'ACRCloud',
+    'local_fingerprint': 'Local',
+    'reaper': 'Reaper',
+    'reaper_daw': 'REAPER',
+    'music_assistant': 'Music Assistant',
+    'linux': 'Linux',
+    'macos': 'Mac',
+    'pear_desktop': 'Pear',
+    'tidal_hifi': 'TIDAL',
+    'smtc_now_playing': 'Windows',
+    'now_playing_input': 'Remote'
+};
+
+/**
+ * Display name for a track's source. Now Playing Input shows the pushing device's name.
+ *
+ * @param {Object|null} trackInfo - Track data from /current-track
+ * @returns {string}
+ */
+export function sourceDisplayName(trackInfo) {
+    if (!trackInfo || !trackInfo.source) return 'Idle';
+    if (trackInfo.source === 'now_playing_input' && trackInfo.source_label) {
+        return trackInfo.source_label;
+    }
+    return SOURCE_NAMES[trackInfo.source] || 'Idle';
+}
+
 // ========== COMPARISON HELPERS ==========
 
 /**

@@ -10,7 +10,8 @@ Adding a new source is simple:
 2. Subclass `BaseMetadataSource`
 3. Implement `get_config()`, `capabilities()`, `get_metadata()`
 4. Add settings to `settings.py`
-5. Restart SyncLyrics - your source auto-registers!
+5. Add `from . import your_source` to the pre-import list in `system_utils/sources/__init__.py`. Running from source works without it, but the packaged builds (PyInstaller) can't discover modules on their own
+6. Restart SyncLyrics - your source auto-registers!
 
 ## Minimal Example
 
@@ -167,7 +168,7 @@ def is_available(self) -> bool:
 > **Note:** Adding settings to `settings.py` is **optional**. Your plugin will work using its default values from `SourceConfig`. Users can also configure via `settings.json` directly.
 >
 > Settings entries are only needed if you want:
-> - Your source to appear in the Settings UI
+> - Your source to appear in the Settings UI (a source that's off by default can only be switched on from the UI if it has settings entries)
 > - Your source to be a "bundled" first-class plugin
 
 Add entries to `settings.py` in the `_definitions` dict:

@@ -4,7 +4,7 @@
  * Manages the REAPER Control Panel modal, offset nudging, auto-calibration triggers,
  * and transport controls.
  *
- * Also exports isReaperConnected() for use by main.js to show/hide the toggle button
+ * Also exports updateReaperButton() so main.js and the monitor share one show/hide rule
  * whenever the companion script is running (heartbeat active), regardless of whether
  * reaper_daw is the currently winning metadata source.
  */
@@ -38,6 +38,23 @@ async function _checkConnection() {
     } catch {
         _reaper_connected = false;
     }
+    updateReaperButton();
+}
+
+/**
+ * Show the REAPER button while the companion heartbeat is active, not only when
+ * reaper_daw is the winning source. Called by the monitor and the main update loop.
+ */
+export function updateReaperButton() {
+    const reaperBtn = document.getElementById('btn-reaper-daw');
+    if (!reaperBtn) return;
+    if (!_reaper_connected) {
+        reaperBtn.style.display = 'none';
+        return;
+    }
+    reaperBtn.style.display = 'flex';
+    const haBtn = document.getElementById('btn-home-assistant');
+    reaperBtn.style.left = (haBtn && haBtn.style.display === 'none') ? '128px' : '180px';
 }
 
 function _startConnectionMonitor() {
