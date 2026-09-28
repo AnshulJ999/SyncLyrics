@@ -21,7 +21,7 @@ Yes, in a few ways:
 **YouTube Music (browser)**: Windows Media detection works, but has limitations:
 - Position updates are unreliable (lyrics may drift out of sync)
 - Thumbnails often fail to load
-- Better option: Use **Spicetify** with its YouTube Music extension for real-time sync
+- Better option: use the [Pear Desktop](https://github.com/pear-devs/pear-desktop) app and its SyncLyrics source for real-time sync
 
 **YouTube videos**: Not recommended for lyrics sync:
 - Video metadata (channel name, video title) doesn't match song databases

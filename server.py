@@ -101,10 +101,9 @@ async def add_cache_headers(response):
         response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     # Static assets (CSS, JS, images, fonts), served under app.static_url_path (/resources).
     # Quart already sends ETag/Last-Modified, so revalidation is a cheap 304.
-    elif req_path.startswith(app.static_url_path + '/'):
+    elif req_path.startswith(app.static_url_path + '/') or req_path.startswith('/v/'):
         if req_path.endswith(('.js', '.css')):
-            # ES modules imported by main.js are not cache-busted: always revalidate,
-            # or an upgrade can mix a new main.js with old cached modules
+            # Always revalidate (cheap 304) so edits show without a restart
             response.headers['Cache-Control'] = 'no-cache'
         else:
             response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
@@ -127,6 +126,12 @@ async def serve_custom_fonts_css():
     from font_scanner import generate_custom_css
     css = generate_custom_css(RESOURCES_DIR / "fonts")
     return css, 200, {'Content-Type': 'text/css', 'Cache-Control': 'public, max-age=360'}
+
+@app.route('/v/<int:token>/<path:filename>')
+async def serve_versioned_static(token, filename):
+    """Static files under a per-start path. main.js loads from here, so every module it
+    imports gets the same fresh URL and a browser can never mix in stale cached modules."""
+    return await send_from_directory(str(STATIC_DIRECTORY), filename)
 
 @app.route('/fonts/<path:filename>')
 async def serve_fonts(filename):

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block scripts %}
-<script type="module" src="{{ url_for('static', filename='js/main.js')}}?v={{ cache_version }}"></script>
+<script type="module" src="/v/{{ cache_version }}/js/main.js"></script>
 {% endblock %}
 {% block content %}
 

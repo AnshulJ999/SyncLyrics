@@ -118,11 +118,11 @@ Windows System Media Transport Controls (SMTC) is how SyncLyrics detects media f
 | Spotify (native) | ✅ Every 1-2s | ✅ | Best choice |
 | MusicBee | ✅ Good | ⚠️ Varies | Good |
 | Browsers (YouTube) | ❌ Rarely/never | ⚠️ Often fails | Not recommended |
-| YouTube Music via Spicetify | ✅ Real-time | ✅ | **Use this instead** |
+| YouTube Music via Pear Desktop | ✅ Real-time | ✅ | Use Pear Desktop |
 
 **Solutions:**
 1. **Use native apps** (Spotify, MusicBee) instead of browser players
-2. **For YouTube Music**: Install the Spicetify extension for real-time sync
+2. **For YouTube Music**: Use the [Pear Desktop](https://github.com/pear-devs/pear-desktop) app and enable the Pear Desktop source in Settings > Media
 3. **For YouTube videos**: Consider blocking browsers (`system.windows.app_blocklist`)
 4. **Audio Recognition**: Use Shazam mode for manual identification
 
