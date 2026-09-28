@@ -6,6 +6,26 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+def get_local_ip() -> str:
+    """Best effort to get the actual LAN IP address."""
+    try:
+        # Connect to a public DNS server to determine the outgoing interface
+        # We don't actually send data, just establish the route
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0)
+        try:
+            s.connect(('8.8.8.8', 1))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
 class MDNSService:
     """
     Handles mDNS (Bonjour/Zeroconf) registration for the application.
@@ -21,22 +41,7 @@ class MDNSService:
         self.info: Optional[ServiceInfo] = None
 
     def _get_local_ip(self) -> str:
-        """Best effort to get the actual LAN IP address."""
-        try:
-            # Connect to a public DNS server to determine the outgoing interface
-            # We don't actually send data, just establish the route
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.settimeout(0)
-            try:
-                s.connect(('8.8.8.8', 1))
-                ip = s.getsockname()[0]
-            except Exception:
-                ip = '127.0.0.1'
-            finally:
-                s.close()
-            return ip
-        except Exception:
-            return '127.0.0.1'
+        return get_local_ip()
 
     def register(self):
         """Register the service on the local network."""

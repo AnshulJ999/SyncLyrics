@@ -138,6 +138,9 @@ import { setupHomeAssistant } from './modules/habrowser.js';
 // REAPER DAW Integration (Level 2)
 import { setupReaperUI, isReaperConnected, seekReaper } from './modules/reaper.js';
 
+// App panels (What's New / Welcome) + update dot
+import { initAppPanels } from './modules/appPanels.js';
+
 // ========== CONNECT MODULES ==========
 
 // Connect slideshow functions to background module
@@ -463,9 +466,11 @@ async function updateLoop() {
                         'macos': 'Mac',
                         'pear_desktop': 'Pear',
                         'tidal_hifi': 'TIDAL',
-                        'smtc_now_playing': 'Windows'
+                        'smtc_now_playing': 'Windows',
+                        'now_playing_input': 'Remote'
                     };
-                    sourceBtn.textContent = sourceMap[trackInfo.source] || 'Idle';
+                    sourceBtn.textContent = (trackInfo.source === 'now_playing_input' && trackInfo.source_label)
+                        || sourceMap[trackInfo.source] || 'Idle';
                 }
             }
         }
@@ -817,6 +822,9 @@ async function main() {
     if (config?.reaperDawEnabled) {
         setupReaperUI();
     }
+
+    // Update dot + What's New / Welcome panels (not awaited: never delays lyrics)
+    initAppPanels();
 
     // Note: HA button is hidden by default in HTML (style="display:none").
     // setupHomeAssistant() removes that hide when called.

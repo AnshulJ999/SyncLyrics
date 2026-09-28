@@ -21,6 +21,11 @@ import os
 from pathlib import Path
 import json
 import uuid
+import hmac
+
+import app_info
+import checkin
+from version import VERSION
 
 logger = get_logger(__name__)
 
@@ -94,36 +99,15 @@ async def add_cache_headers(response):
     # Media browser static assets (React build with content hashes - safe to cache forever)
     if req_path.startswith('/media-browser/static/'):
         response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-    # Static assets (CSS, JS, images, fonts)
-    elif req_path.startswith('/static/'):
-        # Reduced from 3600s (1hr) to 360s (6min) to ensure updates propagate faster
-        # Combined with ETag/Last-Modified, this enables efficient revalidation
-        response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
-        
-        # Add ETag and Last-Modified for static files to enable 304 responses
-        # This makes cache validation very efficient even with shorter max-age
-        try:
-            # Resolve the actual file path from the request URL
-            # /static/js/main.js -> STATIC_DIRECTORY/js/main.js
-            relative_path = req_path[len('/static/'):]  # Remove '/static/' prefix
-            file_path = os.path.join(STATIC_DIRECTORY, relative_path)
-            
-            if os.path.isfile(file_path):
-                # Last-Modified: file modification timestamp
-                mtime = os.path.getmtime(file_path)
-                from email.utils import formatdate
-                response.headers['Last-Modified'] = formatdate(mtime, usegmt=True)
-                
-                # ETag: hash of file path + mtime (fast, no file read needed)
-                # Using mtime ensures ETag changes when file is modified
-                import hashlib
-                etag_source = f"{file_path}:{mtime}".encode('utf-8')
-                etag = hashlib.md5(etag_source).hexdigest()
-                response.headers['ETag'] = f'"{etag}"'
-        except Exception:
-            # If file path resolution fails, skip ETag/Last-Modified
-            # The response will still work, just without validation headers
-            pass
+    # Static assets (CSS, JS, images, fonts), served under app.static_url_path (/resources).
+    # Quart already sends ETag/Last-Modified, so revalidation is a cheap 304.
+    elif req_path.startswith(app.static_url_path + '/'):
+        if req_path.endswith(('.js', '.css')):
+            # ES modules imported by main.js are not cache-busted: always revalidate,
+            # or an upgrade can mix a new main.js with old cached modules
+            response.headers['Cache-Control'] = 'no-cache'
+        else:
+            response.headers['Cache-Control'] = 'public, max-age=360, must-revalidate'
     # API endpoints and pages - no caching (unless route already set its own)
     elif req_path.startswith('/api/') or req_path in ['/', '/lyrics', '/current-track', '/config', '/settings']:
         # Don't overwrite if route already set cache headers (e.g., image serving routes)
@@ -3385,6 +3369,138 @@ async def get_client_config():
         "haEnabled": FEATURES.get("ha_enabled", False),
         "reaperDawEnabled": _safe_bool(conf("media_source.reaper_daw.enabled"), False),
     }
+
+
+# --- App info, status, first-run/update panels ---
+
+_LEGACY_SOURCE_LABELS = {
+    'spotify': 'Spotify', 'spotify_hybrid': 'Spotify', 'spicetify': 'Spicetify',
+    'windows_media': 'Windows', 'audio_recognition': 'Audio recognition', 'reaper': 'Audio recognition',
+}
+
+
+def _source_label(metadata: dict) -> str:
+    name = metadata.get('source', '')
+    if metadata.get('source_label'):
+        return metadata['source_label']
+    if name == 'now_playing_input':
+        return 'Remote'
+    if name in _LEGACY_SOURCE_LABELS:
+        return _LEGACY_SOURCE_LABELS[name]
+    from system_utils.sources import get_source
+    plugin = get_source(name)
+    return plugin.get_config().display_name if plugin else name
+
+
+@app.route('/api/app/info')
+async def app_info_route():
+    """Version, update status, panel state, changelog and donation links for the UI."""
+    from network_utils import get_local_ip
+    return jsonify({
+        'version': VERSION,
+        'install_type': app_info.get_install_type(),
+        'os': app_info.get_os_name(),
+        'update': checkin.get_update_status(),
+        'panel': app_info.get_panel_state(),
+        'changelog_html': app_info.get_changelog_html(),
+        'donations': app_info.get_donation_links(),
+        'lan_ip': get_local_ip(),
+        'links': {
+            'repo': app_info.REPO_URL,
+            'changelog': f"{app_info.REPO_URL}/blob/main/CHANGELOG.md",
+            'docs': f"{app_info.REPO_URL}#readme",
+            'discussions': f"{app_info.REPO_URL}/discussions",
+            'usage_stats': f"{app_info.REPO_URL}/blob/main/docs/Usage%20Stats.md",
+        },
+    })
+
+
+@app.route('/api/app/status')
+async def app_status_route():
+    """Short status rows for the settings Overview and the Welcome panel."""
+    rows = []
+
+    try:
+        metadata = await get_current_song_meta_data()
+    except Exception:
+        metadata = None
+    if metadata and metadata.get('title'):
+        rows.append({'id': 'now_playing', 'label': 'Now playing', 'tab': 'media',
+                     'state': 'ok' if metadata.get('is_playing') else 'idle',
+                     'value': _source_label(metadata), 'detail': metadata.get('title')})
+    else:
+        rows.append({'id': 'now_playing', 'label': 'Now playing', 'tab': 'media',
+                     'state': 'off', 'value': 'Nothing playing yet'})
+
+    client = get_shared_spotify_client()
+    spotify_state = client.get_connection_status().get('state') if client else 'not_configured'
+    spotify_row = {
+        'connected': ('ok', 'Connected'),
+        'degraded': ('warn', 'Having trouble connecting'),
+        'needs_reconnect': ('warn', 'Needs you to log in again'),
+    }.get(spotify_state, ('off', 'Not set up'))
+    rows.append({'id': 'spotify', 'label': 'Spotify API', 'tab': 'spotify-api',
+                 'state': spotify_row[0], 'value': spotify_row[1]})
+
+    from system_utils.sources import music_assistant as ma
+    ma_enabled = _safe_bool(conf("media_source.music_assistant.enabled"), True)
+    if ma_enabled and (ma.is_configured() or app_info.get_install_type() in ('docker', 'ha_addon')):
+        if not ma.is_configured():
+            ma_row = ('off', 'Not set up')
+        elif ma.is_connected():
+            ma_row = ('ok', 'Connected')
+        else:
+            ma_row = ('warn', "Can't connect")
+        rows.append({'id': 'music_assistant', 'label': 'Music Assistant', 'tab': 'music-assistant',
+                     'state': ma_row[0], 'value': ma_row[1],
+                     'detail': conf("system.music_assistant.server_url", "") or None})
+
+    from system_utils.metadata import _get_audio_rec_enabled
+    audio_on = _get_audio_rec_enabled()
+    rows.append({'id': 'audio_recognition', 'label': 'Audio recognition', 'tab': 'audio-recognition',
+                 'state': 'ok' if audio_on else 'off', 'value': 'On' if audio_on else 'Off'})
+
+    provider_keys = [k for k in settings._definitions if k.startswith('providers.') and k.endswith('.enabled')]
+    providers_on = sum(1 for k in provider_keys if _safe_bool(conf(k), False))
+    rows.append({'id': 'providers', 'label': 'Lyrics providers', 'tab': 'providers',
+                 'state': 'ok' if providers_on else 'warn',
+                 'value': f"{providers_on} of {len(provider_keys)} on"})
+
+    return jsonify({'rows': rows})
+
+
+@app.route('/api/app/panel-seen', methods=['POST'])
+async def app_panel_seen_route():
+    data = await request.get_json(silent=True) or {}
+    panel = data.get('panel')
+    if panel not in ('welcome', 'whats_new'):
+        return jsonify({'error': 'Unknown panel'}), 400
+    app_info.mark_panel_seen(panel)
+    return jsonify({'ok': True})
+
+
+# --- Now Playing Input (push) ---
+
+@app.route('/api/now-playing', methods=['POST'])
+async def now_playing_input_route():
+    """Other devices push what they're playing. Contract: sources/now_playing_input.py."""
+    from system_utils.sources import get_source
+    source = get_source('now_playing_input')
+    if not source or not source.enabled:
+        return jsonify({'error': 'Now Playing Input is off. Turn it on in Settings > Media.'}), 403
+
+    token = str(conf("media_source.now_playing_input.token", "") or "").strip()
+    if token:
+        supplied = request.headers.get('Authorization', '')
+        if not hmac.compare_digest(supplied.encode(), f"Bearer {token}".encode()):
+            return jsonify({'error': 'Missing or wrong token.'}), 401
+
+    data = await request.get_json(force=True, silent=True)
+    status, message = source.ingest(data)
+    if status != 200:
+        return jsonify({'error': message}), status
+    return jsonify({'ok': True})
+
 
 @app.route("/callback")
 async def spotify_callback():

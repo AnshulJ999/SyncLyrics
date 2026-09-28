@@ -602,9 +602,21 @@ async def main() -> NoReturn:
     global _hypercorn_shutdown
     _hypercorn_shutdown = asyncio.Event()
     
+    # Record fresh-install / updated-version markers before the UI can ask for them
+    try:
+        import app_info
+        app_info.init_install_markers()
+    except Exception as e:
+        logger.error(f"Failed to record install markers: {e}")
+
     # Start the server and store task globally
     logger.info(f"Starting server on port {PORT}...")
     _server_task = asyncio.create_task(run_server())
+
+    # Daily update check / anonymous stats (no-op while both settings are off)
+    from system_utils import create_tracked_task
+    import checkin
+    create_tracked_task(checkin.checkin_loop())
     
     # Register mDNS service
     try:

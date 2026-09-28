@@ -1,0 +1,359 @@
+/* What's New / Welcome panels and the update dot (modules/appPanels.js).
+   Palette matches the settings page. */
+
+:root {
+    --panel-bg: rgba(30, 32, 48, 0.97);
+    --panel-line: rgba(255, 255, 255, 0.1);
+    --panel-line-soft: rgba(255, 255, 255, 0.06);
+    --panel-text-2: rgba(255, 255, 255, 0.75);
+    --panel-text-3: rgba(255, 255, 255, 0.55);
+    --panel-accent: #60a5fa;
+    --panel-accent-bg: rgba(59, 130, 246, 0.2);
+    --panel-ok: #4ade80;
+    --panel-warn: #fbbf24;
+}
+
+.app-panel-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.app-panel-backdrop.visible {
+    opacity: 1;
+}
+
+.app-panel {
+    position: relative;
+    width: 100%;
+    max-width: 540px;
+    max-height: min(86vh, 760px);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+    color: #fff;
+    border: 1px solid var(--panel-line);
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    font-family: var(--ui-font-family, inherit);
+    text-align: left;
+}
+
+.app-panel:focus {
+    outline: none;
+}
+
+.app-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--panel-line);
+}
+
+.app-panel-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 500;
+}
+
+.app-panel-icon-btn {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--panel-text-3);
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.app-panel-icon-btn:hover,
+.app-panel-icon-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.app-panel-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.app-panel-section + .app-panel-section {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--panel-line-soft);
+}
+
+.app-panel-section h3 {
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--panel-text-3);
+}
+
+.app-panel p {
+    margin: 0 0 10px;
+    color: var(--panel-text-2);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.app-panel a {
+    color: var(--panel-accent);
+    text-decoration: none;
+}
+
+.app-panel a:hover,
+.app-panel a:focus-visible {
+    text-decoration: underline;
+}
+
+/* Changelog content (rendered from CHANGELOG.md) */
+.app-changelog h5 {
+    margin: 14px 0 6px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.app-changelog h5:first-child {
+    margin-top: 0;
+}
+
+.app-changelog h6 {
+    margin: 10px 0 4px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.app-changelog ul {
+    margin: 0 0 8px;
+    padding-left: 20px;
+    color: var(--panel-text-2);
+    font-size: 0.88rem;
+    line-height: 1.55;
+}
+
+.app-changelog code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e5e7eb;
+    font-size: 0.85em;
+}
+
+.app-panel-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 0.88rem;
+}
+
+/* Buttons */
+.app-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid var(--panel-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff !important;
+    font-size: 0.88rem;
+    text-decoration: none !important;
+    cursor: pointer;
+}
+
+.app-btn:hover,
+.app-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.app-btn.primary {
+    background: var(--panel-accent-bg);
+    border-color: rgba(96, 165, 250, 0.4);
+    color: var(--panel-accent) !important;
+}
+
+.app-donate-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+/* Status rows (Welcome panel) */
+.app-status {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.app-status li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--panel-line-soft);
+    font-size: 0.9rem;
+}
+
+.app-status li:last-child {
+    border-bottom: 0;
+}
+
+.app-status .label {
+    flex: none;
+    width: 128px;
+    color: var(--panel-text-2);
+}
+
+.app-status .value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-status .value em {
+    font-style: normal;
+    color: var(--panel-text-3);
+}
+
+.status-ok { color: var(--panel-ok); }
+.status-warn { color: var(--panel-warn); }
+.status-off,
+.status-idle { color: rgba(255, 255, 255, 0.4); }
+
+.app-url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.app-url-row code {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-size: 0.88rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-quiet-line {
+    color: var(--panel-text-3) !important;
+    font-size: 0.85rem !important;
+}
+
+/* Footer + auto-close countdown */
+.app-panel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px 14px;
+    border-top: 1px solid var(--panel-line);
+}
+
+.app-panel-countdown {
+    color: var(--panel-text-3);
+    font-size: 0.8rem;
+}
+
+.app-panel-timer {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    background: var(--panel-accent);
+    opacity: 0.6;
+    transform-origin: left;
+    transition: transform 1s linear;
+}
+
+@media (max-width: 480px) {
+    .app-panel-backdrop {
+        padding: 10px;
+    }
+
+    .app-panel-header,
+    .app-panel-body,
+    .app-panel-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .app-status .label {
+        width: 108px;
+    }
+
+    .app-donate-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-panel-backdrop,
+    .app-panel-timer {
+        transition: none;
+    }
+}
+
+/* Update available: small dot on the gear and the main-settings button */
+.update-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #60a5fa;
+    box-shadow: 0 0 0 2px rgba(20, 20, 30, 0.9);
+    pointer-events: none;
+}
+
+.settings-header-btn {
+    position: relative;
+}
+
+.update-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.update-line:hover {
+    color: #93c5fd;
+}

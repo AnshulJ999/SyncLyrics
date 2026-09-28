@@ -39,6 +39,10 @@ else:
 
 STATE_FILE = os.getenv("SYNCLYRICS_STATE_FILE", str(DATA_DIR / "state.json"))
 
+# Captured at import, before anything calls get_state() (which creates the file).
+# False means a fresh install (or a Docker run without a /data volume).
+STATE_EXISTED_AT_STARTUP = path.exists(STATE_FILE)
+
 DEFAULT_STATE = {
     "theme": "dark",
     "representationMethods": {
@@ -213,15 +217,24 @@ def get_attribute_js_notation(state: dict, attribute: str) -> Any:
 # installs live here, never in settings.json. get_state() resets the file to
 # defaults if it is missing or unreadable, so callers must tolerate these vanishing.
 
-def _update_state_key(key: str, value: Any) -> None:
-    """Set one top-level key, preserving everything else in state.json."""
+def update_state_values(values: dict) -> None:
+    """Set top-level keys, preserving everything else in state.json."""
     with _state_lock:
         updated = dict(get_state())  # copy: get_state() returns the cached dict
-        updated[key] = value
+        updated.update(values)
         try:
             set_state(updated)
         except Exception as e:
-            logger.warning(f"Could not save '{key}' to state file: {e}")
+            logger.warning(f"Could not save {list(values)} to state file: {e}")
+
+
+def _update_state_key(key: str, value: Any) -> None:
+    update_state_values({key: value})
+
+
+def get_state_value(key: str, default: Any = None) -> Any:
+    state = get_state()
+    return state.get(key, default) if isinstance(state, dict) else default
 
 
 def get_install_id() -> str:

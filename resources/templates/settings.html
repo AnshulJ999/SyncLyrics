@@ -12,9 +12,14 @@
                 </button>
             </div>
             <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+                <button class="nav-link active" id="v-pills-overview-tab" data-bs-toggle="pill"
+                    data-bs-target="#v-pills-overview" type="button" role="tab">
+                    <i class="bi bi-house me-2"></i>Overview<span class="nav-update-dot" id="nav-update-dot" hidden></span>
+                </button>
+                <hr class="nav-divider">
                 {% for category in settings.keys() %}
                 <button
-                    class="nav-link {% if loop.first %}active{% endif %} {% if category == 'Deprecated' %}deprecated-tab{% endif %}"
+                    class="nav-link {% if category == 'Deprecated' %}deprecated-tab{% endif %}"
                     id="v-pills-{{ category|lower|replace(' ', '-') }}-tab" data-bs-toggle="pill"
                     data-bs-target="#v-pills-{{ category|lower|replace(' ', '-') }}" type="button" role="tab">
                     {% if category == 'Deprecated' %}
@@ -47,6 +52,8 @@
                     <i class="bi bi-soundwave me-2"></i>
                     {% elif category == 'HTTPS' %}
                     <i class="bi bi-shield-lock me-2"></i>
+                    {% elif category == 'Updates' %}
+                    <i class="bi bi-arrow-repeat me-2"></i>
                     {% else %}
                     <i class="bi bi-gear me-2"></i>
                     {% endif %}
@@ -69,9 +76,58 @@
                 <!-- Flash messages are handled by base.html -->
 
                 <div class="tab-content" id="v-pills-tabContent">
+                    <!-- Overview (filled by loadOverview() from /api/app/info and /api/app/status) -->
+                    <div class="tab-pane fade show active" id="v-pills-overview" role="tabpanel">
+                        <h4 class="section-title">
+                            <span id="ov-title">SyncLyrics</span>
+                            <span class="ov-subtitle" id="ov-subtitle"></span>
+                        </h4>
+
+                        <div class="ov-update" id="ov-update" hidden>
+                            <i class="bi bi-arrow-up-circle" aria-hidden="true"></i>
+                            <div class="ov-update-text">
+                                <strong id="ov-update-title"></strong>
+                                <span id="ov-update-howto"></span>
+                            </div>
+                            <a class="btn btn-sm btn-outline-light" id="ov-update-link" href="#" target="_blank" rel="noopener">
+                                Release notes <i class="bi bi-box-arrow-up-right ms-1"></i>
+                            </a>
+                        </div>
+                        <p class="ov-quiet" id="ov-update-quiet" hidden></p>
+
+                        <div class="ov-grid">
+                            <div class="settings-card ov-card">
+                                <h5 class="ov-card-title" id="ov-changelog-title">What's new</h5>
+                                <div class="app-changelog ov-changelog" id="ov-changelog">
+                                    <p class="text-muted small mb-0">Loading&hellip;</p>
+                                </div>
+                                <a class="ov-link" id="ov-changelog-link" href="#" target="_blank" rel="noopener">
+                                    Full changelog <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                </a>
+                            </div>
+
+                            <div class="ov-side">
+                                <div class="settings-card ov-card">
+                                    <h5 class="ov-card-title">Status</h5>
+                                    <ul class="ov-status" id="ov-status">
+                                        <li><span class="text-muted small">Checking&hellip;</span></li>
+                                    </ul>
+                                </div>
+
+                                <div class="settings-card ov-card" id="ov-support" hidden>
+                                    <h5 class="ov-card-title">Support SyncLyrics</h5>
+                                    <p class="text-muted small">SyncLyrics is free and made by one person. If you enjoy it, you can support it here.</p>
+                                    <div class="ov-donate" id="ov-donate"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ov-privacy" id="ov-privacy"></div>
+                    </div>
+
                     <!-- Dynamic Categories -->
                     {% for category, category_settings in settings.items() %}
-                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                    <div class="tab-pane fade"
                         id="v-pills-{{ category|lower|replace(' ', '-') }}" role="tabpanel">
                         <h4 class="section-title">
                             {{ category }}
@@ -628,8 +684,234 @@
         color: #f87171;
     }
 
+    /* Overview tab */
+    .nav-divider {
+        border: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin: 0.5rem 0.25rem;
+        opacity: 1;
+    }
+
+    .nav-update-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-left: 0.5rem;
+        border-radius: 50%;
+        background: #60a5fa;
+        vertical-align: middle;
+    }
+
+    .ov-subtitle {
+        margin-left: 0.75rem;
+        font-size: 0.95rem;
+        color: rgba(255, 255, 255, 0.5);
+    }
+
+    .ov-update {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.9rem 1rem;
+        margin-bottom: 1.25rem;
+        border-radius: 12px;
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(96, 165, 250, 0.3);
+    }
+
+    .ov-update[hidden] {
+        display: none;
+    }
+
+    .ov-update > i {
+        font-size: 1.4rem;
+        color: #60a5fa;
+    }
+
+    .ov-update-text {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ov-update-text strong {
+        display: block;
+        color: #fff;
+    }
+
+    .ov-update-text span {
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 0.85rem;
+    }
+
+    .ov-quiet {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.85rem;
+        margin: -0.5rem 0 1.25rem;
+    }
+
+    .ov-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .ov-side {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        min-width: 0;
+    }
+
+    .ov-card {
+        padding: 1.1rem 1.25rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .ov-card-title {
+        margin: 0 0 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.55);
+    }
+
+    .ov-changelog p {
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 0.88rem;
+        line-height: 1.55;
+    }
+
+    .ov-changelog a,
+    .ov-link,
+    .ov-privacy a {
+        color: #60a5fa;
+        text-decoration: none;
+    }
+
+    .ov-link {
+        display: inline-block;
+        margin-top: 0.5rem;
+        font-size: 0.88rem;
+    }
+
+    .ov-status {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .ov-status li {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .ov-status li:last-child {
+        border-bottom: 0;
+    }
+
+    .ov-status a {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.55rem 0;
+        color: #fff;
+        text-decoration: none;
+        font-size: 0.88rem;
+    }
+
+    .ov-status a:hover .ov-k,
+    .ov-status a:focus-visible .ov-k {
+        color: #fff;
+    }
+
+    .ov-k {
+        flex: none;
+        width: 128px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .ov-v {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    .ov-v em {
+        font-style: normal;
+        color: rgba(255, 255, 255, 0.5);
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .ov-go {
+        color: rgba(255, 255, 255, 0.4);
+    }
+
+    .ov-donate {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .ov-donate a {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        min-height: 40px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        color: #fff;
+        font-size: 0.85rem;
+        text-decoration: none;
+    }
+
+    .ov-donate a:hover,
+    .ov-donate a:focus-visible {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .ov-privacy {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.25rem;
+        margin-top: 1.25rem;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.82rem;
+    }
+
+    .ov-privacy i {
+        margin-right: 0.3rem;
+    }
+
+    .settings-content-area.overview-active .save-bar {
+        display: none;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
+        .ov-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .ov-update {
+            flex-wrap: wrap;
+        }
+
+        .ov-k {
+            width: 108px;
+        }
+
+        .nav-divider {
+            display: none;
+        }
+
         .settings-wrapper {
             padding: 0;
         }
@@ -927,7 +1209,171 @@
         setInterval(refreshStatus, 15000);
     }
 
+    // ===== Tabs: open from /settings#<tab>, and return to the same tab after Save =====
+    function showSettingsTab(tab) {
+        const btn = document.getElementById('v-pills-' + tab + '-tab');
+        if (!btn) return false;
+        bootstrap.Tab.getOrCreateInstance(btn).show();
+        return true;
+    }
+
+    function setupTabRouting() {
+        const form = document.getElementById('settingsForm');
+        const contentArea = document.querySelector('.settings-content-area');
+        document.querySelectorAll('#v-pills-tab [data-bs-toggle="pill"]').forEach(btn => {
+            btn.addEventListener('shown.bs.tab', () => {
+                const tab = btn.id.replace(/^v-pills-/, '').replace(/-tab$/, '');
+                // replaceState: Close uses history.back(), so tab switches must not add entries
+                history.replaceState(null, '', tab === 'overview' ? location.pathname : '#' + tab);
+                // A redirect without a fragment keeps the form action's, so Save lands back here
+                if (form) form.action = form.getAttribute('action').split('#')[0] + (tab === 'overview' ? '' : '#' + tab);
+                if (contentArea) contentArea.classList.toggle('overview-active', tab === 'overview');
+            });
+        });
+        if (contentArea) contentArea.classList.add('overview-active');
+        const initial = location.hash.slice(1);
+        if (initial) showSettingsTab(initial);
+    }
+
+    // ===== Overview tab =====
+    const INSTALL_LABELS = {
+        ha_addon: () => 'Home Assistant add-on',
+        docker: os => 'Docker · ' + os,
+        appimage: () => 'AppImage · Linux',
+        exe: os => os,
+        source: os => 'Running from source · ' + os
+    };
+
+    const UPDATE_HOWTO = {
+        ha_addon: 'Update it from Home Assistant.',
+        docker: 'Pull the new image and recreate the container.',
+        appimage: 'Download the new AppImage from the release page.',
+        exe: 'Download it from the release page.',
+        source: 'Pull the latest code from GitHub.'
+    };
+
+    const STATUS_ICONS = { ok: 'bi-check-circle', warn: 'bi-exclamation-triangle', off: 'bi-dash-circle', idle: 'bi-pause-circle' };
+
+    function ovEl(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function ovIcon(name, extra) {
+        const i = ovEl('i', 'bi ' + name + (extra ? ' ' + extra : ''));
+        i.setAttribute('aria-hidden', 'true');
+        return i;
+    }
+
+    function renderOverviewInfo(info) {
+        document.getElementById('ov-title').textContent = 'SyncLyrics ' + info.version;
+        const labelFn = INSTALL_LABELS[info.install_type] || (os => os);
+        document.getElementById('ov-subtitle').textContent = labelFn(info.os);
+
+        const update = info.update || {};
+        const quiet = document.getElementById('ov-update-quiet');
+        if (update.available) {
+            document.getElementById('ov-update').hidden = false;
+            document.getElementById('nav-update-dot').hidden = false;
+            document.getElementById('ov-update-title').textContent = update.latest + ' is available';
+            document.getElementById('ov-update-howto').textContent = UPDATE_HOWTO[info.install_type] || UPDATE_HOWTO.exe;
+            const link = document.getElementById('ov-update-link');
+            if (info.install_type === 'ha_addon') {
+                link.hidden = true;
+            } else {
+                link.href = update.url;
+                if (info.install_type === 'exe' || info.install_type === 'appimage') {
+                    link.firstChild.textContent = 'Download ';
+                }
+            }
+        } else if (update.checks_enabled && update.checked_at) {
+            quiet.hidden = false;
+            quiet.textContent = "You're on the latest version.";
+        }
+        if (update.notice) {
+            quiet.hidden = false;
+            quiet.textContent = update.notice;
+        }
+
+        document.getElementById('ov-changelog-title').textContent = "What's new in " + info.version;
+        const changelog = document.getElementById('ov-changelog');
+        if (info.changelog_html) {
+            changelog.innerHTML = info.changelog_html;
+            changelog.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+        } else {
+            changelog.replaceChildren(ovEl('p', 'text-muted small mb-0', 'No changelog found for this version.'));
+        }
+        document.getElementById('ov-changelog-link').href = info.links.changelog;
+
+        const donations = info.donations || [];
+        if (donations.length) {
+            const grid = document.getElementById('ov-donate');
+            grid.replaceChildren(...donations.map(d => {
+                const a = ovEl('a');
+                a.href = d.url;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                a.append(ovIcon(d.icon), document.createTextNode(d.label));
+                return a;
+            }));
+            document.getElementById('ov-support').hidden = false;
+        }
+
+        const privacy = document.getElementById('ov-privacy');
+        const checks = ovEl('span');
+        checks.append(ovIcon('bi-arrow-repeat'), document.createTextNode('Update checks: ' + (update.checks_enabled ? 'On' : 'Off')));
+        const stats = ovEl('span');
+        stats.append(ovIcon('bi-bar-chart'), document.createTextNode('Anonymous usage stats: ' + (update.stats_enabled ? 'On' : 'Off')));
+        const sent = ovEl('a', null, "What's sent");
+        sent.href = info.links.usage_stats;
+        sent.target = '_blank';
+        sent.rel = 'noopener';
+        const change = ovEl('a', null, 'Change in Updates settings');
+        change.href = '#updates';
+        change.addEventListener('click', e => { e.preventDefault(); showSettingsTab('updates'); });
+        privacy.replaceChildren(checks, stats, sent, change);
+    }
+
+    function renderOverviewStatus(rows) {
+        const list = document.getElementById('ov-status');
+        list.replaceChildren(...rows.map(row => {
+            const li = ovEl('li');
+            const a = ovEl('a');
+            a.href = '#' + row.tab;
+            a.addEventListener('click', e => { e.preventDefault(); showSettingsTab(row.tab); });
+            const value = ovEl('span', 'ov-v');
+            value.append(ovIcon(STATUS_ICONS[row.state] || 'bi-circle', 'status-' + row.state), document.createTextNode(row.value));
+            if (row.detail) value.append(ovEl('em', null, '· ' + row.detail));
+            a.append(ovEl('span', 'ov-k', row.label), value, ovIcon('bi-chevron-right', 'ov-go'));
+            li.append(a);
+            return li;
+        }));
+    }
+
+    function loadOverview() {
+        fetch('/api/app/info')
+            .then(r => r.json())
+            .then(renderOverviewInfo)
+            .catch(() => {
+                document.getElementById('ov-changelog').replaceChildren(ovEl('p', 'text-muted small mb-0', "Couldn't load version info. Reload the page to try again."));
+            });
+        const refreshStatus = () => fetch('/api/app/status')
+            .then(r => r.json())
+            .then(data => renderOverviewStatus(data.rows || []))
+            .catch(() => {
+                document.getElementById('ov-status').replaceChildren(ovEl('li', 'text-muted small', "Couldn't load status."));
+            });
+        refreshStatus();
+        setInterval(() => {
+            if (document.getElementById('v-pills-overview').classList.contains('active')) refreshStatus();
+        }, 15000);
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        setupTabRouting();
+        loadOverview();
         setupSpotifyStatusCard();
 
         // Initialize tooltips

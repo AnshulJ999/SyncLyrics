@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.5.0] - Unreleased
+
+### ⚠️ Important
+
+SyncLyrics now checks for updates once a day and sends anonymous usage stats: the version, how it's installed (Docker, Home Assistant, app), the OS, and which sources and lyrics providers are switched on. It never sends what you're listening to or your settings, and your IP address isn't stored. Both can be turned off in **Settings > Updates**. Full details: [Usage Stats](https://github.com/AnshulJ999/SyncLyrics/blob/main/docs/Usage%20Stats.md).
+
+### ✨ New Features
+
+#### Now Playing Input
+
+Other devices can now tell SyncLyrics what they're playing: a phone (with Tasker or MacroDroid), a Home Assistant automation, or your own script. Send the song to `POST /api/now-playing` and SyncLyrics shows its lyrics. Turn it on in **Settings > Media** (off by default), and set a token there if SyncLyrics is reachable from the internet.
+
+#### Music Assistant: music it didn't start
+
+Music Assistant players now show lyrics for playback that didn't start in Music Assistant, like the Sonos app, Spotify Connect, AirPlay or a radio button. Play, pause, skip and seek go straight to the speaker.
+
+#### TIDAL (tidal-hifi)
+
+A new source reads what's playing in [tidal-hifi](https://github.com/Mastermindzh/tidal-hifi), the TIDAL desktop app. Turn it on in **Settings > Media** (off by default).
+
+#### Windows players over the network (smtc-now-playing)
+
+A Docker or Home Assistant install can follow any player on a Windows PC running [smtc-now-playing](https://github.com/soarqin/smtc-now-playing). Turn it on in **Settings > Media** (off by default).
+
+#### Update notices and a new Overview page
+
+Settings now opens on an Overview page: your version, what's new, a quick status check of your sources, and how to update when a new version is out. A small dot on the settings icon means an update is available. After an update, a short What's New panel shows once.
+
+### 🐛 Bug Fixes
+
+- Fixed next-track album art not loading with Music Assistant. Thanks to [@morgancurrie](https://github.com/morgancurrie) in [#26](https://github.com/AnshulJ999/SyncLyrics/pull/26).
+- Fixed the main album art request size for Music Assistant, which newer Music Assistant versions reject.
+- Fixed a rare case where app state could be lost if SyncLyrics stopped while saving it.
+
 ## [2.4.0] - 2026-08-24
 
 ### ⚠️ Important

@@ -40,6 +40,7 @@ from . import reaper_daw       # noqa: F401
 from . import pear_desktop     # noqa: F401
 from . import tidal_hifi       # noqa: F401
 from . import smtc_now_playing # noqa: F401
+from . import now_playing_input # noqa: F401
 
 logger = get_logger(__name__)
 

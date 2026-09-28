@@ -135,6 +135,14 @@ def build(debug_mode=False):
         else:
             print("WARNING: .env.example not found!")
 
+        # CHANGELOG.md feeds the in-app What's New panel (read from beside the executable)
+        src_changelog = Path("CHANGELOG.md")
+        if src_changelog.exists():
+            shutil.copy2(src_changelog, output_dir / "CHANGELOG.md")
+            print("Copied CHANGELOG.md to output directory")
+        else:
+            print("WARNING: CHANGELOG.md not found!")
+
         # Copy docs folder to build output
         print("Copying documentation to output directory...")
         src_docs = Path("docs")

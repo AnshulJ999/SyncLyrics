@@ -290,6 +290,15 @@ class SettingsManager:
             "media_source.smtc_now_playing.priority": Setting("smtc-now-playing Priority", int, 8, False, "Media", "Source priority (lower = first)", "number"),
             "media_source.smtc_now_playing.base_url": Setting("smtc-now-playing URL", str, "http://127.0.0.1:11451", True, "Media", "Address of the Windows PC running smtc-now-playing", "text"),
 
+            # Now Playing Input (other devices push what's playing to /api/now-playing)
+            "media_source.now_playing_input.enabled": Setting("Now Playing Input", bool, False, False, "Media", "Let phones, Home Assistant or scripts send what's playing to /api/now-playing", "switch"),
+            "media_source.now_playing_input.priority": Setting("Now Playing Input Priority", int, 9, False, "Media", "Source priority (lower = first)", "number"),
+            "media_source.now_playing_input.token": Setting("Now Playing Input Token", str, "", False, "Media", "Optional. When set, senders must include the header Authorization: Bearer <token>. Set one if SyncLyrics is reachable from the internet", "text"),
+
+            # Updates and usage stats (daily check-in, see docs/Usage Stats.md)
+            "updates.check_enabled": Setting("Check for Updates", bool, True, False, "Updates", "Once a day, ask the SyncLyrics server for the latest version", "switch"),
+            "updates.usage_stats": Setting("Anonymous Usage Stats", bool, True, False, "Updates", "Include anonymous stats in the daily check: version, install type, OS, and which sources and lyrics providers are on. Never songs or settings values", "switch"),
+
 
             "spotify.redirect_uri": Setting("Redirect URI", str, "http://127.0.0.1:9012/callback", True, "Spotify API", "Callback URL"),
             "spotify.cache.metadata_ttl": Setting("Metadata TTL", float, 2.0, False, "Spotify API", "Metadata cache (s)", "number"),
