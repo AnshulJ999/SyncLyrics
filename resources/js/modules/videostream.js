@@ -17,8 +17,10 @@
  *  - Auto-reconnect on stream drop (exponential backoff)
  *  - Controls extracted to sibling divs (unaffected by blend modes)
  *
- * Level 2 - Imports: nothing (self-contained, no state/api dependencies)
+ * Level 2 - Imports: utils (timeoutSignal only; no state/api dependencies)
  */
+
+import { timeoutSignal } from './utils.js';
 
 const STREAM_PORT           = 9062;
 const STREAM_STATUS_POLL_MS = 3000;
@@ -159,6 +161,9 @@ export function setupVideoStream() {
     const videoOnlySettingRows = document.querySelectorAll('.vs-video-only-row');
 
     if (!btn || !overlay || !img) return;
+
+    // Button starts hidden in the HTML; only an enabled overlay reveals it.
+    btn.style.display = '';
 
     // ── Runtime state ─────────────────────────────────────────────────────────
     let isOpen          = false;
@@ -734,7 +739,7 @@ export function setupVideoStream() {
     function doPoll() {
         if (!syncActive) return;
         const fetchStart = Date.now();
-        fetch(getPlaybackUrl(), { signal: AbortSignal.timeout(500) })
+        fetch(getPlaybackUrl(), { signal: timeoutSignal(500) })
             .then(r => r.ok ? r.json() : Promise.reject('non-ok'))
             .then(data => {
                 if (!syncActive || activeSource !== 'direct') return;
@@ -794,7 +799,7 @@ export function setupVideoStream() {
     function probePlaybackAvailability() {
         if (!isOpen || activeSource !== 'tabs' || playbackProbeInFlight) return;
         playbackProbeInFlight = true;
-        fetch(getPlaybackUrl(), { signal: AbortSignal.timeout(1500) })
+        fetch(getPlaybackUrl(), { signal: timeoutSignal(1500) })
             .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
             .then(data => {
                 if (!isOpen || activeSource !== 'tabs') return;
@@ -1565,7 +1570,7 @@ export function setupVideoStream() {
         }
 
         tabsStatusInFlight = true;
-        fetch(statusUrl, { signal: AbortSignal.timeout(2500) })
+        fetch(statusUrl, { signal: timeoutSignal(2500) })
             .then(response => response.ok ? response.json() : Promise.reject('non-ok'))
             .then(data => {
                 noteReaTabsReachable(data);
@@ -1709,7 +1714,7 @@ export function setupVideoStream() {
             // Don't poll /status or call loadStream() — that would re-set img.src.
             if (activeSource !== 'capture') return;
 
-            fetch(getStatusUrl(), { signal: AbortSignal.timeout(3000) })
+            fetch(getStatusUrl(), { signal: timeoutSignal(3000) })
                 .then(r => {
                     if (!r.ok) {
                         handleSocketDeath();

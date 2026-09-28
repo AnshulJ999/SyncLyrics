@@ -54,6 +54,7 @@ _last_active_time: float = 0
 _last_active_player_id: Optional[str] = None  # Track player that was last playing/paused
 _metadata_cache: Optional[Dict[str, Any]] = None
 _cache_time: float = 0
+_external_playback = False  # Player is playing something MA did not start (Sonos app, Spotify Connect...)
 
 # Log rate limiting - prevent spam in logs
 _last_no_player_log: float = 0
@@ -370,6 +371,23 @@ async def _get_active_queue_id(player_id: str) -> Optional[str]:
     return player_id
 
 
+def _is_external_playback(player) -> bool:
+    """
+    True when the player is playing a source MA did not start (e.g. Sonos app,
+    Spotify Connect, AirPlay, line-in). MA reports a queue id as active_source when
+    it is in control; any other value is a player-native source.
+    """
+    source = getattr(player, "active_source", None)
+    if not source or not _client:
+        return False
+    return _client.player_queues.get(source) is None
+
+
+def _external_player_id() -> Optional[str]:
+    """Player to command directly while playback is external; None when MA is in control."""
+    return _current_player_id if _external_playback else None
+
+
 class MusicAssistantSource(BaseMetadataSource):
     """
     Music Assistant integration.
@@ -443,8 +461,8 @@ class MusicAssistantSource(BaseMetadataSource):
         Gets current track info from the active player's queue.
         Uses cached data if fresh enough, otherwise fetches from server.
         """
-        global _metadata_cache, _cache_time, _current_player_id, _last_active_time
-        
+        global _metadata_cache, _cache_time, _current_player_id, _last_active_time, _external_playback
+
         # Ensure connected
         if not await _ensure_connected_nonblocking():
             return None
@@ -467,7 +485,12 @@ class MusicAssistantSource(BaseMetadataSource):
             player = _client.players.get(player_id)
             if not player:
                 return None
-            
+
+            # Playback started outside MA has no queue item; read the player's own media instead
+            _external_playback = _is_external_playback(player)
+            if _external_playback:
+                return self._metadata_from_player(player)
+
             # Get active queue
             queue_id = await _get_active_queue_id(player_id)
             if not queue_id:
@@ -557,7 +580,8 @@ class MusicAssistantSource(BaseMetadataSource):
             if not album_art_url:
                 try:
                     # Fallback: station logo / MA image helper
-                    album_art_url = _client.get_media_item_image_url(current_item, size=640)
+                    # MA's imageproxy only accepts sizes 0, 80, 160, 256, 512, 1024
+                    album_art_url = _client.get_media_item_image_url(current_item, size=512)
                 except Exception:
                     pass
             
@@ -565,14 +589,8 @@ class MusicAssistantSource(BaseMetadataSource):
             # IMPORTANT: Only use corrected_elapsed_time when PLAYING
             # When paused/stopped, use raw elapsed_time to avoid infinite interpolation
             # (corrected_elapsed_time interpolates based on queue.state, which can get stuck)
-            #
-            # TODO: MA Server PR #2959 (Jan 2026) adds elapsed_time_updated_at from server
-            # This will eliminate clock drift between MA server and client by providing
-            # the server's timestamp when elapsed_time was measured.
-            # Track: https://github.com/music-assistant/server/pull/2959
-            # When merged, update to use server timestamp instead of client time.time()
-            # Current workaround: users adjust music_assistant_latency_compensation setting
-            #
+            # The client stamps queue time updates with local receive time, so there is no
+            # server/client clock skew; music_assistant_latency_compensation covers playback delay.
             if is_playing:
                 position = queue.corrected_elapsed_time if queue.corrected_elapsed_time is not None else 0
             else:
@@ -629,15 +647,58 @@ class MusicAssistantSource(BaseMetadataSource):
             # Don't set _connected = False here - that causes reconnect spam
             # Connection errors are handled by start_listening task
             return None
-    
+
+    def _metadata_from_player(self, player) -> Optional[Dict[str, Any]]:
+        """
+        Build metadata from player.current_media for playback MA did not start.
+        No queue, favorites or shuffle/repeat state exist in this mode.
+        """
+        media = player.current_media
+        if not media or not media.title:
+            return None
+
+        is_playing = bool(player.playback_state and player.playback_state.value == "playing")
+
+        # Drop long-paused/stale media, same rule as the queue path
+        last_updated = player.elapsed_time_last_updated or 0
+        if not is_playing and last_updated and time.time() - last_updated > self.get_config().paused_timeout:
+            return None
+
+        position = player.corrected_elapsed_time
+        if position is None:
+            position = media.corrected_elapsed_time if is_playing else media.elapsed_time
+
+        if is_playing:
+            self._last_active_time = time.time()
+
+        artist = media.artist or ""
+        title = media.title
+        return {
+            "track_id": _normalize_track_id(artist, title),
+            "artist": artist,
+            "artist_name": artist,
+            "title": title,
+            "album": media.album,
+            "album_art_url": media.image_url,
+            "position": position or 0,
+            "duration_ms": int(media.duration * 1000) if media.duration else None,
+            "is_playing": is_playing,
+            "source": "music_assistant",
+            "colors": ("#24273a", "#363b54"),  # Default, will be enriched
+            "last_active_time": self._last_active_time,
+        }
+
     # === Playback Controls ===
     
     async def toggle_playback(self) -> bool:
         """Toggle play/pause on the active queue."""
         if not await _ensure_connected_nonblocking():
             return False
-        
+
         try:
+            if (player_id := _external_player_id()):
+                await _client.players.play_pause(player_id)
+                return True
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
@@ -653,8 +714,11 @@ class MusicAssistantSource(BaseMetadataSource):
         """Resume playback."""
         if not await _ensure_connected_nonblocking():
             return False
-        
+
         try:
+            if (player_id := _external_player_id()):
+                await _client.players.play(player_id)
+                return True
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
@@ -669,8 +733,11 @@ class MusicAssistantSource(BaseMetadataSource):
         """Pause playback."""
         if not await _ensure_connected_nonblocking():
             return False
-        
+
         try:
+            if (player_id := _external_player_id()):
+                await _client.players.pause(player_id)
+                return True
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
@@ -685,8 +752,11 @@ class MusicAssistantSource(BaseMetadataSource):
         """Skip to next track."""
         if not await _ensure_connected_nonblocking():
             return False
-        
+
         try:
+            if (player_id := _external_player_id()):
+                await _client.players.next_track(player_id)
+                return True
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
@@ -701,8 +771,11 @@ class MusicAssistantSource(BaseMetadataSource):
         """Skip to previous track."""
         if not await _ensure_connected_nonblocking():
             return False
-        
+
         try:
+            if (player_id := _external_player_id()):
+                await _client.players.previous_track(player_id)
+                return True
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
@@ -719,12 +792,16 @@ class MusicAssistantSource(BaseMetadataSource):
             return False
         
         try:
+            # MA seek expects seconds
+            position_seconds = position_ms // 1000
+            if (player_id := _external_player_id()):
+                await _client.players.seek(player_id, position_seconds)
+                return True
+
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return False
-            
-            # MA seek expects seconds
-            position_seconds = position_ms // 1000
+
             await _client.player_queues.seek(queue_id, position_seconds)
             return True
         except Exception as e:
@@ -740,12 +817,16 @@ class MusicAssistantSource(BaseMetadataSource):
         """
         if not await _ensure_connected_nonblocking():
             return None
-        
+
+        # External playback has no MA queue; the MA queue would list unrelated items
+        if _external_playback:
+            return None
+
         try:
             queue_id = _current_queue_id or _current_player_id
             if not queue_id:
                 return None
-            
+
             # Get queue object to find current position
             queue_obj = _client.player_queues.get(queue_id)
             if not queue_obj:

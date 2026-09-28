@@ -88,6 +88,22 @@ export function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * AbortSignal that aborts after `ms`. Falls back to AbortController on browsers
+ * without AbortSignal.timeout() (Safari < 16, Chrome < 103 - common on older wall tablets).
+ *
+ * @param {number} ms - Timeout in milliseconds
+ * @returns {AbortSignal}
+ */
+export function timeoutSignal(ms) {
+    if (typeof AbortSignal.timeout === 'function') {
+        return AbortSignal.timeout(ms);
+    }
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+}
+
 // ========== COMPARISON HELPERS ==========
 
 /**

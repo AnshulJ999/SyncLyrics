@@ -26,6 +26,10 @@ Requires a secure context (HTTPS or localhost). In an iframe the parent must set
 
 Thanks to [@Ayce45](https://github.com/Ayce45) for contributing this feature in [#25](https://github.com/AnshulJ999/SyncLyrics/pull/25).
 
+### 🐛 Bug Fixes
+
+- Fixed `.env` path overrides (`SYNCLYRICS_SETTINGS_FILE`, `SYNCLYRICS_LOGS_DIR`) being silently ignored.
+
 ## [2.3.0] - 2026-07-23
 
 ### ⚠️ Important

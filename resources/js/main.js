@@ -130,8 +130,7 @@ import { initKeyboardShortcuts } from './modules/keyboard.js';
 // Media Browser (Level 2)
 import { setupMediaBrowser, updateMediaBrowserIcon } from './modules/mediabrowser.js';
 
-// Video Stream (Level 2)
-import { setupVideoStream } from './modules/videostream.js';
+// Video Stream (Level 2) - loaded on demand in main() only when REAPER_VIDEO_ENABLED is set
 
 // Home Assistant Browser (Level 2)
 import { setupHomeAssistant } from './modules/habrowser.js';
@@ -461,7 +460,10 @@ async function updateLoop() {
                         'reaper_daw': 'REAPER',
                         'music_assistant': 'Music Assistant',
                         'linux': 'Linux',
-                        'macos': 'Mac'
+                        'macos': 'Mac',
+                        'pear_desktop': 'Pear',
+                        'tidal_hifi': 'TIDAL',
+                        'smtc_now_playing': 'Windows'
                     };
                     sourceBtn.textContent = sourceMap[trackInfo.source] || 'Idle';
                 }
@@ -796,13 +798,13 @@ async function main() {
     // Initialize media browser
     setupMediaBrowser();
 
-    // Initialize video stream (REAPER_VIDEO_ENABLED feature flag required)
+    // Initialize video stream (REAPER_VIDEO_ENABLED feature flag required).
+    // The button is hidden in the HTML; setupVideoStream() reveals it. The module is
+    // imported on demand so regular users never download it.
     if (config?.reaperVideoEnabled) {
-        setupVideoStream();
-    } else {
-        // Hide the video stream button so it doesn't appear for regular users
-        const vsBtn = document.getElementById('btn-video-stream');
-        if (vsBtn) vsBtn.style.display = 'none';
+        import('./modules/videostream.js')
+            .then(({ setupVideoStream }) => setupVideoStream())
+            .catch(err => console.error('[Main] Failed to load video stream module:', err));
     }
 
     // Initialize Home Assistant embed (HA_ENABLED feature flag required)
@@ -810,8 +812,11 @@ async function main() {
         setupHomeAssistant();
     }
 
-    // Initialize REAPER DAW Control UI
-    setupReaperUI();
+    // Initialize REAPER DAW Control UI only when the source is enabled; otherwise its
+    // status poll would run for every user. The button stays hidden (HTML default).
+    if (config?.reaperDawEnabled) {
+        setupReaperUI();
+    }
 
     // Note: HA button is hidden by default in HTML (style="display:none").
     // setupHomeAssistant() removes that hide when called.

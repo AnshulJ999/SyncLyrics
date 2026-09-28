@@ -122,8 +122,9 @@ class RecognitionBlacklist:
         if not self._active:
             return False
 
-        artist_norm = artist.lower().strip()
-        title_norm = title.lower().strip()
+        # Providers can send explicit None (e.g. Shazam subtitle: null)
+        artist_norm = (artist or "").lower().strip()
+        title_norm = (title or "").lower().strip()
 
         # 1. Check artists list
         for pattern in self._artists:

@@ -1,5 +1,5 @@
 from os import path
-from typing import Any
+from typing import Any, Optional
 import sys  # Added sys
 from pathlib import Path  # Added Path
 import json 
@@ -206,3 +206,40 @@ def get_attribute_js_notation(state: dict, attribute: str) -> Any:
 
     state = benedict(state, keypath_separator=".")
     return state[attribute]
+
+
+# --- Per-install values ---
+# state.json is untracked and per-install, so values that must differ between
+# installs live here, never in settings.json. get_state() resets the file to
+# defaults if it is missing or unreadable, so callers must tolerate these vanishing.
+
+def _update_state_key(key: str, value: Any) -> None:
+    """Set one top-level key, preserving everything else in state.json."""
+    with _state_lock:
+        updated = dict(get_state())  # copy: get_state() returns the cached dict
+        updated[key] = value
+        try:
+            set_state(updated)
+        except Exception as e:
+            logger.warning(f"Could not save '{key}' to state file: {e}")
+
+
+def get_install_id() -> str:
+    """Random anonymous ID for this install, created on first use."""
+    with _state_lock:
+        install_id = get_state().get("install_id")
+        if isinstance(install_id, str) and install_id:
+            return install_id
+        install_id = uuid.uuid4().hex
+        _update_state_key("install_id", install_id)
+        return install_id
+
+
+def get_last_seen_version() -> Optional[str]:
+    """Version whose What's New was last shown, or None on a fresh install."""
+    value = get_state().get("last_seen_version")
+    return value if isinstance(value, str) and value else None
+
+
+def set_last_seen_version(version: str) -> None:
+    _update_state_key("last_seen_version", version)
