@@ -104,10 +104,7 @@ def set_state(new_state: dict):
             with open(temp_path, "w") as f:
                 json.dump(new_state, f, indent=4)
             
-            # Atomic replace (works on both Windows and Unix)
-            
-            if path.exists(STATE_FILE):
-                os.remove(STATE_FILE)
+            # Atomic replace (works on both Windows and Unix); overwrites the old file in one step
             os.replace(temp_path, STATE_FILE)
             
             # Update cache immediately
