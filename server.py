@@ -3448,7 +3448,7 @@ async def app_status_route():
         'connected': ('ok', 'Connected'),
         'degraded': ('warn', 'Having trouble connecting'),
         'needs_reconnect': ('warn', 'Needs you to log in again'),
-    }.get(spotify_state, ('off', 'Not set up'))
+    }.get(spotify_state, ('off', 'Not set up (optional)'))
     rows.append({'id': 'spotify', 'label': 'Spotify API', 'tab': 'spotify-api',
                  'state': spotify_row[0], 'value': spotify_row[1]})
 
@@ -3456,7 +3456,7 @@ async def app_status_route():
     ma_enabled = _safe_bool(conf("media_source.music_assistant.enabled"), True)
     if ma_enabled and (ma.is_configured() or app_info.get_install_type() in ('docker', 'ha_addon')):
         if not ma.is_configured():
-            ma_row = ('off', 'Not set up')
+            ma_row = ('off', 'Not set up (optional)')
         elif ma.is_connected():
             ma_row = ('ok', 'Connected')
         else:

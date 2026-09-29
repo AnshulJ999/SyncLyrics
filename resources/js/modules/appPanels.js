@@ -185,6 +185,8 @@ function whatsNewBody(info) {
 function shareUrl(info) {
     const host = window.location.hostname;
     const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+    // Inside Docker the detected IP is the container's own, which other devices can't reach
+    if (isLocal && info.install_type === 'docker') return null;
     if (isLocal && info.lan_ip && info.lan_ip !== '127.0.0.1') {
         const port = window.location.port ? `:${window.location.port}` : '';
         return `${window.location.protocol}//${info.lan_ip}${port}`;
@@ -238,8 +240,11 @@ function welcomeBody(info) {
             statusList),
         el('div', { className: 'app-panel-section' },
             el('h3', {}, 'Use it on another screen'),
-            el('p', {}, 'Open this address on a tablet or phone on the same network.'),
-            el('div', { className: 'app-url-row' }, el('code', {}, url), copyBtn)),
+            ...(url
+                ? [el('p', {}, 'Open this address on a tablet or phone on the same network.'),
+                   el('div', { className: 'app-url-row' }, el('code', {}, url), copyBtn)]
+                : [el('p', {}, "On a tablet or phone on the same network, open this computer's network address, for example ",
+                      el('code', {}, `http://192.168.1.10:${window.location.port || '9012'}`), '.')])),
         el('div', { className: 'app-panel-section' },
             el('h3', {}, 'Help'),
             el('p', {}, externalLink(info.links.docs, 'Docs'), ' · ', externalLink(info.links.discussions, 'Ask on GitHub Discussions')))
@@ -304,9 +309,13 @@ export async function initAppPanels() {
 
     showUpdateDot(info);
 
-    const preview = new URLSearchParams(window.location.search).get('preview');
+    const params = new URLSearchParams(window.location.search);
+    const preview = params.get('preview');
     if (preview === 'whats-new') return openAppPanel('whats_new', info, true);
     if (preview === 'welcome') return openAppPanel('welcome', info, true);
+
+    // Dashboard cards and minimal mode wait for a full-app visit; nothing is marked seen
+    if (params.get('minimal') === 'true' || window.self !== window.top) return;
 
     const panel = pickPanel(info);
     if (panel) openAppPanel(panel, info, false);

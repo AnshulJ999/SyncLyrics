@@ -23,7 +23,7 @@ Both are on by default and both can be turned off in **Settings > Updates**. Wit
 | Python version | `3.12.4` |
 | Enabled sources | `spotify`, `music_assistant`, ... (names only) |
 | Enabled lyrics providers | `lrclib`, `musixmatch`, ... (names only) |
-| Played since the last check | `true` or `false`: whether anything played while SyncLyrics was open |
+| Played since the last check | `true` or `false`: whether anything played while SyncLyrics UI was open |
 | Sources and providers used | Which sources actually played and which providers served lyrics since the last check, plus the most used of each (names only, no counts) |
 
 The server also records the **country** the request came from (worked out by Cloudflare), but only when usage stats are on.

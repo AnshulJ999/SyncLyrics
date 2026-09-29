@@ -971,7 +971,7 @@ function initDebugOverlay() {
     if (lyricsContainer) {
         let tapCount = 0;
         let lastTapTime = 0;
-        const TAP_THRESHOLD = 700; // 500ms window between taps
+        const TAP_THRESHOLD = 700; // 700ms window between taps
         
         lyricsContainer.addEventListener('click', (e) => {
             // Don't trigger on control buttons
