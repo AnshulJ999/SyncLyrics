@@ -9,6 +9,7 @@ Audio recognition is useful when:
 - Using a media player without native metadata support
 - Playing audio from external devices
 - Identifying songs from TV/speakers
+- Listening to radio, where the station doesn't report how far into the song it is
 
 ## Two Capture Modes
 

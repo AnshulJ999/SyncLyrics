@@ -84,6 +84,12 @@ In this mode:
 
 For a player Music Assistant can't see at all, Home Assistant can send SyncLyrics what's playing instead: see [Now Playing Input](Now%20Playing%20Input.md#home-assistant).
 
+## Radio
+
+For radio stations (Radio Browser, TuneIn, a radio preset), SyncLyrics shows the song, artist and cover the station reports, instead of the station name.
+
+Lyrics timing can't line up on radio, though: stations don't report how far into the song they are, so there's no position to sync to. For synced lyrics on radio, use [Audio Recognition](Audio%20Recognition.md), which works out the song and position from the audio itself.
+
 ## Latency Tuning
 
 ### The Problem

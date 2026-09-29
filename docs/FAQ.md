@@ -53,6 +53,8 @@ Adjust latency compensation:
 2. Use +/− buttons to adjust timing
 3. For word-sync: use [ and ] keyboard shortcuts
 
+On radio through Music Assistant, lyrics can't be synced at all, because stations don't report how far into the song they are. Use Audio Recognition instead; see [Music Assistant: Radio](Music%20Assistant.md#radio).
+
 ## Setup
 
 ### Does this work offline?
