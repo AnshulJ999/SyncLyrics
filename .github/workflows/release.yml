@@ -474,6 +474,13 @@ jobs:
             echo "::warning::No CHANGELOG.md section found for ${{ needs.prepare.outputs.version_clean }} - release body will be auto-generated notes only"
           fi
 
+          cat >> release-body.md <<'EOF'
+
+          ---
+
+          ☕ **Enjoying SyncLyrics?** It's free and made by one person. If it's earned a spot in your setup, you can support it here: [GitHub Sponsors](https://github.com/sponsors/AnshulJ999) · [Ko-fi](https://ko-fi.com/anshul99) · [Patreon](https://www.patreon.com/AnshulJain) · [PayPal](https://paypal.me/AnshulJain99)
+          EOF
+
           cat release-body.md
 
       - name: Consolidate checksums

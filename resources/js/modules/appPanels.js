@@ -174,7 +174,7 @@ function whatsNewBody(info) {
     if (info.donations?.length) {
         body.push(el('div', { className: 'app-panel-section' },
             el('h3', {}, 'Support SyncLyrics'),
-            el('p', {}, 'SyncLyrics is free and made by one person. If you enjoy it, you can support it here.'),
+            el('p', {}, "SyncLyrics started as a small hobby project so I could get lyrics on my tablet, and somehow grew into this. It's free and made by one person, so if it's earned a spot in your setup, a small contribution would really help me keep building it :)"),
             donationButtons(info.donations)));
     }
     return body;
