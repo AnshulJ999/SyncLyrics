@@ -83,6 +83,9 @@ _Video demo showcasing the app's main features_
 
 SyncLyrics started as a small hobby project so I could get lyrics on my tablet, and somehow grew into this. More people are using it every month, which is honestly amazing to see. If it's earned a permanent spot in your setup, a small contribution would really help me keep building it :)
 
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/AnshulJ999)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?logo=kofi)](https://ko-fi.com/anshul99)
+[![Patreon](https://img.shields.io/badge/Patreon-Join-f96854?logo=patreon)](https://www.patreon.com/AnshulJain)
 [![PayPal](https://img.shields.io/badge/PayPal-Donate-blue?logo=paypal)](https://paypal.me/AnshulJain99)
 
 ---

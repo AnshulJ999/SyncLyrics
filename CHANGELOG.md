@@ -28,12 +28,22 @@ A Docker or Home Assistant install can now follow any player on a Windows PC run
 
 Settings now opens on an Overview page with your version, what's new, a quick status check and how to update. A small dot on the settings icon means an update is out, and after an update this What's New panel shows once.
 
-### 🐛 Bug Fixes
+### 🐛 Bug Fixes and Improvements
 
 - Fixed next-track album art not loading with Music Assistant. Thanks to [@morgancurrie](https://github.com/morgancurrie) in [#26](https://github.com/AnshulJ999/SyncLyrics/pull/26).
 - Fixed the main album art request size for Music Assistant, which newer Music Assistant versions reject.
+- Fixed Music Assistant radio stations showing the station name instead of the song that's playing, so lyrics can now be found for radio too.
+- Music Assistant now asks the MA server for the queue far less often, so there's less network chatter.
+- Fixed the source name showing "Idle" while Pear Desktop was playing.
+- Fixed audio recognition still trying ACRCloud after its daily limit was used up.
 - Fixed browsers sometimes showing an outdated version of the page for up to 12 hours after an update.
 - Fixed a rare case where app state could be lost if SyncLyrics stopped while saving it.
+- The Linux AppImage now runs on older Linux versions too. Its file name now ends in `x86_64.AppImage` instead of `linux-x64.AppImage`.
+
+### 📖 Documentation
+
+- New guides: [Now Playing Input](https://github.com/AnshulJ999/SyncLyrics/blob/main/docs/Now%20Playing%20Input.md), and an [AI setup guide](https://github.com/AnshulJ999/SyncLyrics/blob/main/AI-SETUP.md) you can hand to an AI assistant to install SyncLyrics for you.
+- The API Reference now covers using SyncLyrics as a lyrics server for your own apps.
 
 ## [2.4.0] - 2026-08-24
 
