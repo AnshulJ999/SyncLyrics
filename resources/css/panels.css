@@ -367,6 +367,11 @@ div.cl-item {
     border-top: 1px solid var(--panel-line);
 }
 
+.app-panel-actions {
+    display: flex;
+    gap: 8px;
+}
+
 .app-panel-countdown {
     color: var(--panel-text-3);
     font-size: 0.8rem;

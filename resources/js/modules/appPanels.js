@@ -86,7 +86,7 @@ function focusables(root) {
         .filter(node => node.offsetParent !== null);
 }
 
-function showPanel({ title, body, footerButton, autoClose, onClose }) {
+function showPanel({ title, body, footerButton, footerExtra, autoClose, onClose }) {
     closePanel();
 
     const closeX = el('button', { type: 'button', className: 'app-panel-icon-btn', 'aria-label': 'Close' }, icon('bi-x-lg'));
@@ -97,7 +97,8 @@ function showPanel({ title, body, footerButton, autoClose, onClose }) {
     const panel = el('div', { className: 'app-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'app-panel-title', tabindex: '-1' },
         el('div', { className: 'app-panel-header' }, el('h2', { id: 'app-panel-title' }, title), closeX),
         el('div', { className: 'app-panel-body' }, ...body),
-        el('div', { className: 'app-panel-footer' }, countdown, footerBtn),
+        el('div', { className: 'app-panel-footer' }, countdown,
+            el('div', { className: 'app-panel-actions' }, footerExtra, footerBtn)),
         autoClose ? timerBar : null
     );
     const backdrop = el('div', { className: 'app-panel-backdrop' }, panel);
@@ -172,7 +173,7 @@ function whatsNewBody(info) {
                 'Full changelog', icon('bi-box-arrow-up-right')))
     ];
     if (info.donations?.length) {
-        body.push(el('div', { className: 'app-panel-section' },
+        body.push(el('div', { className: 'app-panel-section', id: 'app-support' },
             el('h3', {}, 'Support SyncLyrics'),
             el('p', {}, "SyncLyrics started as a small hobby project so I could get lyrics on my tablet, and somehow grew into this. It's free and made by one person, so if it's earned a spot in your setup, a small contribution would really help me keep building it :)"),
             donationButtons(info.donations)));
@@ -293,7 +294,13 @@ function openAppPanel(panel, info, preview) {
     if (panel === 'welcome') {
         showPanel({ title: 'Welcome to SyncLyrics', body: welcomeBody(info), footerButton: 'Got it', autoClose: false, onClose });
     } else if (info.changelog_html) {
-        showPanel({ title: `What's new in ${info.version}`, body: whatsNewBody(info), footerButton: 'Close', autoClose: true, onClose });
+        let supportBtn = null;
+        if (info.donations?.length) {
+            supportBtn = el('button', { type: 'button', className: 'app-btn', 'aria-label': 'Support SyncLyrics' }, icon('bi-heart'), 'Support');
+            supportBtn.addEventListener('click', () =>
+                document.getElementById('app-support')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        }
+        showPanel({ title: `What's new in ${info.version}`, body: whatsNewBody(info), footerButton: 'Close', footerExtra: supportBtn, autoClose: true, onClose });
     }
 }
 
