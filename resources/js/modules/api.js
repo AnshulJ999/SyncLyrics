@@ -12,6 +12,9 @@ import { setWakeLockMode, setWakeLockPlaying } from './wakeLock.js';
 import {
     displayConfig,
     visualModeConfig,
+    flowSheetId,
+    setFlowSheet,
+    setLyricsFlowServerDefault,
     slideshowConfig,
     currentColors,
     setUpdateInterval,
@@ -243,6 +246,17 @@ export async function getConfig() {
             console.log(`Word-sync default: ${config.word_sync_default_enabled}`);
         }
 
+        // Lyrics Flow server default (only if the URL doesn't set lyricsFlow); remembered so the
+        // page link can say lyricsFlow=false when the user turns it off against an 'on' default
+        if (config.lyrics_flow_default_enabled !== undefined) {
+            setLyricsFlowServerDefault(config.lyrics_flow_default_enabled);
+            if (!urlParams.has('lyricsFlow')) {
+                displayConfig.lyricsFlow = config.lyrics_flow_default_enabled;
+                const flowCheckbox = document.getElementById('opt-lyrics-flow');
+                if (flowCheckbox) flowCheckbox.checked = displayConfig.lyricsFlow;
+            }
+        }
+
         // Apply word-sync transition timing (0 = instant, >0 = fade delay in ms)
         if (config.wordSyncTransitionMs !== undefined) {
             setWordSyncTransitionMs(config.wordSyncTransitionMs);
@@ -383,7 +397,12 @@ export async function getCurrentTrack() {
  */
 export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updateProviderDisplayFn) {
     try {
-        let response = await fetch('/lyrics', { signal: timeoutSignal(API_FETCH_TIMEOUT_MS) });
+        // Lyrics Flow asks for the sheet (flow=1) and says which sheet it holds, so the server sends it only on change
+        let lyricsUrl = '/lyrics';
+        if (displayConfig.lyricsFlow) {
+            lyricsUrl += '?flow=1' + (flowSheetId ? `&flow_sheet=${encodeURIComponent(flowSheetId)}` : '');
+        }
+        let response = await fetch(lyricsUrl, { signal: timeoutSignal(API_FETCH_TIMEOUT_MS) });
         let data = await response.json();
 
         // Update background if colors are present
@@ -411,6 +430,15 @@ export async function getLyrics(updateBackgroundFn, updateThemeColorFn, updatePr
         // This allows toggle to be enabled even if current provider doesn't have word-sync
         setAnyProviderHasWordSync(data.any_provider_has_word_sync || false);
         
+        // Lyrics Flow: keep the sheet the server sent; a null id means there is no sheet for this state
+        if (data.flow) {
+            if (data.flow.sheet) {
+                setFlowSheet(data.flow.sheet, data.flow.sheet_id);
+            } else if (!data.flow.sheet_id) {
+                setFlowSheet(null, null);
+            }
+        }
+
         // Update instrumental markers (timestamps where ♪ appears in line-sync)
         // Used for accurate gap detection during word-sync playback
         setInstrumentalMarkers(data.instrumental_markers);

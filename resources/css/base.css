@@ -2597,3 +2597,68 @@ body.art-only-mode .main-latency-controls {
     color: rgba(255, 255, 255, 0.5);
 }
 
+/* ========== LYRICS FLOW ========== */
+/* Whole song as one sheet that glides to keep the current line at a fixed spot (resources/js/modules/lyricsFlow.js).
+   While it shows, the six fixed lines stay in the DOM (karaoke and other code use them) but are hidden. */
+.lyrics-flow {
+    display: none;
+}
+
+body.lyrics-flow-active #lyrics {
+    position: relative;
+    overflow: hidden;
+    /* #lyrics spans the whole screen under the header and playback bar; fade the sheet out before it reaches them */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 12%, #000 24%, #000 66%, transparent 82%);
+    mask-image: linear-gradient(to bottom, transparent 12%, #000 24%, #000 66%, transparent 82%);
+}
+
+body.lyrics-flow-active #lyrics > .lyric-line {
+    visibility: hidden;
+}
+
+body.lyrics-flow-active .lyrics-flow {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 0 clamp(1rem, 3vw, 2rem);
+    text-align: center;
+    will-change: transform;
+    transition: transform 450ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lyrics-flow .flow-line {
+    max-width: 90%;
+    margin: 0 auto clamp(0.8rem, 3vh, 2rem);
+    font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--lyrics-font-scale-current, 1));
+    line-height: 1.25;
+    font-family: var(--lyrics-font-family, inherit);
+    color: var(--lyrics-text-color, #ffffff);
+    font-weight: var(--lyrics-font-weight, 400);
+    -webkit-font-smoothing: antialiased;
+    opacity: 0.45;
+    transform: scale(0.85);
+    transform-origin: center top;
+    transition: transform 300ms ease-out, opacity 300ms ease-out;
+}
+
+.lyrics-flow .flow-line.flow-current {
+    opacity: 1;
+    transform: scale(1);
+    font-weight: var(--lyrics-font-weight-current, 500);
+    text-shadow: 0 0 calc(20px * var(--lyrics-glow-intensity, 1)) rgba(255, 255, 255, calc(0.3 * var(--lyrics-glow-intensity, 1)));
+}
+
+/* Jumps (new sheet, seek, re-show, re-measure) move without any transition */
+.lyrics-flow.flow-no-transition,
+.lyrics-flow.flow-no-transition .flow-line {
+    transition: none !important;
+}
+
+/* Reduced motion: the sheet's own glide is switched off in lyricsFlow.js; no focus transitions either */
+@media (prefers-reduced-motion: reduce) {
+    .lyrics-flow .flow-line {
+        transition: none;
+    }
+}

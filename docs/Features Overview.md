@@ -8,6 +8,7 @@ SyncLyrics is a synchronized lyrics display application with multiple advanced f
 Displays synchronized lyrics in a 6-line view with smooth scrolling:
 - **Line-sync**: Standard timed lyrics from multiple providers
 - **Word-sync**: Karaoke-style word highlighting (see [Word Sync and Karaoke](Word%20Sync%20and%20Karaoke.md))
+- **Lyrics Flow** (optional): the whole song as one sheet that glides so the current line stays in one spot, current line larger and brighter. Turn on with **Lyrics Flow** in the display settings or `?lyricsFlow=true`; karaoke still takes over for word-timed songs while Word-Sync is on. Moves without animation when the device asks for reduced motion
 
 ### 📡 Media Sources
 SyncLyrics can get track info from:

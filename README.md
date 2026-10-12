@@ -248,6 +248,7 @@ Append these to the URL for custom displays (e.g., `http://localhost:9012/?minim
 | `artBackground` | `true/false` | Blurred album art background |
 | `hideControls` | `true/false` | Hide playback controls |
 | `hideProgress` | `true/false` | Hide progress bar |
+| `lyricsFlow` | `true/false` | Lyrics Flow: the whole song glides so the current line stays in one spot (overrides the server default) |
 | `keepAwake` | `always/playback/off` | Override the Keep Screen Awake setting for this display |
 | `preview` | `whats-new/welcome` | Show the What's New or Welcome panel again, without marking it as seen |
 

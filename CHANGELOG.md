@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ New Features
+
+#### Lyrics Flow
+
+A new display mode shows the whole song as one sheet and glides it so the current line stays in the same spot, instead of redrawing six lines at once. The current line is larger and brighter, so your eye can follow it. Turn it on with **Lyrics Flow** in the display settings (⚙️), the `?lyricsFlow=true` URL parameter, or **Settings > Features** to make it the default (off by default). Songs with word timing still use karaoke while Word-Sync is on.
+
 ## [2.5.0] - 2026-09-30
 
 ### ⚠️ Important

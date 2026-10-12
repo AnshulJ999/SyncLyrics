@@ -68,6 +68,16 @@ The primary polling endpoint. Returns current, previous, and next lyric lines, a
 - `word_synced_lyrics` — karaoke word-by-word data, or `null` if unavailable
 - `instrumental_markers` — timestamps (seconds) of `♪` markers in line-sync data, or `null`
 
+**Lyrics Flow** (`?flow=1`, optionally `&flow_sheet=<id>`): adds a `flow` object for the whole-song sheet. Without `flow=1` the response is unchanged.
+
+```json
+"flow": { "sheet_id": "1c81e6e2a9d1", "row": 8, "sheet": ["Intro", "first line", "...", "End"] }
+```
+
+- `sheet_id` — short hash of the current timed lyrics; `null` (with `row: null`) when there is no sheet (no lyrics, "Searching lyrics...", an instrumental placeholder)
+- `row` — the current row in the sheet: `0` is the leading "Intro" row (before the first line), the last row is "End" (after the song's lyrics finish)
+- `sheet` — every row's text, sent only when `flow_sheet` differs from `sheet_id`, so the page downloads the sheet once per song (and again if the lyrics are replaced mid-song)
+
 ---
 
 ### `GET /current-track`
@@ -132,6 +142,7 @@ Returns the frontend display configuration. Used once at startup to initialize t
   "lyricsGlowIntensity": 0.3,
   "customFonts": ["MyFont", "AnotherFont"],
   "word_sync_default_enabled": true,
+  "lyrics_flow_default_enabled": false,
   "wordSyncTransitionMs": 0
 }
 ```

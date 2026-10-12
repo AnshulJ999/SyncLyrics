@@ -13,6 +13,7 @@ from providers.qq import QQMusicProvider
 from providers.musixmatch import MusixmatchProvider
 from config import LYRICS, DEBUG, FEATURES, DATABASE_DIR
 from logging_config import get_logger
+import lyrics_flow
 
 logger = get_logger(__name__)
 
@@ -1873,29 +1874,41 @@ async def get_timed_lyrics(delta: Optional[float] = None) -> str:
 
 async def get_timed_lyrics_previous_and_next() -> tuple:
     """Returns tuple of 6 lines: (prev2, prev1, current, next1, next2, next3)."""
-    
-    def safe_get_line(idx):
-        if current_song_lyrics and 0 <= idx < len(current_song_lyrics):
-            return current_song_lyrics[idx][1] or "♪"
-        return ""
+    window, _idx, _lines = await get_timed_lyrics_window_and_index()
+    return window
 
+async def get_timed_lyrics_window_and_index() -> tuple:
+    """
+    The six-line window plus the line index and the lyric list it was computed from.
+
+    Lyrics Flow (lyrics_flow.py) needs the same index the window used, from the same computation:
+    calling _find_current_lyric_index() again later could disagree, because the position moves and
+    background tasks replace current_song_lyrics. Returns (window, idx, lines); window is the
+    6-tuple or a status string, idx and lines are None with a status string.
+    """
     await _update_song()
     
-    if current_song_data is None: return "No song playing"
-    if current_song_lyrics is None: return "Lyrics not found"
+    if current_song_data is None: return "No song playing", None, None
+    if current_song_lyrics is None: return "Lyrics not found", None, None
     
+    lines = current_song_lyrics  # snapshot: no await between here and the return
     idx = _find_current_lyric_index()
+
+    def safe_get_line(idx):
+        if lines and 0 <= idx < len(lines):
+            return lines[idx][1] or "♪"
+        return ""
 
     # Explicit Flag Check (New)
     is_instrumental = False
     
     # 1. Check if the lyrics list itself has a special flag (we can attach this in providers)
     # For now, we improve the text check to be less brittle
-    if len(current_song_lyrics) == 1:
-        text = current_song_lyrics[0][1].lower().strip()
+    if len(lines) == 1:
+        text = lines[0][1].lower().strip()
         # Check for known "Instrumental" markers from providers
         # Expanded list to catch more symbols and common provider placeholders
-        if text in ["instrumental", "music only", "no lyrics", "non-lyrical", "♪", "♫", "♬", "(instrumental)", "[instrumental]"]:
+        if text in lyrics_flow.INSTRUMENTAL_TEXTS:
             is_instrumental = True
     
     # Note: Instrumental breaks (sections within songs marked with "(Instrumental)", "[Solo]", etc.)
@@ -1905,13 +1918,13 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
     # Handle instrumental / intro
     if idx == -1:
         # Look ahead to see what the first lyric is
-        return ("", "", "♪", safe_get_line(0), safe_get_line(1), safe_get_line(2))
+        return ("", "", "♪", safe_get_line(0), safe_get_line(1), safe_get_line(2)), idx, lines
     
     if idx == -2: # Intro
-        return ("", "", "Intro", safe_get_line(0), safe_get_line(1), safe_get_line(2))
+        return ("", "", "Intro", safe_get_line(0), safe_get_line(1), safe_get_line(2)), idx, lines
         
     if idx == -3: # Outro
-        return (safe_get_line(len(current_song_lyrics)-1), "End", "", "", "", "")
+        return (safe_get_line(len(lines)-1), "End", "", "", "", ""), idx, lines
     return (
         safe_get_line(idx - 2),
         safe_get_line(idx - 1),
@@ -1919,4 +1932,4 @@ async def get_timed_lyrics_previous_and_next() -> tuple:
         safe_get_line(idx + 1),
         safe_get_line(idx + 2),
         safe_get_line(idx + 3)
-    )
+    ), idx, lines

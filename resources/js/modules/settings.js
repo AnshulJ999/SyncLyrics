@@ -11,7 +11,8 @@ import {
     displayConfig,
     wordSyncEnabled,
     setWordSyncEnabled,
-    setManualStyleOverride
+    setManualStyleOverride,
+    lyricsFlowServerDefault
 } from './state.js';
 import { showToast } from './dom.js';
 import { copyToClipboard } from './utils.js';
@@ -92,6 +93,11 @@ export function initializeDisplay() {
     // Enforce mutual exclusivity: Waveform <-> Progress (can't have both)
     if (displayConfig.showWaveform) {
         displayConfig.showProgress = false;
+    }
+
+    // Lyrics Flow (whole-song gliding sheet) - URL wins over the server default applied in api.js
+    if (params.has('lyricsFlow')) {
+        displayConfig.lyricsFlow = params.get('lyricsFlow') === 'true';
     }
 
     // Word-sync toggle (disabled by default, can be enabled via URL)
@@ -369,7 +375,8 @@ export function setupSettingsPanel() {
         'opt-audio-source': 'showAudioSource',
         'opt-visual-mode-toggle': 'showVisualModeToggle',
         'opt-waveform': 'showWaveform',
-        'opt-spectrum': 'showSpectrum'
+        'opt-spectrum': 'showSpectrum',
+        'opt-lyrics-flow': 'lyricsFlow'
     };
 
     // Initialize checkboxes
@@ -544,6 +551,7 @@ function handleCheckboxChange(id, checked) {
     if (id === 'opt-show-provider') displayConfig.showProvider = checked;
     if (id === 'opt-audio-source') displayConfig.showAudioSource = checked;
     if (id === 'opt-visual-mode-toggle') displayConfig.showVisualModeToggle = checked;
+    if (id === 'opt-lyrics-flow') displayConfig.lyricsFlow = checked;
 
     // Handle mutually exclusive background options
     if (id === 'opt-art-bg') {
@@ -650,6 +658,10 @@ export function generateCurrentUrl() {
     if (!displayConfig.showVisualModeToggle) params.set('showVisualModeToggle', 'false');
     // wordSync is now default=false, so only add param if true
     if (wordSyncEnabled) params.set('wordSync', 'true');
+    // Lyrics Flow: write 'true' when on, and 'false' when off but the server default is on,
+    // so a bookmarked link keeps its state either way (no browser storage)
+    if (displayConfig.lyricsFlow) params.set('lyricsFlow', 'true');
+    else if (lyricsFlowServerDefault) params.set('lyricsFlow', 'false');
     if (displayConfig.useAlbumColors) params.set('useAlbumColors', 'true');
 
     // Enforce mutual exclusivity: only add one of artBackground, softAlbumArt (now default), or sharpAlbumArt

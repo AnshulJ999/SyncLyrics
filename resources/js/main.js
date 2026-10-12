@@ -52,6 +52,9 @@ import { initializeDisplay, toggleMinimalMode } from './modules/settings.js';
 // Wake Lock (Level 1)
 import { initWakeLock } from './modules/wakeLock.js';
 
+// Lyrics Flow (whole-song gliding sheet)
+import { showLyricsFlow, hideLyricsFlow } from './modules/lyricsFlow.js';
+
 // Controls (Level 2)
 import {
     attachControlHandlers,
@@ -468,6 +471,9 @@ async function updateLoop() {
                 currentPollInterval = IDLE_POLL_INTERVAL;
             }
 
+            // Nothing playing: drop the Lyrics Flow sheet so today's display shows
+            hideLyricsFlow();
+
             await sleep(currentPollInterval);
             continue;
         }
@@ -695,6 +701,14 @@ async function updateLoop() {
             }
         } else if (data && typeof data === 'object') {
             setLyricsInDom(data);
+        }
+
+        // Lyrics Flow: show the whole-song sheet unless karaoke takes over (same check as setLyricsInDom)
+        // or there is no sheet for this state, in which case today's six-line display shows
+        if (displayConfig.lyricsFlow && !(hasWordSync && wordSyncEnabled) && data && data.flow) {
+            showLyricsFlow(data.flow.row);
+        } else {
+            hideLyricsFlow();
         }
 
         // Check for visual mode

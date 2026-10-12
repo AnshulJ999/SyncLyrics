@@ -33,6 +33,7 @@
     "features.album_art_colors": true,
     "features.album_art_db": true,
     "features.auto_theme": true,
+    "features.lyrics_flow_default_enabled": false,
     "features.minimal_ui": true,
     "features.parallel_provider_fetch": true,
     "features.provider_stats": false,

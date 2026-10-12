@@ -70,7 +70,8 @@ export let displayConfig = {
     softAlbumArt: true,   // Soft album art background - DEFAULT ON for optimal experience
     sharpAlbumArt: false, // Sharp album art background (no blur, no scaling, super sharp and clear)
     showWaveform: false,  // Waveform seekbar (mutually exclusive with showProgress)
-    showSpectrum: false   // Spectrum analyzer visualizer (full-width behind content)
+    showSpectrum: false,  // Spectrum analyzer visualizer (full-width behind content)
+    lyricsFlow: false     // Lyrics Flow: whole song as one gliding sheet (default OFF; URL param or server default)
 };
 
 // ========== VISUAL MODE STATE ==========
@@ -203,3 +204,10 @@ export function setDebugLastPollTimestamp(value) { debugLastPollTimestamp = valu
 export function setDebugPollInterval(value) { debugPollInterval = value; }
 export function setDebugSource(value) { debugSource = value; }
 export function setDebugBadSamples(value) { debugBadSamples = value; }
+
+// ========== LYRICS FLOW STATE ==========
+export let lyricsFlowServerDefault = false; // features.lyrics_flow_default_enabled from /config
+export let flowSheet = null;                // Rows of the current song's Lyrics Flow sheet (from /lyrics)
+export let flowSheetId = null;              // Id of flowSheet; sent back so the server omits an unchanged sheet
+export function setLyricsFlowServerDefault(value) { lyricsFlowServerDefault = value; }
+export function setFlowSheet(rows, id) { flowSheet = rows; flowSheetId = id; }

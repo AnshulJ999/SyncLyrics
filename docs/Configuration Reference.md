@@ -141,6 +141,7 @@ Each provider has: `enabled`, `priority` (lower = first), `timeout`, `retries`.
 | `features.album_art_db` | true | Cache album art |
 | `features.word_sync_auto_switch` | false | Prefer providers with word-sync |
 | `features.word_sync_default_enabled` | true | Enable word-sync by default |
+| `features.lyrics_flow_default_enabled` | false | Show lyrics as one gliding sheet (Lyrics Flow) by default; the `lyricsFlow` URL parameter overrides it |
 | `features.spicetify_database` | true | Cache audio analysis |
 
 ## System
